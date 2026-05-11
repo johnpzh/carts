@@ -24,9 +24,12 @@
 // OPENMP-NOT: arts.for
 // OPENMP: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // OPENMP: arts.edt <parallel> <intranode>
+// OPENMP-SAME: arts.plan.owner_dims = [0]
+// OPENMP-SAME: arts.plan.physical_block_shape = [8, 64]
 // OPENMP-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
-// OPENMP-SAME: stencil_max_offsets = [1, 1]
-// OPENMP-SAME: stencil_min_offsets = [-1, -1]
+// OPENMP-SAME: stencil_block_shape = [8]
+// OPENMP-SAME: stencil_max_offsets = [1]
+// OPENMP-SAME: stencil_min_offsets = [-1]
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<64x64xf64>, %B: memref<64x64xf64>) {

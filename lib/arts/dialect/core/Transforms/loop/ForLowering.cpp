@@ -28,6 +28,7 @@
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Analysis/heuristics/DistributionHeuristics.h"
 #include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
+#include "arts/dialect/core/Transforms/db/DbLayoutPlanUtils.h"
 #include "arts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_FORLOWERING
 #include "arts/dialect/core/Analysis/db/OwnershipProof.h"
@@ -1370,8 +1371,18 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
     /// ForLowering preserves that mode instead of reclassifying loop-local
     /// memops and drifting away from the dependency contract.
     ArtsMode effectiveTaskMode = parentAcqOp.getMode();
+    auto sourceAlloc = dyn_cast_or_null<DbAllocOp>(
+        DbUtils::getUnderlyingDbAlloc(parentAcqOp.getSourcePtr()));
+    bool hasSdePhysicalLayoutPlan =
+        sourceAlloc && hasPhysicalDbLayoutPlan(sourceAlloc.getOperation());
+    bool parentUsesBlockLayout =
+        parentAcqOp.getPartitionMode() &&
+        usesBlockLayout(*parentAcqOp.getPartitionMode());
+    bool preservePlannedBlockRead = effectiveTaskMode == ArtsMode::in &&
+                                    parentUsesBlockLayout &&
+                                    hasSdePhysicalLayoutPlan;
     bool forceCoarseReadOnlyDep =
-        effectiveTaskMode == ArtsMode::in &&
+        effectiveTaskMode == ArtsMode::in && !preservePlannedBlockRead &&
         !acquireHasAccessDependingOnLoopIv(parentAcqOp, forOp);
 
     DbAcquireOp chunkAcqOp;
@@ -1436,23 +1447,12 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
     }
 
     TaskAcquireRewritePlanInput planningInput{
-        AC,
-        loc,
-        parentAcqOp,
-        effectiveTaskMode,
-        rootGuidValue,
-        rootPtrValue,
+        AC, loc, parentAcqOp, effectiveTaskMode, rootGuidValue, rootPtrValue,
         /*forceCoarseRewrite=*/
         forceCoarseReadOnlyDep ||
             (singleDispatchLane && !parentHasPartitionInfo),
-        loopInfo.strategy.kind,
-        distributionPattern,
-        tiling2DGrid,
-        contract,
-        acquireOffsetVal,
-        acquireSizeVal,
-        acquireHintSizeVal,
-        stepVal,
+        loopInfo.strategy.kind, distributionPattern, tiling2DGrid, contract,
+        acquireOffsetVal, acquireSizeVal, acquireHintSizeVal, stepVal,
         stepIsUnit};
 
     ARTS_DEBUG("    - Planned contract for dep "
@@ -1550,8 +1550,7 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
 
     applyTaskAcquireContractMetadata(
         forceCoarseReadOnlyDep ? nullptr : forOp.getOperation(), chunkAcqOp,
-        planningInput.contract,
-        plannedTaskBlockShape, AC->getBuilder(), loc);
+        planningInput.contract, plannedTaskBlockShape, AC->getBuilder(), loc);
     if (plannedTaskBlockShape)
       refinedTaskBlockShape = *plannedTaskBlockShape;
 

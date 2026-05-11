@@ -480,7 +480,13 @@ void DbStencilRewriter::transformAcquireAsBlock(const DbRewriteAcquire &info,
       /// distribution/lowering. Re-expand that owner slice here before
       /// converting it to DB-space blocks, otherwise boundary tasks can miss a
       /// halo block even though the element slice metadata looks complete.
-      if (acquire.getMode() == ArtsMode::in) {
+      ///
+      /// Write-capable stencil acquires also need this DB-space halo expansion:
+      /// they cannot use ARTS read-only byte-slice transport for writable
+      /// state, but they can conservatively depend on neighboring physical DB
+      /// blocks. Only read acquires update element_offsets/element_sizes for
+      /// ESD slices.
+      if (contract && contract->supportsBlockHalo()) {
         unsigned ownerDim = resolveOwnerDim(d);
         std::optional<unsigned> ownerPosition =
             contract ? getContractOwnerPosition(*contract, ownerDim)
@@ -490,7 +496,7 @@ void DbStencilRewriter::transformAcquireAsBlock(const DbRewriteAcquire &info,
               builder, loc, elemOff, elemSz, totalExtent, minOffset, maxOffset);
           elemOff = expanded.offset;
           elemSz = expanded.size;
-          if (canUpdateElementSlice &&
+          if (acquire.getMode() == ArtsMode::in && canUpdateElementSlice &&
               ownerDim < updatedElementOffsets.size() &&
               ownerDim < updatedElementSizes.size()) {
             updatedElementOffsets[ownerDim] = elemOff;

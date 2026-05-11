@@ -191,7 +191,7 @@ def DbAcquireOp : Arts_Op<"db_acquire", [AttrSizedOperandSegments]> {
 
     DB-space fields: indices, offsets and sizes
 
-    Partition hints (element-space, for DbPartitioning pass):
+    Partition hints (element-space, consumed by task/DB-space lowering):
     - partition_mode: coarse, chunked, fine_grained, or stencil - describes access pattern
     - partition_indices: element indices for fine_grained access (from depend(inout: A[i][j]))
     - partition_offsets: element offsets for chunked/stencil access (from depend(in: A[off:sz]))

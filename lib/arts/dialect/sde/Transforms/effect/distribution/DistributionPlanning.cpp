@@ -12,13 +12,19 @@ namespace mlir::arts {
 #include "arts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::arts
 
+#include "arts/dialect/core/Analysis/KernelFamily.h"
 #include "arts/utils/LoopUtils.h"
+#include "arts/utils/OperationAttributes.h"
+#include "arts/utils/StencilAttributes.h"
+#include "arts/utils/ValueAnalysis.h"
 #include "arts/utils/costs/SDECostModel.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/Support/MathExtras.h"
 
 using namespace mlir;
 using namespace mlir::arts;
@@ -29,6 +35,103 @@ struct PlannedDistribution {
   sde::SdeSuIterateOp op;
   sde::SdeDistributionKind kind = sde::SdeDistributionKind::blocked;
 };
+
+static std::optional<SmallVector<int64_t, 4>>
+findStaticMemrefShape(sde::SdeSuIterateOp op, unsigned minRank) {
+  std::optional<SmallVector<int64_t, 4>> selectedShape;
+
+  op.getBody().walk([&](Operation *nested) {
+    Value memref;
+    if (auto load = dyn_cast<memref::LoadOp>(nested))
+      memref = load.getMemref();
+    else if (auto store = dyn_cast<memref::StoreOp>(nested))
+      memref = store.getMemref();
+    else
+      return WalkResult::advance();
+
+    Value base = ValueAnalysis::stripMemrefViewOps(memref);
+    auto memRefType = dyn_cast<MemRefType>(base.getType());
+    if (!memRefType || memRefType.getRank() < static_cast<int64_t>(minRank))
+      return WalkResult::advance();
+
+    SmallVector<int64_t, 4> shape;
+    shape.reserve(memRefType.getRank());
+    for (int64_t dim : memRefType.getShape()) {
+      if (dim == ShapedType::kDynamic)
+        return WalkResult::advance();
+      shape.push_back(dim);
+    }
+
+    selectedShape = std::move(shape);
+    return WalkResult::interrupt();
+  });
+
+  return selectedShape;
+}
+
+static int64_t readStencilHaloForOwnerDim(sde::SdeSuIterateOp op,
+                                          unsigned ownerDim) {
+  auto minOffsets = readI64ArrayAttr(op.getOperation(), "accessMinOffsets");
+  auto maxOffsets = readI64ArrayAttr(op.getOperation(), "accessMaxOffsets");
+  auto ownerDims = readI64ArrayAttr(op.getOperation(), "ownerDims");
+  if (!minOffsets || !maxOffsets || !ownerDims)
+    return 0;
+
+  for (auto [idx, rawDim] : llvm::enumerate(*ownerDims)) {
+    if (rawDim < 0 || static_cast<unsigned>(rawDim) != ownerDim)
+      continue;
+    if (idx >= minOffsets->size() || idx >= maxOffsets->size())
+      return 0;
+    return std::max<int64_t>(0,
+                             std::max(-(*minOffsets)[idx], (*maxOffsets)[idx]));
+  }
+  return 0;
+}
+
+static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
+                                     sde::SDECostModel &costModel) {
+  if (costModel.getWorkerCount() <= 1)
+    return;
+  auto classification = op.getStructuredClassification();
+  if (!classification ||
+      *classification != sde::SdeStructuredClassification::stencil)
+    return;
+
+  unsigned spatialRank = 1;
+  if (auto spatialDims = readI64ArrayAttr(op.getOperation(), "spatialDims"))
+    spatialRank = std::max<unsigned>(1, spatialDims->size());
+  else if (auto minOffsets =
+               readI64ArrayAttr(op.getOperation(), "accessMinOffsets"))
+    spatialRank = std::max<unsigned>(1, minOffsets->size());
+
+  std::optional<SmallVector<int64_t, 4>> shape =
+      findStaticMemrefShape(op, spatialRank);
+  if (!shape || shape->empty() || shape->front() <= 0)
+    return;
+
+  int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+  SmallVector<int64_t, 4> physicalBlockShape(*shape);
+  physicalBlockShape.front() =
+      std::max<int64_t>(1, llvm::divideCeil(shape->front(), workers));
+
+  SmallVector<int64_t, 1> ownerDims{0};
+  SmallVector<int64_t, 1> haloShape{
+      std::max<int64_t>(0, readStencilHaloForOwnerDim(op, 0))};
+
+  MLIRContext *ctx = op.getContext();
+  op->setAttr(
+      AttrNames::Operation::Plan::KernelFamily,
+      StringAttr::get(ctx, kernelFamilyToString(KernelFamily::Stencil)));
+  op->setAttr(AttrNames::Operation::Plan::OwnerDims,
+              buildI64ArrayAttr(ctx, ownerDims));
+  op->setAttr(AttrNames::Operation::Plan::PhysicalBlockShape,
+              buildI64ArrayAttr(ctx, physicalBlockShape));
+  if (haloShape.front() > 0)
+    op->setAttr(AttrNames::Operation::Plan::HaloShape,
+                buildI64ArrayAttr(ctx, haloShape));
+  op->setAttr(AttrNames::Operation::Plan::IterationTopology,
+              StringAttr::get(ctx, "owner_strip"));
+}
 
 static std::optional<sde::SdeConcurrencyScope>
 getEnclosingParallelScope(sde::SdeSuIterateOp op) {
@@ -146,6 +249,7 @@ struct DistributionPlanningPass
 
     SmallVector<PlannedDistribution> rewrites;
     getOperation().walk([&](sde::SdeSuIterateOp op) {
+      stampStencilPhysicalPlan(op, *costModel);
       if (auto kind = chooseDistributionKind(op, *costModel))
         rewrites.push_back({op, *kind});
     });

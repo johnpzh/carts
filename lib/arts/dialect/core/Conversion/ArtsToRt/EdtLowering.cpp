@@ -1326,6 +1326,21 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
     return resolved;
   };
 
+  auto resolveExplicitParams = [&](ValueRange params, Location loc) {
+    SmallVector<Value> resolved;
+    resolved.reserve(params.size());
+    for (Value param : params) {
+      auto it = paramMap.find(param);
+      if (it != paramMap.end() && it->second < allParams.size())
+        resolved.push_back(allParams[it->second]);
+      else if (auto c = param.getDefiningOp<arith::ConstantIndexOp>())
+        resolved.push_back(AC->createIndexConstant(c.value(), loc));
+      else
+        resolved.push_back(param);
+    }
+    return resolved;
+  };
+
   /// Compute the base offset of the dependency within the outlined Edt
   /// This corresponds to the sum of number of elements in the previous
   /// dependencies
@@ -1427,6 +1442,16 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
     SmallVector<Value> accessSizes(depSizes.begin(), depSizes.end());
     SmallVector<Value> accessOffsets(depOffsets.begin(), depOffsets.end());
     SmallVector<Value> accessStrides(depStrides.begin(), depStrides.end());
+    SmallVector<Value> depSlotSizes(depSizes.begin(), depSizes.end());
+    SmallVector<Value> depSlotOffsets(depOffsets.begin(), depOffsets.end());
+    if (originalAcquire) {
+      if (!originalAcquire.getOffsets().empty())
+        depSlotOffsets = resolveExplicitParams(originalAcquire.getOffsets(),
+                                               originalAcquire.getLoc());
+      if (!originalAcquire.getSizes().empty())
+        depSlotSizes = resolveExplicitParams(originalAcquire.getSizes(),
+                                             originalAcquire.getLoc());
+    }
     const bool usePayloadIndexing =
         isSingleElement && !isNestedMemref && !allocElementSizes.empty();
     if (usePayloadIndexing) {
@@ -1437,6 +1462,13 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
         accessOffsets.push_back(AC->createIndexConstant(0, loc));
       accessStrides = AC->computeStridesFromSizes(accessSizes, loc);
     }
+    ArrayRef<Value> depIndexOffsets = usePayloadIndexing
+                                          ? ArrayRef<Value>(accessOffsets)
+                                          : ArrayRef<Value>(depSlotOffsets);
+    ArrayRef<Value> depIndexSizes = usePayloadIndexing
+                                        ? ArrayRef<Value>(accessSizes)
+                                        : ArrayRef<Value>(depSlotSizes);
+    const bool depIndicesAlreadySliceRelative = usePayloadIndexing;
     /// Get the users of the dependency placeholder
     SmallVector<Operation *, 16> users, dbAcquireUsers;
     SmallVector<OpOperand *, 8> nestedEdtDepUses;
@@ -1466,9 +1498,6 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
          llvm::all_of(depSizes, ValueAnalysis::isOneLikeValue)) &&
         !hasDbGepUsers;
 
-    const bool accessIndicesAlreadySliceRelative =
-        indicesAlreadySliceRelative || usePayloadIndexing;
-
     auto normalizeSliceIndices = [&](ArrayRef<Value> indices,
                                      ArrayRef<Value> offsets,
                                      ArrayRef<Value> sizes,
@@ -1483,19 +1512,16 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
           Value off = offsets[i];
           if (off.getType() != idx.getType())
             off = AC->castToInt(idx.getType(), off, loc);
-          if (alreadySliceRelative) {
-            if (auto sub = idx.getDefiningOp<arith::SubIOp>();
-                sub && sub.getRhs() == off) {
-              Value lhs = sub.getLhs();
-              if (lhs.getType() != idx.getType())
-                lhs = AC->castToInt(idx.getType(), lhs, loc);
-              Value belowOffset = AC->create<arith::CmpIOp>(
-                  loc, arith::CmpIPredicate::ult, lhs, off);
-              Value shifted = AC->create<arith::SubIOp>(loc, lhs, off);
-              idx =
-                  AC->create<arith::SelectOp>(loc, belowOffset, zero, shifted);
-            }
-          } else {
+          if (auto sub = idx.getDefiningOp<arith::SubIOp>();
+              sub && sub.getRhs() == off) {
+            Value lhs = sub.getLhs();
+            if (lhs.getType() != idx.getType())
+              lhs = AC->castToInt(idx.getType(), lhs, loc);
+            Value belowOffset = AC->create<arith::CmpIOp>(
+                loc, arith::CmpIPredicate::ult, lhs, off);
+            Value shifted = AC->create<arith::SubIOp>(loc, lhs, off);
+            idx = AC->create<arith::SelectOp>(loc, belowOffset, zero, shifted);
+          } else if (!alreadySliceRelative) {
             Value belowOffset = AC->create<arith::CmpIOp>(
                 loc, arith::CmpIPredicate::ult, idx, off);
             Value shifted = AC->create<arith::SubIOp>(loc, idx, off);
@@ -1533,8 +1559,8 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
                                dbAcquire.getSizes().end());
       Value boundsValid = dbAcquire.getBoundsValid();
       indices = resolveParam(indices, dbAcquire.getLoc());
-      indices = normalizeSliceIndices(indices, depOffsets, depSizes,
-                                      indicesAlreadySliceRelative);
+      indices = normalizeSliceIndices(indices, depIndexOffsets, depIndexSizes,
+                                      depIndicesAlreadySliceRelative);
       offsets = resolveParam(offsets, dbAcquire.getLoc());
       sizes = resolveParam(sizes, dbAcquire.getLoc());
       auto depDbAcquire = AC->create<DepDbAcquireOp>(
@@ -1571,8 +1597,9 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
                                 sourceAcquire.getIndices().end());
       }
       forwardedIndices = resolveParam(forwardedIndices, loc);
-      forwardedIndices = normalizeSliceIndices(
-          forwardedIndices, depOffsets, depSizes, indicesAlreadySliceRelative);
+      forwardedIndices =
+          normalizeSliceIndices(forwardedIndices, depIndexOffsets,
+                                depIndexSizes, depIndicesAlreadySliceRelative);
 
       return AC->create<DepDbAcquireOp>(userLoc, depGuidType, depPtrType, depv,
                                         baseOffset, forwardedIndices,
@@ -1784,8 +1811,8 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
                                         dbGep.getIndices().end());
         dbGepIndices = resolveParam(dbGepIndices, dbGep.getLoc());
         dbGepIndices =
-            normalizeSliceIndices(dbGepIndices, accessOffsets, accessSizes,
-                                  accessIndicesAlreadySliceRelative);
+            normalizeSliceIndices(dbGepIndices, depIndexOffsets, depIndexSizes,
+                                  depIndicesAlreadySliceRelative);
         if (usePayloadIndexing) {
           auto payloadGep = AC->create<DbGepOp>(
               loc, AC->llvmPtr, getPayloadView(), dbGepIndices, accessStrides);
@@ -1848,8 +1875,8 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
                                       dbRef.getIndices().end());
         refIndices = resolveParam(refIndices, dbRef.getLoc());
         refIndices =
-            normalizeSliceIndices(refIndices, accessOffsets, accessSizes,
-                                  accessIndicesAlreadySliceRelative);
+            normalizeSliceIndices(refIndices, depIndexOffsets, depIndexSizes,
+                                  depIndicesAlreadySliceRelative);
         Value basePtr;
         if (usePayloadIndexing) {
           basePtr = AC->create<DbGepOp>(loc, AC->llvmPtr, getPayloadView(),
@@ -1915,8 +1942,8 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
                                         store.getIndices().end());
         storeIndices = resolveParam(storeIndices, store.getLoc());
         storeIndices =
-            normalizeSliceIndices(storeIndices, accessOffsets, accessSizes,
-                                  accessIndicesAlreadySliceRelative);
+            normalizeSliceIndices(storeIndices, depIndexOffsets, depIndexSizes,
+                                  depIndicesAlreadySliceRelative);
         if (usePayloadIndexing) {
           auto payloadGep = AC->create<DbGepOp>(
               loc, AC->llvmPtr, getPayloadView(), storeIndices, accessStrides);
@@ -1934,8 +1961,8 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
                                        load.getIndices().end());
         loadIndices = resolveParam(loadIndices, load.getLoc());
         loadIndices =
-            normalizeSliceIndices(loadIndices, accessOffsets, accessSizes,
-                                  accessIndicesAlreadySliceRelative);
+            normalizeSliceIndices(loadIndices, depIndexOffsets, depIndexSizes,
+                                  depIndicesAlreadySliceRelative);
         Value loaded;
         if (usePayloadIndexing) {
           auto payloadGep = AC->create<DbGepOp>(

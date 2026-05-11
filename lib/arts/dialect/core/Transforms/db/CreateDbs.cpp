@@ -47,6 +47,7 @@
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
+#include "arts/dialect/core/Transforms/db/DbLayoutPlanUtils.h"
 #include "arts/dialect/core/Transforms/db/DbRewriter.h"
 #include "arts/dialect/core/Transforms/db/block/DbBlockIndexer.h"
 #include "arts/dialect/core/Transforms/db/elementwise/DbElementWiseIndexer.h"
@@ -292,7 +293,8 @@ private:
                                 ArtsMode requestedMode,
                                 bool requiresIndexedAccess = false);
   void initializeGlobalDbIfNeeded(Operation *alloc, DbAllocOp dbAllocOp,
-                                  ArrayRef<Value> sizes, DbAllocType allocType);
+                                  const DbRewritePlan &plan,
+                                  DbAllocType allocType);
 
   DbAllocType inferAllocType(Operation *alloc);
   void insertDbFreeForDbAlloc(DbAllocOp dbAlloc, Operation *alloc);
@@ -303,7 +305,10 @@ private:
                                 Value localAcquireView,
                                 const DbRewritePlan &plan);
   void rewriteUsesInParentEdt(MemrefInfo &memrefInfo);
-  void rewriteUsesEverywhereCoarse(Operation *alloc, DbAllocOp dbAlloc);
+  Operation *findPhysicalLayoutPlanSource(Operation *alloc);
+  void projectPlanContractToDbValue(Operation *sourceOp, DbAllocOp dbAlloc);
+  void rewriteUsesEverywhereWithPlan(Operation *alloc, DbAllocOp dbAlloc,
+                                     const DbRewritePlan &plan);
 };
 } // namespace
 
@@ -493,6 +498,65 @@ void CreateDbsPass::projectSemanticContractToDbValue(Operation *sourceOp,
   AC->setInsertionPointAfter(targetOp);
   transferLoweringContract(sourceOp, contractTarget, AC->getBuilder(),
                            targetOp->getLoc());
+}
+
+Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
+  if (!alloc || alloc->getNumResults() == 0)
+    return nullptr;
+
+  auto touchesAlloc = [&](Operation *root) {
+    bool found = false;
+    root->walk([&](Operation *nested) {
+      if (found)
+        return WalkResult::interrupt();
+      auto access = DbUtils::getMemoryAccessInfo(nested);
+      if (!access)
+        return WalkResult::advance();
+      Operation *underlying =
+          ValueAnalysis::getUnderlyingOperation(access->memref);
+      if (underlying == alloc) {
+        found = true;
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+    return found;
+  };
+
+  Operation *selected = nullptr;
+  module.walk([&](ForOp forOp) {
+    if (!hasPhysicalDbLayoutPlan(forOp.getOperation()))
+      return WalkResult::advance();
+    if (!touchesAlloc(forOp.getOperation()))
+      return WalkResult::advance();
+    selected = forOp.getOperation();
+    return WalkResult::interrupt();
+  });
+  if (selected)
+    return selected;
+
+  module.walk([&](EdtOp edt) {
+    if (!hasPhysicalDbLayoutPlan(edt.getOperation()))
+      return WalkResult::advance();
+    if (!touchesAlloc(edt.getOperation()))
+      return WalkResult::advance();
+    selected = edt.getOperation();
+    return WalkResult::interrupt();
+  });
+  return selected;
+}
+
+void CreateDbsPass::projectPlanContractToDbValue(Operation *sourceOp,
+                                                 DbAllocOp dbAlloc) {
+  if (!sourceOp || !dbAlloc)
+    return;
+  copyPlanAttrs(sourceOp, dbAlloc.getOperation());
+  transferOperationContract(sourceOp, dbAlloc.getOperation());
+
+  OpBuilder::InsertionGuard guard(AC->getBuilder());
+  AC->setInsertionPointAfter(dbAlloc);
+  transferLoweringContract(sourceOp, dbAlloc.getPtr(), AC->getBuilder(),
+                           dbAlloc.getLoc());
 }
 
 ///===----------------------------------------------------------------------===///
@@ -813,14 +877,10 @@ void CreateDbsPass::createDbAllocOps() {
       elementType = nestedMemRef.getElementType();
 
     /// Determine allocation granularity using unified heuristics
-    SmallVector<Value> sizes, elementSizes;
+    SmallVector<Value> sizes, logicalElementSizes, elementSizes;
     const bool isRankZero = memRefType.getRank() == 0;
     const unsigned rank = std::max<unsigned>(1, memRefType.getRank());
     const auto accessPatternInfo = info.getAccessPatternInfo();
-
-    /// CreateDbs ALWAYS creates COARSE allocations.
-    /// The actual partitioning is deferred to DbPartitioning pass.
-    /// Partition info is carried by DbAcquireOp's offsets/indices attributes.
 
     /// Store block sizes for later use in createDbAcquireOps
     if (accessPatternInfo.hasChunkDeps) {
@@ -828,26 +888,48 @@ void CreateDbsPass::createDbAllocOps() {
                              accessPatternInfo.blockSizes.end());
     }
 
-    /// ALWAYS create COARSE allocation:
-    /// sizes = [1], elementSizes = [all original dimensions]
-    /// DbPartitioning will transform this based on the hint
-    ARTS_DEBUG(" - Using coarse-grained allocation (deferred partitioning)");
-    elementSizes.reserve(rank);
+    /// Build the original logical allocation extents. These are the source
+    /// extents for any SDE-authored physical layout plan.
+    logicalElementSizes.reserve(rank);
     for (unsigned i = 0; i < rank; ++i) {
       if (!isRankZero && memRefType.isDynamicDim(i)) {
-        elementSizes.push_back(
+        logicalElementSizes.push_back(
             AC->create<arts::DbDimOp>(loc, allocValue, (int64_t)i));
       } else {
         int64_t dimSize =
             isRankZero ? 1 : static_cast<int64_t>(memRefType.getDimSize(i));
-        elementSizes.push_back(AC->createIndexConstant(dimSize, loc));
+        logicalElementSizes.push_back(AC->createIndexConstant(dimSize, loc));
       }
     }
-    sizes.push_back(AC->createIndexConstant(1, loc));
 
-    /// Always coarse partition mode - DbPartitioning will change if needed
+    /// Coarse is the conservative fallback. If SDE has already authored a
+    /// physical tensor layout plan, materialize it now so CreateDbs is the
+    /// point where the final DB shape first appears.
+    DbRewritePlan plan(PartitionMode::coarse);
+    sizes.push_back(AC->createIndexConstant(1, loc));
+    elementSizes.assign(logicalElementSizes.begin(), logicalElementSizes.end());
     PartitionMode partitionMode = PartitionMode::coarse;
-    ARTS_DEBUG(" - Partition mode: coarse (to be refined by DbPartitioning)");
+    Operation *planSource = nullptr;
+
+    if (!DbUtils::hasNonPartitionableHostViewUses(allocValue)) {
+      planSource = findPhysicalLayoutPlanSource(alloc);
+      if (planSource) {
+        FailureOr<DbRewritePlan> resolvedPlan = resolvePhysicalDbLayoutPlan(
+            planSource, ValueRange(logicalElementSizes), AC->getBuilder(), loc);
+        if (succeeded(resolvedPlan)) {
+          plan = *resolvedPlan;
+          sizes.assign(plan.outerSizes.begin(), plan.outerSizes.end());
+          elementSizes.assign(plan.innerSizes.begin(), plan.innerSizes.end());
+          partitionMode = plan.mode;
+          ARTS_DEBUG(" - Using SDE-authored physical DB layout");
+        }
+      }
+    } else {
+      ARTS_DEBUG(" - Keeping coarse DB layout due to host whole-view use");
+    }
+
+    if (plan.isCoarse())
+      ARTS_DEBUG(" - Using coarse-grained allocation");
 
     /// Create the db_alloc operation
     /// DBs without an explicit route stay on the creating node. Lowering
@@ -861,21 +943,24 @@ void CreateDbsPass::createDbAllocOps() {
 
     projectSemanticContractToDbValue(alloc, dbAllocOp.getOperation(),
                                      dbAllocOp.getPtr());
+    projectPlanContractToDbValue(planSource, dbAllocOp);
 
     /// Initialize global DBs
-    initializeGlobalDbIfNeeded(alloc, dbAllocOp, sizes, allocType);
+    initializeGlobalDbIfNeeded(alloc, dbAllocOp, plan, allocType);
 
     /// Copy ARTS ID from original allocation to DbAllocOp
     copyArtsMetadataAttrs(alloc, dbAllocOp.getOperation());
 
-    /// Create coarse rewrite plan - DbPartitioning will refine based on hint
-    DbRewritePlan plan(PartitionMode::coarse);
     info.rewritePlan = plan;
 
     /// Record allocation strategy decision for diagnostics
     AM->getDbHeuristics().recordDecision(
-        "AllocationStrategy", true, "Coarse allocation", alloc,
-        {{"outerRank", 0}, {"innerRank", static_cast<int64_t>(rank)}});
+        "AllocationStrategy", true,
+        plan.isCoarse() ? "Coarse allocation"
+                        : "SDE-authored physical block allocation",
+        alloc,
+        {{"outerRank", static_cast<int64_t>(plan.outerRank())},
+         {"innerRank", static_cast<int64_t>(plan.innerRank())}});
 
     /// Store mappings for later use
     info.dbAllocOp = dbAllocOp;
@@ -894,7 +979,7 @@ void CreateDbsPass::createDbAllocOps() {
       /// Redirect non-EDT aliases/host accesses to the canonical DB-backed
       /// coarse view so initialization and verification code observe the
       /// datablock contents instead of a disconnected host allocation.
-      rewriteUsesEverywhereCoarse(alloc, dbAllocOp);
+      rewriteUsesEverywhereWithPlan(alloc, dbAllocOp, plan);
 
       /// Step 2: Rewrite EDT uses without explicit deps
       Type elementMemRefType = dbAllocOp.getAllocatedElementType();
@@ -919,11 +1004,10 @@ void CreateDbsPass::createDbAllocOps() {
   }
 }
 
-/// Initialize global constants for single coarse-grained DBs.
-/// Since CreateDbs now always creates coarse allocations, this is always safe.
+/// Initialize global constants for DB-backed globals.
 void CreateDbsPass::initializeGlobalDbIfNeeded(Operation *alloc,
                                                DbAllocOp dbAllocOp,
-                                               ArrayRef<Value> sizes,
+                                               const DbRewritePlan &plan,
                                                DbAllocType allocType) {
   if (allocType != DbAllocType::global)
     return;
@@ -945,25 +1029,51 @@ void CreateDbsPass::initializeGlobalDbIfNeeded(Operation *alloc,
                                                        getGlobal.getNameAttr());
 
   SmallVector<Value> zeroIndices;
-  zeroIndices.reserve(sizes.size());
-  for (size_t i = 0; i < sizes.size(); ++i)
+  zeroIndices.reserve(dbAllocOp.getSizes().size());
+  for (size_t i = 0; i < dbAllocOp.getSizes().size(); ++i)
     zeroIndices.push_back(AC->createIndexConstant(0, loc));
-  Value dbRef = AC->create<DbRefOp>(loc, dbAllocOp.getPtr(), zeroIndices);
 
   auto memRefType = cast<MemRefType>(globalOp.getType());
   unsigned rank = memRefType.getRank();
   if (rank == 0) {
+    Value dbRef = AC->create<DbRefOp>(loc, dbAllocOp.getPtr(), zeroIndices);
     Value initVal = AC->create<memref::LoadOp>(loc, globalMemref);
     AC->create<memref::StoreOp>(loc, initVal, dbRef);
     return;
   }
+
+  auto storeToDb = [&](Value initVal, ArrayRef<Value> indices) {
+    if (plan.usesBlockedLayout()) {
+      PartitionInfo blockInfo;
+      blockInfo.mode = PartitionMode::block;
+      blockInfo.sizes.assign(plan.blockSizes.begin(), plan.blockSizes.end());
+      blockInfo.partitionedDims.assign(plan.partitionedDims.begin(),
+                                       plan.partitionedDims.end());
+      SmallVector<Value> startBlocks;
+      startBlocks.reserve(plan.blockSizes.size());
+      for (size_t i = 0; i < plan.blockSizes.size(); ++i)
+        startBlocks.push_back(AC->createIndexConstant(0, loc));
+      DbBlockIndexer indexer(blockInfo, startBlocks, plan.outerRank(),
+                             plan.innerRank());
+      LocalizedIndices localized =
+          indexer.localize(indices, AC->getBuilder(), loc);
+      Value dbRef =
+          AC->create<DbRefOp>(loc, dbAllocOp.getAllocatedElementType(),
+                              dbAllocOp.getPtr(), localized.dbRefIndices);
+      AC->create<memref::StoreOp>(loc, initVal, dbRef, localized.memrefIndices);
+      return;
+    }
+
+    Value dbRef = AC->create<DbRefOp>(loc, dbAllocOp.getPtr(), zeroIndices);
+    AC->create<memref::StoreOp>(loc, initVal, dbRef, indices);
+  };
 
   SmallVector<Value> indices;
   indices.reserve(rank);
   auto emitLoopCopy = [&](auto &self, unsigned dim) -> void {
     if (dim == rank) {
       Value initVal = AC->create<memref::LoadOp>(loc, globalMemref, indices);
-      AC->create<memref::StoreOp>(loc, initVal, dbRef, indices);
+      storeToDb(initVal, indices);
       return;
     }
 
@@ -1183,17 +1293,18 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
       continue;
     }
 
-    /// Build coarse DB-space: offsets=[0], sizes=[allocSizes]
+    /// Build full DB-space range for the already-created physical layout.
     SmallVector<Value> dbOffsets, dbSizes;
-    dbOffsets.push_back(AC->createIndexConstant(0, edt.getLoc()));
-
     SmallVector<Value> allocSizes(dbAllocOp.getSizes().begin(),
                                   dbAllocOp.getSizes().end());
     if (allocSizes.empty()) {
+      dbOffsets.push_back(AC->createIndexConstant(0, edt.getLoc()));
       dbSizes.push_back(AC->createIndexConstant(1, edt.getLoc()));
     } else {
-      for (Value s : allocSizes)
+      for (Value s : allocSizes) {
+        dbOffsets.push_back(AC->createIndexConstant(0, edt.getLoc()));
         dbSizes.push_back(s);
+      }
     }
 
     SmallVector<SmallVector<const MemrefInfo::DbDep *, 4>, 4> depGroups;
@@ -1204,10 +1315,12 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
       depGroups.emplace_back();
       depGroupModes.push_back(ArtsMode::uninitialized);
       depGroupPreserveDepEdges.push_back(true);
-      depGroupPartitionModes.push_back(PartitionMode::coarse);
+      depGroupPartitionModes.push_back(
+          plan.usesBlockedLayout() ? plan.mode : PartitionMode::coarse);
     } else {
       for (const auto &dep : deps) {
-        PartitionMode depPartitionMode = PartitionMode::coarse;
+        PartitionMode depPartitionMode =
+            plan.usesBlockedLayout() ? plan.mode : PartitionMode::coarse;
         if (!dep.indices.empty()) {
           depPartitionMode = PartitionMode::fine_grained;
         } else if (!dep.offsets.empty() && !dep.sizes.empty()) {
@@ -1240,10 +1353,11 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
     Value inScopeAcquireView;
 
     for (auto [groupIdx, depGroup] : llvm::enumerate(depGroups)) {
-      /// CreateDbs always creates coarse-grained DB-space acquires. The
-      /// partition hints (from DbControlOp depend clauses) tell DbPartitioning
-      /// how to optimize later. Keep different access modes in separate
-      /// acquires so downstream rec_dep lowering preserves read vs write slots.
+      /// Create the parent acquire over the full physical DB range selected at
+      /// allocation time. Element-space partition hints from DbControlOp remain
+      /// attached so task lowering can derive worker-local dependency windows.
+      /// Keep different access modes in separate acquires so downstream
+      /// rec_dep lowering preserves read vs write slots.
       const bool preserveDepEdge = depGroupPreserveDepEdges[groupIdx];
       ARTS_DEBUG(" - Creating coarse-grained acquire group "
                  << groupIdx << " for mode " << depGroupModes[groupIdx]
@@ -1288,7 +1402,7 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
         }
       }
 
-      PartitionMode partMode = PartitionMode::coarse;
+      PartitionMode partMode = depGroupPartitionModes[groupIdx];
       if (!entryModes.empty())
         partMode = static_cast<PartitionMode>(entryModes[0]);
 
@@ -1467,17 +1581,34 @@ void CreateDbsPass::rewriteUsesInParentEdt(MemrefInfo &memrefInfo) {
 
   /// Coarse-grained: db_ref[0] + load/store[indices]
   /// Fine-grained: db_ref[indices] + load/store[0]
-  unsigned outerRank =
-      memrefInfo.usedFineGrained ? dbAlloc.getSizes().size() : 0;
+  const DbRewritePlan &plan = memrefInfo.rewritePlan.value();
   unsigned innerRank = cast<MemRefType>(elementMemRefType).getRank();
-  /// Coarse allocation: keep indices empty so db_ref uses constant zero
-  PartitionInfo info;
-  info.mode = PartitionMode::coarse;
-  DbElementWiseIndexer indexer(info, outerRank, innerRank, {});
+
+  std::unique_ptr<DbIndexerBase> indexer;
+  if (plan.usesBlockedLayout()) {
+    PartitionInfo blockInfo;
+    blockInfo.mode = PartitionMode::block;
+    blockInfo.sizes.assign(plan.blockSizes.begin(), plan.blockSizes.end());
+    blockInfo.partitionedDims.assign(plan.partitionedDims.begin(),
+                                     plan.partitionedDims.end());
+    SmallVector<Value> startBlocks(plan.blockSizes.size());
+    for (Value &startBlock : startBlocks)
+      startBlock = AC->createIndexConstant(0, dbAlloc.getLoc());
+    indexer = std::make_unique<DbBlockIndexer>(blockInfo, startBlocks,
+                                               plan.outerRank(), innerRank);
+  } else {
+    PartitionInfo info;
+    info.mode = PartitionMode::coarse;
+    unsigned outerRank =
+        memrefInfo.usedFineGrained ? dbAlloc.getSizes().size() : 0;
+    indexer =
+        std::make_unique<DbElementWiseIndexer>(info, outerRank, innerRank);
+  }
+
   for (Operation *user : users) {
     size_t sizeBefore = opsToRemove.size();
-    indexer.transformAccess(user, dbAlloc.getPtr(), elementMemRefType, *AC,
-                            opsToRemove);
+    indexer->transformOps({user}, dbAlloc.getPtr(), elementMemRefType, *AC,
+                          opsToRemove);
     if (opsToRemove.size() > sizeBefore) {
       ARTS_DEBUG("   Transformed: " << user->getName()
                                     << " -> added to remove");
@@ -1488,15 +1619,34 @@ void CreateDbsPass::rewriteUsesInParentEdt(MemrefInfo &memrefInfo) {
   }
 }
 
-/// Rewrite uses of a coarse-grained allocation in the parent region.
+/// Rewrite uses of a DB allocation in the parent region.
 /// This is used when the allocation is not inside an EDT, but is still shared
 /// with EDTs and the host needs to see the updated data.
-/// For coarse-grained: all indices go to inner load/store, db_ref gets [0].
-void CreateDbsPass::rewriteUsesEverywhereCoarse(Operation *alloc,
-                                                DbAllocOp dbAlloc) {
+void CreateDbsPass::rewriteUsesEverywhereWithPlan(Operation *alloc,
+                                                  DbAllocOp dbAlloc,
+                                                  const DbRewritePlan &plan) {
   Value originalValue = alloc->getResult(0);
   if (!originalValue)
     return;
+
+  if (plan.usesBlockedLayout()) {
+    for (auto &use : llvm::make_early_inc_range(originalValue.getUses()))
+      if (isa<memref::DeallocOp>(use.getOwner()))
+        opsToRemove.insert(use.getOwner());
+
+    PartitionInfo blockInfo;
+    blockInfo.mode = PartitionMode::block;
+    blockInfo.sizes.assign(plan.blockSizes.begin(), plan.blockSizes.end());
+    blockInfo.partitionedDims.assign(plan.partitionedDims.begin(),
+                                     plan.partitionedDims.end());
+    SmallVector<Value> startBlocks(plan.blockSizes.size());
+    for (Value &startBlock : startBlocks)
+      startBlock = AC->createIndexConstant(0, dbAlloc.getLoc());
+    DbBlockIndexer indexer(blockInfo, startBlocks, plan.outerRank(),
+                           plan.innerRank());
+    indexer.transformUsesInParentRegion(alloc, dbAlloc, *AC, opsToRemove);
+    return;
+  }
 
   auto getAnchorInDbAllocBlock = [&](Operation *user) -> Operation * {
     if (!user)
@@ -1708,7 +1858,7 @@ void CreateDbsPass::rewriteOpsToUseDbAcquire(
       continue;
     }
 
-    if (plan.isBlock()) {
+    if (plan.usesBlockedLayout()) {
       /// Block mode: Use DbBlockIndexer with stored block size
       ARTS_DEBUG(" - Using DbBlockIndexer with stored plan");
       Location loc = op->getLoc();

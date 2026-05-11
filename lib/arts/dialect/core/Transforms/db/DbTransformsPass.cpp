@@ -42,6 +42,7 @@
 #include "arts/utils/Utils.h"
 #include "mlir/Pass/Pass.h"
 #include "llvm/ADT/Statistic.h"
+#include <memory>
 /// Debug
 #include "arts/utils/Debug.h"
 ARTS_DEBUG_SETUP(db_transforms);

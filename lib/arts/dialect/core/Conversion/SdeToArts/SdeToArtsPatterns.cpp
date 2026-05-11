@@ -22,6 +22,7 @@ namespace mlir::arts {
 #include "arts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::arts
 #include "arts/passes/Passes.h"
+#include "arts/utils/LoweringContractUtils.h"
 #include "arts/utils/OperationAttributes.h"
 #include "arts/utils/StencilAttributes.h"
 #include "arts/utils/Utils.h"
@@ -234,18 +235,79 @@ static void stampStencilOnOp(Operation *op, ArtsDepPattern family,
     setStencilBlockShape(op, blockShape);
 }
 
+static SmallVector<int64_t, 4> toSmallVector(ArrayRef<int64_t> values) {
+  return SmallVector<int64_t, 4>(values.begin(), values.end());
+}
+
+static std::optional<SmallVector<int64_t, 4>>
+projectPhysicalShapeToOwnerDims(ArrayRef<int64_t> physicalShape,
+                                ArrayRef<int64_t> ownerDims) {
+  if (physicalShape.empty())
+    return SmallVector<int64_t, 4>{};
+  if (ownerDims.empty() || physicalShape.size() == ownerDims.size())
+    return toSmallVector(physicalShape);
+
+  SmallVector<int64_t, 4> result;
+  result.reserve(ownerDims.size());
+  for (int64_t dim : ownerDims) {
+    if (dim < 0 || static_cast<size_t>(dim) >= physicalShape.size())
+      return std::nullopt;
+    result.push_back(physicalShape[dim]);
+  }
+  return result;
+}
+
 /// Stamp a recovered stencil-family contract on an arts.for and its parent
 /// EdtOp.
 static void stampStencilContract(Operation *artsForOp, ArtsDepPattern pattern,
                                  const StructuredNeighborhoodSummary &info,
+                                 ArrayRef<int64_t> planOwnerDims = {},
+                                 ArrayRef<int64_t> planBlockShape = {},
                                  int64_t revision = 1) {
-  stampStencilOnOp(artsForOp, pattern, info.ownerDims, info.minOffsets,
-                   info.maxOffsets, info.writeFootprint, info.spatialDims,
-                   /*blockShape=*/{}, revision);
+  SmallVector<int64_t, 4> ownerDims = planOwnerDims.empty()
+                                          ? toSmallVector(info.ownerDims)
+                                          : toSmallVector(planOwnerDims);
+  SmallVector<int64_t, 4> minOffsets = toSmallVector(info.minOffsets);
+  SmallVector<int64_t, 4> maxOffsets = toSmallVector(info.maxOffsets);
+  SmallVector<int64_t, 4> writeFootprint = toSmallVector(info.writeFootprint);
+  SmallVector<int64_t, 4> blockShape = toSmallVector(planBlockShape);
+
+  if (!planOwnerDims.empty()) {
+    auto projectedMins = projectOwnerIndexedStaticValues(
+        info.minOffsets, info.ownerDims, planOwnerDims);
+    auto projectedMaxs = projectOwnerIndexedStaticValues(
+        info.maxOffsets, info.ownerDims, planOwnerDims);
+    auto projectedFootprint = projectOwnerIndexedStaticValues(
+        info.writeFootprint, info.ownerDims, planOwnerDims);
+
+    if (projectedMins && projectedMaxs && projectedFootprint) {
+      minOffsets = std::move(*projectedMins);
+      maxOffsets = std::move(*projectedMaxs);
+      writeFootprint = std::move(*projectedFootprint);
+    } else {
+      ownerDims = toSmallVector(info.ownerDims);
+    }
+  }
+
+  if (auto projectedBlockShape =
+          projectPhysicalShapeToOwnerDims(planBlockShape, ownerDims))
+    blockShape = std::move(*projectedBlockShape);
+  else if (blockShape.size() != ownerDims.size())
+    blockShape.clear();
+
+  stampStencilOnOp(artsForOp, pattern, ownerDims, minOffsets, maxOffsets,
+                   writeFootprint, info.spatialDims, blockShape, revision);
   if (auto parentEdt = artsForOp->getParentOfType<EdtOp>())
-    stampStencilOnOp(parentEdt.getOperation(), pattern, info.ownerDims,
-                     info.minOffsets, info.maxOffsets, info.writeFootprint,
-                     info.spatialDims, /*blockShape=*/{}, revision);
+    stampStencilOnOp(parentEdt.getOperation(), pattern, ownerDims, minOffsets,
+                     maxOffsets, writeFootprint, info.spatialDims, blockShape,
+                     revision);
+}
+
+static void copyPlanAttrsToArtsForAndParent(Operation *source,
+                                            Operation *artsForOp) {
+  copyPlanAttrs(source, artsForOp);
+  if (auto parentEdt = artsForOp->getParentOfType<EdtOp>())
+    copyPlanAttrs(source, parentEdt.getOperation());
 }
 
 static void stampDistributionKind(Operation *op, EdtDistributionKind kind,
@@ -506,8 +568,18 @@ struct SuIterateToArtsPattern : public OpRewritePattern<sde::SdeSuIterateOp> {
                  << stringifyArtsDepPattern(*selectedPattern));
       if (selectedStencilContract &&
           isStencilFamilyDepPattern(*selectedPattern)) {
+        SmallVector<int64_t, 4> planOwnerDims;
+        SmallVector<int64_t, 4> planBlockShape;
+        if (auto ownerDims = readI64ArrayAttr(
+                op.getOperation(), AttrNames::Operation::Plan::OwnerDims))
+          planOwnerDims.assign(ownerDims->begin(), ownerDims->end());
+        if (auto blockShape = readI64ArrayAttr(
+                op.getOperation(),
+                AttrNames::Operation::Plan::PhysicalBlockShape))
+          planBlockShape.assign(blockShape->begin(), blockShape->end());
         stampStencilContract(artsFor.getOperation(), *selectedPattern,
-                             *selectedStencilContract, selectedRevision);
+                             *selectedStencilContract, planOwnerDims,
+                             planBlockShape, selectedRevision);
       } else {
         stampPatternContract(artsFor.getOperation(), *selectedPattern,
                              selectedRevision);
@@ -526,6 +598,7 @@ struct SuIterateToArtsPattern : public OpRewritePattern<sde::SdeSuIterateOp> {
       }
     }
 
+    copyPlanAttrsToArtsForAndParent(op.getOperation(), artsFor.getOperation());
     copySdeHintAttrs(op.getOperation(), artsFor.getOperation());
 
     ++numSuIterateConverted;
@@ -728,8 +801,8 @@ static LogicalResult lowerMuData(sde::SdeMuDataOp op) {
   Value replacementTensor;
   if (tensorType.getRank() == 0) {
     Value zero = arts::createZeroIndex(builder, loc);
-    Value scalar = memref::LoadOp::create(builder, loc, inner,
-                                          SmallVector<Value>{zero});
+    Value scalar =
+        memref::LoadOp::create(builder, loc, inner, SmallVector<Value>{zero});
     replacementTensor =
         tensor::FromElementsOp::create(builder, loc, tensorType, scalar);
   } else {
@@ -1196,8 +1269,8 @@ static void foldTensorPathToMemref(ModuleOp module) {
       if (auto fromElements =
               mat.getSource().getDefiningOp<tensor::FromElementsOp>()) {
         OpBuilder builder(mat);
-        if (succeeded(emitFromElementsStore(builder, mat.getLoc(),
-                                            fromElements, mat.getDest()))) {
+        if (succeeded(emitFromElementsStore(builder, mat.getLoc(), fromElements,
+                                            mat.getDest()))) {
           mat.erase();
           continue;
         }

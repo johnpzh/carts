@@ -531,8 +531,8 @@ mlir::arts::planTaskAcquireRewrite(TaskAcquireRewritePlanInput input) {
         /// Stencil read acquires widen `partition_sizes` when halo expansion is
         /// applied, so recovering the owner block shape later from those sizes
         /// loses the pre-halo chunk extent. Materialize the N-D owner tile
-        /// here, from the pre-halo hint sizes, so DbPartitioning can harmonize
-        /// read/write allocations on the same worker-local block plan.
+        /// here, from the pre-halo hint sizes, so DB-space lowering can keep
+        /// read/write acquires aligned to the same worker-local block plan.
         if (!plan.refinedTaskBlockShape &&
             !contract.spatial.ownerDims.empty()) {
           SmallVector<unsigned, 4> ownerDims;
@@ -612,7 +612,7 @@ DbAcquireOp mlir::arts::rewriteAcquire(AcquireRewriteInput &in,
   if (in.singleElement || in.forceCoarse) {
     /// Intentionally drop any worker-local block hints here. For single-node
     /// Seidel-like inout updates with cross-element self-reads, keeping those
-    /// hints lets DbPartitioning recover an unsafe block/stencil layout later.
+    /// hints can turn a deliberately coarse acquire into an unsafe block slice.
     auto coarseAcquire = in.AC->create<DbAcquireOp>(
         in.loc, in.effectiveMode, in.rootGuid, in.rootPtr,
         in.parentAcquire.getPtr().getType(), PartitionMode::coarse,
@@ -833,9 +833,9 @@ void mlir::arts::applyTaskAcquireSlicePlan(TaskAcquireSlicePlanInput input) {
       return;
 
     /// Keep partition hint ranges worker-local for two-level write acquires.
-    /// DbPartitioning consults partition_* hints; if these remain node-wide
-    /// while offsets/sizes are worker-local, later rewrites may widen the
-    /// write slice back to node scope.
+    /// Later DB-space lowering consults partition_* hints; if these remain
+    /// node-wide while offsets/sizes are worker-local, later rewrites may widen
+    /// the write slice back to node scope.
     if (input.distributionKind == DistributionKind::TwoLevel &&
         input.effectiveMode != ArtsMode::in) {
       if (!input.taskAcquire.getPartitionOffsets().empty())
@@ -888,10 +888,10 @@ void mlir::arts::applyTaskAcquireContractMetadata(
     if (auto hint = getPartitioningHint(semanticSourceOp)) {
       auto mode = taskAcquire.getPartitionMode();
       if (mode && usesBlockLayout(*mode)) {
-        /// DbPartitioning resolves allocation block plans from task acquires
-        /// after ForLowering. Carry the loop-selected owner-span hint onto the
-        /// rewritten acquire so lowering and later DB planning use the same
-        /// block granularity.
+        /// CreateDbs materializes SDE-authored allocation block plans before
+        /// ForLowering. Carry the loop-selected owner-span hint onto the
+        /// rewritten acquire so lowering and DB-space dependency windows use
+        /// the same block granularity.
         setPartitioningHint(taskAcquire.getOperation(), *hint);
       }
     }
@@ -1073,9 +1073,9 @@ void mlir::arts::applyTaskAcquireContractMetadata(
   if (taskBlockShape) {
     /// Tiling-2D workers refine the inherited stencil owner shape into a
     /// worker-local owner tile. Reflect that narrower static tile on the
-    /// acquire before DbPartitioning runs so the N-D block planner can align
-    /// allocation blocks with the actual 2-D worker grid instead of widening
-    /// back to the parent stencil tile.
+    /// acquire so downstream DB-space lowering can align task metadata with
+    /// the actual 2-D worker grid instead of widening back to the parent
+    /// stencil tile.
     setStencilBlockShape(taskAcquire.getOperation(), *taskBlockShape);
 
     SmallVector<int64_t, 4> clampedTaskBlockShape = *taskBlockShape;

@@ -129,6 +129,10 @@ getLoweringContract(Operation *op, OpBuilder &builder, Location loc);
 ContractChange mergeLoweringContractInfo(LoweringContractInfo &dest,
                                          const LoweringContractInfo &src);
 void normalizeLoweringContractInfo(LoweringContractInfo &info);
+std::optional<SmallVector<int64_t, 4>>
+projectOwnerIndexedStaticValues(ArrayRef<int64_t> values,
+                                ArrayRef<int64_t> sourceOwnerDims,
+                                ArrayRef<int64_t> targetOwnerDims);
 std::optional<unsigned>
 getContractOwnerPosition(const LoweringContractInfo &info,
                          unsigned physicalDim);

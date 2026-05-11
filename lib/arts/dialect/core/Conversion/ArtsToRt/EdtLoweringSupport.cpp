@@ -61,8 +61,7 @@ void normalizeTaskDepSlice(ArtsCodegen *AC, DbAcquireOp acquire,
   auto haloMinOffsets = contract.getStaticMinOffsets();
   auto haloMaxOffsets = contract.getStaticMaxOffsets();
   bool hasContractHalo = applyStencilHalo || haloMinOffsets || haloMaxOffsets;
-  bool needsStructuralNormalization =
-      rank > 1 || *mode == PartitionMode::stencil;
+  bool needsStructuralNormalization = rank > 1 || usesBlockLayout(*mode);
   if (!hasContractHalo && !needsStructuralNormalization)
     return;
 

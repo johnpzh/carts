@@ -656,10 +656,39 @@ void mlir::arts::normalizeLoweringContractInfo(LoweringContractInfo &info) {
   clearMismatchedDynamic(info.spatial.blockShape);
   clearMismatchedDynamic(info.spatial.minOffsets);
   clearMismatchedDynamic(info.spatial.maxOffsets);
+  clearMismatchedDynamic(info.spatial.writeFootprint);
 
   clearMismatchedStatic(info.spatial.staticBlockShape);
   clearMismatchedStatic(info.spatial.staticMinOffsets);
   clearMismatchedStatic(info.spatial.staticMaxOffsets);
+}
+
+std::optional<SmallVector<int64_t, 4>>
+mlir::arts::projectOwnerIndexedStaticValues(ArrayRef<int64_t> values,
+                                            ArrayRef<int64_t> sourceOwnerDims,
+                                            ArrayRef<int64_t> targetOwnerDims) {
+  if (targetOwnerDims.empty())
+    return SmallVector<int64_t, 4>{values.begin(), values.end()};
+  if (values.empty())
+    return SmallVector<int64_t, 4>{};
+  if (values.size() != sourceOwnerDims.size())
+    return std::nullopt;
+
+  SmallVector<int64_t, 4> result;
+  result.reserve(targetOwnerDims.size());
+  for (int64_t targetDim : targetOwnerDims) {
+    std::optional<unsigned> ownerPosition;
+    for (unsigned idx = 0, e = sourceOwnerDims.size(); idx < e; ++idx) {
+      if (sourceOwnerDims[idx] == targetDim) {
+        ownerPosition = static_cast<unsigned>(idx);
+        break;
+      }
+    }
+    if (!ownerPosition)
+      return std::nullopt;
+    result.push_back(values[*ownerPosition]);
+  }
+  return result;
 }
 
 std::optional<unsigned>
