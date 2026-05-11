@@ -27,7 +27,7 @@ namespace mlir::arts {
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
-
+#include "polygeist/Ops.h"
 
 #include "arts/utils/Debug.h"
 ARTS_DEBUG_SETUP(raise_to_tensor);
@@ -56,9 +56,35 @@ static RankedTensorType getTensorType(MemRefType mrType) {
   return RankedTensorType::get(mrType.getShape(), mrType.getElementType());
 }
 
+/// Check that a subview-like value is used only for dependency metadata. Actual
+/// loads/stores through a view need index composition support before they can
+/// be raised safely.
+static bool hasOnlyDependencyViewUsers(Value memref,
+                                       Operation **blocker = nullptr) {
+  for (Operation *user : memref.getUsers()) {
+    if (isa<sde::SdeMuDepOp>(user))
+      continue;
+    if (auto castOp = dyn_cast<memref::CastOp>(user)) {
+      if (!hasOnlyDependencyViewUsers(castOp.getResult(), blocker))
+        return false;
+      continue;
+    }
+    if (auto subIndexOp = dyn_cast<polygeist::SubIndexOp>(user)) {
+      if (!hasOnlyDependencyViewUsers(subIndexOp.getResult(), blocker))
+        return false;
+      continue;
+    }
+    if (blocker)
+      *blocker = user;
+    return false;
+  }
+  return true;
+}
+
 /// Check if a memref value (or any of its casts) is used as an operand to
-/// an op that is NOT load/store/cast/mu_dep. This catches calls, su_iterate
-/// reductionAccumulators, and any other non-raisable usage.
+/// an op that is NOT load/store/cast/mu_dep/dependency-only subindex. This
+/// catches calls, su_iterate reductionAccumulators, and any other non-raisable
+/// usage.
 /// If \p blocker is non-null, the first blocking operation is stored there.
 static bool hasNonRaisableUser(Value memref, Operation **blocker = nullptr) {
   for (Operation *user : memref.getUsers()) {
@@ -74,6 +100,13 @@ static bool hasNonRaisableUser(Value memref, Operation **blocker = nullptr) {
         return true;
       continue;
     }
+    if (auto subIndexOp = dyn_cast<polygeist::SubIndexOp>(user)) {
+      if (!hasOnlyDependencyViewUsers(subIndexOp.getResult(), blocker))
+        return true;
+      continue;
+    }
+    if (isa<polygeist::Memref2PointerOp>(user))
+      continue;
     // Any other user (calls, su_iterate operands, etc.) disqualifies.
     if (blocker)
       *blocker = user;
@@ -83,11 +116,13 @@ static bool hasNonRaisableUser(Value memref, Operation **blocker = nullptr) {
 }
 
 /// Return true if the operation is directly inside a supported region-holding
-/// op (scf.for, cu_region, su_iterate, scf.execute_region) or in the function
-/// entry block — NOT inside scf.if, scf.while, etc. that we can't thread
+/// op (scf.for, cu_region, su_iterate, scf.if, scf.execute_region) or in the
+/// function entry block — NOT inside scf.while, etc. that we can't thread
 /// tensors through.
 /// scf.execute_region is treated as transparent: it always executes, has a
 /// single entry/exit, and tensor updates inside it are visible after it.
+/// scf.if is supported by threading the current tensor through both branches
+/// and selecting the branch result.
 static bool isInSupportedParent(Operation *op, func::FuncOp func) {
   Operation *parent = op->getParentOp();
   while (parent && parent != func) {
@@ -95,17 +130,46 @@ static bool isInSupportedParent(Operation *op, func::FuncOp func) {
       return true;
     if (isa<func::FuncOp>(parent))
       return true;
-    // scf.execute_region is transparent — walk through it.
-    if (isa<scf::ExecuteRegionOp>(parent)) {
+    // scf.execute_region and scf.if are transparent for the parent check:
+    // walkBlock has explicit lowering support for both.
+    if (isa<scf::ExecuteRegionOp, scf::IfOp>(parent)) {
       parent = parent->getParentOp();
       continue;
     }
-    // scf.if, scf.while, etc. — unsupported
-    if (isa<scf::IfOp, scf::WhileOp>(parent))
+    // scf.while, etc. — unsupported
+    if (isa<scf::WhileOp>(parent))
       return false;
     parent = parent->getParentOp();
   }
   return parent == func.getOperation();
+}
+
+static bool hasMemref2PointerUser(Value memref) {
+  for (Operation *user : memref.getUsers()) {
+    if (isa<polygeist::Memref2PointerOp>(user))
+      return true;
+    if (auto castOp = dyn_cast<memref::CastOp>(user)) {
+      if (hasMemref2PointerUser(castOp.getResult()))
+        return true;
+    }
+  }
+  return false;
+}
+
+static bool hasStoreInsideSdeRegion(Value memref) {
+  for (Operation *user : memref.getUsers()) {
+    if (auto storeOp = dyn_cast<memref::StoreOp>(user)) {
+      if (storeOp->getParentOfType<sde::SdeCuRegionOp>() ||
+          storeOp->getParentOfType<sde::SdeSuIterateOp>())
+        return true;
+      continue;
+    }
+    if (auto castOp = dyn_cast<memref::CastOp>(user)) {
+      if (hasStoreInsideSdeRegion(castOp.getResult()))
+        return true;
+    }
+  }
+  return false;
 }
 
 /// Check if a memref.alloca is raisable: only used by load/store/cast/mu_dep,
@@ -115,9 +179,16 @@ static bool isRaisableMemref(Value memref, func::FuncOp func) {
   auto mrType = dyn_cast<MemRefType>(memref.getType());
   if (!mrType)
     return false;
+  if (!TensorType::isValidElementType(mrType.getElementType()))
+    return false;
 
   // Reject if any user (through casts) is not load/store/cast/mu_dep.
   if (hasNonRaisableUser(memref))
+    return false;
+
+  // Pointer views are tolerated only when SDE cannot mutate the backing memref.
+  // Otherwise the tensor value and the original stack buffer may diverge.
+  if (hasMemref2PointerUser(memref) && hasStoreInsideSdeRegion(memref))
     return false;
 
   // All load/store users must be in supported parent regions.
@@ -134,7 +205,7 @@ static bool isRaisableMemref(Value memref, func::FuncOp func) {
 /// Try to resolve the canonical alloca for a memref value used in a
 /// load/store. Returns null if not a raisable alloca.
 static memref::AllocaOp resolveAlloca(Value memref,
-                                       func::FuncOp func = nullptr) {
+                                      func::FuncOp func = nullptr) {
   Value canonical = stripMemrefCasts(memref);
   auto alloca = canonical.getDefiningOp<memref::AllocaOp>();
   if (!alloca)
@@ -210,7 +281,7 @@ static bool isManagedByReduction(memref::AllocaOp alloca) {
 /// Find the first load/store user inside a cu_region that is nested inside
 /// an unsupported control-flow op (scf.if, scf.while, etc.).
 static Operation *findUnsupportedParentAccess(memref::AllocaOp alloca,
-                                               func::FuncOp func) {
+                                              func::FuncOp func) {
   for (Operation *user : alloca.getResult().getUsers()) {
     if (isa<memref::LoadOp, memref::StoreOp>(user)) {
       if (!isInSupportedParent(user, func))
@@ -230,11 +301,11 @@ static Operation *findUnsupportedParentAccess(memref::AllocaOp alloca,
 
 /// Emit a diagnostic explaining why a captured alloca was not raised.
 static void diagnoseCapturedAlloca(memref::AllocaOp alloca,
-                                    sde::SdeCuRegionOp cuRegion,
-                                    func::FuncOp func) {
+                                   sde::SdeCuRegionOp cuRegion,
+                                   func::FuncOp func) {
   auto diag = alloca.emitError()
-      << "memref.alloca of type " << alloca.getType()
-      << " captured by cu_region but was not raised to tensor";
+              << "memref.alloca of type " << alloca.getType()
+              << " captured by cu_region but was not raised to tensor";
   diag.attachNote(cuRegion.getLoc()) << "cu_region capturing this alloca";
 
   // Diagnose specific reason.
@@ -243,14 +314,12 @@ static void diagnoseCapturedAlloca(memref::AllocaOp alloca,
     diag.attachNote(blocker->getLoc())
         << "blocked by non-raisable user: " << blocker->getName();
   } else if (Operation *bad = findUnsupportedParentAccess(alloca, func)) {
-    diag.attachNote(bad->getLoc())
-        << "access inside unsupported control flow ("
-        << bad->getParentOp()->getName() << ")";
+    diag.attachNote(bad->getLoc()) << "access inside unsupported control flow ("
+                                   << bad->getParentOp()->getName() << ")";
   } else if (alloca->getBlock() != &func.getBody().front()) {
     diag.attachNote() << "alloca is not in function entry block";
   } else if (!isAccessedInsideSdeRegion(alloca)) {
-    diag.attachNote()
-        << "alloca has no load/store users inside SDE regions";
+    diag.attachNote() << "alloca has no load/store users inside SDE regions";
   }
 }
 
@@ -280,10 +349,9 @@ collectFunctionScopeAllocas(func::FuncOp func) {
 
 /// Create initial tensor values for each alloca and populate currentTensor.
 /// Also erases consumed scalar init stores.
-static void
-initializeTensorValues(OpBuilder &builder,
-                       ArrayRef<memref::AllocaOp> allocas,
-                       DenseMap<Value, Value> &currentTensor) {
+static void initializeTensorValues(OpBuilder &builder,
+                                   ArrayRef<memref::AllocaOp> allocas,
+                                   DenseMap<Value, Value> &currentTensor) {
   for (memref::AllocaOp alloca : allocas) {
     auto mrType = cast<MemRefType>(alloca.getType());
     RankedTensorType tensorTy = getTensorType(mrType);
@@ -307,8 +375,7 @@ initializeTensorValues(OpBuilder &builder,
           continue;
         // Check no region-holding op between alloca and this store.
         bool blocked = false;
-        for (auto it = std::next(alloca->getIterator());
-             &*it != store; ++it) {
+        for (auto it = std::next(alloca->getIterator()); &*it != store; ++it) {
           if (it->getNumRegions() > 0) {
             blocked = true;
             break;
@@ -317,8 +384,7 @@ initializeTensorValues(OpBuilder &builder,
         if (blocked)
           break;
         // Insert the value into the tensor.
-        tensor = tensor::InsertOp::create(builder, loc,
-                                          store.getValueToStore(),
+        tensor = tensor::InsertOp::create(builder, loc, store.getValueToStore(),
                                           tensor, store.getIndices());
         store.erase();
         break; // only consume the first init store
@@ -379,16 +445,16 @@ static void threadThroughScfFor(scf::ForOp forOp,
 
   // Build extended iter_args.
   SmallVector<Value> newInitArgs(forOp.getInitArgs().begin(),
-                                forOp.getInitArgs().end());
+                                 forOp.getInitArgs().end());
   unsigned existingIterArgs = newInitArgs.size();
   for (memref::AllocaOp alloca : accessed)
     newInitArgs.push_back(currentTensor[alloca.getResult()]);
 
   // Build new ForOp with empty body.
   OpBuilder builder(forOp);
-  auto newFor = scf::ForOp::create(builder, loc, forOp.getLowerBound(),
-                                   forOp.getUpperBound(), forOp.getStep(),
-                                   newInitArgs);
+  auto newFor =
+      scf::ForOp::create(builder, loc, forOp.getLowerBound(),
+                         forOp.getUpperBound(), forOp.getStep(), newInitArgs);
 
   // Move old body into new ForOp (the new ForOp was created with a default body
   // including IV + iter_arg block args). We need to move ops from the old body.
@@ -445,6 +511,109 @@ static void threadThroughScfFor(scf::ForOp forOp,
 }
 
 //===----------------------------------------------------------------------===//
+// Step 3b: Thread through scf.if
+//===----------------------------------------------------------------------===//
+
+static SmallVector<memref::AllocaOp>
+collectAccessedAllocas(scf::IfOp ifOp, ArrayRef<memref::AllocaOp> candidates) {
+  DenseSet<Value> accessed;
+  for (memref::AllocaOp alloca :
+       collectAccessedAllocas(ifOp.getThenRegion(), candidates))
+    accessed.insert(alloca.getResult());
+  if (!ifOp.getElseRegion().empty()) {
+    for (memref::AllocaOp alloca :
+         collectAccessedAllocas(ifOp.getElseRegion(), candidates))
+      accessed.insert(alloca.getResult());
+  }
+
+  SmallVector<memref::AllocaOp> result;
+  for (memref::AllocaOp alloca : candidates) {
+    if (accessed.contains(alloca.getResult()))
+      result.push_back(alloca);
+  }
+  return result;
+}
+
+static void appendScfIfYield(Block &block, Location loc,
+                             ArrayRef<memref::AllocaOp> accessed,
+                             DenseMap<Value, Value> &branchTensor) {
+  scf::YieldOp oldYield;
+  if (!block.empty() && block.back().hasTrait<OpTrait::IsTerminator>())
+    oldYield = dyn_cast<scf::YieldOp>(&block.back());
+  SmallVector<Value> yieldedValues;
+  if (oldYield)
+    yieldedValues.assign(oldYield.getResults().begin(),
+                         oldYield.getResults().end());
+  for (memref::AllocaOp alloca : accessed)
+    yieldedValues.push_back(branchTensor[alloca.getResult()]);
+
+  OpBuilder builder(block.getParent()->getContext());
+  if (oldYield)
+    builder.setInsertionPoint(oldYield);
+  else
+    builder.setInsertionPointToEnd(&block);
+  scf::YieldOp::create(builder, oldYield ? oldYield.getLoc() : loc,
+                       yieldedValues);
+  if (oldYield)
+    oldYield.erase();
+}
+
+static void threadThroughScfIf(scf::IfOp ifOp,
+                               DenseMap<Value, Value> &currentTensor,
+                               ArrayRef<memref::AllocaOp> allocas) {
+  SmallVector<memref::AllocaOp> accessed =
+      collectAccessedAllocas(ifOp, allocas);
+
+  if (accessed.empty()) {
+    DenseMap<Value, Value> thenTensor(currentTensor);
+    walkBlock(ifOp.getThenRegion().front(), thenTensor, allocas);
+    if (!ifOp.getElseRegion().empty()) {
+      DenseMap<Value, Value> elseTensor(currentTensor);
+      walkBlock(ifOp.getElseRegion().front(), elseTensor, allocas);
+    }
+    return;
+  }
+
+  Location loc = ifOp.getLoc();
+  SmallVector<Type> newResultTypes(ifOp.getResultTypes().begin(),
+                                   ifOp.getResultTypes().end());
+  unsigned existingResults = newResultTypes.size();
+  for (memref::AllocaOp alloca : accessed)
+    newResultTypes.push_back(currentTensor[alloca.getResult()].getType());
+
+  OpBuilder outerBuilder(ifOp);
+  auto newIf = scf::IfOp::create(outerBuilder, loc, TypeRange{newResultTypes},
+                                 ifOp.getCondition(),
+                                 /*addThenBlock=*/false,
+                                 /*addElseBlock=*/false);
+
+  bool hadElse = !ifOp.getElseRegion().empty();
+  newIf.getThenRegion().takeBody(ifOp.getThenRegion());
+  if (hadElse) {
+    newIf.getElseRegion().takeBody(ifOp.getElseRegion());
+  } else {
+    OpBuilder elseBuilder(ifOp.getContext());
+    elseBuilder.createBlock(&newIf.getElseRegion());
+  }
+
+  DenseMap<Value, Value> thenTensor(currentTensor);
+  walkBlock(newIf.getThenRegion().front(), thenTensor, allocas);
+  appendScfIfYield(newIf.getThenRegion().front(), loc, accessed, thenTensor);
+
+  DenseMap<Value, Value> elseTensor(currentTensor);
+  if (hadElse)
+    walkBlock(newIf.getElseRegion().front(), elseTensor, allocas);
+  appendScfIfYield(newIf.getElseRegion().front(), loc, accessed, elseTensor);
+
+  for (unsigned i = 0; i < existingResults; ++i)
+    ifOp.getResult(i).replaceAllUsesWith(newIf.getResult(i));
+  ifOp.erase();
+
+  for (auto [i, alloca] : llvm::enumerate(accessed))
+    currentTensor[alloca.getResult()] = newIf.getResult(existingResults + i);
+}
+
+//===----------------------------------------------------------------------===//
 // Step 4: Thread through cu_region
 //===----------------------------------------------------------------------===//
 
@@ -465,7 +634,7 @@ static void threadThroughCuRegion(sde::SdeCuRegionOp cuRegion,
 
   // Build extended iter_args.
   SmallVector<Value> newIterArgs(cuRegion.getIterArgs().begin(),
-                                cuRegion.getIterArgs().end());
+                                 cuRegion.getIterArgs().end());
   SmallVector<Type> newResultTypes(cuRegion.getResultTypes().begin(),
                                    cuRegion.getResultTypes().end());
   unsigned existingIterArgs = newIterArgs.size();
@@ -493,8 +662,8 @@ static void threadThroughCuRegion(sde::SdeCuRegionOp cuRegion,
   // Create new cu_region with extended iter_args.
   OpBuilder outerBuilder(cuRegion);
   auto newCuRegion = sde::SdeCuRegionOp::create(
-      outerBuilder, loc, TypeRange{newResultTypes},
-      cuRegion.getKindAttr(), cuRegion.getConcurrencyScopeAttr(),
+      outerBuilder, loc, TypeRange{newResultTypes}, cuRegion.getKindAttr(),
+      cuRegion.getConcurrencyScopeAttr(),
       cuRegion.getNowaitAttr() ? UnitAttr::get(ctx) : nullptr,
       ValueRange{newIterArgs});
 
@@ -515,7 +684,8 @@ static void threadThroughCuRegion(sde::SdeCuRegionOp cuRegion,
   // Recurse into body.
   walkBlock(entry, bodyTensor, allocas);
 
-  // Update yield — add one if missing (cu_region without iter_args may lack terminator).
+  // Update yield — add one if missing (cu_region without iter_args may lack
+  // terminator).
   if (entry.empty() || !entry.back().hasTrait<OpTrait::IsTerminator>()) {
     // No terminator: create a yield with tensor values.
     OpBuilder yieldBuilder(newCuRegion.getContext());
@@ -558,7 +728,8 @@ static void threadThroughCuRegion(sde::SdeCuRegionOp cuRegion,
 
   // Update currentTensor with cu_region results.
   for (auto [i, alloca] : llvm::enumerate(accessed))
-    currentTensor[alloca.getResult()] = newCuRegion.getResult(existingIterArgs + i);
+    currentTensor[alloca.getResult()] =
+        newCuRegion.getResult(existingIterArgs + i);
 }
 
 //===----------------------------------------------------------------------===//
@@ -581,9 +752,8 @@ static void threadThroughSuIterate(sde::SdeSuIterateOp suIter,
   MLIRContext *ctx = suIter.getContext();
 
   // Collect existing reductionAccumulators (which serve as iter_args).
-  SmallVector<Value> newAccumulators(
-      suIter.getReductionAccumulators().begin(),
-      suIter.getReductionAccumulators().end());
+  SmallVector<Value> newAccumulators(suIter.getReductionAccumulators().begin(),
+                                     suIter.getReductionAccumulators().end());
   unsigned existingAccs = newAccumulators.size();
 
   SmallVector<Type> tensorTypes;
@@ -606,9 +776,9 @@ static void threadThroughSuIterate(sde::SdeSuIterateOp suIter,
   auto newSuIter = sde::SdeSuIterateOp::create(
       outerBuilder, loc, newResultTypes, suIter.getLowerBounds(),
       suIter.getUpperBounds(), suIter.getSteps(), suIter.getScheduleAttr(),
-      suIter.getChunkSize(), suIter.getNowaitAttr() ? UnitAttr::get(ctx) : nullptr,
-      newAccumulators, suIter.getReductionKindsAttr(),
-      suIter.getReductionStrategyAttr(),
+      suIter.getChunkSize(),
+      suIter.getNowaitAttr() ? UnitAttr::get(ctx) : nullptr, newAccumulators,
+      suIter.getReductionKindsAttr(), suIter.getReductionStrategyAttr(),
       suIter.getStructuredClassificationAttr(),
       suIter.getAccessMinOffsetsAttr(), suIter.getAccessMaxOffsetsAttr(),
       suIter.getOwnerDimsAttr(), suIter.getSpatialDimsAttr(),
@@ -631,7 +801,8 @@ static void threadThroughSuIterate(sde::SdeSuIterateOp suIter,
   // Recurse into body.
   walkBlock(entry, bodyTensor, allocas);
 
-  // Update yield — add one if missing (su_iterate without accumulators may lack terminator).
+  // Update yield — add one if missing (su_iterate without accumulators may lack
+  // terminator).
   if (entry.empty() || !entry.back().hasTrait<OpTrait::IsTerminator>()) {
     OpBuilder yieldBuilder(newSuIter.getContext());
     yieldBuilder.setInsertionPointToEnd(&entry);
@@ -689,6 +860,11 @@ static void walkBlock(Block &block, DenseMap<Value, Value> &currentTensor,
       continue;
     }
 
+    if (auto ifOp = dyn_cast<scf::IfOp>(&op)) {
+      threadThroughScfIf(ifOp, currentTensor, allocas);
+      continue;
+    }
+
     if (auto cuRegion = dyn_cast<sde::SdeCuRegionOp>(&op)) {
       threadThroughCuRegion(cuRegion, currentTensor, allocas);
       continue;
@@ -736,7 +912,7 @@ static void walkBlock(Block &block, DenseMap<Value, Value> &currentTensor,
       if (replacement.getType() != toTensorOp.getType()) {
         OpBuilder b(toTensorOp);
         replacement = tensor::CastOp::create(b, toTensorOp.getLoc(),
-                                              toTensorOp.getType(), replacement);
+                                             toTensorOp.getType(), replacement);
       }
       toTensorOp.getResult().replaceAllUsesWith(replacement);
       toErase.push_back(toTensorOp);
@@ -769,8 +945,8 @@ static void walkBlock(Block &block, DenseMap<Value, Value> &currentTensor,
 
       OpBuilder b(storeOp);
       Value inserted = tensor::InsertOp::create(
-          b, storeOp.getLoc(), storeOp.getValueToStore(),
-          it->second, storeOp.getIndices());
+          b, storeOp.getLoc(), storeOp.getValueToStore(), it->second,
+          storeOp.getIndices());
       it->second = inserted;
       toErase.push_back(storeOp);
       continue;
@@ -823,8 +999,8 @@ static unsigned raiseFunctionAllocas(func::FuncOp func) {
     }
   }
 
-  ARTS_DEBUG("raised " << erased << "/" << allocas.size()
-                        << " alloca(s) in " << func.getName());
+  ARTS_DEBUG("raised " << erased << "/" << allocas.size() << " alloca(s) in "
+                       << func.getName());
   return erased;
 }
 
@@ -839,9 +1015,8 @@ struct RaiseToTensorPass
 
     // Phase 1: Function-scope tensor raising.
     unsigned totalRaised = 0;
-    module.walk([&](func::FuncOp func) {
-      totalRaised += raiseFunctionAllocas(func);
-    });
+    module.walk(
+        [&](func::FuncOp func) { totalRaised += raiseFunctionAllocas(func); });
 
     // Phase 2: VERIFY no remaining captured allocas. If any memref.alloca
     // is captured by a cu_region but was not raised to tensor form, the pass
@@ -881,14 +1056,14 @@ struct RaiseToTensorPass
     });
 
     if (unraised > 0) {
-      ARTS_INFO("RaiseToTensor: FAILED — " << unraised
-                << " captured alloca(s) not raised to tensor");
+      ARTS_INFO("RaiseToTensor: FAILED — "
+                << unraised << " captured alloca(s) not raised to tensor");
       signalPassFailure();
       return;
     }
 
-    ARTS_INFO("RaiseToTensor: raised " << totalRaised
-              << " alloca(s), all captured memrefs eliminated");
+    ARTS_INFO("RaiseToTensor: raised "
+              << totalRaised << " alloca(s), all captured memrefs eliminated");
   }
 };
 

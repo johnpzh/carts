@@ -88,32 +88,6 @@ def DbScratchElimination : Pass<"db-scratch-elimination", "mlir::ModuleOp"> {
   let constructor = "mlir::arts::createDbScratchEliminationPass()";
 }
 
-def DbPartitioning : Pass<"db-partitioning", "mlir::ModuleOp"> {
-  let summary = "Partition DBs for fine-grained parallel access";
-  let description = [{
-    Transforms coarse-grained DB allocations to fine-grained (chunked)
-    allocations for better parallelism. Also handles:
-    - Stencil bounds analysis and runtime bounds checking
-    - Unsupported/non-partitionable accesses remain coarse
-  }];
-  let dependentDialects = [
-    "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::scf::SCFDialect",
-    "::mlir::polygeist::PolygeistDialect"
-  ];
-  let options = [
-    Option<"forceCoarseAllocId", "force-coarse-alloc-id", "int64_t", "-1",
-           "Force the DB allocation with this arts.id to use coarse partitioning (-1 = disabled)">,
-    Option<"maxOuterDbs", "max-outer-dbs", "int64_t", "1024",
-           "Maximum number of outer DB partitions before coarsening">,
-    Option<"maxDepsPerEdt", "max-deps-per-edt", "int64_t", "8",
-           "Maximum dependencies per EDT before coarsening">,
-    Option<"minInnerBytes", "min-inner-bytes", "int64_t", "64",
-           "Minimum inner partition size in bytes">
-  ];
-  let constructor = "mlir::arts::createDbPartitioningPass(nullptr)";
-}
-
 def DbDistributedOwnership
     : Pass<"distributed-db-ownership", "mlir::ModuleOp"> {
   let summary = "Mark eligible DB allocations for distributed ownership";

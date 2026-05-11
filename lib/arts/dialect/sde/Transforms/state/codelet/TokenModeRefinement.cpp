@@ -76,6 +76,12 @@ struct TokenModeRefinePass
     MLIRContext *ctx = &getContext();
 
     module.walk([&](sde::SdeCuCodeletOp codelet) {
+      // Downgrading a writable token also requires removing the corresponding
+      // codelet result/yield slot. This pass only mutates token modes, so leave
+      // result-bearing codelets unchanged.
+      if (codelet.getNumResults() != 0)
+        return;
+
       // Map each token operand to its corresponding codelet block argument.
       Block &body = codelet.getBody().front();
       unsigned numTokens = codelet.getTokens().size();

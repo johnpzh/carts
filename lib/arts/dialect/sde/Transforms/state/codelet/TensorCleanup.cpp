@@ -67,8 +67,8 @@ struct TensorCleanupPass
     config.setMaxIterations(4);
 
     for (sde::SdeCuCodeletOp codelet : codelets) {
-      if (failed(
-              applyPatternsGreedily(codelet.getBody(), frozenPatterns, config))) {
+      if (failed(applyPatternsGreedily(codelet.getBody(), frozenPatterns,
+                                       config))) {
         signalPassFailure();
         return;
       }

@@ -9,8 +9,6 @@ dialect/                 MLIR dialects (IREE-style per-dialect structure)
     Conversion/
       ArtsToLLVM/        ConvertArtsToLLVM pass + core LLVM patterns
       ArtsToRt/          EDT/epoch lowering (core → rt conversion)
-      OmpToArts/         OpenMP-to-ARTS conversion
-      PolygeistToArts/   Inliner, RaiseMemRefDimensionality, HandleDeps (pre-SDE bridge)
       SdeToArts/         SDE-to-ARTS conversion patterns
     IR/                  Core dialect definition
     Transforms/          All passes + transform libraries (db/, edt/, loop/, kernel/, dep/)
@@ -21,7 +19,9 @@ dialect/                 MLIR dialects (IREE-style per-dialect structure)
     Transforms/          DataPtrHoisting, GuidRangCallOpt, RuntimeCallOpt, ScalarReplacement, LoopVectorizationHints, AliasScopeGen
   sde/                   SEMANTIC — OMP conversion, linalg raising, semantic transforms
     Analysis/            StructuredOpAnalysis (loop/access classification)
-    Conversion/OmpToSde/ ConvertOpenMPToSde (OMP→SDE boundary)
+    Conversion/
+      OmpToSde/          ConvertOpenMPToSde (OMP→SDE boundary)
+      PolygeistToSde/    Inliner, MemrefNormalization, HandleDeps (pre-SDE Polygeist bridge)
     IR/                  sde dialect (SdeDialect.cpp, SdeOps.cpp)
     Transforms/
       state/raising/     RaiseToLinalg, RaiseToTensor, RaiseMemrefToTensor

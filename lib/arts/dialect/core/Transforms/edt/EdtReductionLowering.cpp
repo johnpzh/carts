@@ -174,13 +174,11 @@ static Value createReductionCombiner(ArtsCodegen *AC, Location loc,
     return isFloat ? AC->create<arith::MulFOp>(loc, lhs, rhs).getResult()
                    : AC->create<arith::MulIOp>(loc, lhs, rhs).getResult();
   case ReductionCombinerKind::min:
-    return isFloat
-               ? AC->create<arith::MinimumFOp>(loc, lhs, rhs).getResult()
-               : AC->create<arith::MinSIOp>(loc, lhs, rhs).getResult();
+    return isFloat ? AC->create<arith::MinimumFOp>(loc, lhs, rhs).getResult()
+                   : AC->create<arith::MinSIOp>(loc, lhs, rhs).getResult();
   case ReductionCombinerKind::max:
-    return isFloat
-               ? AC->create<arith::MaximumFOp>(loc, lhs, rhs).getResult()
-               : AC->create<arith::MaxSIOp>(loc, lhs, rhs).getResult();
+    return isFloat ? AC->create<arith::MaximumFOp>(loc, lhs, rhs).getResult()
+                   : AC->create<arith::MaxSIOp>(loc, lhs, rhs).getResult();
   case ReductionCombinerKind::land:
     assert(!isFloat && "bitwise reductions require integer element types");
     return AC->create<arith::AndIOp>(loc, lhs, rhs).getResult();
@@ -198,8 +196,7 @@ static Value createReductionCombiner(ArtsCodegen *AC, Location loc,
 /// add/or/xor: 0, mul: 1, min: max representable, max: min representable,
 /// and: all-ones.
 static Value createReductionIdentity(ArtsCodegen *AC, Type elemType,
-                                     Location loc,
-                                     ReductionCombinerKind kind) {
+                                     Location loc, ReductionCombinerKind kind) {
   if (kind == ReductionCombinerKind::add)
     return AC->createZeroValue(elemType, loc);
 
@@ -817,8 +814,8 @@ void mlir::arts::createResultEdt(ArtsCodegen *AC,
 
     auto memType = cast<MemRefType>(finalMemRef.getType());
     Type elemType = memType.getElementType();
-    ReductionCombinerKind combKind =
-        i < redInfo.combinerKinds.size() ? redInfo.combinerKinds[i]
+    ReductionCombinerKind combKind = i < redInfo.combinerKinds.size()
+                                         ? redInfo.combinerKinds[i]
                                          : ReductionCombinerKind::add;
 
     switch (redInfo.strategy) {

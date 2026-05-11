@@ -62,8 +62,8 @@ static void refineDistributedScope(Operation *operation,
       // Estimate remote access count from the loop body.
       int64_t memAccessCount = 0;
       op.getBody().walk([&](Operation *inner) {
-        if (isa<memref::LoadOp, memref::StoreOp,
-                tensor::ExtractOp, tensor::InsertOp>(inner))
+        if (isa<memref::LoadOp, memref::StoreOp, tensor::ExtractOp,
+                tensor::InsertOp>(inner))
           ++memAccessCount;
       });
 
@@ -124,8 +124,7 @@ private:
 
 namespace mlir::arts::sde {
 
-std::unique_ptr<Pass>
-createScopeSelectionPass(sde::SDECostModel *costModel) {
+std::unique_ptr<Pass> createScopeSelectionPass(sde::SDECostModel *costModel) {
   return std::make_unique<ScopeSelectionPass>(costModel);
 }
 

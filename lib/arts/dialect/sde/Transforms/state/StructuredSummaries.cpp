@@ -26,8 +26,7 @@ using namespace mlir::arts;
 namespace {
 
 struct StructuredSummariesPass
-    : public arts::impl::StructuredSummariesBase<
-          StructuredSummariesPass> {
+    : public arts::impl::StructuredSummariesBase<StructuredSummariesPass> {
   explicit StructuredSummariesPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 
@@ -38,8 +37,7 @@ struct StructuredSummariesPass
       if (!summary)
         return;
 
-      sde::SdeStructuredClassification classification =
-          summary->classification;
+      sde::SdeStructuredClassification classification = summary->classification;
       if (auto existingClassification = op.getStructuredClassification();
           existingClassification &&
           *existingClassification ==
@@ -62,8 +60,7 @@ struct StructuredSummariesPass
           sde::SdeStructuredClassificationAttr::get(&getContext(),
                                                     classification));
 
-      if (classification ==
-          sde::SdeStructuredClassification::stencil) {
+      if (classification == sde::SdeStructuredClassification::stencil) {
         std::optional<sde::StructuredNeighborhoodInfo> neighborhoodSummary =
             sde::extractNeighborhoodSummary(*summary);
         if (!neighborhoodSummary)
@@ -79,48 +76,6 @@ struct StructuredSummariesPass
             op.getContext(), neighborhoodSummary->spatialDims));
         op.setWriteFootprintAttr(buildI64ArrayAttr(
             op.getContext(), neighborhoodSummary->writeFootprint));
-
-        // Stamp per-dimension dependency distances from neighborhood offsets
-        SmallVector<int64_t> depDistances;
-        for (unsigned d = 0; d < neighborhoodSummary->spatialDims.size(); ++d) {
-          int64_t minOff = d < neighborhoodSummary->minOffsets.size()
-                               ? neighborhoodSummary->minOffsets[d]
-                               : 0;
-          int64_t maxOff = d < neighborhoodSummary->maxOffsets.size()
-                               ? neighborhoodSummary->maxOffsets[d]
-                               : 0;
-          depDistances.push_back(
-              std::max(std::abs(minOff), std::abs(maxOff)));
-        }
-        op->setAttr(AttrNames::Operation::Sde::DepDistances,
-                     buildI64ArrayAttr(op.getContext(), depDistances));
-
-        // Phase 14: Stamp data reuse footprint (stencil path)
-        {
-          int64_t totalFootprintBytes = 0;
-          op.getBody().walk([&](memref::LoadOp loadOp) {
-            auto memrefType = cast<MemRefType>(loadOp.getMemref().getType());
-            Type elemType = memrefType.getElementType();
-            int64_t elemBytes = elemType.isF64() || elemType.isInteger(64) ? 8
-                              : elemType.isF32() || elemType.isInteger(32) ? 4
-                              : 8;
-            totalFootprintBytes += elemBytes;
-          });
-          op.getBody().walk([&](memref::StoreOp storeOp) {
-            auto memrefType = cast<MemRefType>(storeOp.getMemref().getType());
-            Type elemType = memrefType.getElementType();
-            int64_t elemBytes = elemType.isF64() || elemType.isInteger(64) ? 8
-                              : elemType.isF32() || elemType.isInteger(32) ? 4
-                              : 8;
-            totalFootprintBytes += elemBytes;
-          });
-
-          if (totalFootprintBytes > 0) {
-            op->setAttr(AttrNames::Operation::Sde::ReuseFootprintBytes,
-                        IntegerAttr::get(IndexType::get(&getContext()),
-                                         totalFootprintBytes));
-          }
-        }
 
         // Phase 15: In-place operation detection (stencil path)
         {
@@ -145,20 +100,13 @@ struct StructuredSummariesPass
           }
 
           if (inPlaceSafe) {
-            op->setAttr(AttrNames::Operation::InPlaceSafe, UnitAttr::get(op.getContext()));
+            op->setAttr(AttrNames::Operation::InPlaceSafe,
+                        UnitAttr::get(op.getContext()));
           }
         }
 
         ARTS_DEBUG("stamped generic SDE structured summary on su_iterate");
         return;
-      }
-
-      // Non-stencil: stamp zero dependency distances (independent iterations)
-      {
-        unsigned numDims = op.getLowerBounds().size();
-        SmallVector<int64_t> zeroDistances(numDims, 0);
-        op->setAttr(AttrNames::Operation::Sde::DepDistances,
-                     buildI64ArrayAttr(op.getContext(), zeroDistances));
       }
 
       if (classification == sde::SdeStructuredClassification::elementwise ||
@@ -196,41 +144,13 @@ struct StructuredSummariesPass
           });
         }
 
-        op->setAttr(AttrNames::Operation::Sde::VectorizeWidth,
-                     IntegerAttr::get(IndexType::get(&getContext()),
-                                      vectorWidth));
+        op->setAttr(
+            AttrNames::Operation::Sde::VectorizeWidth,
+            IntegerAttr::get(IndexType::get(&getContext()), vectorWidth));
         op->setAttr(AttrNames::Operation::Sde::UnrollFactor,
-                     IntegerAttr::get(IndexType::get(&getContext()), 2));
+                    IntegerAttr::get(IndexType::get(&getContext()), 2));
         op->setAttr(AttrNames::Operation::Sde::InterleaveCount,
-                     IntegerAttr::get(IndexType::get(&getContext()), 4));
-      }
-
-      // Phase 14: Stamp data reuse footprint
-      // Compute the total memory footprint per iteration from memref types.
-      {
-        int64_t totalFootprintBytes = 0;
-        op.getBody().walk([&](memref::LoadOp loadOp) {
-          auto memrefType = cast<MemRefType>(loadOp.getMemref().getType());
-          Type elemType = memrefType.getElementType();
-          int64_t elemBytes = elemType.isF64() || elemType.isInteger(64) ? 8
-                            : elemType.isF32() || elemType.isInteger(32) ? 4
-                            : 8; // default
-          totalFootprintBytes += elemBytes;
-        });
-        op.getBody().walk([&](memref::StoreOp storeOp) {
-          auto memrefType = cast<MemRefType>(storeOp.getMemref().getType());
-          Type elemType = memrefType.getElementType();
-          int64_t elemBytes = elemType.isF64() || elemType.isInteger(64) ? 8
-                            : elemType.isF32() || elemType.isInteger(32) ? 4
-                            : 8;
-          totalFootprintBytes += elemBytes;
-        });
-
-        if (totalFootprintBytes > 0) {
-          op->setAttr(AttrNames::Operation::Sde::ReuseFootprintBytes,
-                      IntegerAttr::get(IndexType::get(&getContext()),
-                                       totalFootprintBytes));
-        }
+                    IntegerAttr::get(IndexType::get(&getContext()), 4));
       }
 
       // Phase 15: In-place operation detection
@@ -260,7 +180,8 @@ struct StructuredSummariesPass
         }
 
         if (inPlaceSafe) {
-          op->setAttr(AttrNames::Operation::InPlaceSafe, UnitAttr::get(op.getContext()));
+          op->setAttr(AttrNames::Operation::InPlaceSafe,
+                      UnitAttr::get(op.getContext()));
         }
       }
 

@@ -11,8 +11,8 @@
 #ifndef ARTS_UTILS_COSTS_ARTSCOSTMODEL_H
 #define ARTS_UTILS_COSTS_ARTSCOSTMODEL_H
 
-#include "arts/utils/machine/RuntimeConfig.h"
 #include "arts/utils/costs/SDECostModel.h"
+#include "arts/utils/machine/RuntimeConfig.h"
 
 namespace mlir::arts {
 
@@ -68,8 +68,8 @@ public:
   // --- Hardware parameters ---
   int getVectorWidth() const override { return 4; } // 256-bit SIMD / 64-bit
   int getCacheLineSize() const override { return 64; }
-  int64_t getL1CacheSize() const override { return 32768; }   // 32KB
-  int64_t getL2CacheSize() const override { return 262144; }  // 256KB
+  int64_t getL1CacheSize() const override { return 32768; }  // 32KB
+  int64_t getL2CacheSize() const override { return 262144; } // 256KB
 
   // --- Reduction splitting ---
   int64_t getReductionSplitFactor(int64_t tripCount) const override {

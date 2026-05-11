@@ -851,7 +851,8 @@ static bool isDerivedFromPtrImpl(Value value, Value source,
         unsigned argIndex = blockArg.getArgNumber();
         ValueRange deps = edt.getDependencies();
         if (argIndex < deps.size())
-          return isDerivedFromPtrImpl(deps[argIndex], source, visited, depth + 1);
+          return isDerivedFromPtrImpl(deps[argIndex], source, visited,
+                                      depth + 1);
       }
     }
     return false;

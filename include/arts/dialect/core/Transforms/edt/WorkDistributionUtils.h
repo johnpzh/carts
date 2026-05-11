@@ -11,8 +11,8 @@
 #ifndef ARTS_DIALECT_CORE_TRANSFORMS_EDT_WORKDISTRIBUTIONUTILS_H
 #define ARTS_DIALECT_CORE_TRANSFORMS_EDT_WORKDISTRIBUTIONUTILS_H
 
-#include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "arts/dialect/core/Analysis/heuristics/DistributionHeuristics.h"
+#include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "arts/utils/LoweringContractUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Value.h"

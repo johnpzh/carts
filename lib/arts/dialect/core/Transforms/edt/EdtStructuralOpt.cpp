@@ -13,8 +13,8 @@
 
 /// Dialects
 #include "arts/utils/DbUtils.h"
-#include "arts/utils/OperationAttributes.h"
 #include "arts/utils/EdtUtils.h"
+#include "arts/utils/OperationAttributes.h"
 #include "arts/utils/RemovalUtils.h"
 #include "arts/utils/Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"

@@ -32,9 +32,9 @@ namespace mlir::arts {
 #include "arts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::arts
 
-#include "arts/utils/ValueAnalysis.h"
 #include "arts/utils/Debug.h"
 #include "arts/utils/Utils.h"
+#include "arts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -342,7 +342,7 @@ struct IterationSpaceDecompositionPass
     }
 
     ARTS_INFO("IterationSpaceDecomposition: applied " << rewrites
-                                                       << " rewrite(s)");
+                                                      << " rewrite(s)");
   }
 };
 

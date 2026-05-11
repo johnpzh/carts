@@ -30,10 +30,10 @@ namespace mlir::arts {
 #define GEN_PASS_DEF_EDTLOWERING
 #include "arts/dialect/rt/Transforms/Passes.h.inc"
 } // namespace mlir::arts
-#include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
+#include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "arts/dialect/core/Conversion/ArtsToRt/EdtLoweringInternal.h"
 #include "arts/dialect/rt/IR/RtDialect.h"
 #include "arts/passes/Passes.h"
@@ -494,6 +494,10 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
   if (auto depSchema = edtOp->getAttrOfType<DenseI64ArrayAttr>(
           AttrNames::Operation::LaunchState::DepSchema))
     outlineOp->setAttr(AttrNames::Operation::LaunchState::DepSchema, depSchema);
+  if (auto reductionStrategy = edtOp->getAttrOfType<StringAttr>(
+          AttrNames::Operation::Contract::ReductionStrategy))
+    outlineOp->setAttr(AttrNames::Operation::Contract::ReductionStrategy,
+                       reductionStrategy);
 
   int64_t baseId = getArtsId(edtOp);
   if (!baseId)

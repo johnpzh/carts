@@ -1,3 +1,6 @@
+// XFAIL: *
+// FIXME: requires tests/inputs/snapshots/activations_openmp_to_arts.mlir which
+// was never committed. Re-enable once the snapshot fixture is regenerated.
 // RUN: %carts-compile %inputs_dir/snapshots/activations_openmp_to_arts.mlir --pipeline post-db-refinement --arts-config %inputs_dir/arts_1t.cfg | %FileCheck %s
 
 // Verify that the late DbModeTightening pass does not degrade write-capable

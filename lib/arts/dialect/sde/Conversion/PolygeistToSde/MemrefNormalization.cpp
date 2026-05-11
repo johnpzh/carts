@@ -93,6 +93,88 @@ static bool isMemrefContainerValue(Value value) {
   return memrefType && isa<MemRefType>(memrefType.getElementType());
 }
 
+static bool isSameUnderlyingValue(Value value, Value expected) {
+  if (value == expected)
+    return true;
+  Value underlying = ValueAnalysis::getUnderlyingValue(value);
+  return underlying && underlying == expected;
+}
+
+static void collectWrappersStoringValue(Value value,
+                                        llvm::SetVector<Value> &wrappers,
+                                        DenseSet<Value> &visitedValues) {
+  if (!value || !visitedValues.insert(value).second)
+    return;
+
+  for (Operation *user : value.getUsers()) {
+    if (auto storeOp = dyn_cast<memref::StoreOp>(user)) {
+      if (isSameUnderlyingValue(storeOp.getValue(), value) &&
+          isMemrefContainerValue(storeOp.getMemref()))
+        wrappers.insert(storeOp.getMemref());
+      continue;
+    }
+
+    if (Value forwarded = getForwardedMemrefAliasResult(user, value))
+      collectWrappersStoringValue(forwarded, wrappers, visitedValues);
+  }
+}
+
+static bool wrapperLoadEscapesIf(Value wrapper, scf::IfOp parentIf,
+                                 DenseSet<Value> &visitedWrappers) {
+  if (!wrapper || !visitedWrappers.insert(wrapper).second)
+    return false;
+
+  for (Operation *user : wrapper.getUsers()) {
+    if (Value forwarded = getForwardedMemrefAliasResult(user, wrapper)) {
+      if (wrapperLoadEscapesIf(forwarded, parentIf, visitedWrappers))
+        return true;
+      continue;
+    }
+
+    Value loaded;
+    if (auto loadOp = dyn_cast<memref::LoadOp>(user)) {
+      if (loadOp.getMemref() != wrapper)
+        continue;
+      if (!parentIf->isAncestor(loadOp))
+        return true;
+      loaded = loadOp.getResult();
+    } else if (auto loadOp = dyn_cast<affine::AffineLoadOp>(user)) {
+      if (loadOp.getMemref() != wrapper)
+        continue;
+      if (!parentIf->isAncestor(loadOp))
+        return true;
+      loaded = loadOp.getResult();
+    } else {
+      continue;
+    }
+
+    for (Operation *loadUser : loaded.getUsers()) {
+      if (!parentIf->isAncestor(loadUser))
+        return true;
+    }
+  }
+
+  return false;
+}
+
+static bool allocEscapesIf(memref::AllocOp allocOp, scf::IfOp parentIf) {
+  for (Operation *user : allocOp->getUsers()) {
+    if (!parentIf->isAncestor(user))
+      return true;
+  }
+
+  llvm::SetVector<Value> wrappers;
+  DenseSet<Value> visitedValues;
+  collectWrappersStoringValue(allocOp.getResult(), wrappers, visitedValues);
+  for (Value wrapper : wrappers) {
+    DenseSet<Value> visitedWrappers;
+    if (wrapperLoadEscapesIf(wrapper, parentIf, visitedWrappers))
+      return true;
+  }
+
+  return false;
+}
+
 ///===----------------------------------------------------------------------===///
 /// Data Structures
 ///===----------------------------------------------------------------------===///
@@ -309,14 +391,11 @@ void MemrefNormalizationPass::runOnOperation() {
       auto parentIf = allocOp->getParentOfType<scf::IfOp>();
       if (!parentIf)
         return;
-      for (Operation *user : allocOp->getUsers()) {
-        if (!parentIf->isAncestor(user)) {
-          escapingAllocs.push_back(allocOp);
-          ARTS_DEBUG("Found escaping alloc: " << allocOp << " at "
-                                              << allocOp.getLoc());
-          return;
-        }
-      }
+      if (!allocEscapesIf(allocOp, parentIf))
+        return;
+      escapingAllocs.push_back(allocOp);
+      ARTS_DEBUG("Found escaping alloc: " << allocOp << " at "
+                                          << allocOp.getLoc());
     });
     ARTS_INFO("Pre-processing: found " << escapingAllocs.size()
                                        << " escaping alloc(s)");
@@ -325,14 +404,7 @@ void MemrefNormalizationPass::runOnOperation() {
       /// Find the outermost scf.if that this alloc escapes from.
       Operation *target = allocOp;
       while (auto parentIf = target->getParentOfType<scf::IfOp>()) {
-        bool escapes = false;
-        for (Operation *user : allocOp->getUsers()) {
-          if (!parentIf->isAncestor(user)) {
-            escapes = true;
-            break;
-          }
-        }
-        if (!escapes)
+        if (!allocEscapesIf(allocOp, parentIf))
           break;
         target = parentIf;
       }
@@ -341,30 +413,27 @@ void MemrefNormalizationPass::runOnOperation() {
       /// scf.if. We collect all operations that need to move by walking
       /// the operand tree backward.
       auto *targetOp = target;
-      SmallVector<Operation *> opsToHoist;
-      llvm::SetVector<Operation *> visited;
+      llvm::SetVector<Operation *> opsToHoist;
 
-      /// BFS to collect the full operand tree that needs hoisting.
-      SmallVector<Operation *> worklist;
-      worklist.push_back(allocOp);
-      while (!worklist.empty()) {
-        Operation *op = worklist.pop_back_val();
-        if (!visited.insert(op))
-          continue;
+      /// Collect the full operand tree in topological order so operands are
+      /// moved before their users. Some Polygeist size expressions are emitted
+      /// after the alloc; a stack worklist can invert those dependencies.
+      std::function<void(Operation *)> collectForHoist = [&](Operation *op) {
+        if (!op || opsToHoist.count(op))
+          return;
         /// Only hoist ops inside the target region.
         if (!targetOp->isAncestor(op))
-          continue;
-        opsToHoist.push_back(op);
+          return;
         for (Value operand : op->getOperands()) {
           if (auto *defOp = operand.getDefiningOp())
-            worklist.push_back(defOp);
+            collectForHoist(defOp);
         }
-      }
+        opsToHoist.insert(op);
+      };
+      collectForHoist(allocOp);
 
-      /// Move in reverse order (operands before their uses) since the BFS
-      /// collected uses before operands.
-      for (auto it = opsToHoist.rbegin(); it != opsToHoist.rend(); ++it)
-        (*it)->moveBefore(targetOp);
+      for (Operation *op : opsToHoist)
+        op->moveBefore(targetOp);
 
       ARTS_INFO("Hoisted escaping memref.alloc and "
                 << opsToHoist.size() << " ops from scf.if to parent block");
@@ -443,9 +512,10 @@ void MemrefNormalizationPass::runOnOperation() {
     unsupportedUseOp = nullptr;
     unsupportedUseReason.clear();
     if (!hasOnlySupportedUseGraph(*patternOpt)) {
-      std::string detail = unsupportedUseReason.empty()
-                               ? std::string("unsupported use graph")
-                               : ("unsupported use graph: " + unsupportedUseReason);
+      std::string detail =
+          unsupportedUseReason.empty()
+              ? std::string("unsupported use graph")
+              : ("unsupported use graph: " + unsupportedUseReason);
       auto diag = patternOpt->rootAlloc.getDefiningOp()->emitError(
           "un-normalizable nested memref pattern (");
       diag << detail
@@ -454,9 +524,8 @@ void MemrefNormalizationPass::runOnOperation() {
       if (unsupportedUseOp) {
         diag.attachNote(unsupportedUseOp->getLoc()) << "unsupported use here";
       }
-      ARTS_DEBUG(
-          "MemrefNormalization: skipping nested memref pattern ("
-          << detail << ") at " << patternOpt->rootAlloc.getLoc());
+      ARTS_DEBUG("MemrefNormalization: skipping nested memref pattern ("
+                 << detail << ") at " << patternOpt->rootAlloc.getLoc());
       hadUnraisedNestedMemref = true;
       continue;
     }
@@ -526,10 +595,10 @@ MemrefNormalizationPass::detectPattern(Value alloc) {
   /// Check for Wrapper Alloca (rank-0 or rank-1 single-element alloca storing
   /// the pointer). Polygeist sometimes emits memref<1xmemref<?xT>> instead of
   /// memref<memref<?xT>> for C pointer variables like int *A = malloc(...).
-  bool isRank1SingleElem =
-      allocType.getRank() == 1 && allocType.getDimSize(0) == 1 &&
-      isa<MemRefType>(allocType.getElementType()) &&
-      alloc.getDefiningOp<memref::AllocaOp>();
+  bool isRank1SingleElem = allocType.getRank() == 1 &&
+                           allocType.getDimSize(0) == 1 &&
+                           isa<MemRefType>(allocType.getElementType()) &&
+                           alloc.getDefiningOp<memref::AllocaOp>();
   if (allocType.getRank() == 0 || isRank1SingleElem) {
     auto elemType = dyn_cast<MemRefType>(allocType.getElementType());
     if (!elemType)
@@ -969,9 +1038,10 @@ void MemrefNormalizationPass::collectOmpDependencies(
   }
 }
 
-std::optional<DepInfo> MemrefNormalizationPass::analyzeDepVar(
-    Value depVar, AllocPattern &pattern, omp::TaskOp taskOp, unsigned depIdx,
-    omp::ClauseTaskDepend depMode) {
+std::optional<DepInfo>
+MemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
+                                       omp::TaskOp taskOp, unsigned depIdx,
+                                       omp::ClauseTaskDepend depMode) {
   DepInfo info;
   info.taskOp = taskOp;
   info.depVarIndex = depIdx;
@@ -1099,8 +1169,8 @@ std::optional<DepInfo> MemrefNormalizationPass::analyzeDepVar(
     /// Element-level sizes
     for (size_t d = 0; d < info.indices.size(); ++d)
       info.sizes.push_back(arts::createConstantIndex(builder, loc, 1));
-    info.indices = arts::clampDepIndices(info.source, info.indices, builder, loc,
-                                         pattern.dimensions);
+    info.indices = arts::clampDepIndices(info.source, info.indices, builder,
+                                         loc, pattern.dimensions);
 
     info.opsToRemove = traceResult->chainOps;
     info.opsToRemove.push_back(subIndexOp);
@@ -1129,8 +1199,7 @@ std::optional<DepInfo> MemrefNormalizationPass::analyzeDepVar(
 ///===----------------------------------------------------------------------===///
 
 std::optional<TraceResult>
-MemrefNormalizationPass::traceToPattern(Value val,
-                                              AllocPattern &pattern) {
+MemrefNormalizationPass::traceToPattern(Value val, AllocPattern &pattern) {
   TraceResult result;
 
   /// Direct match to root or any alias wrapper that resolves to it.
@@ -1178,8 +1247,7 @@ MemrefNormalizationPass::traceToPattern(Value val,
 }
 
 std::optional<TraceResult>
-MemrefNormalizationPass::traceValueToPattern(Value val,
-                                                   AllocPattern &pattern) {
+MemrefNormalizationPass::traceValueToPattern(Value val, AllocPattern &pattern) {
   /// For element values (not memrefs), we look at the defining load
   if (auto loadOp = val.getDefiningOp<memref::LoadOp>()) {
     auto memResult = traceToPattern(loadOp.getMemref(), pattern);
@@ -1257,7 +1325,7 @@ void MemrefNormalizationPass::collectOuterWrapperAliases(
 }
 
 bool MemrefNormalizationPass::recordUnsupportedUse(Operation *op,
-                                                         llvm::Twine reason) {
+                                                   llvm::Twine reason) {
   if (!unsupportedUseOp) {
     unsupportedUseOp = op;
     unsupportedUseReason = reason.str();
@@ -1452,9 +1520,8 @@ bool MemrefNormalizationPass::hasOnlySupportedUses(
 /// Phase 3: Transformation
 ///===----------------------------------------------------------------------===///
 
-LogicalResult
-MemrefNormalizationPass::transformPattern(AllocPattern &pattern,
-                                                OpBuilder &builder) {
+LogicalResult MemrefNormalizationPass::transformPattern(AllocPattern &pattern,
+                                                        OpBuilder &builder) {
   OpBuilder::InsertionGuard guard(builder);
   DominanceInfo localDomInfo(
       pattern.rootAlloc.getDefiningOp()->getParentOfType<func::FuncOp>());
@@ -1473,9 +1540,8 @@ MemrefNormalizationPass::transformPattern(AllocPattern &pattern,
   if (pattern.getOutermostInitLoop() &&
       pattern.getOutermostInitLoop() != pattern.rootAlloc.getDefiningOp())
     candidates.push_back(pattern.getOutermostInitLoop());
-  if (pattern.wrapperAlloca &&
-      pattern.wrapperAlloca.getDefiningOp() !=
-          pattern.rootAlloc.getDefiningOp())
+  if (pattern.wrapperAlloca && pattern.wrapperAlloca.getDefiningOp() !=
+                                   pattern.rootAlloc.getDefiningOp())
     candidates.push_back(pattern.wrapperAlloca.getDefiningOp());
 
   /// Candidate 4: the enclosing scf.if of the rootAlloc.
@@ -1528,8 +1594,7 @@ MemrefNormalizationPass::transformPattern(AllocPattern &pattern,
     }
     if (dominatesAll) {
       for (const auto &dep : pattern.dependencies) {
-        if (!localDomInfo.dominates(candidateBlock,
-                                    dep.taskOp->getBlock())) {
+        if (!localDomInfo.dominates(candidateBlock, dep.taskOp->getBlock())) {
           dominatesAll = false;
           break;
         }
@@ -1679,9 +1744,8 @@ MemrefNormalizationPass::transformPattern(AllocPattern &pattern,
       /// share a single row-allocation loop, removing it while processing
       /// the first pattern would prevent the others from being raised.
       llvm::DenseSet<Operation *> patternOps(pattern.nestedAllocs.begin(),
-                                              pattern.nestedAllocs.end());
-      patternOps.insert(pattern.initStores.begin(),
-                         pattern.initStores.end());
+                                             pattern.nestedAllocs.end());
+      patternOps.insert(pattern.initStores.begin(), pattern.initStores.end());
       outermost->walk([&](memref::AllocOp innerAlloc) {
         if (keepLoop)
           return;
@@ -1798,7 +1862,7 @@ void MemrefNormalizationPass::rewriteTracedMemref2PointerUses(
 ///
 LogicalResult
 MemrefNormalizationPass::transformSimpleWrapper(AllocPattern &pattern,
-                                                      OpBuilder &builder) {
+                                                OpBuilder &builder) {
   OpBuilder::InsertionGuard guard(builder);
   DominanceInfo localDomInfo(
       pattern.rootAlloc.getDefiningOp()->getParentOfType<func::FuncOp>());
@@ -1928,7 +1992,7 @@ Value MemrefNormalizationPass::createCanonicalAllocation(
 }
 
 void MemrefNormalizationPass::transferMetadata(Operation *oldAlloc,
-                                                     Operation *newAlloc) {
+                                               Operation *newAlloc) {
   if (!oldAlloc || !newAlloc)
     return;
   for (auto namedAttr : oldAlloc->getAttrs()) {
@@ -2141,11 +2205,9 @@ void MemrefNormalizationPass::handleDeallocations(
           /// direct memref.dealloc ops. Do NOT assume generic LoadOp/ForOp
           /// users are dealloc-related — they may be computation (e.g.,
           /// checksum loops reading the allocated array).
-          if (llvm::all_of(loadOp.getResult().getUsers(),
-                           [&](Operation *u) {
-                             return toRemove.count(u) ||
-                                    isa<memref::DeallocOp>(u);
-                           })) {
+          if (llvm::all_of(loadOp.getResult().getUsers(), [&](Operation *u) {
+                return toRemove.count(u) || isa<memref::DeallocOp>(u);
+              })) {
             toRemove.insert(loadOp);
           }
         }
@@ -2198,9 +2260,10 @@ void MemrefNormalizationPass::handleDeallocations(
   }
 
   /// Create single dealloc for the new N-D allocation.
-  /// The ndAlloc may be defined inside a nested block (scf.if, scf.execute_region)
-  /// but escape via scf.yield. Placing the dealloc in that nested block would
-  /// cause use-after-free. Walk up the block hierarchy to find a safe scope.
+  /// The ndAlloc may be defined inside a nested block (scf.if,
+  /// scf.execute_region) but escape via scf.yield. Placing the dealloc in that
+  /// nested block would cause use-after-free. Walk up the block hierarchy to
+  /// find a safe scope.
 
   Operation *ndAllocOp = ndAlloc.getDefiningOp();
   Block *ndAllocBlock = ndAllocOp->getBlock();
@@ -2251,8 +2314,7 @@ void MemrefNormalizationPass::handleDeallocations(
 ///===----------------------------------------------------------------------===///
 
 /// Check if maybeLoad is a load operation from the given source value
-bool MemrefNormalizationPass::isLoadFromValue(Value maybeLoad,
-                                                    Value source) {
+bool MemrefNormalizationPass::isLoadFromValue(Value maybeLoad, Value source) {
   if (auto loadOp = maybeLoad.getDefiningOp<memref::LoadOp>()) {
     return loadOp.getMemref() == source;
   }
@@ -2281,9 +2343,11 @@ bool MemrefNormalizationPass::isLoadFromValue(Value maybeLoad,
 /// directly.
 ///
 /// Returns true if a complete pattern was found (reaching scalar element type)
-bool MemrefNormalizationPass::extractNestedAllocations(
-    Value storedVal, Operation *loopOp, memref::StoreOp storeOp,
-    AllocPattern &pattern, int depth) {
+bool MemrefNormalizationPass::extractNestedAllocations(Value storedVal,
+                                                       Operation *loopOp,
+                                                       memref::StoreOp storeOp,
+                                                       AllocPattern &pattern,
+                                                       int depth) {
   /// Limit recursion depth to prevent infinite loops
   constexpr int MAX_DEPTH = 10;
   if (depth >= MAX_DEPTH) {
@@ -2380,7 +2444,7 @@ bool MemrefNormalizationPass::extractNestedAllocations(
 
 /// Check if a value traces back to the root allocation through a chain of loads
 bool MemrefNormalizationPass::tracesToRootAlloc(Value val,
-                                                      AllocPattern &pattern) {
+                                                AllocPattern &pattern) {
   constexpr int MAX_TRACE_DEPTH = 10;
   Value current = val;
 

@@ -44,16 +44,15 @@ std::unique_ptr<Pass> createCreateDbsPass(AnalysisManager *AM);
 std::unique_ptr<Pass> createDbModeTighteningPass(AnalysisManager *AM,
                                                  bool forceInout = false);
 std::unique_ptr<Pass> createDbScratchEliminationPass();
-std::unique_ptr<Pass> createDbPartitioningPass(AnalysisManager *AM);
 std::unique_ptr<Pass> createDbDistributedOwnershipPass(AnalysisManager *AM);
 std::unique_ptr<Pass> createDbTransformsPass(AnalysisManager *AM);
 std::unique_ptr<Pass> createCreateEpochsPass();
 
 /// Lower ARTS dialect operations into LLVM-ready IR.
 std::unique_ptr<Pass> createConvertArtsToLLVMPass();
-std::unique_ptr<Pass>
-createConvertArtsToLLVMPass(bool debug, bool distributedInitPerWorker,
-                            const RuntimeConfig *machine);
+std::unique_ptr<Pass> createConvertArtsToLLVMPass(bool debug,
+                                                  bool distributedInitPerWorker,
+                                                  const RuntimeConfig *machine);
 
 /// EDT-local cleanup and codegen-preparation passes.
 std::unique_ptr<Pass> createEdtICMPass();

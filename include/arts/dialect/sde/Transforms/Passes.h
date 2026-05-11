@@ -78,8 +78,7 @@ std::unique_ptr<Pass> createTokenModeRefinementPass();
 
 // --- Dep passes (structural transforms) ---
 std::unique_ptr<Pass> createLoopInterchangePass();
-std::unique_ptr<Pass>
-createTilingPass(SDECostModel *costModel = nullptr);
+std::unique_ptr<Pass> createTilingPass(SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass>
 createStructuredSummariesPass(SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass> createElementwiseFusionPass();
@@ -91,8 +90,7 @@ std::unique_ptr<Pass>
 createScopeSelectionPass(SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass>
 createScheduleRefinementPass(SDECostModel *costModel = nullptr);
-std::unique_ptr<Pass>
-createChunkOptPass(SDECostModel *costModel = nullptr);
+std::unique_ptr<Pass> createChunkOptPass(SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass>
 createReductionStrategyPass(SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass>

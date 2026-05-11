@@ -7,7 +7,7 @@
 ///==========================================================================///
 
 #include "arts/dialect/core/Analysis/heuristics/EpochHeuristics.h"
-#include "arts/dialect/core/Analysis/heuristics/StructuredKernelPlanAnalysis.h"
+#include "arts/dialect/core/Analysis/KernelFamily.h"
 #include "arts/utils/DbUtils.h"
 #include "arts/utils/LoopUtils.h"
 #include "arts/utils/OperationAttributes.h"

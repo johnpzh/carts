@@ -23,7 +23,6 @@ enum class AnalysisKind : uint8_t {
   DbHeuristics,
   EdtHeuristics,
   RuntimeConfig,
-  StructuredKernelPlan,
 };
 
 /// Declares which analyses a pass reads and invalidates.

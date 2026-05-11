@@ -66,33 +66,182 @@ static Value traceBackingMemref(Value tensor,
   auto it = backingMemref.find(tensor);
   if (it != backingMemref.end())
     return it->second;
+  if (auto muToTensor = tensor.getDefiningOp<sde::SdeMuMemrefToTensorOp>())
+    return muToTensor.getMemref();
+  if (auto toTensor = tensor.getDefiningOp<bufferization::ToTensorOp>())
+    return toTensor.getBuffer();
   if (auto insertOp = tensor.getDefiningOp<tensor::InsertOp>())
     return traceBackingMemref(insertOp.getDest(), backingMemref);
   if (auto castOp = tensor.getDefiningOp<tensor::CastOp>())
     return traceBackingMemref(castOp.getSource(), backingMemref);
+  if (auto ifOp = tensor.getDefiningOp<scf::IfOp>()) {
+    unsigned resultIdx = cast<OpResult>(tensor).getResultNumber();
+    auto traceYieldedBacking = [&](Region &region) -> Value {
+      if (region.empty())
+        return Value();
+      auto yield =
+          dyn_cast_or_null<scf::YieldOp>(region.front().getTerminator());
+      if (!yield || resultIdx >= yield.getResults().size())
+        return Value();
+      return traceBackingMemref(yield.getResults()[resultIdx], backingMemref);
+    };
+
+    Value thenBacking = traceYieldedBacking(ifOp.getThenRegion());
+    Value elseBacking = traceYieldedBacking(ifOp.getElseRegion());
+    if (thenBacking && (!elseBacking || thenBacking == elseBacking))
+      return thenBacking;
+    if (!thenBacking && elseBacking)
+      return elseBacking;
+  }
+  if (auto forOp = tensor.getDefiningOp<scf::ForOp>()) {
+    unsigned resultIdx = cast<OpResult>(tensor).getResultNumber();
+    if (resultIdx < forOp.getInitArgs().size())
+      return traceBackingMemref(forOp.getInitArgs()[resultIdx], backingMemref);
+  }
+  if (auto cuRegion = tensor.getDefiningOp<sde::SdeCuRegionOp>()) {
+    unsigned resultIdx = cast<OpResult>(tensor).getResultNumber();
+    if (resultIdx < cuRegion.getIterArgs().size())
+      return traceBackingMemref(cuRegion.getIterArgs()[resultIdx],
+                                backingMemref);
+  }
+  if (auto suIter = tensor.getDefiningOp<sde::SdeSuIterateOp>()) {
+    unsigned resultIdx = cast<OpResult>(tensor).getResultNumber();
+    if (resultIdx < suIter.getReductionAccumulators().size())
+      return traceBackingMemref(suIter.getReductionAccumulators()[resultIdx],
+                                backingMemref);
+  }
   return Value();
 }
 
 /// Find or create a backing memref alloca for a tensor init value.
 /// Traces through mu_memref_to_tensor / bufferization.to_tensor to find
 /// existing allocas, or creates a new memref.alloca as fallback.
-static Value getOrCreateBacking(Value initTensor, OpBuilder &builder) {
+static Value getOrCreateBacking(Value initTensor, OpBuilder &builder,
+                                DenseMap<Value, Value> &backingMemref) {
+  if (Value backing = traceBackingMemref(initTensor, backingMemref))
+    return backing;
+
   // Trace through known conversion ops.
   if (auto muToTensor =
-          initTensor.getDefiningOp<sde::SdeMuMemrefToTensorOp>())
+          initTensor.getDefiningOp<sde::SdeMuMemrefToTensorOp>()) {
+    backingMemref[initTensor] = muToTensor.getMemref();
     return muToTensor.getMemref();
-  if (auto toTensor = initTensor.getDefiningOp<bufferization::ToTensorOp>())
+  }
+  if (auto toTensor = initTensor.getDefiningOp<bufferization::ToTensorOp>()) {
+    backingMemref[initTensor] = toTensor.getBuffer();
     return toTensor.getBuffer();
+  }
+
+  // Follow tensor block arguments back to their region iter_args. This keeps
+  // nested loops inside <single> regions tied to the parent tensor backing.
+  if (auto blockArg = dyn_cast<BlockArgument>(initTensor)) {
+    Operation *owner = blockArg.getOwner()->getParentOp();
+    unsigned argNo = blockArg.getArgNumber();
+    Value backing;
+
+    if (auto forOp = dyn_cast_or_null<scf::ForOp>(owner)) {
+      if (argNo > 0) {
+        unsigned initIdx = argNo - 1;
+        if (initIdx < forOp.getInitArgs().size())
+          backing = getOrCreateBacking(forOp.getInitArgs()[initIdx], builder,
+                                       backingMemref);
+      }
+    } else if (auto cuRegion = dyn_cast_or_null<sde::SdeCuRegionOp>(owner)) {
+      if (argNo < cuRegion.getIterArgs().size())
+        backing = getOrCreateBacking(cuRegion.getIterArgs()[argNo], builder,
+                                     backingMemref);
+    } else if (auto suIter = dyn_cast_or_null<sde::SdeSuIterateOp>(owner)) {
+      unsigned numIVs = suIter.getLowerBounds().size();
+      if (argNo >= numIVs) {
+        unsigned accIdx = argNo - numIVs;
+        if (accIdx < suIter.getReductionAccumulators().size())
+          backing =
+              getOrCreateBacking(suIter.getReductionAccumulators()[accIdx],
+                                 builder, backingMemref);
+      }
+    }
+
+    if (backing) {
+      backingMemref[initTensor] = backing;
+      return backing;
+    }
+  }
+
   // Trace through tensor.insert chains.
-  if (auto insertOp = initTensor.getDefiningOp<tensor::InsertOp>())
-    return getOrCreateBacking(insertOp.getDest(), builder);
-  if (auto castOp = initTensor.getDefiningOp<tensor::CastOp>())
-    return getOrCreateBacking(castOp.getSource(), builder);
+  if (auto insertOp = initTensor.getDefiningOp<tensor::InsertOp>()) {
+    Value backing =
+        getOrCreateBacking(insertOp.getDest(), builder, backingMemref);
+    backingMemref[initTensor] = backing;
+    return backing;
+  }
+  if (auto castOp = initTensor.getDefiningOp<tensor::CastOp>()) {
+    Value backing =
+        getOrCreateBacking(castOp.getSource(), builder, backingMemref);
+    backingMemref[initTensor] = backing;
+    return backing;
+  }
+
+  if (auto ifOp = initTensor.getDefiningOp<scf::IfOp>()) {
+    unsigned resultIdx = cast<OpResult>(initTensor).getResultNumber();
+    auto getYieldedBacking = [&](Region &region) -> Value {
+      if (region.empty())
+        return Value();
+      auto yield =
+          dyn_cast_or_null<scf::YieldOp>(region.front().getTerminator());
+      if (!yield || resultIdx >= yield.getResults().size())
+        return Value();
+      return getOrCreateBacking(yield.getResults()[resultIdx], builder,
+                                backingMemref);
+    };
+
+    Value thenBacking = getYieldedBacking(ifOp.getThenRegion());
+    Value elseBacking = getYieldedBacking(ifOp.getElseRegion());
+    if (thenBacking && (!elseBacking || thenBacking == elseBacking)) {
+      backingMemref[initTensor] = thenBacking;
+      return thenBacking;
+    }
+    if (!thenBacking && elseBacking) {
+      backingMemref[initTensor] = elseBacking;
+      return elseBacking;
+    }
+  }
+
+  if (auto forOp = initTensor.getDefiningOp<scf::ForOp>()) {
+    unsigned resultIdx = cast<OpResult>(initTensor).getResultNumber();
+    if (resultIdx < forOp.getInitArgs().size()) {
+      Value backing = getOrCreateBacking(forOp.getInitArgs()[resultIdx],
+                                         builder, backingMemref);
+      backingMemref[initTensor] = backing;
+      return backing;
+    }
+  }
+
+  if (auto cuRegion = initTensor.getDefiningOp<sde::SdeCuRegionOp>()) {
+    unsigned resultIdx = cast<OpResult>(initTensor).getResultNumber();
+    if (resultIdx < cuRegion.getIterArgs().size()) {
+      Value backing = getOrCreateBacking(cuRegion.getIterArgs()[resultIdx],
+                                         builder, backingMemref);
+      backingMemref[initTensor] = backing;
+      return backing;
+    }
+  }
+
+  if (auto suIter = initTensor.getDefiningOp<sde::SdeSuIterateOp>()) {
+    unsigned resultIdx = cast<OpResult>(initTensor).getResultNumber();
+    if (resultIdx < suIter.getReductionAccumulators().size()) {
+      Value backing = getOrCreateBacking(
+          suIter.getReductionAccumulators()[resultIdx], builder, backingMemref);
+      backingMemref[initTensor] = backing;
+      return backing;
+    }
+  }
 
   // Fallback: create a temporary alloca.
   auto tensorTy = cast<RankedTensorType>(initTensor.getType());
-  return memref::AllocaOp::create(builder, initTensor.getLoc(),
-                                  getMemRefType(tensorTy));
+  Value alloca = memref::AllocaOp::create(builder, initTensor.getLoc(),
+                                          getMemRefType(tensorTy));
+  backingMemref[initTensor] = alloca;
+  return alloca;
 }
 
 //===----------------------------------------------------------------------===//
@@ -179,9 +328,9 @@ static void walkBlock(Block &block, DenseMap<Value, Value> &backingMemref) {
     if (auto muAlloc = dyn_cast<sde::SdeMuAllocOp>(&op)) {
       auto tensorTy = cast<RankedTensorType>(muAlloc.getTensor().getType());
       OpBuilder b(muAlloc);
-      Value alloca = memref::AllocaOp::create(b, muAlloc.getLoc(),
-                                               getMemRefType(tensorTy),
-                                               muAlloc.getDynamicSizes());
+      Value alloca =
+          memref::AllocaOp::create(b, muAlloc.getLoc(), getMemRefType(tensorTy),
+                                   muAlloc.getDynamicSizes());
       backingMemref[muAlloc.getTensor()] = alloca;
       toErase.push_back(muAlloc);
       continue;
@@ -246,8 +395,7 @@ static void walkBlock(Block &block, DenseMap<Value, Value> &backingMemref) {
           auto newRead = vector::TransferReadOp::create(
               b, readOp.getLoc(), readOp.getVectorType(), backing,
               readOp.getIndices(), readOp.getPermutationMapAttr(),
-              readOp.getPadding(), readOp.getMask(),
-              readOp.getInBoundsAttr());
+              readOp.getPadding(), readOp.getMask(), readOp.getInBoundsAttr());
           readOp.getResult().replaceAllUsesWith(newRead.getResult());
           toErase.push_back(readOp);
           continue;
@@ -321,7 +469,8 @@ static void walkBlock(Block &block, DenseMap<Value, Value> &backingMemref) {
 //===----------------------------------------------------------------------===//
 
 /// Strip tensor iter_args from scf.for ops.
-static void stripScfForTensorArgs(ModuleOp module) {
+static void stripScfForTensorArgs(ModuleOp module,
+                                  DenseMap<Value, Value> &backingMemref) {
   SmallVector<scf::ForOp> forOps;
   module.walk([&](scf::ForOp op) {
     for (Value init : op.getInitArgs()) {
@@ -351,9 +500,12 @@ static void stripScfForTensorArgs(ModuleOp module) {
 
     // Find backing allocas for tensor init values.
     SmallVector<Value> backingAllocas;
-    for (unsigned idx : tensorArgIndices)
-      backingAllocas.push_back(
-          getOrCreateBacking(forOp.getInitArgs()[idx], outerBuilder));
+    for (unsigned idx : tensorArgIndices) {
+      Value backing = getOrCreateBacking(forOp.getInitArgs()[idx], outerBuilder,
+                                         backingMemref);
+      backingAllocas.push_back(backing);
+      backingMemref[body.getArgument(1 + idx)] = backing;
+    }
 
     // Replace tensor block arg uses with mu_memref_to_tensor from alloca.
     for (auto [i, idx] : llvm::enumerate(tensorArgIndices)) {
@@ -363,6 +515,7 @@ static void stripScfForTensorArgs(ModuleOp module) {
       bodyStart.setInsertionPointToStart(&body);
       Value tensorFromAlloca = sde::SdeMuMemrefToTensorOp::create(
           bodyStart, loc, tensorTy, backingAllocas[i]);
+      backingMemref[tensorFromAlloca] = backingAllocas[i];
       blockArg.replaceAllUsesWith(tensorFromAlloca);
     }
 
@@ -371,9 +524,8 @@ static void stripScfForTensorArgs(ModuleOp module) {
     for (auto [i, idx] : llvm::enumerate(tensorArgIndices)) {
       if (idx < yield.getResults().size()) {
         OpBuilder preYield(yield);
-        sde::SdeMuTensorToMemrefOp::create(preYield, loc,
-                                           yield.getResults()[idx],
-                                           backingAllocas[i]);
+        sde::SdeMuTensorToMemrefOp::create(
+            preYield, loc, yield.getResults()[idx], backingAllocas[i]);
       }
     }
 
@@ -383,10 +535,10 @@ static void stripScfForTensorArgs(ModuleOp module) {
     for (auto [i, idx] : llvm::enumerate(tensorArgIndices)) {
       if (idx >= forOp.getNumResults())
         continue;
-      auto tensorTy =
-          cast<RankedTensorType>(forOp.getResult(idx).getType());
+      auto tensorTy = cast<RankedTensorType>(forOp.getResult(idx).getType());
       Value tensorAfter = sde::SdeMuMemrefToTensorOp::create(
           afterBuilder, loc, tensorTy, backingAllocas[i]);
+      backingMemref[tensorAfter] = backingAllocas[i];
       forOp.getResult(idx).replaceAllUsesWith(tensorAfter);
     }
 
@@ -404,8 +556,8 @@ static void stripScfForTensorArgs(ModuleOp module) {
     body.getArgument(0).replaceAllUsesWith(newBody.getArgument(0));
     // Map kept iter_arg block args.
     for (auto [newIdx, oldIdx] : llvm::enumerate(keptIndices))
-      body.getArgument(1 + oldIdx).replaceAllUsesWith(
-          newBody.getArgument(1 + newIdx));
+      body.getArgument(1 + oldIdx)
+          .replaceAllUsesWith(newBody.getArgument(1 + newIdx));
 
     // Move ops from old body to new. Erase default yield first.
     if (!newBody.empty() && newBody.back().hasTrait<OpTrait::IsTerminator>())
@@ -431,11 +583,22 @@ static void stripScfForTensorArgs(ModuleOp module) {
 
 /// Strip tensor iter_args from cu_region ops (parallel/master only).
 /// Tensor iter_args that feed nested <single> cu_regions are preserved.
-static void stripCuRegionTensorArgs(ModuleOp module) {
+static void stripCuRegionTensorArgs(ModuleOp module,
+                                    DenseMap<Value, Value> &backingMemref) {
   SmallVector<sde::SdeCuRegionOp> cuRegions;
   module.walk([&](sde::SdeCuRegionOp op) {
-    if (op.getKind() == sde::SdeCuKind::single)
-      return; // Handled by ConvertToCodelet.
+    if (op.getKind() == sde::SdeCuKind::single) {
+      bool hasNonScalarTensorArg = false;
+      for (Value arg : op.getIterArgs()) {
+        auto tensorTy = dyn_cast<RankedTensorType>(arg.getType());
+        if (tensorTy && tensorTy.getRank() > 0) {
+          hasNonScalarTensorArg = true;
+          break;
+        }
+      }
+      if (!hasNonScalarTensorArg)
+        return; // Scalar token state is handled by ConvertToCodelet.
+    }
     for (Value arg : op.getIterArgs()) {
       if (isa<RankedTensorType>(arg.getType())) {
         cuRegions.push_back(op);
@@ -463,9 +626,12 @@ static void stripCuRegionTensorArgs(ModuleOp module) {
 
     // Find backing allocas for tensor init values.
     SmallVector<Value> backingAllocas;
-    for (unsigned idx : tensorArgIndices)
-      backingAllocas.push_back(
-          getOrCreateBacking(cuRegion.getIterArgs()[idx], outerBuilder));
+    for (unsigned idx : tensorArgIndices) {
+      Value backing = getOrCreateBacking(cuRegion.getIterArgs()[idx],
+                                         outerBuilder, backingMemref);
+      backingAllocas.push_back(backing);
+      backingMemref[body.getArgument(idx)] = backing;
+    }
 
     // Replace tensor block arg uses with mu_memref_to_tensor from alloca.
     for (auto [i, idx] : llvm::enumerate(tensorArgIndices)) {
@@ -475,6 +641,7 @@ static void stripCuRegionTensorArgs(ModuleOp module) {
       bodyStart.setInsertionPointToStart(&body);
       Value tensorFromAlloca = sde::SdeMuMemrefToTensorOp::create(
           bodyStart, loc, tensorTy, backingAllocas[i]);
+      backingMemref[tensorFromAlloca] = backingAllocas[i];
       blockArg.replaceAllUsesWith(tensorFromAlloca);
     }
 
@@ -483,9 +650,8 @@ static void stripCuRegionTensorArgs(ModuleOp module) {
     for (auto [i, idx] : llvm::enumerate(tensorArgIndices)) {
       if (idx < yield.getValues().size()) {
         OpBuilder preYield(yield);
-        sde::SdeMuTensorToMemrefOp::create(preYield, loc,
-                                           yield.getValues()[idx],
-                                           backingAllocas[i]);
+        sde::SdeMuTensorToMemrefOp::create(
+            preYield, loc, yield.getValues()[idx], backingAllocas[i]);
       }
     }
 
@@ -495,10 +661,10 @@ static void stripCuRegionTensorArgs(ModuleOp module) {
     for (auto [i, idx] : llvm::enumerate(tensorArgIndices)) {
       if (idx >= cuRegion.getNumResults())
         continue;
-      auto tensorTy =
-          cast<RankedTensorType>(cuRegion.getResult(idx).getType());
+      auto tensorTy = cast<RankedTensorType>(cuRegion.getResult(idx).getType());
       Value tensorAfter = sde::SdeMuMemrefToTensorOp::create(
           afterBuilder, loc, tensorTy, backingAllocas[i]);
+      backingMemref[tensorAfter] = backingAllocas[i];
       cuRegion.getResult(idx).replaceAllUsesWith(tensorAfter);
     }
 
@@ -548,7 +714,8 @@ static void stripCuRegionTensorArgs(ModuleOp module) {
 }
 
 /// Strip tensor accumulators from su_iterate ops.
-static void stripSuIterateTensorArgs(ModuleOp module) {
+static void stripSuIterateTensorArgs(ModuleOp module,
+                                     DenseMap<Value, Value> &backingMemref) {
   SmallVector<sde::SdeSuIterateOp> suIters;
   module.walk([&](sde::SdeSuIterateOp op) {
     for (Value acc : op.getReductionAccumulators()) {
@@ -580,9 +747,14 @@ static void stripSuIterateTensorArgs(ModuleOp module) {
 
     // Find backing allocas for tensor accumulator init values.
     SmallVector<Value> backingAllocas;
-    for (unsigned accIdx : tensorAccIndices)
-      backingAllocas.push_back(
-          getOrCreateBacking(allAccumulators[accIdx], outerBuilder));
+    for (unsigned accIdx : tensorAccIndices) {
+      Value backing = getOrCreateBacking(allAccumulators[accIdx], outerBuilder,
+                                         backingMemref);
+      backingAllocas.push_back(backing);
+      unsigned blockArgIdx = numIVs + accIdx;
+      if (blockArgIdx < body.getNumArguments())
+        backingMemref[body.getArgument(blockArgIdx)] = backing;
+    }
 
     // Replace tensor block arg uses with mu_memref_to_tensor from alloca.
     for (auto [i, accIdx] : llvm::enumerate(tensorAccIndices)) {
@@ -595,18 +767,17 @@ static void stripSuIterateTensorArgs(ModuleOp module) {
       bodyStart.setInsertionPointToStart(&body);
       Value tensorFromAlloca = sde::SdeMuMemrefToTensorOp::create(
           bodyStart, loc, tensorTy, backingAllocas[i]);
+      backingMemref[tensorFromAlloca] = backingAllocas[i];
       blockArg.replaceAllUsesWith(tensorFromAlloca);
     }
 
     // Before yield: store yielded tensors back to alloca.
-    if (auto yield =
-            dyn_cast_or_null<sde::SdeYieldOp>(body.getTerminator())) {
+    if (auto yield = dyn_cast_or_null<sde::SdeYieldOp>(body.getTerminator())) {
       for (auto [i, accIdx] : llvm::enumerate(tensorAccIndices)) {
         if (accIdx < yield.getValues().size()) {
           OpBuilder preYield(yield);
-          sde::SdeMuTensorToMemrefOp::create(preYield, loc,
-                                             yield.getValues()[accIdx],
-                                             backingAllocas[i]);
+          sde::SdeMuTensorToMemrefOp::create(
+              preYield, loc, yield.getValues()[accIdx], backingAllocas[i]);
         }
       }
     }
@@ -621,6 +792,7 @@ static void stripSuIterateTensorArgs(ModuleOp module) {
           cast<RankedTensorType>(suIter.getResult(accIdx).getType());
       Value tensorAfter = sde::SdeMuMemrefToTensorOp::create(
           afterBuilder, loc, tensorTy, backingAllocas[i]);
+      backingMemref[tensorAfter] = backingAllocas[i];
       suIter.getResult(accIdx).replaceAllUsesWith(tensorAfter);
     }
 
@@ -696,14 +868,58 @@ static void stripSuIterateTensorArgs(ModuleOp module) {
   }
 }
 
+/// After tensor iter_args are stripped, <single> regions contain explicit
+/// mu_memref_to_tensor anchors for their token-backed state. Revisit those
+/// bodies so tensor.extract/tensor.insert in nested cu_task bodies become
+/// concrete memref.load/memref.store side effects before TensorCleanup.
+static void lowerSingleRegionTensorOps(ModuleOp module,
+                                       DenseMap<Value, Value> &backingMemref) {
+  SmallVector<sde::SdeCuRegionOp> singleRegions;
+  module.walk([&](sde::SdeCuRegionOp cuRegion) {
+    if (cuRegion.getKind() == sde::SdeCuKind::single)
+      singleRegions.push_back(cuRegion);
+  });
+
+  for (sde::SdeCuRegionOp cuRegion : singleRegions) {
+    if (cuRegion.getBody().empty())
+      continue;
+
+    Block &body = cuRegion.getBody().front();
+    OpBuilder builder(cuRegion);
+    bool hasNonScalarTensorState = false;
+    for (auto [i, arg] : llvm::enumerate(cuRegion.getIterArgs())) {
+      auto tensorTy = dyn_cast<RankedTensorType>(arg.getType());
+      if (!tensorTy || tensorTy.getRank() == 0)
+        continue;
+      if (i >= body.getNumArguments())
+        continue;
+      Value backing = getOrCreateBacking(arg, builder, backingMemref);
+      backingMemref[body.getArgument(i)] = backing;
+      hasNonScalarTensorState = true;
+    }
+
+    body.walk([&](sde::SdeMuMemrefToTensorOp op) {
+      auto tensorTy = dyn_cast<RankedTensorType>(op.getTensor().getType());
+      if (!tensorTy || tensorTy.getRank() == 0)
+        return;
+      backingMemref[op.getTensor()] = op.getMemref();
+      hasNonScalarTensorState = true;
+    });
+
+    if (hasNonScalarTensorState)
+      walkBlock(body, backingMemref);
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // Phase C: Lower authoritative carriers to scf.for loops
 //===----------------------------------------------------------------------===//
 
-/// Trace a tensor value back to a memref. Walks through bufferization.to_tensor,
-/// mu_memref_to_tensor, tensor.cast, tensor.extract_slice, and tensor.empty
-/// chains. For extract_slice, creates a memref.subview. For tensor.empty,
-/// creates a memref.alloca as backing storage.
+/// Trace a tensor value back to a memref. Walks through
+/// bufferization.to_tensor, mu_memref_to_tensor, tensor.cast,
+/// tensor.extract_slice, and tensor.empty chains. For extract_slice, creates a
+/// memref.subview. For tensor.empty, creates a memref.alloca as backing
+/// storage.
 static Value traceToMemref(Value tensor, OpBuilder &builder) {
   if (auto toTensor = tensor.getDefiningOp<bufferization::ToTensorOp>())
     return toTensor.getBuffer();
@@ -742,13 +958,11 @@ static bool lowerCarrierToLoops(linalg::GenericOp carrier) {
   // Only handle tensor-backed carriers.
   if (carrier.hasPureBufferSemantics())
     return false;
-  if (!llvm::all_of(carrier.getDpsInputs(), [](Value v) {
-        return isa<TensorType>(v.getType());
-      }))
+  if (!llvm::all_of(carrier.getDpsInputs(),
+                    [](Value v) { return isa<TensorType>(v.getType()); }))
     return false;
-  if (!llvm::all_of(carrier.getDpsInits(), [](Value v) {
-        return isa<TensorType>(v.getType());
-      }))
+  if (!llvm::all_of(carrier.getDpsInits(),
+                    [](Value v) { return isa<TensorType>(v.getType()); }))
     return false;
 
   OpBuilder builder(carrier);
@@ -782,8 +996,7 @@ static bool lowerCarrierToLoops(linalg::GenericOp carrier) {
   auto memrefGeneric = linalg::GenericOp::create(
       builder, loc, /*resultTypes=*/TypeRange{}, memrefInputs, memrefOutputs,
       indexingMaps, iterTypes,
-      [&](OpBuilder &nestedBuilder, Location nestedLoc,
-          ValueRange blockArgs) {
+      [&](OpBuilder &nestedBuilder, Location nestedLoc, ValueRange blockArgs) {
         // Clone the carrier's body, mapping old block args to new ones.
         IRMapping mapper;
         Block &carrierBody = carrier.getRegion().front();
@@ -814,7 +1027,8 @@ static bool lowerCarrierToLoops(linalg::GenericOp carrier) {
 
   // Erase tensor.insert_slice ops that use the carrier's results.
   for (Value carrierResult : carrier.getResults()) {
-    for (Operation *user : llvm::make_early_inc_range(carrierResult.getUsers())) {
+    for (Operation *user :
+         llvm::make_early_inc_range(carrierResult.getUsers())) {
       if (isa<tensor::InsertSliceOp>(user))
         user->erase();
     }
@@ -917,20 +1131,22 @@ struct LowerToMemrefPass
     // Phase A: Walk each function, rewrite tensor ops to memref ops,
     //          build backing memref map.
     unsigned totalLowered = 0;
+    DenseMap<Value, Value> backingMemref;
     module.walk([&](func::FuncOp func) {
       if (func.getBody().empty())
         return;
-      DenseMap<Value, Value> backingMemref;
+      unsigned before = backingMemref.size();
       walkBlock(func.getBody().front(), backingMemref);
-      totalLowered += backingMemref.size();
+      totalLowered += backingMemref.size() - before;
     });
 
     // Phase B: Strip tensor iter_args.
     // Order: cu_regions first (innermost via post-order walk), then
     // su_iterates, then scf.for (outermost).
-    stripCuRegionTensorArgs(module);
-    stripSuIterateTensorArgs(module);
-    stripScfForTensorArgs(module);
+    stripCuRegionTensorArgs(module, backingMemref);
+    stripSuIterateTensorArgs(module, backingMemref);
+    stripScfForTensorArgs(module, backingMemref);
+    lowerSingleRegionTensorOps(module, backingMemref);
 
     // Phase C: Lower authoritative carriers to scf.for loops.
     unsigned carriersLowered = lowerAuthoritativeCarriers(module);
@@ -938,10 +1154,9 @@ struct LowerToMemrefPass
     // Phase D: Erase remaining dead carriers.
     eraseDeadCarriers(module);
 
-    ARTS_INFO("LowerToMemref: lowered " << totalLowered
-                                        << " tensor value(s) to memref, "
-                                        << carriersLowered
-                                        << " carrier(s) to loops");
+    ARTS_INFO("LowerToMemref: lowered "
+              << totalLowered << " tensor value(s) to memref, "
+              << carriersLowered << " carrier(s) to loops");
   }
 };
 

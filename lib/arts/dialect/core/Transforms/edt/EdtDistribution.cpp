@@ -27,7 +27,7 @@
 #include "arts/Dialect.h"
 #include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
-#include "arts/dialect/core/Analysis/heuristics/StructuredKernelPlanAnalysis.h"
+#include "arts/dialect/core/Analysis/KernelFamily.h"
 #include "arts/passes/Passes.h"
 #include "arts/passes/Passes.h.inc"
 #include "arts/utils/OperationAttributes.h"

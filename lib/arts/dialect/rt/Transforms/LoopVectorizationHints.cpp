@@ -659,7 +659,8 @@ createOuterLoopHints(MLIRContext *ctx, bool mustProgress, unsigned unrollCount,
 }
 
 struct LoopVectorizationHintsPass
-    : public arts::impl::LoopVectorizationHintsBase<LoopVectorizationHintsPass> {
+    : public arts::impl::LoopVectorizationHintsBase<
+          LoopVectorizationHintsPass> {
   unsigned vectorWidth = 0;
   unsigned interleaveCount = 4;
   bool enableScalable = false;
@@ -687,7 +688,8 @@ struct LoopVectorizationHintsPass
 
       // SDE is the single source of truth for loop optimization hints.
       // Read SDE-stamped attrs from the EDT function; these were forwarded
-      // from StructuredSummaries → ConvertSdeToArts → ForLowering → EdtLowering.
+      // from StructuredSummaries → ConvertSdeToArts → ForLowering →
+      // EdtLowering.
       unsigned sdeVecWidth = 0;
       unsigned sdeUnrollFactor = 0;
       unsigned sdeInterleaveCount = 0;
@@ -732,7 +734,8 @@ struct LoopVectorizationHintsPass
         if (sdeVecWidth) {
           width = sdeVecWidth;
           unrollCount = sdeUnrollFactor ? sdeUnrollFactor : 2;
-          interleave = sdeInterleaveCount ? sdeInterleaveCount : interleaveCount;
+          interleave =
+              sdeInterleaveCount ? sdeInterleaveCount : interleaveCount;
         } else {
           auto typeInfo = analyzeLoadTypes(loopBlocks);
           width = vectorWidth ? vectorWidth : typeInfo.vectorWidth;

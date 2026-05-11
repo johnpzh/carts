@@ -163,8 +163,7 @@ static std::optional<OmpDependSlice> extractDependSlice(Value depVar) {
     slice.source = ompDepOp.getSource();
     slice.offsets.assign(ompDepOp.getIndices().begin(),
                          ompDepOp.getIndices().end());
-    slice.sizes.assign(ompDepOp.getSizes().begin(),
-                       ompDepOp.getSizes().end());
+    slice.sizes.assign(ompDepOp.getSizes().begin(), ompDepOp.getSizes().end());
     return slice;
   }
 
@@ -342,9 +341,9 @@ struct WsloopToSdePattern : public OpRewritePattern<omp::WsloopOp> {
     }
 
     auto suIter = sde::SdeSuIterateOp::create(
-        rewriter, loc, /*resultTypes=*/TypeRange{},
-        ValueRange{lbs}, ValueRange{ubs}, ValueRange{steps},
-        schedAttr, chunkSize, nowaitAttr(ctx, nw), ValueRange{redAccs},
+        rewriter, loc, /*resultTypes=*/TypeRange{}, ValueRange{lbs},
+        ValueRange{ubs}, ValueRange{steps}, schedAttr, chunkSize,
+        nowaitAttr(ctx, nw), ValueRange{redAccs},
         reductionKinds.empty() ? nullptr
                                : rewriter.getArrayAttr(reductionKinds),
         /*reductionStrategy=*/nullptr, /*structuredClassification=*/nullptr,
@@ -372,8 +371,8 @@ struct WsloopToSdePattern : public OpRewritePattern<omp::WsloopOp> {
       Value oldArg = src.getArgument(d);
       // If the source IV was non-index, cast back so cloned body ops match
       if (!oldArg.getType().isIndex())
-        newArg = arith::IndexCastOp::create(rewriter, loc, oldArg.getType(),
-                                                      newArg);
+        newArg =
+            arith::IndexCastOp::create(rewriter, loc, oldArg.getType(), newArg);
       mapper.map(oldArg, newArg);
     }
     mapWsloopCapturedArgs(op, mapper);
@@ -477,8 +476,8 @@ struct TaskloopToSdePattern : public OpRewritePattern<omp::TaskloopOp> {
     Value step = ensureIndex(rewriter, loc, loopNest.getLoopSteps()[0]);
 
     auto suIter = sde::SdeSuIterateOp::create(
-        rewriter, loc, /*resultTypes=*/TypeRange{},
-        ValueRange{lb}, ValueRange{ub}, ValueRange{step},
+        rewriter, loc, /*resultTypes=*/TypeRange{}, ValueRange{lb},
+        ValueRange{ub}, ValueRange{step},
         /*schedule=*/nullptr, /*chunkSize=*/Value(),
         /*nowait=*/nullptr,
         /*reductionAccumulators=*/ValueRange{},
@@ -503,8 +502,8 @@ struct TaskloopToSdePattern : public OpRewritePattern<omp::TaskloopOp> {
       Value newArg = dst.getArgument(0);
       Value oldArg = src.getArgument(0);
       if (!oldArg.getType().isIndex())
-        newArg = arith::IndexCastOp::create(rewriter, loc, oldArg.getType(),
-                                                      newArg);
+        newArg =
+            arith::IndexCastOp::create(rewriter, loc, oldArg.getType(), newArg);
       mapper.map(oldArg, newArg);
     }
     for (Operation &srcOp : src.without_terminator())
@@ -541,8 +540,8 @@ struct SCFParallelToSdePattern : public OpRewritePattern<scf::ParallelOp> {
     Value st = ensureIndex(rewriter, loc, op.getStep().front());
 
     auto suIter = sde::SdeSuIterateOp::create(
-        rewriter, loc, /*resultTypes=*/TypeRange{},
-        ValueRange{lb}, ValueRange{ub}, ValueRange{st},
+        rewriter, loc, /*resultTypes=*/TypeRange{}, ValueRange{lb},
+        ValueRange{ub}, ValueRange{st},
         /*schedule=*/nullptr, /*chunkSize=*/Value(),
         /*nowait=*/nullptr,
         /*reductionAccumulators=*/ValueRange{},
@@ -736,7 +735,8 @@ struct ConvertOpenMPToSdePass
     // Erase omp.declare_reduction symbols — they were consumed by
     // WsloopToSdePattern to infer SDE reduction kinds and are no longer needed.
     SmallVector<omp::DeclareReductionOp> declReductions;
-    module.walk([&](omp::DeclareReductionOp op) { declReductions.push_back(op); });
+    module.walk(
+        [&](omp::DeclareReductionOp op) { declReductions.push_back(op); });
     for (auto op : declReductions)
       op.erase();
 

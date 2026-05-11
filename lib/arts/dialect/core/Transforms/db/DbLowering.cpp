@@ -20,8 +20,8 @@
 
 #include "arts/Dialect.h"
 #include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
-#define GEN_PASS_DEF_DBLOWERING
 #include "arts/dialect/core/Transforms/db/DbLayoutStrategy.h"
+#define GEN_PASS_DEF_DBLOWERING
 #include "arts/passes/Passes.h"
 #include "arts/passes/Passes.h.inc"
 #include "arts/utils/DbUtils.h"
@@ -539,7 +539,7 @@ void DbLoweringPass::updateAcquireUsers(DbAcquireOp acquireOp, Value newGuid,
 /// Helper function to get LLVM pointer from a base value and indices
 Value DbLoweringPass::getLLVMPtr(Value base, ValueRange opIndices,
                                  Location loc) {
-  LayoutInfo layout = buildLayoutInfo(base);
+  arts::LayoutInfo layout = buildLayoutInfo(base);
   SmallVector<Value> indices(opIndices.begin(), opIndices.end());
   return computeDbElementPointer(*AC, loc, base, indices, layout);
 }

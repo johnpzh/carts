@@ -14,7 +14,6 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_HEURISTICS_DBHEURISTICS_H
 #define ARTS_DIALECT_CORE_ANALYSIS_HEURISTICS_DBHEURISTICS_H
 
-#include "arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.h"
 #include "arts/utils/machine/RuntimeConfig.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
@@ -39,21 +38,6 @@ struct HeuristicDecision {
   llvm::StringMap<int64_t> costModelInputs;
 };
 
-/// Pass-facing per-acquire policy input assembled by DbPartitioning.
-/// This is a normalized snapshot for H1.7-style acquire decisions, not a raw
-/// graph fact object or a second contract authority.
-struct AcquirePolicyInput {
-  DbAcquireOp acquire;
-  ArtsDepPattern depPattern = ArtsDepPattern::unknown;
-  bool hasPartitionDims = false;
-  bool hasOwnerDims = false;
-  bool hasBlockHints = false;
-  bool hasExplicitStencilContract = false;
-  bool hasIndirectAccess = false;
-  bool needsFullRange = false;
-  bool preservesDistributedContract = false;
-};
-
 class DbHeuristics {
 public:
   explicit DbHeuristics(const mlir::arts::RuntimeConfig &machine);
@@ -72,10 +56,6 @@ public:
   int64_t getMaxOuterDBs() const { return maxOuterDBsOverride; }
   int64_t getMaxDepsPerEDT() const { return maxDepsPerEDTOverride; }
   int64_t getMinInnerBytes() const { return minInnerBytesOverride; }
-
-  PartitioningDecision choosePartitioning(const PartitioningContext &ctx);
-  SmallVector<AcquireDecision>
-  chooseAcquirePolicies(ArrayRef<AcquirePolicyInput> acquireInputs);
 
   void recordDecision(llvm::StringRef heuristic, bool applied,
                       llvm::StringRef rationale, Operation *op,

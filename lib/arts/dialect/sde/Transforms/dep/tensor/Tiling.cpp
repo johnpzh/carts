@@ -105,7 +105,8 @@ static Value buildTileIterationValue(OpBuilder &builder, Location loc,
   return arith::MinUIOp::create(builder, loc, preferredTile, clampedTripCount);
 }
 
-static SmallVector<Value> buildPerDimTripCounts(OpBuilder &builder, Location loc,
+static SmallVector<Value> buildPerDimTripCounts(OpBuilder &builder,
+                                                Location loc,
                                                 sde::SdeSuIterateOp op) {
   SmallVector<Value> tripCounts;
   unsigned numDims = op.getLowerBounds().size();
@@ -150,9 +151,9 @@ buildPerDimTileIterations(OpBuilder &builder, Location loc,
     return {};
 
   unsigned numDims = tripCounts.size();
-  int workersPerDim = std::max(
-      1, static_cast<int>(std::ceil(
-             std::pow(costModel.getWorkerCount(), 1.0 / numDims))));
+  int workersPerDim =
+      std::max(1, static_cast<int>(std::ceil(
+                      std::pow(costModel.getWorkerCount(), 1.0 / numDims))));
   int64_t minIter = costModel.getMinIterationsPerWorker();
 
   SmallVector<Value> tileIterations;
@@ -167,8 +168,7 @@ buildPerDimTileIterations(OpBuilder &builder, Location loc,
         arith::CeilDivUIOp::create(builder, loc, clampedTrip, workersVal);
     Value preferred =
         arith::MaxUIOp::create(builder, loc, balanced, minIterVal);
-    Value tile =
-        arith::MinUIOp::create(builder, loc, preferred, clampedTrip);
+    Value tile = arith::MinUIOp::create(builder, loc, preferred, clampedTrip);
     tileIterations.push_back(tile);
   }
   return tileIterations;
@@ -349,9 +349,8 @@ static bool isReductionTensorCandidate(Block &body,
 /// Return a per-SDE-dim mask: true = parallel (should tile), false = reduction
 /// (keep original step). The su_iterate's first dim maps to the first carrier
 /// iterator type, etc.
-static SmallVector<bool>
-getParallelDimMask(sde::SdeSuIterateOp op,
-                   linalg::GenericOp tensorGeneric) {
+static SmallVector<bool> getParallelDimMask(sde::SdeSuIterateOp op,
+                                            linalg::GenericOp tensorGeneric) {
   unsigned numDims = op.getLowerBounds().size();
   SmallVector<bool> mask(numDims, true); // default: tile everything
   if (!tensorGeneric)
@@ -432,12 +431,13 @@ static bool isCarrierAuthoritative(Block &body) {
   return hasCarrier && !hasScalar;
 }
 
-/// Check carrier-authoritative eligibility purely from the carrier's properties.
-/// In authoritative mode, the carrier IS the computation — no scalar body to
-/// inspect. We check iterator types, output projections, and disjointness
-/// directly from the linalg.generic.
-static bool isCarrierAuthoritativeCandidate(linalg::GenericOp carrier,
-                                            sde::SdeStructuredClassification cls) {
+/// Check carrier-authoritative eligibility purely from the carrier's
+/// properties. In authoritative mode, the carrier IS the computation — no
+/// scalar body to inspect. We check iterator types, output projections, and
+/// disjointness directly from the linalg.generic.
+static bool
+isCarrierAuthoritativeCandidate(linalg::GenericOp carrier,
+                                sde::SdeStructuredClassification cls) {
   if (carrier.getNumDpsInits() == 0 || carrier.getNumLoops() == 0)
     return false;
 
@@ -450,8 +450,8 @@ static bool isCarrierAuthoritativeCandidate(linalg::GenericOp carrier,
         }))
       return false;
     for (unsigned i = 0; i < carrier.getNumDpsInits(); ++i) {
-      AffineMap map = carrier.getMatchingIndexingMap(
-          carrier.getDpsInitOperand(i));
+      AffineMap map =
+          carrier.getMatchingIndexingMap(carrier.getDpsInitOperand(i));
       if (!map.isProjectedPermutation())
         return false;
     }
@@ -463,8 +463,10 @@ static bool isCarrierAuthoritativeCandidate(linalg::GenericOp carrier,
   case sde::SdeStructuredClassification::reduction: {
     bool hasParallel = false, hasReduction = false;
     for (auto t : iterTypes) {
-      if (t == utils::IteratorType::parallel) hasParallel = true;
-      if (t == utils::IteratorType::reduction) hasReduction = true;
+      if (t == utils::IteratorType::parallel)
+        hasParallel = true;
+      if (t == utils::IteratorType::reduction)
+        hasReduction = true;
     }
     return hasParallel && hasReduction;
   }
@@ -522,10 +524,9 @@ static bool isTilingCandidate(sde::SdeSuIterateOp op, Block &body,
 /// map: dimensions that reference a tiled parallel dim get sliced at
 /// [tileBase][tileSize], while untiled (reduction/full-range) dimensions
 /// keep their full range.
-static bool tileCarrierAuthoritative(linalg::GenericOp carrier,
-                                     Block &srcBody, OpBuilder &builder,
-                                     Value tileBase, Value tileSize,
-                                     unsigned tileDim,
+static bool tileCarrierAuthoritative(linalg::GenericOp carrier, Block &srcBody,
+                                     OpBuilder &builder, Value tileBase,
+                                     Value tileSize, unsigned tileDim,
                                      IRMapping &mapper) {
   Location loc = carrier.getLoc();
 
@@ -632,8 +633,7 @@ static bool tileCarrierAuthoritative(linalg::GenericOp carrier,
           bodyMapper.map(oldArg, newArg);
         for (Operation &op : carrierBody.without_terminator())
           nestedBuilder.clone(op, bodyMapper);
-        auto carrierYield =
-            cast<linalg::YieldOp>(carrierBody.getTerminator());
+        auto carrierYield = cast<linalg::YieldOp>(carrierBody.getTerminator());
         SmallVector<Value> yieldValues;
         for (Value v : carrierYield.getValues())
           yieldValues.push_back(bodyMapper.lookupOrDefault(v));
@@ -679,8 +679,7 @@ static void cloneBodyIntoTileLoop(Block &srcBody, IRMapping &mapper,
   }
 }
 
-struct TilingPass
-    : public arts::impl::TilingBase<TilingPass> {
+struct TilingPass : public arts::impl::TilingBase<TilingPass> {
   explicit TilingPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 
@@ -779,9 +778,8 @@ struct TilingPass
         Value cacheVal = getConstantIndex(rewriter, loc,
                                           std::max<int64_t>(1, cacheLineTile));
         for (unsigned d = 0; d < numDims; ++d) {
-          perDimTileIter[d] =
-              arith::MinUIOp::create(rewriter, loc, perDimTileIter[d],
-                                     cacheVal);
+          perDimTileIter[d] = arith::MinUIOp::create(
+              rewriter, loc, perDimTileIter[d], cacheVal);
         }
       }
 
@@ -810,10 +808,9 @@ struct TilingPass
         continue;
 
       auto newOp = sde::SdeSuIterateOp::create(
-          rewriter, loc, /*resultTypes=*/TypeRange{},
-          op.getLowerBounds(), op.getUpperBounds(),
-          ValueRange{tiledSteps}, op.getScheduleAttr(), op.getChunkSize(),
-          op.getNowaitAttr(), op.getReductionAccumulators(),
+          rewriter, loc, /*resultTypes=*/TypeRange{}, op.getLowerBounds(),
+          op.getUpperBounds(), ValueRange{tiledSteps}, op.getScheduleAttr(),
+          op.getChunkSize(), op.getNowaitAttr(), op.getReductionAccumulators(),
           op.getReductionKindsAttr(), op.getReductionStrategyAttr(),
           op.getStructuredClassificationAttr(), op.getAccessMinOffsetsAttr(),
           op.getAccessMaxOffsetsAttr(), op.getOwnerDimsAttr(),
@@ -837,10 +834,10 @@ struct TilingPass
         // For 1-D: tile dim 0 (the su_iterate dim).
         // Compute dynamic tile size: min(tileStep, ub - base).
         Value tileBase = newBody.getArgument(0);
-        Value rem = arith::SubIOp::create(rewriter, loc,
-                                           op.getUpperBounds()[0], tileBase);
-        Value tileSizeVal = arith::MinUIOp::create(rewriter, loc,
-                                                    perDimTileIter[0], rem);
+        Value rem = arith::SubIOp::create(rewriter, loc, op.getUpperBounds()[0],
+                                          tileBase);
+        Value tileSizeVal =
+            arith::MinUIOp::create(rewriter, loc, perDimTileIter[0], rem);
         // Map old body's block args → new body's block args so that any
         // ops cloned from the old body that reference iteration variables
         // will point to the new body's arguments (not the old, soon-erased
@@ -865,10 +862,10 @@ struct TilingPass
           Value tileLimit =
               arith::AddIOp::create(rewriter, loc, tileBase, tiledSteps[d]);
           Value tileUpper = arith::MinUIOp::create(rewriter, loc, tileLimit,
-                                                    op.getUpperBounds()[d]);
+                                                   op.getUpperBounds()[d]);
           Value originalStep = op.getSteps()[d];
-          auto tileLoop = scf::ForOp::create(rewriter, loc, tileBase,
-                                              tileUpper, originalStep);
+          auto tileLoop = scf::ForOp::create(rewriter, loc, tileBase, tileUpper,
+                                             originalStep);
           mapper.map(srcBody.getArgument(d), tileLoop.getInductionVar());
           rewriter.setInsertionPointToStart(tileLoop.getBody());
         }
@@ -884,7 +881,6 @@ struct TilingPass
 
       rewriter.eraseOp(op);
     }
-
   }
 
 private:
@@ -895,8 +891,7 @@ private:
 
 namespace mlir::arts::sde {
 
-std::unique_ptr<Pass>
-createTilingPass(sde::SDECostModel *costModel) {
+std::unique_ptr<Pass> createTilingPass(sde::SDECostModel *costModel) {
   return std::make_unique<TilingPass>(costModel);
 }
 

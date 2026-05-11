@@ -151,7 +151,8 @@ static bool shouldInterchangeMatmul(linalg::GenericOp carrier,
 /// should be innermost for cache efficiency.
 ///
 /// Returns a cost per dim where lower cost = should be more inner.
-/// Cost 0 = dim appears as last index in the most maps (best stride-1 candidate).
+/// Cost 0 = dim appears as last index in the most maps (best stride-1
+/// candidate).
 static SmallVector<int64_t> computeStrideCostPerDim(linalg::GenericOp carrier) {
   unsigned numDims = carrier.getNumLoops();
   SmallVector<int64_t> stride1Count(numDims, 0);
@@ -266,9 +267,9 @@ static bool collectInnerForChain(Block &body,
 
 /// Find the two innermost scf.for loops inside the su_iterate body.
 /// The su_iterate body can contain carrier ops + one scf.for (the j loop),
-/// and j's body can contain an optional init section + one scf.for (the k loop).
-static bool findInnerLoopPair(Block &body, scf::ForOp &jLoop,
-                              scf::ForOp &kLoop,
+/// and j's body can contain an optional init section + one scf.for (the k
+/// loop).
+static bool findInnerLoopPair(Block &body, scf::ForOp &jLoop, scf::ForOp &kLoop,
                               SmallVectorImpl<Operation *> &initOps) {
   jLoop = nullptr;
   kLoop = nullptr;
@@ -307,9 +308,10 @@ static bool findInnerLoopPair(Block &body, scf::ForOp &jLoop,
 
 /// Collect prefix ops from initOps that are used by kLoop's body.
 /// These must be rematerialized into the rebuilt loop nest.
-static bool collectRematerializablePrefixOps(ArrayRef<Operation *> initOps,
-                                             scf::ForOp kLoop,
-                                             SmallVectorImpl<Operation *> &out) {
+static bool
+collectRematerializablePrefixOps(ArrayRef<Operation *> initOps,
+                                 scf::ForOp kLoop,
+                                 SmallVectorImpl<Operation *> &out) {
   DenseSet<Operation *> prefixSet(initOps.begin(), initOps.end());
   DenseSet<Operation *> needed;
   bool supported = true;
@@ -358,7 +360,7 @@ static bool collectRematerializablePrefixOps(ArrayRef<Operation *> initOps,
 ///     for k: for j: { body }     (interchanged)
 ///   }
 static bool interchangeLoops(scf::ForOp jLoop, scf::ForOp kLoop,
-                              ArrayRef<Operation *> initOps) {
+                             ArrayRef<Operation *> initOps) {
   if (kLoop->getParentOp() != jLoop.getOperation()) {
     ARTS_DEBUG("LoopInterchange: k loop is not directly inside j loop");
     return false;
@@ -401,8 +403,7 @@ static bool interchangeLoops(scf::ForOp jLoop, scf::ForOp kLoop,
 
   scf::ForOp::create(
       builder, jLoop.getLoc(), lb2, ub2, step2, ValueRange{},
-      [&](OpBuilder &outerBuilder, Location loc, Value newOuterIV,
-          ValueRange) {
+      [&](OpBuilder &outerBuilder, Location loc, Value newOuterIV, ValueRange) {
         scf::ForOp::create(
             outerBuilder, loc, lb1, ub1, step1, ValueRange{},
             [&](OpBuilder &innerBuilder, Location innerLoc, Value newInnerIV,
@@ -593,7 +594,7 @@ struct LoopInterchangePass
     });
 
     ARTS_DEBUG("LoopInterchangePass: interchanged " << interchangeCount
-                                                       << " loop nests");
+                                                    << " loop nests");
   }
 };
 

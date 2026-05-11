@@ -9,9 +9,9 @@
 #include "arts/Dialect.h"
 #include "arts/utils/DbUtils.h"
 #include "arts/utils/Debug.h"
+#include "arts/utils/LocationMetadata.h"
 #include "arts/utils/OperationAttributes.h"
 #include "arts/utils/ValueAnalysis.h"
-#include "arts/utils/LocationMetadata.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
 ARTS_DEBUG_SETUP(db_heuristics)
@@ -112,87 +112,6 @@ void DbHeuristics::recordDecision(llvm::StringRef heuristic, bool applied,
 
 llvm::ArrayRef<HeuristicDecision> DbHeuristics::getDecisions() const {
   return decisions;
-}
-
-PartitioningDecision
-DbHeuristics::choosePartitioning(const PartitioningContext &ctx) {
-  auto decision = evaluatePartitioningHeuristics(ctx, &machine);
-  if (ctx.preferBlockND && ctx.preferredOuterRank > 0 && !decision.isCoarse()) {
-    std::string rationale =
-        "H1.B0: owner-compute tiling keeps N-D block partitioning";
-    recordDecision("H1.B0", true, rationale, nullptr, {});
-    return PartitioningDecision::blockND(ctx, ctx.preferredOuterRank,
-                                         rationale);
-  }
-  std::string heuristicId = extractHeuristicId(decision.rationale);
-  recordDecision(heuristicId, true, decision.rationale, nullptr, {});
-  return decision;
-}
-
-SmallVector<AcquireDecision> DbHeuristics::chooseAcquirePolicies(
-    ArrayRef<AcquirePolicyInput> acquireInputs) {
-  SmallVector<AcquireDecision> result;
-  result.reserve(acquireInputs.size());
-
-  for (size_t i = 0; i < acquireInputs.size(); ++i) {
-    const AcquirePolicyInput &input = acquireInputs[i];
-
-    AcquireDecision decision;
-    if (!input.acquire) {
-      result.push_back(decision);
-      continue;
-    }
-
-    bool preserveDistributionContract =
-        input.hasPartitionDims && input.preservesDistributedContract;
-
-    bool needsFullRange = input.needsFullRange;
-
-    /// A known owner-compute contract can keep the acquire local even if the
-    /// graph-side legality probe conservatively marked it full-range.
-    if (needsFullRange && input.hasOwnerDims && !input.hasIndirectAccess) {
-      ARTS_DEBUG("  chooseAcquirePolicies["
-                 << i
-                 << "]: contract ownerDims override full-range "
-                    "(owner-compute locality known)");
-      needsFullRange = false;
-    }
-
-    /// Explicit stencil contracts with block hints can rely on halo-aware
-    /// block access instead of widening the acquire to full range.
-    if (needsFullRange && input.hasExplicitStencilContract &&
-        input.hasBlockHints && !input.hasIndirectAccess) {
-      ARTS_DEBUG("  chooseAcquirePolicies["
-                 << i
-                 << "]: stencil contract with block hints overrides "
-                    "full-range");
-      needsFullRange = false;
-    }
-
-    if (needsFullRange && !preserveDistributionContract) {
-      decision.needsFullRange = true;
-      decision.canContributeBlockSize = false;
-      DbAcquireOp acquire = input.acquire;
-
-      if (input.hasIndirectAccess) {
-        decision.rationale = "indirect access pattern";
-      } else if (input.depPattern != ArtsDepPattern::unknown) {
-        decision.rationale =
-            "partition offset not in access pattern (depPattern=" +
-            std::string(stringifyArtsDepPattern(input.depPattern)) + ")";
-      } else {
-        decision.rationale = "partition offset not in access pattern";
-      }
-
-      recordDecision("H1.7-AcquireFullRange", true,
-                     "acquire needs full range: " + decision.rationale,
-                     acquire.getOperation(), {});
-    }
-
-    result.push_back(decision);
-  }
-
-  return result;
 }
 
 void DbHeuristics::exportDecisionsToJson(llvm::json::OStream &J) const {

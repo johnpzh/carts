@@ -37,7 +37,9 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Interfaces/ViewLikeInterface.h"
 #include "mlir/Pass/Pass.h"
+#include "polygeist/Ops.h"
 #include "llvm/ADT/DenseSet.h"
 #include <algorithm>
 
@@ -79,6 +81,48 @@ struct DeadCodeEliminationPass
       if (isContractUse(user))
         contracts.push_back(user);
     }
+  }
+
+  static bool isForwardingMemrefAliasOp(Operation *op, Value source) {
+    if (auto viewLike = dyn_cast<ViewLikeOpInterface>(op))
+      return viewLike.getViewSource() == source && op->getNumResults() == 1;
+
+    if (auto cast = dyn_cast<memref::CastOp>(op))
+      return cast.getSource() == source && op->getNumResults() == 1;
+
+    if (auto unrealized = dyn_cast<UnrealizedConversionCastOp>(op))
+      return unrealized.getInputs().size() == 1 &&
+             unrealized.getInputs().front() == source &&
+             unrealized.getOutputs().size() == 1;
+
+    if (auto subindex = dyn_cast<polygeist::SubIndexOp>(op))
+      return subindex.getSource() == source && op->getNumResults() == 1;
+
+    return false;
+  }
+
+  static bool hasLoadThroughAlias(Value value, DenseSet<Value> &visited) {
+    if (!visited.insert(value).second)
+      return false;
+
+    for (Operation *user : value.getUsers()) {
+      if (auto load = dyn_cast<memref::LoadOp>(user)) {
+        if (load.getMemref() == value)
+          return true;
+      } else if (auto load = dyn_cast<affine::AffineLoadOp>(user)) {
+        if (load.getMemref() == value)
+          return true;
+      } else if (isa<DbControlOp>(user)) {
+        return true;
+      } else if (isForwardingMemrefAliasOp(user, value)) {
+        if (hasLoadThroughAlias(user->getResult(0), visited))
+          return true;
+      } else if (!isa<memref::StoreOp, affine::AffineStoreOp>(user)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   void runOnOperation() override {
@@ -152,10 +196,11 @@ struct DeadCodeEliminationPass
       bool hasLoads = false;
       SmallVector<memref::StoreOp> stores;
 
+      DenseSet<Value> visited;
+      hasLoads = hasLoadThroughAlias(alloca.getResult(), visited);
+
       for (auto *user : alloca->getUsers()) {
-        if (isa<memref::LoadOp>(user)) {
-          hasLoads = true;
-        } else if (auto store = dyn_cast<memref::StoreOp>(user)) {
+        if (auto store = dyn_cast<memref::StoreOp>(user)) {
           /// Only consider stores TO this alloca (not stores of alloca value)
           if (store.getMemref() == alloca.getResult())
             stores.push_back(store);

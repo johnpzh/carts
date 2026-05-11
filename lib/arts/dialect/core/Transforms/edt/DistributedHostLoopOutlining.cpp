@@ -11,7 +11,6 @@
 #include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/heuristics/DistributionHeuristics.h"
-#include "arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.h"
 #include "arts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_DISTRIBUTEDHOSTLOOPOUTLINING
 #include "arts/passes/Passes.h"

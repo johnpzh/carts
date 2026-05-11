@@ -395,19 +395,21 @@ def SdeCuCodeletOp
     : ArtsSde_Op<"cu_codelet", [
       IsolatedFromAbove,
       SingleBlock,
-      RecursiveMemoryEffects
+      RecursiveMemoryEffects,
+      AttrSizedOperandSegments
     ]> {
-  let summary = "Dataflow codelet: all I/O through tokens + yield, no captures.";
+  let summary = "Dataflow codelet with tensor tokens and scalar captures.";
   let description = [{
     A compute unit whose only communication with the enclosing scope is
-    through `sde.mu_token` operands and yielded tensor results. The name
-    follows OCR's "codelet": a purely asynchronous, pure-dataflow unit of
-    work whose inputs and outputs are entirely explicit.
+    through `sde.mu_token` operands, scalar capture operands, and yielded
+    tensor results. The name follows OCR's "codelet": a purely asynchronous,
+    pure-dataflow unit of work whose inputs and outputs are entirely explicit.
 
-    Operand shape: every operand is a `!sde.token<tensor<...>>`. The body's
-    block arguments are typed as the token's `slice_type`; the op implicitly
-    unpacks tokens at block entry so the body sees tensor values of the
-    addressed region.
+    Operand shape: token operands are `!sde.token<tensor<...>>`; scalar
+    captures are ordinary SSA values that are copied into the downstream EDT
+    parameter pack. The body's block arguments first list one tensor view per
+    token, typed as the token's `slice_type`, followed by one block argument per
+    scalar capture.
 
     Result shape: one SSA result per `write` or `readwrite` token, of the
     same type as the source parent tensor. The op implicitly reconstructs
@@ -416,15 +418,20 @@ def SdeCuCodeletOp
 
     `IsolatedFromAbove` guarantees the body references no SSA value from
     outside its block arguments. Dependencies are SSA-visible via the token
-    operand list; a missing dep is a missing operand, caught by the verifier.
+    operand list; scalar firstprivate-style values are SSA-visible via the
+    capture operand list.
   }];
 
-  let arguments = (ins Variadic<SdeTokenType>:$tokens);
+  let arguments = (ins
+    Variadic<SdeTokenType>:$tokens,
+    Variadic<AnyType>:$captures
+  );
   let results   = (outs Variadic<AnyTensor>:$outputs);
   let regions   = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
     `(` ($tokens^ `:` type($tokens))? `)`
+    (`captures` `(` $captures^ `:` type($captures) `)`)?
     (`->` `(` type($outputs)^ `)`)?
     $body attr-dict
   }];

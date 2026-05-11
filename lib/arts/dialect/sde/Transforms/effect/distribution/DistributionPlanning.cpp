@@ -127,7 +127,8 @@ chooseDistributionKind(sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
         op.getReductionStrategyAttr())
       return sde::SdeDistributionKind::blocked;
     if (*scope == sde::SdeConcurrencyScope::distributed &&
-        op.getReductionStrategyAttr() && hasEnoughDistributedWork(op, costModel))
+        op.getReductionStrategyAttr() &&
+        hasEnoughDistributedWork(op, costModel))
       return sde::SdeDistributionKind::blocked;
     return std::nullopt;
   }
@@ -135,8 +136,7 @@ chooseDistributionKind(sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
 }
 
 struct DistributionPlanningPass
-    : public arts::impl::DistributionPlanningBase<
-          DistributionPlanningPass> {
+    : public arts::impl::DistributionPlanningBase<DistributionPlanningPass> {
   explicit DistributionPlanningPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 

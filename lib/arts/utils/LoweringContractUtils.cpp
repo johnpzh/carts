@@ -603,8 +603,8 @@ mlir::arts::mergeLoweringContractInfo(LoweringContractInfo &dest,
 
   // Only merge supportedBlockHalo when the effective depPattern is
   // stencil-family (either already set in dest or coming from src).
-  auto effectiveDepPattern =
-      dest.pattern.depPattern ? dest.pattern.depPattern : src.pattern.depPattern;
+  auto effectiveDepPattern = dest.pattern.depPattern ? dest.pattern.depPattern
+                                                     : src.pattern.depPattern;
   if (!dest.spatial.supportedBlockHalo && src.spatial.supportedBlockHalo &&
       effectiveDepPattern && isStencilFamilyDepPattern(*effectiveDepPattern)) {
     dest.spatial.supportedBlockHalo = true;

@@ -17,7 +17,6 @@
 ///==========================================================================///
 
 #include "arts/dialect/core/Transforms/edt/EdtRewriter.h"
-#include "arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.h"
 #include "arts/utils/DbUtils.h"
 #include "arts/utils/LoweringContractUtils.h"
 #include "arts/utils/OperationAttributes.h"

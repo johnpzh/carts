@@ -33,8 +33,7 @@ void SdeCuRegionOp::print(OpAsmPrinter &p) {
     p << " iter_args(";
     Block &body = getBody().front();
     llvm::interleaveComma(
-        llvm::zip(body.getArguments(), getIterArgs()), p,
-        [&](auto pair) {
+        llvm::zip(body.getArguments(), getIterArgs()), p, [&](auto pair) {
           p << std::get<0>(pair) << " = " << std::get<1>(pair);
         });
     p << " : ";
@@ -138,7 +137,8 @@ ParseResult SdeCuRegionOp::parse(OpAsmParser &parser, OperationState &result) {
   // If no iter_args and no terminator, add empty yield
   // (preserves backward compat with NoTerminator-style IR)
   Block &entry = body->front();
-  if (!hasIterArgs && (entry.empty() || !entry.back().hasTrait<OpTrait::IsTerminator>())) {
+  if (!hasIterArgs &&
+      (entry.empty() || !entry.back().hasTrait<OpTrait::IsTerminator>())) {
     auto endBuilder = OpBuilder::atBlockEnd(&entry);
     SdeYieldOp::create(endBuilder, result.location, ValueRange{});
   }
@@ -167,10 +167,10 @@ LogicalResult SdeCuRegionOp::verify() {
          llvm::enumerate(llvm::zip(entry.getArguments(), getIterArgs()))) {
       auto [blockArg, iterArg] = pair;
       if (blockArg.getType() != iterArg.getType())
-        return emitOpError() << "block argument #" << i << " type ("
-                             << blockArg.getType()
-                             << ") does not match iter_arg type ("
-                             << iterArg.getType() << ")";
+        return emitOpError()
+               << "block argument #" << i << " type (" << blockArg.getType()
+               << ") does not match iter_arg type (" << iterArg.getType()
+               << ")";
     }
 
     // Result count must match iter_args count
@@ -194,10 +194,9 @@ LogicalResult SdeCuRegionOp::verify() {
          llvm::enumerate(llvm::zip(yield.getValues(), getResultTypes()))) {
       auto [yielded, resultTy] = pair;
       if (yielded.getType() != resultTy)
-        return emitOpError() << "sde.yield operand #" << i << " type ("
-                             << yielded.getType()
-                             << ") does not match result type (" << resultTy
-                             << ")";
+        return emitOpError()
+               << "sde.yield operand #" << i << " type (" << yielded.getType()
+               << ") does not match result type (" << resultTy << ")";
     }
   }
 
@@ -252,14 +251,14 @@ void SdeSuIterateOp::print(OpAsmPrinter &p) {
 
   // reduction_strategy(<strategy>)
   if (auto strategy = getReductionStrategy()) {
-    p << " reduction_strategy(<"
-      << stringifySdeReductionStrategy(*strategy) << ">)";
+    p << " reduction_strategy(<" << stringifySdeReductionStrategy(*strategy)
+      << ">)";
   }
 
   // classification(<class>)
   if (auto cls = getStructuredClassification()) {
-    p << " classification(<"
-      << stringifySdeStructuredClassification(*cls) << ">)";
+    p << " classification(<" << stringifySdeStructuredClassification(*cls)
+      << ">)";
   }
 
   // iter_args(%a = %init : type) -> (type)
@@ -289,14 +288,16 @@ void SdeSuIterateOp::print(OpAsmPrinter &p) {
 
   // attr-dict — elide attributes with dedicated syntax
   SmallVector<StringRef> elidedAttrs = {
-      "schedule", "nowait", "reductionKinds", "reductionStrategy",
+      "schedule",
+      "nowait",
+      "reductionKinds",
+      "reductionStrategy",
       "structuredClassification",
       getOperandSegmentSizesAttrName().getValue()};
   p.printOptionalAttrDict((*this)->getAttrs(), elidedAttrs);
 }
 
-ParseResult SdeSuIterateOp::parse(OpAsmParser &parser,
-                                  OperationState &result) {
+ParseResult SdeSuIterateOp::parse(OpAsmParser &parser, OperationState &result) {
   MLIRContext *ctx = parser.getContext();
   auto indexType = IndexType::get(ctx);
 
@@ -369,9 +370,8 @@ ParseResult SdeSuIterateOp::parse(OpAsmParser &parser,
   if (succeeded(parser.parseOptionalKeyword("reduction_strategy"))) {
     SdeReductionStrategyAttr stratAttr;
     if (parser.parseLParen() ||
-        parser.parseCustomAttributeWithFallback(stratAttr, Type{},
-                                                "reductionStrategy",
-                                                result.attributes) ||
+        parser.parseCustomAttributeWithFallback(
+            stratAttr, Type{}, "reductionStrategy", result.attributes) ||
         parser.parseRParen())
       return failure();
   }
@@ -381,8 +381,7 @@ ParseResult SdeSuIterateOp::parse(OpAsmParser &parser,
     SdeStructuredClassificationAttr classAttr;
     if (parser.parseLParen() ||
         parser.parseCustomAttributeWithFallback(
-            classAttr, Type{}, "structuredClassification",
-            result.attributes) ||
+            classAttr, Type{}, "structuredClassification", result.attributes) ||
         parser.parseRParen())
       return failure();
   }
@@ -434,14 +433,11 @@ ParseResult SdeSuIterateOp::parse(OpAsmParser &parser,
   // ---- Operand segment sizes ----
   // Order: lowerBounds | upperBounds | steps | chunkSize? | redAccs+iterArgs
   SmallVector<int32_t> segmentSizes = {
-      static_cast<int32_t>(numDims),
-      static_cast<int32_t>(numDims),
-      static_cast<int32_t>(numDims),
-      hasChunkSize ? 1 : 0,
+      static_cast<int32_t>(numDims), static_cast<int32_t>(numDims),
+      static_cast<int32_t>(numDims), hasChunkSize ? 1 : 0,
       static_cast<int32_t>(redAccOps.size() + iterArgOperands.size())};
-  result.addAttribute(
-      SdeSuIterateOp::getOperandSegmentSizeAttr(),
-      parser.getBuilder().getDenseI32ArrayAttr(segmentSizes));
+  result.addAttribute(SdeSuIterateOp::getOperandSegmentSizeAttr(),
+                      parser.getBuilder().getDenseI32ArrayAttr(segmentSizes));
 
   // ---- Body region ----
   // Build block arguments: numDims IV args + iter_args body args.
@@ -491,8 +487,8 @@ LogicalResult SdeSuIterateOp::verify() {
   if (yield.getValues().size() != getNumResults())
     return emitOpError() << "sde.yield operand count ("
                          << yield.getValues().size()
-                         << ") does not match result count ("
-                         << getNumResults() << ")";
+                         << ") does not match result count (" << getNumResults()
+                         << ")";
 
   // When results are present, check type consistency
   for (auto [i, pair] :
@@ -576,9 +572,8 @@ LogicalResult SdeMuTokenOp::verify() {
   // Rank match between offsets/sizes and source tensor.
   int64_t rank = tensorTy.getRank();
   if (static_cast<int64_t>(offsets.size()) != rank) {
-    return emitOpError()
-           << "expects offsets/sizes count (" << offsets.size()
-           << ") to match source tensor rank (" << rank << ")";
+    return emitOpError() << "expects offsets/sizes count (" << offsets.size()
+                         << ") to match source tensor rank (" << rank << ")";
   }
 
   // Static sizes must be non-negative; when both offset and size are constants
@@ -599,8 +594,8 @@ LogicalResult SdeMuTokenOp::verify() {
       int64_t off = offsetVal.getSExtValue();
       int64_t sz = sizeVal.getSExtValue();
       if (off < 0) {
-        return emitOpError() << "expects non-negative offset at dimension "
-                             << i << " (got " << off << ")";
+        return emitOpError() << "expects non-negative offset at dimension " << i
+                             << " (got " << off << ")";
       }
       if (off + sz > shape[i]) {
         return emitOpError()
@@ -619,15 +614,15 @@ LogicalResult SdeMuTokenOp::verify() {
 ///===----------------------------------------------------------------------===///
 LogicalResult SdeCuCodeletOp::verify() {
   auto tokens = getTokens();
+  auto captures = getCaptures();
 
-  // Every operand must be `!sde.token<Ti>` for ranked Ti.
+  // Every token operand must be `!sde.token<Ti>` for ranked Ti.
   SmallVector<TokenType> tokenTypes;
   tokenTypes.reserve(tokens.size());
   for (auto token : tokens) {
     auto tt = llvm::dyn_cast<TokenType>(token.getType());
     if (!tt)
-      return emitOpError()
-             << "expects every operand to be of type !sde.token";
+      return emitOpError() << "expects every operand to be of type !sde.token";
     tokenTypes.push_back(tt);
   }
 
@@ -636,19 +631,29 @@ LogicalResult SdeCuCodeletOp::verify() {
     return emitOpError() << "expects body to contain a single block";
   Block &entry = getBody().front();
 
-  // Block-arg count == operand count; block-arg types == token slice_type.
-  if (entry.getNumArguments() != tokens.size()) {
-    return emitOpError() << "expects " << tokens.size()
-                         << " block argument(s) (one per token); got "
-                         << entry.getNumArguments();
+  // Block arguments first mirror token slice types, then scalar captures.
+  unsigned expectedArgs = tokens.size() + captures.size();
+  if (entry.getNumArguments() != expectedArgs) {
+    return emitOpError() << "expects " << expectedArgs << " block argument(s) ("
+                         << tokens.size() << " token + " << captures.size()
+                         << " capture); got " << entry.getNumArguments();
   }
   for (auto [idx, tt] : llvm::enumerate(tokenTypes)) {
     Type argTy = entry.getArgument(idx).getType();
     Type sliceTy = tt.getSliceType();
     if (argTy != sliceTy) {
-      return emitOpError()
-             << "block argument #" << idx << " type (" << argTy
-             << ") does not match token slice type (" << sliceTy << ")";
+      return emitOpError() << "block argument #" << idx << " type (" << argTy
+                           << ") does not match token slice type (" << sliceTy
+                           << ")";
+    }
+  }
+  for (auto [idx, capture] : llvm::enumerate(captures)) {
+    unsigned argIdx = tokens.size() + idx;
+    Type argTy = entry.getArgument(argIdx).getType();
+    if (argTy != capture.getType()) {
+      return emitOpError() << "capture block argument #" << idx << " type ("
+                           << argTy << ") does not match capture operand type ("
+                           << capture.getType() << ")";
     }
   }
 
@@ -677,8 +682,7 @@ LogicalResult SdeCuCodeletOp::verify() {
   if (getOutputs().size() != writableIndices.size()) {
     return emitOpError()
            << "expects one result per writable token: got "
-           << getOutputs().size() << " result(s) and "
-           << writableIndices.size()
+           << getOutputs().size() << " result(s) and " << writableIndices.size()
            << " writable (write / readwrite) token(s); a <read> token must "
               "not have a yielded counterpart";
   }
@@ -698,10 +702,10 @@ LogicalResult SdeCuCodeletOp::verify() {
     Type yieldedTy = yield.getValues()[i].getType();
     Type sliceTy = tokenTypes[writableIdx].getSliceType();
     if (yieldedTy != sliceTy) {
-      return emitOpError()
-             << "sde.yield operand #" << i << " type (" << yieldedTy
-             << ") does not match writable token slice type (" << sliceTy
-             << ")";
+      return emitOpError() << "sde.yield operand #" << i << " type ("
+                           << yieldedTy
+                           << ") does not match writable token slice type ("
+                           << sliceTy << ")";
     }
 
     // The result type matches the parent tensor type of the writable token's
@@ -725,8 +729,7 @@ LogicalResult SdeCuCodeletOp::verify() {
     return (m == SdeAccessMode::read) ? 0 : 1;
   };
 
-  auto constantSlice = [](SdeMuTokenOp op,
-                          SmallVectorImpl<int64_t> &offs,
+  auto constantSlice = [](SdeMuTokenOp op, SmallVectorImpl<int64_t> &offs,
                           SmallVectorImpl<int64_t> &szs) -> bool {
     if (op.getOffsets().size() != op.getSizes().size())
       return false;

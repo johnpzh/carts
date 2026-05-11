@@ -228,6 +228,7 @@ void EpochLoweringPass::runOnOperation() {
         hasContinuation ? finishGuid : Value(),
         hasContinuation ? finishSlot : Value());
     auto currentEpoch = createEpochOp.getEpochGuid();
+    bool needsWait = !hasContinuation || isCPSChainInnerEpoch;
 
     /// Propagate persistent region flag to the lowered CreateEpochOp.
     if (isPersistent)
@@ -254,6 +255,32 @@ void EpochLoweringPass::runOnOperation() {
         newEdtCreateOp->setAttr(attr.getName(), attr.getValue());
       edtCreateOp->replaceAllUsesWith(newEdtCreateOp);
       edtCreateOp->erase();
+    }
+
+    if (needsWait) {
+      SmallVector<EdtCreateOp, 8> localAccumulateCreates;
+      epochOp.walk([&](EdtCreateOp edtCreateOp) {
+        if (edtCreateOp.getEpochGuid() != currentEpoch)
+          return;
+        auto strategy = edtCreateOp->getAttrOfType<StringAttr>(
+            AttrNames::Operation::Contract::ReductionStrategy);
+        if (strategy && strategy.getValue() ==
+                            AttrNames::Operation::Contract::
+                                ReductionStrategyValue::LocalAccumulate)
+          localAccumulateCreates.push_back(edtCreateOp);
+      });
+
+      for (EdtCreateOp edtCreateOp : localAccumulateCreates) {
+        Operation *insertAfter = edtCreateOp.getOperation();
+        while (Operation *next = insertAfter->getNextNode()) {
+          auto recordDep = dyn_cast<RecordDepOp>(next);
+          if (!recordDep || recordDep.getEdtGuid() != edtCreateOp.getGuid())
+            break;
+          insertAfter = next;
+        }
+        AC->setInsertionPointAfter(insertAfter);
+        AC->create<WaitOnEpochOp>(edtCreateOp.getLoc(), currentEpoch);
+      }
     }
 
     /// Move operations out of the epoch region, tracking where to insert
@@ -287,7 +314,6 @@ void EpochLoweringPass::runOnOperation() {
     /// active count in the inner epoch is never released, creating a circular
     /// dependency → deadlock. Emitting WaitOnEpochOp releases the guard and
     /// blocks only until the first iteration's workers finish.
-    bool needsWait = !hasContinuation || isCPSChainInnerEpoch;
     if (hasContinuation && !isCPSChainInnerEpoch) {
       ARTS_INFO("  Skipping WaitOnEpochOp (continuation path)");
     }

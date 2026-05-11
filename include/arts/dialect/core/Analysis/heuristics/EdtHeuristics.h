@@ -43,8 +43,6 @@ public:
   LoopCoarseningDecision
   computeLoopCoarseningDecision(ForOp forOp,
                                 const WorkerConfig &workerCfg) const;
-  std::optional<int64_t>
-  computeCoarsenedBlockHint(ForOp forOp, const WorkerConfig &workerCfg) const;
   ParallelEdtFusionDecision evaluateParallelEdtFusion(EdtOp first,
                                                       EdtOp second) const;
 

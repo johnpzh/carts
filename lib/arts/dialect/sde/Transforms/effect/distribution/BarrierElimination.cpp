@@ -115,8 +115,7 @@ static bool isSuContainer(Operation *op) {
 }
 
 struct BarrierEliminationPass
-    : public arts::impl::BarrierEliminationBase<
-          BarrierEliminationPass> {
+    : public arts::impl::BarrierEliminationBase<BarrierEliminationPass> {
   explicit BarrierEliminationPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 
@@ -143,8 +142,8 @@ struct BarrierEliminationPass
       }
 
       // Walk forward to find successor su_iterate or su_distribute
-      for (auto it = std::next(barrier->getIterator());
-           it != block->end(); ++it) {
+      for (auto it = std::next(barrier->getIterator()); it != block->end();
+           ++it) {
         if (isSuContainer(&*it)) {
           succOp = &*it;
           break;
@@ -188,8 +187,7 @@ struct BarrierEliminationPass
       }
     });
 
-    ARTS_INFO("BarrierElimination: eliminated " << eliminated
-                                                   << " barrier(s)");
+    ARTS_INFO("BarrierElimination: eliminated " << eliminated << " barrier(s)");
 
     // Phase 11: Nowait inference — conservative approach.
     // For reduction-only su_iterate ops (all memory operations touch only
@@ -334,8 +332,7 @@ struct BarrierEliminationPass
           break; // only check immediate successor
         }
         // Skip barriers and memory-effect-free ops.
-        if (!isMemoryEffectFree(nextOp) &&
-            !isa<sde::SdeSuBarrierOp>(nextOp))
+        if (!isMemoryEffectFree(nextOp) && !isa<sde::SdeSuBarrierOp>(nextOp))
           break;
         nextOp = nextOp->getNextNode();
       }
@@ -348,7 +345,7 @@ struct BarrierEliminationPass
     });
 
     ARTS_INFO("BarrierElimination: inferred nowait on " << nowaitInferred
-                                                           << " op(s)");
+                                                        << " op(s)");
   }
 
 private:

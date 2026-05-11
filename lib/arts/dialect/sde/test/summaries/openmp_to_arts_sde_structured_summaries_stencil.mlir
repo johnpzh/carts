@@ -8,7 +8,7 @@
 // SDE-LABEL: // -----// IR Dump After StructuredSummaries (structured-summaries) //----- //
 // SDE: func.func @main
 // SDE: arts_sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
-// SDE: } {accessMaxOffsets = [1, 1], accessMinOffsets = [-1, -1], ownerDims = [0, 1], sde.dep_distances = [1, 1], sde.reuse_footprint_bytes = {{[0-9]+}} : index, spatialDims = [0, 1], writeFootprint = [1, 1]}
+// SDE: } {accessMaxOffsets = [1, 1], accessMinOffsets = [-1, -1], ownerDims = [0, 1], spatialDims = [0, 1], writeFootprint = [1, 1]}
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main

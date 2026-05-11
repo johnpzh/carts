@@ -374,11 +374,9 @@ static bool classifyExternalCaptures(sde::SdeCuTaskOp task,
 /// look them up via the returned mapping. Impure task-private producers are
 /// moved separately (by moveImpureProducersInto) and the mapping is updated
 /// with those moves.
-static std::optional<IRMapping>
-cloneExternalPureProducers(sde::SdeCuTaskOp task,
-                           const DenseSet<Value> &raisedMemrefs,
-                           const SmallVector<Value> &pureExternal,
-                           OpBuilder &codeletBuilder) {
+static std::optional<IRMapping> cloneExternalPureProducers(
+    sde::SdeCuTaskOp task, const DenseSet<Value> &raisedMemrefs,
+    const SmallVector<Value> &pureExternal, OpBuilder &codeletBuilder) {
   IRMapping mapping;
   Region &body = task.getBody();
 
@@ -411,8 +409,7 @@ cloneExternalPureProducers(sde::SdeCuTaskOp task,
         return false;
     }
     Operation *cloned = codeletBuilder.clone(*def, mapping);
-    for (auto [orig, repl] :
-         llvm::zip(def->getResults(), cloned->getResults()))
+    for (auto [orig, repl] : llvm::zip(def->getResults(), cloned->getResults()))
       mapping.map(orig, repl);
     return true;
   };
@@ -623,8 +620,8 @@ struct RaiseMemrefToTensorPass
       int64_t numElements = mrType.getNumElements();
       for (int64_t e = 0; e < numElements; ++e) {
         Value idx = arts::createConstantIndex(boundaryBuilder, loc, e);
-        Value extracted = tensor::ExtractOp::create(boundaryBuilder, loc,
-                                                    finalTensor, idx);
+        Value extracted =
+            tensor::ExtractOp::create(boundaryBuilder, loc, finalTensor, idx);
         memref::StoreOp::create(boundaryBuilder, loc, extracted, memref,
                                 ValueRange{idx});
       }
@@ -740,8 +737,7 @@ struct RaiseMemrefToTensorPass
       }
       auto tokenType = sde::TokenType::get(ctx, tty);
       auto tokOp = sde::SdeMuTokenOp::create(
-          builder, loc, tokenType,
-          sde::SdeAccessModeAttr::get(ctx, mode), src,
+          builder, loc, tokenType, sde::SdeAccessModeAttr::get(ctx, mode), src,
           /*offsets=*/ValueRange{}, /*sizes=*/ValueRange{});
       tokens.push_back(tokOp.getToken());
       blockArgTypes.push_back(tty);
@@ -753,7 +749,8 @@ struct RaiseMemrefToTensorPass
 
     // Create the codelet shell.
     auto codelet =
-        sde::SdeCuCodeletOp::create(builder, loc, resultTypes, tokens);
+        sde::SdeCuCodeletOp::create(builder, loc, resultTypes, tokens,
+                                    /*captures=*/ValueRange{});
     Block *codeletBlock = new Block();
     SmallVector<Location> argLocs(blockArgTypes.size(), loc);
     codeletBlock->addArguments(blockArgTypes, argLocs);
@@ -855,8 +852,7 @@ struct RaiseMemrefToTensorPass
       for (Value idx : indices) {
         auto c = matchConstantIndex(idx);
         assert(c && "gather phase should have checked constant indices");
-        idxVals.push_back(
-            arts::createConstantIndex(bodyBuilder, loc, *c));
+        idxVals.push_back(arts::createConstantIndex(bodyBuilder, loc, *c));
       }
       if (idxVals.empty())
         idxVals.push_back(arts::createZeroIndex(bodyBuilder, loc));
@@ -903,9 +899,8 @@ struct RaiseMemrefToTensorPass
         return false;
       Value zero = arts::createZeroIndex(bodyBuilder, op.getLoc());
       Value mappedVal = mapping.lookupOrDefault(st.getValue());
-      Value updated = tensor::InsertOp::create(bodyBuilder, op.getLoc(),
-                                               mappedVal, it->second,
-                                               ValueRange{zero});
+      Value updated = tensor::InsertOp::create(
+          bodyBuilder, op.getLoc(), mappedVal, it->second, ValueRange{zero});
       liveTensor[canonical] = updated;
       return true;
     }

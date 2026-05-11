@@ -76,9 +76,6 @@ static const AnalysisKind kEdtTransforms_reads[] = {AnalysisKind::EdtAnalysis};
 static llvm::Statistic numGranularityAnnotations{
     "edt_transforms", "NumGranularityAnnotations",
     "Number of ET-1 granularity annotations"};
-static llvm::Statistic numAffinityAnnotations{
-    "edt_transforms", "NumAffinityAnnotations",
-    "Number of ET-2 affinity annotations"};
 static llvm::Statistic numReductionAnnotations{
     "edt_transforms", "NumReductionAnnotations",
     "Number of ET-5 reduction strategy annotations"};
@@ -119,10 +116,6 @@ private:
   /// ET-6: Compute critical path distances for all EDTs in a function.
   /// Returns the number of annotated EDTs.
   unsigned analyzeCriticalPath(func::FuncOp func, EdtGraph &edtGraph);
-
-  /// ET-2: Place EDTs near the data they primarily write to.
-  /// Returns the number of EDTs annotated with affinity hints.
-  unsigned placeEdtsByAffinity();
 
   /// ET-3: Narrow dependency chains for stencil/wavefront patterns.
   /// For neighbor halo reads, mark the dependency as narrowable when the
@@ -197,21 +190,6 @@ void EdtTransformsPass::runOnOperation() {
   if (et1Count > 0)
     ARTS_INFO("ET-1: annotated " << et1Count
                                  << " EDTs with estimated task cost");
-
-  ///===--------------------------------------------------------------------===///
-  /// ET-2: Data affinity placement
-  ///
-  /// For each EDT, find the DB it primarily writes to (the one with the
-  /// most access bytes among inout/out acquires).  If the primary write
-  /// target is a distributed/partitioned allocation, annotate the EDT
-  /// with an "affinity_db" attribute pointing to that DB so downstream
-  /// scheduling/lowering can place the task near its dominant data.
-  ///===--------------------------------------------------------------------===///
-  unsigned et2Count = placeEdtsByAffinity();
-  numAffinityAnnotations += et2Count;
-  if (et2Count > 0)
-    ARTS_INFO("ET-2: annotated " << et2Count
-                                 << " EDTs with data affinity placement");
 
   ///===--------------------------------------------------------------------===///
   /// ET-5: Reduction strategy selection
@@ -436,87 +414,6 @@ unsigned EdtTransformsPass::analyzeCriticalPath(func::FuncOp func,
 }
 
 ///===----------------------------------------------------------------------===///
-/// ET-2: Data affinity placement
-///===----------------------------------------------------------------------===///
-unsigned EdtTransformsPass::placeEdtsByAffinity() {
-  ModuleOp module = getOperation();
-  unsigned count = 0;
-
-  module.walk([&](func::FuncOp func) {
-    auto &edtGraph = AM->getEdtAnalysis().getOrCreateEdtGraph(func);
-    if (edtGraph.size() == 0)
-      return;
-
-    func.walk([&](EdtOp edt) {
-      EdtNode *node = edtGraph.getEdtNode(edt);
-      if (!node)
-        return;
-
-      /// Find the first writer acquire's root DbAllocOp as affinity target.
-      DbAllocOp bestAlloc = nullptr;
-      for (Value dep : edt.getDependencies()) {
-        auto acquire = dep.getDefiningOp<DbAcquireOp>();
-        if (!acquire)
-          continue;
-
-        /// Only consider writer modes (out, inout).
-        if (!DbUtils::isWriterMode(acquire.getMode()))
-          continue;
-
-        /// Trace this acquire back to its root DbAllocOp.
-        auto *rootOp = DbUtils::getUnderlyingDbAlloc(acquire.getSourcePtr());
-        auto allocOp = dyn_cast_or_null<DbAllocOp>(rootOp);
-        if (!allocOp)
-          continue;
-
-        bestAlloc = allocOp;
-        break;
-      }
-
-      if (!bestAlloc)
-        return;
-
-      /// Only annotate if the target allocation is distributed/partitioned.
-      /// Non-distributed (coarse) allocations have no meaningful placement
-      /// affinity since they reside in a single location anyway.
-      if (!hasDistributedDbAllocation(bestAlloc.getOperation()) &&
-          !DbAnalysis::isFineGrained(bestAlloc))
-        return;
-
-      /// Annotate the EdtOp with the affinity_db attribute.
-      /// The value is the MLIR arts.id of the target DbAllocOp, which
-      /// downstream passes and the runtime can use for placement decisions.
-      int64_t allocId = getArtsId(bestAlloc.getOperation());
-      if (allocId <= 0) {
-        /// If the alloc does not have an arts.id, fall back to annotating
-        /// with a symbolic reference using the alloc's SSA name is not
-        /// feasible. Instead, we use a boolean marker that records affinity
-        /// was computed. The actual placement will be resolved during
-        /// lowering by matching the EDT's dependency list.
-        ARTS_DEBUG("ET-2: EDT [" << node->getHierId()
-                                 << "] primary write target has no arts.id"
-                                 << "; skipping affinity annotation");
-        return;
-      }
-
-      auto *ctx = edt.getContext();
-      auto i64Type = IntegerType::get(ctx, 64);
-      edt->setAttr(AttrNames::Operation::Contract::AffinityDb,
-                   IntegerAttr::get(i64Type, allocId));
-      ++count;
-
-      ARTS_DEBUG("ET-2: EDT ["
-                 << node->getHierId() << "]"
-                 << " affinity_db=" << allocId << " (distributed="
-                 << hasDistributedDbAllocation(bestAlloc.getOperation())
-                 << ")");
-    });
-  });
-
-  return count;
-}
-
-///===----------------------------------------------------------------------===///
 /// ET-5: Reduction strategy selection
 ///===----------------------------------------------------------------------===///
 
@@ -528,10 +425,7 @@ unsigned EdtTransformsPass::selectReductionStrategies() {
   /// and topologies is still future work.
   ModuleOp module = getOperation();
   unsigned count = 0;
-
-  /// Retrieve worker count from module attributes (set by runtime config).
   int64_t workerCount = getRuntimeTotalWorkers(module).value_or(0);
-  auto &costModel = AM->getCostModel();
 
   module.walk([&](func::FuncOp func) {
     auto &edtGraph = AM->getEdtAnalysis().getOrCreateEdtGraph(func);
@@ -541,6 +435,11 @@ unsigned EdtTransformsPass::selectReductionStrategies() {
     func.walk([&](EdtOp edt) {
       EdtNode *node = edtGraph.getEdtNode(edt);
       if (!node)
+        return;
+
+      /// SDE owns reduction strategy selection for structured loops; if it
+      /// already stamped a decision via SdeToArtsPatterns, do not overwrite.
+      if (edt->hasAttr(AttrNames::Operation::Contract::ReductionStrategy))
         return;
 
       /// Walk each dependency acquire for this EDT.
@@ -609,25 +508,13 @@ unsigned EdtTransformsPass::selectReductionStrategies() {
             AttrNames::Operation::Contract::ReductionStrategyValue;
 
         if (isLoopNested) {
-          /// Inside a loop nest: accumulate locally, then single atomic at end.
           strategy = ReductionStrategyValue::LocalAccumulate;
         } else if (EdtAnalysis::isAtomicCapable(*reductionKind)) {
-          if (workerCount > 0) {
-            double atomicCost = static_cast<double>(workerCount) *
-                                costModel.getAtomicUpdateCost();
-            double treeLevels = std::ceil(std::log2(
-                static_cast<double>(std::max<int64_t>(workerCount, 1))));
-            double treeCost = treeLevels * costModel.getTaskSyncCost();
-
-            strategy = atomicCost <= treeCost ? ReductionStrategyValue::Atomic
-                                              : ReductionStrategyValue::Tree;
-          } else {
-            /// Worker count unknown but op atomic-capable: default to atomic.
-            strategy = ReductionStrategyValue::Atomic;
-          }
+          // Atomic contention scales linearly with workers; tree scales as
+          // log2(workers). Pick tree once worker count is large enough.
+          strategy = workerCount > 4 ? ReductionStrategyValue::Tree
+                                     : ReductionStrategyValue::Atomic;
         } else {
-          /// Non-atomic-capable with unknown worker count: tree is safe
-          /// default.
           strategy = ReductionStrategyValue::Tree;
         }
 

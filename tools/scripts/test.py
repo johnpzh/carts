@@ -172,7 +172,13 @@ def test(
     """Run CARTS test suite using llvm-lit."""
     config = get_config()
     test_paths = _resolve_lit_targets(config, suite)
-    _run_lit(test_paths, verbose_tests=verbose_tests, suite_name=suite)
+    extra_args: List[str] = []
+    if suite in ("e2e", "all"):
+        # E2E samples bind a fixed runtime port (default_ports=34739). Run
+        # them serially so parallel tests do not race on the same port.
+        extra_args.extend(["-j", "1"])
+    _run_lit(test_paths, verbose_tests=verbose_tests, suite_name=suite,
+             extra_args=extra_args)
 
 
 def lit(

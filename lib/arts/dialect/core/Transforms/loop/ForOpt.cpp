@@ -14,7 +14,6 @@
 #include "arts/Dialect.h"
 #include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
-#include "arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.h"
 #define GEN_PASS_DEF_FOROPT
 #include "arts/passes/Passes.h"
 #include "arts/passes/Passes.h.inc"

@@ -127,7 +127,6 @@ constexpr StringLiteral SupportedBlockHalo = "supported_block_halo";
 constexpr StringLiteral StencilIndependentDims = "stencil_independent_dims";
 constexpr StringLiteral PostDbRefined = "post_db_refined";
 constexpr StringLiteral CriticalPathDistance = "critical_path_distance";
-constexpr StringLiteral AffinityDb = "affinity_db";
 constexpr StringLiteral ReductionStrategy = "arts.reduction_strategy";
 namespace ReductionStrategyValue {
 constexpr StringLiteral Atomic = "atomic";
@@ -214,15 +213,9 @@ constexpr llvm::StringLiteral InPlaceSafe = "in_place_safe";
 /// SDE-specific semantic attributes stamped by SDE transforms.
 namespace Sde {
 using namespace llvm;
-constexpr StringLiteral DepDistances = "sde.dep_distances";
-constexpr StringLiteral ReuseFootprintBytes = "sde.reuse_footprint_bytes";
 constexpr StringLiteral VectorizeWidth = "sde.vectorize_width";
 constexpr StringLiteral UnrollFactor = "sde.unroll_factor";
-constexpr StringLiteral ReductionSplitFactor = "sde.reduction_split_factor";
-constexpr StringLiteral CollapsedDims = "sde.collapsed_dims";
 constexpr StringLiteral InterleaveCount = "sde.interleave_count";
-constexpr StringLiteral ExpandTileSize = "sde.expand_tile_size";
-constexpr StringLiteral PackedTile = "sde.packed_tile";
 } // namespace Sde
 
 } // namespace Operation
@@ -234,10 +227,9 @@ constexpr StringLiteral PackedTile = "sde.packed_tile";
 inline void copySdeHintAttrs(Operation *source, Operation *dest) {
   if (!source || !dest)
     return;
-  for (StringRef attrName :
-       {AttrNames::Operation::Sde::VectorizeWidth,
-        AttrNames::Operation::Sde::UnrollFactor,
-        AttrNames::Operation::Sde::InterleaveCount}) {
+  for (StringRef attrName : {AttrNames::Operation::Sde::VectorizeWidth,
+                             AttrNames::Operation::Sde::UnrollFactor,
+                             AttrNames::Operation::Sde::InterleaveCount}) {
     if (auto attr = source->getAttr(attrName))
       dest->setAttr(attrName, attr);
   }
@@ -405,8 +397,20 @@ inline void setRuntimeTotalNodes(ModuleOp module, int64_t nodes) {
       IntegerAttr::get(IntegerType::get(module.getContext(), 64), nodes));
 }
 
-/// Forward declaration - defined in PartitioningHeuristics.h
-struct PartitioningHint;
+struct PartitioningHint {
+  PartitionMode mode = PartitionMode::coarse;
+  std::optional<int64_t> blockSize;
+
+  static PartitioningHint block(std::optional<int64_t> size) {
+    PartitioningHint h;
+    h.mode = PartitionMode::block;
+    h.blockSize = size;
+    return h;
+  }
+
+  DictionaryAttr toAttribute(MLIRContext *ctx) const;
+  static std::optional<PartitioningHint> fromAttribute(Attribute attr);
+};
 
 inline int64_t getArtsId(Operation *op) {
   if (!op)
@@ -879,11 +883,27 @@ inline void inheritPatternAttrs(Operation *source, Operation *dest) {
       setPatternRevision(dest, *revision);
 }
 
-/// Full implementation in PartitioningHeuristics.cpp.
 /// Use only when the destination preserves the same loop semantics/identity as
 /// the source. Structural rewrites that create a new iteration space should
 /// restamp the specific attrs they still mean instead of cloning all metadata.
-void copyArtsMetadataAttrs(Operation *source, Operation *dest);
+inline void copyArtsMetadataAttrs(Operation *source, Operation *dest) {
+  if (!source || !dest)
+    return;
+  if (auto id =
+          source->getAttrOfType<IntegerAttr>(AttrNames::Operation::ArtsId))
+    dest->setAttr(AttrNames::Operation::ArtsId, id);
+  if (auto originId = source->getAttrOfType<IntegerAttr>(
+          AttrNames::Operation::MetadataOriginId))
+    dest->setAttr(AttrNames::Operation::MetadataOriginId, originId);
+  if (auto provenance = source->getAttrOfType<StringAttr>(
+          AttrNames::Operation::MetadataProvenance))
+    dest->setAttr(AttrNames::Operation::MetadataProvenance, provenance);
+  if (auto mode = source->getAttrOfType<PartitionModeAttr>(
+          AttrNames::Operation::PartitionMode))
+    dest->setAttr(AttrNames::Operation::PartitionMode, mode);
+  if (auto hint = source->getAttr(AttrNames::Operation::PartitionHint))
+    dest->setAttr(AttrNames::Operation::PartitionHint, hint);
+}
 
 /// Copy only the semantic contract attrs that specialized pattern detection
 /// stamps before DB values exist. Structural rewrites should use this helper
@@ -934,9 +954,44 @@ inline void inheritSemanticContractAttrs(Operation *source, Operation *dest) {
                   UnitAttr::get(dest->getContext()));
 }
 
-/// Full implementation in PartitioningHeuristics.cpp (uses DictionaryAttr).
-std::optional<PartitioningHint> getPartitioningHint(Operation *op);
-void setPartitioningHint(Operation *op, const PartitioningHint &hint);
+inline DictionaryAttr PartitioningHint::toAttribute(MLIRContext *ctx) const {
+  SmallVector<NamedAttribute> attrs;
+  attrs.push_back(
+      {StringAttr::get(ctx, "mode"),
+       IntegerAttr::get(IntegerType::get(ctx, 8), static_cast<uint8_t>(mode))});
+  if (blockSize)
+    attrs.push_back({StringAttr::get(ctx, "blockSize"),
+                     IntegerAttr::get(IntegerType::get(ctx, 64), *blockSize)});
+  return DictionaryAttr::get(ctx, attrs);
+}
+
+inline std::optional<PartitioningHint>
+PartitioningHint::fromAttribute(Attribute attr) {
+  auto dictAttr = dyn_cast_or_null<DictionaryAttr>(attr);
+  if (!dictAttr)
+    return std::nullopt;
+  PartitioningHint hint;
+  if (auto modeAttr = dictAttr.getAs<IntegerAttr>("mode"))
+    hint.mode = static_cast<PartitionMode>(modeAttr.getInt());
+  if (auto chunkAttr = dictAttr.getAs<IntegerAttr>("blockSize"))
+    hint.blockSize = chunkAttr.getInt();
+  return hint;
+}
+
+inline std::optional<PartitioningHint> getPartitioningHint(Operation *op) {
+  if (!op)
+    return std::nullopt;
+  if (auto attr = op->getAttr(AttrNames::Operation::PartitionHint))
+    return PartitioningHint::fromAttribute(attr);
+  return std::nullopt;
+}
+
+inline void setPartitioningHint(Operation *op, const PartitioningHint &hint) {
+  if (!op)
+    return;
+  op->setAttr(AttrNames::Operation::PartitionHint,
+              hint.toAttribute(op->getContext()));
+}
 
 } // namespace arts
 } // namespace mlir

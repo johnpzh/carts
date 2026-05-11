@@ -983,10 +983,10 @@ private:
                                  DepAccessMode accessMode,
                                  Value boundsValid) const {
     DepBoundsInfo result;
-    result.useDepv = depInfo.depStruct && depInfo.baseOffset &&
-                     (accessMode == DepAccessMode::from_depv ||
-                      isa_and_nonnull<DepDbAcquireOp>(
-                          DbUtils::getUnderlyingDb(dbGuid)));
+    result.useDepv =
+        depInfo.depStruct && depInfo.baseOffset &&
+        (accessMode == DepAccessMode::from_depv ||
+         isa_and_nonnull<DepDbAcquireOp>(DbUtils::getUnderlyingDb(dbGuid)));
 
     result.totalDBs = result.useDepv
                           ? Value()
@@ -1171,10 +1171,10 @@ private:
       Value byteOffset, Value byteSize, Value stencilCenterLinear,
       ArrayRef<Value> stencilCenterCoords, const DepDbInfo *depInfo,
       Value readyLocalDepBuffer, Location loc) const {
-    const bool useDepv = depStruct && baseOffset &&
-                         (accessMode == DepAccessMode::from_depv ||
-                          isa_and_nonnull<DepDbAcquireOp>(
-                              DbUtils::getUnderlyingDb(dbGuid)));
+    const bool useDepv =
+        depStruct && baseOffset &&
+        (accessMode == DepAccessMode::from_depv ||
+         isa_and_nonnull<DepDbAcquireOp>(DbUtils::getUnderlyingDb(dbGuid)));
 
     /// Extend boundsValid with DB index check for stencil cases.
     /// When the allocation is coarse (totalDBs == 1), all workers bind to the

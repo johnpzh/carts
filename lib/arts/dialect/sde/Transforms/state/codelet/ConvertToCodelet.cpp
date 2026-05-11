@@ -25,51 +25,21 @@ namespace mlir::arts {
 #include "arts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::arts
 
+#include "arts/dialect/sde/Transforms/CodeletUtils.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
 
 using namespace mlir;
 using namespace mlir::arts;
 
 namespace {
-
-/// Return true if the cu_region has any tensor-typed iter_args.
-static bool hasTensorIterArgs(sde::SdeCuRegionOp region) {
-  for (Value arg : region.getIterArgs())
-    if (isa<RankedTensorType>(arg.getType()))
-      return true;
-  return false;
-}
-
-/// Determine the access mode for a tensor block arg inside the cu_region body.
-/// Walk the body and classify uses as read (tensor.extract), write
-/// (tensor.insert), or readwrite (both).
-static sde::SdeAccessMode classifyAccess(BlockArgument blockArg) {
-  bool hasRead = false;
-  bool hasWrite = false;
-  for (Operation *user : blockArg.getUsers()) {
-    if (isa<tensor::ExtractOp>(user))
-      hasRead = true;
-    else if (isa<tensor::InsertOp>(user))
-      hasWrite = true;
-    else {
-      // Conservative: any unknown use is readwrite.
-      hasRead = true;
-      hasWrite = true;
-    }
-  }
-  if (hasRead && hasWrite)
-    return sde::SdeAccessMode::readwrite;
-  if (hasWrite)
-    return sde::SdeAccessMode::write;
-  return sde::SdeAccessMode::read;
-}
 
 /// Rewrite a single cu_region <single> with tensor iter_args into codelet form.
 static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
@@ -99,9 +69,9 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
   for (unsigned idx : tensorArgIndices) {
     Value iterArg = region.getIterArgs()[idx];
     auto tensorTy = cast<RankedTensorType>(iterArg.getType());
-    auto muData = sde::SdeMuDataOp::create(
-        outerBuilder, loc, tensorTy, /*init=*/nullptr,
-        /*shared=*/UnitAttr::get(ctx));
+    auto muData =
+        sde::SdeMuDataOp::create(outerBuilder, loc, tensorTy, /*init=*/nullptr,
+                                 /*shared=*/UnitAttr::get(ctx));
     muDataOps.push_back(muData);
   }
 
@@ -117,7 +87,7 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
   SmallVector<sde::SdeAccessMode> accessModes;
   for (unsigned idx : tensorArgIndices) {
     BlockArgument blockArg = body.getArgument(idx);
-    accessModes.push_back(classifyAccess(blockArg));
+    accessModes.push_back(sde::classifyTensorAccess(blockArg));
   }
 
   // Create mu_token ops at the start of the body.
@@ -151,14 +121,6 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
     }
   }
 
-  // Create the codelet op.
-  auto codelet =
-      sde::SdeCuCodeletOp::create(bodyBuilder, loc, codeletResultTypes, tokens);
-  Block *codeletBlock = new Block();
-  SmallVector<Location> argLocs(codeletBlockArgTypes.size(), loc);
-  codeletBlock->addArguments(codeletBlockArgTypes, argLocs);
-  codelet.getBody().push_back(codeletBlock);
-
   // --- Step 3: Move body ops into the codelet.
   //
   // We need to move all ops between the mu_token ops and the yield into the
@@ -178,8 +140,8 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
   auto *yieldOp = body.getTerminator();
   SmallVector<Operation *> opsToMove;
   for (Operation &op : body.getOperations()) {
-    // Skip mu_token ops we just created and the codelet itself.
-    if (isa<sde::SdeMuTokenOp>(op) || &op == codelet.getOperation())
+    // Skip mu_token ops we just created.
+    if (isa<sde::SdeMuTokenOp>(op))
       continue;
     // Skip the yield — we'll handle it separately.
     if (&op == yieldOp)
@@ -187,59 +149,155 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
     opsToMove.push_back(&op);
   }
 
+  DenseSet<Value> preMappedValues;
+  for (unsigned idx : tensorArgIndices)
+    preMappedValues.insert(body.getArgument(idx));
+
+  DenseSet<Value> materializableMemrefs;
+  DenseMap<Type, unsigned> materializableMemrefTypeCounts;
+  for (auto [i, idx] : llvm::enumerate(tensorArgIndices)) {
+    if (accessModes[i] != sde::SdeAccessMode::read)
+      continue;
+    if (Value memref =
+            sde::traceTensorBoundaryMemref(region.getIterArgs()[idx]))
+      materializableMemrefs.insert(memref);
+    auto tensorTy = cast<RankedTensorType>(region.getIterArgs()[idx].getType());
+    auto memrefTy =
+        MemRefType::get(tensorTy.getShape(), tensorTy.getElementType());
+    ++materializableMemrefTypeCounts[memrefTy];
+  }
+  DenseSet<Type> materializableMemrefTypes;
+  for (auto &entry : materializableMemrefTypeCounts) {
+    if (entry.second == 1)
+      materializableMemrefTypes.insert(entry.first);
+  }
+
+  DenseSet<Operation *> movedOps = sde::collectMovedOpTree(opsToMove);
+  sde::ExternalCapturePlan capturePlan;
+  if (failed(sde::planExternalCaptures(
+          opsToMove, preMappedValues, materializableMemrefs,
+          materializableMemrefTypes, movedOps, capturePlan)))
+    return failure();
+
+  for (Value capture : capturePlan.scalarCaptures)
+    codeletBlockArgTypes.push_back(capture.getType());
+
+  // Create the codelet op after scalar capture discovery so the entry block
+  // has all token and scalar block arguments up front.
+  auto codelet = sde::SdeCuCodeletOp::create(
+      bodyBuilder, loc, codeletResultTypes, tokens, capturePlan.scalarCaptures);
+  Block *codeletBlock = new Block();
+  SmallVector<Location> argLocs(codeletBlockArgTypes.size(), loc);
+  codeletBlock->addArguments(codeletBlockArgTypes, argLocs);
+  codelet.getBody().push_back(codeletBlock);
+  OpBuilder codeletTerminatorBuilder(ctx);
+  codeletTerminatorBuilder.setInsertionPointToEnd(codeletBlock);
+  auto placeholderYield =
+      sde::SdeYieldOp::create(codeletTerminatorBuilder, loc, ValueRange{});
+
   // Build an IRMapping from old block args to codelet block args.
   IRMapping mapping;
+  DenseMap<Value, Value> readOnlyMemrefToTensorArg;
+  DenseMap<Type, Value> uniqueReadOnlyMemrefTypeToTensorArg;
+  DenseSet<Type> ambiguousReadOnlyMemrefTypes;
   for (auto [i, idx] : llvm::enumerate(tensorArgIndices)) {
     BlockArgument oldArg = body.getArgument(idx);
     BlockArgument newArg = codeletBlock->getArgument(i);
     mapping.map(oldArg, newArg);
+
+    if (accessModes[i] != sde::SdeAccessMode::read)
+      continue;
+    if (Value memref =
+            sde::traceTensorBoundaryMemref(region.getIterArgs()[idx]))
+      readOnlyMemrefToTensorArg[memref] = newArg;
+    auto tensorTy = cast<RankedTensorType>(region.getIterArgs()[idx].getType());
+    auto memrefTy =
+        MemRefType::get(tensorTy.getShape(), tensorTy.getElementType());
+    if (uniqueReadOnlyMemrefTypeToTensorArg.contains(memrefTy)) {
+      uniqueReadOnlyMemrefTypeToTensorArg.erase(memrefTy);
+      ambiguousReadOnlyMemrefTypes.insert(memrefTy);
+    } else if (!ambiguousReadOnlyMemrefTypes.contains(memrefTy)) {
+      uniqueReadOnlyMemrefTypeToTensorArg[memrefTy] = newArg;
+    }
+  }
+  for (auto [i, capture] : llvm::enumerate(capturePlan.scalarCaptures)) {
+    mapping.map(capture,
+                codeletBlock->getArgument(tensorArgIndices.size() + i));
   }
 
   // Clone ops into the codelet body, handling external references by cloning
-  // pure producers.
+  // pure producers, scalar-capturing non-cloneable scalar values, and
+  // materializing read-only memrefs from token block arguments.
   OpBuilder codeletBuilder(ctx);
-  codeletBuilder.setInsertionPointToStart(codeletBlock);
+  codeletBuilder.setInsertionPoint(placeholderYield);
+  DenseMap<Value, Value> materializedMemrefs;
+
+  auto materializeReadOnlyMemref = [&](Value memref,
+                                       Location userLoc) -> Value {
+    auto tensorIt = readOnlyMemrefToTensorArg.find(memref);
+    auto memrefTy = dyn_cast<MemRefType>(memref.getType());
+    if (!memrefTy || !memrefTy.hasStaticShape())
+      return Value();
+
+    Value tensorArg;
+    if (tensorIt != readOnlyMemrefToTensorArg.end()) {
+      tensorArg = tensorIt->second;
+    } else if (!ambiguousReadOnlyMemrefTypes.contains(memrefTy)) {
+      auto typeIt = uniqueReadOnlyMemrefTypeToTensorArg.find(memrefTy);
+      if (typeIt != uniqueReadOnlyMemrefTypeToTensorArg.end())
+        tensorArg = typeIt->second;
+    }
+    if (!tensorArg)
+      return Value();
+
+    auto existing = materializedMemrefs.find(memref);
+    if (existing != materializedMemrefs.end())
+      return existing->second;
+
+    Value local = memref::AllocaOp::create(codeletBuilder, userLoc, memrefTy);
+    sde::SdeMuTensorToMemrefOp::create(codeletBuilder, userLoc, tensorArg,
+                                       local);
+    materializedMemrefs[memref] = local;
+    mapping.map(memref, local);
+    return local;
+  };
+
+  std::function<LogicalResult(Value, Location)> clonePureValue =
+      [&](Value value, Location userLoc) -> LogicalResult {
+    if (mapping.contains(value) ||
+        sde::isValueInternalToMovedOps(value, movedOps))
+      return success();
+    if (materializeReadOnlyMemref(value, userLoc))
+      return success();
+
+    Operation *defOp = value.getDefiningOp();
+    if (!defOp || !isMemoryEffectFree(defOp))
+      return failure();
+
+    for (Value operand : defOp->getOperands()) {
+      if (failed(clonePureValue(operand, defOp->getLoc())))
+        return failure();
+    }
+
+    if (defOp->getNumResults() > 0 && mapping.contains(defOp->getResult(0)))
+      return success();
+    Operation *cloned = codeletBuilder.clone(*defOp, mapping);
+    for (auto [orig, repl] :
+         llvm::zip(defOp->getResults(), cloned->getResults()))
+      mapping.map(orig, repl);
+    return success();
+  };
+
+  for (Value value : capturePlan.pureExternal) {
+    if (failed(clonePureValue(value, loc)))
+      return failure();
+  }
+  for (Value memref : capturePlan.materializedMemrefs) {
+    if (!materializeReadOnlyMemref(memref, loc))
+      return failure();
+  }
 
   for (Operation *op : opsToMove) {
-    // For each operand, check if it's defined outside the body (external).
-    // If so, clone it into the codelet.
-    for (Value operand : op->getOperands()) {
-      if (mapping.contains(operand))
-        continue;
-      // If defined in the body (by an op we already cloned), skip.
-      if (operand.getParentRegion() == &region.getBody())
-        continue;
-      // External value — clone its defining op if pure.
-      Operation *defOp = operand.getDefiningOp();
-      if (defOp && isMemoryEffectFree(defOp)) {
-        // Clone the pure producer into the codelet body.
-        // First ensure its operands are mapped.
-        std::function<void(Operation *)> clonePure = [&](Operation *op) {
-          // Check if already cloned (via any of its results).
-          if (op->getNumResults() > 0 && mapping.contains(op->getResult(0)))
-            return;
-          for (Value inp : op->getOperands()) {
-            if (mapping.contains(inp))
-              continue;
-            Operation *inpDef = inp.getDefiningOp();
-            if (inpDef && isMemoryEffectFree(inpDef))
-              clonePure(inpDef);
-          }
-          Operation *cloned = codeletBuilder.clone(*op, mapping);
-          for (auto [orig, repl] :
-               llvm::zip(op->getResults(), cloned->getResults()))
-            mapping.map(orig, repl);
-        };
-        clonePure(defOp);
-      } else if (!defOp) {
-        // Block argument from an ancestor region (e.g., func arg).
-        // For IsolatedFromAbove, we cannot reference it directly.
-        // This shouldn't occur for our target <single> bodies which
-        // only use tensor.extract/insert + arith on the block arg.
-        // If it does, signal failure.
-        return failure();
-      }
-    }
     codeletBuilder.clone(*op, mapping);
   }
 
@@ -256,7 +314,9 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
     Value mapped = mapping.lookupOrDefault(yieldedVal);
     codeletYieldValues.push_back(mapped);
   }
+  codeletBuilder.setInsertionPoint(placeholderYield);
   sde::SdeYieldOp::create(codeletBuilder, loc, codeletYieldValues);
+  placeholderYield.erase();
 
   // --- Step 5: Erase the original body ops that were cloned into the codelet.
   // Only mu_token, codelet, and yield should remain in the body.
@@ -295,8 +355,7 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
     SmallVector<Operation *> toTensorOps;
     for (unsigned idx : tensorArgIndices) {
       Value iterArg = region.getIterArgs()[idx];
-      if (auto toTensor =
-              iterArg.getDefiningOp<bufferization::ToTensorOp>()) {
+      if (auto toTensor = iterArg.getDefiningOp<bufferization::ToTensorOp>()) {
         toTensorOps.push_back(toTensor);
       } else if (auto muToTensor =
                      iterArg.getDefiningOp<sde::SdeMuMemrefToTensorOp>()) {
@@ -377,7 +436,7 @@ struct ConvertToCodeletPass
       SmallVector<sde::SdeCuRegionOp> singles;
       module.walk([&](sde::SdeCuRegionOp region) {
         if (region.getKind() == sde::SdeCuKind::single &&
-            hasTensorIterArgs(region))
+            sde::hasTensorIterArgs(region))
           singles.push_back(region);
       });
       for (sde::SdeCuRegionOp region : singles) {

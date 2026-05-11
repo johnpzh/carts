@@ -49,8 +49,6 @@ void AnalysisManager::invalidate() {
     loopAnalysis->invalidate();
   if (stringAnalysis)
     stringAnalysis->invalidate();
-  if (structuredKernelPlanAnalysis)
-    structuredKernelPlanAnalysis->invalidate();
   if (edtHeuristics)
     edtHeuristics->invalidate();
   if (dbHeuristics)
@@ -106,14 +104,6 @@ EdtHeuristics &AnalysisManager::getEdtHeuristics() {
   if (!edtHeuristics)
     edtHeuristics = std::make_unique<EdtHeuristics>(*this);
   return *edtHeuristics;
-}
-
-StructuredKernelPlanAnalysis &
-AnalysisManager::getStructuredKernelPlanAnalysis() {
-  if (!structuredKernelPlanAnalysis)
-    structuredKernelPlanAnalysis =
-        std::make_unique<StructuredKernelPlanAnalysis>(*this);
-  return *structuredKernelPlanAnalysis;
 }
 
 std::optional<DbAnalysis::LoopDbAccessSummary>

@@ -149,10 +149,11 @@ static std::optional<AffineMap> tryBuildIndexingMap(OperandRange indices,
   return AffineMap::get(/*dimCount=*/ivs.size(), /*symbolCount=*/0, exprs, ctx);
 }
 
-static bool collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
-                                      SmallVectorImpl<MemrefAccessEntry> &reads,
-                                      SmallVectorImpl<MemrefAccessEntry> &writes,
-                                      MLIRContext *ctx, bool &sawAccess) {
+static bool
+collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
+                          SmallVectorImpl<MemrefAccessEntry> &reads,
+                          SmallVectorImpl<MemrefAccessEntry> &writes,
+                          MLIRContext *ctx, bool &sawAccess) {
   for (auto &op : body) {
     if (op.hasTrait<OpTrait::IsTerminator>())
       continue;
@@ -196,8 +197,8 @@ static bool collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
       auto map = tryBuildIndexingMap(extractOp.getIndices(), ivs, ctx);
       if (!map)
         return false;
-      reads.push_back({extractOp.getTensor(), *map,
-                       extractOp.getOperation(), /*isRead=*/true});
+      reads.push_back({extractOp.getTensor(), *map, extractOp.getOperation(),
+                       /*isRead=*/true});
       sawAccess = true;
       continue;
     }
@@ -206,8 +207,8 @@ static bool collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
       auto map = tryBuildIndexingMap(insertOp.getIndices(), ivs, ctx);
       if (!map)
         return false;
-      writes.push_back({insertOp.getDest(), *map,
-                        insertOp.getOperation(), /*isRead=*/false});
+      writes.push_back({insertOp.getDest(), *map, insertOp.getOperation(),
+                        /*isRead=*/false});
       sawAccess = true;
       continue;
     }
@@ -221,8 +222,8 @@ static bool collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
 
       if (!ifOp.getElseRegion().empty()) {
         bool elseSawAccess = false;
-        if (!collectMemrefAccessesImpl(ifOp.getElseRegion().front(), ivs,
-                                       reads, writes, ctx, elseSawAccess))
+        if (!collectMemrefAccessesImpl(ifOp.getElseRegion().front(), ivs, reads,
+                                       writes, ctx, elseSawAccess))
           return false;
         sawAccess |= elseSawAccess;
       }

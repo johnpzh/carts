@@ -43,16 +43,16 @@
 ///==========================================================================///
 
 #include "arts/Dialect.h"
-#include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
-#include "arts/utils/ValueAnalysis.h"
-#define GEN_PASS_DEF_CREATEDBS
+#include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "arts/dialect/core/Transforms/db/DbRewriter.h"
-#include "arts/dialect/core/Transforms/db/DbTransforms.h"
 #include "arts/dialect/core/Transforms/db/block/DbBlockIndexer.h"
 #include "arts/dialect/core/Transforms/db/elementwise/DbElementWiseIndexer.h"
+#include "arts/utils/ValueAnalysis.h"
+#define GEN_PASS_DEF_CREATEDBS
+#include "arts/dialect/core/Transforms/db/DbTransforms.h"
 #include "arts/passes/Passes.h"
 #include "arts/passes/Passes.h.inc"
 #include "arts/utils/DbUtils.h"
@@ -304,7 +304,6 @@ private:
                                 const DbRewritePlan &plan);
   void rewriteUsesInParentEdt(MemrefInfo &memrefInfo);
   void rewriteUsesEverywhereCoarse(Operation *alloc, DbAllocOp dbAlloc);
-
 };
 } // namespace
 
@@ -346,6 +345,58 @@ void CreateDbsPass::runOnOperation() {
 
   /// Phase 5-7: Cleanup and validation post-checks.
   cleanupAndFinalize();
+
+  // When arts.for has block distribution but the acquire is coarse (no
+  // per-task slice geometry), the SDE-generated body uses chunk-local
+  // indexing inside an inner scf.for. Globalize the inner loop bounds so
+  // each task writes to its own slice. This restores the index-translation
+  // portion of the deleted DbPartitioning pass.
+  //
+  // Conservative guards keep the transform surgical: only fire when the
+  // inner scf.for matches SDE's exact chunk-loop signature
+  //   lower = const 0
+  //   upper = arith.minui(step, arith.subi(arts_for_upper, arts_for_iv))
+  // Other inner scf.for shapes (e.g., user-written nested loops in
+  // parallel_for_loops) are left alone.
+  module.walk([](arts::ForOp artsFor) {
+    auto kind = getEdtDistributionKind(artsFor);
+    if (!kind || (*kind != EdtDistributionKind::block &&
+                  *kind != EdtDistributionKind::block_cyclic))
+      return;
+    Block *body = artsFor.getBody();
+    if (!body || body->getNumArguments() == 0)
+      return;
+    Value artsForIV = body->getArgument(0);
+    scf::ForOp inner = nullptr;
+    for (Operation &op : body->getOperations()) {
+      if (auto sf = dyn_cast<scf::ForOp>(&op)) {
+        if (inner) {
+          inner = nullptr;
+          return;
+        }
+        inner = sf;
+      }
+    }
+    if (!inner)
+      return;
+    auto lbConst =
+        inner.getLowerBound().getDefiningOp<arith::ConstantIndexOp>();
+    if (!lbConst || lbConst.value() != 0)
+      return;
+    auto minOp = inner.getUpperBound().getDefiningOp<arith::MinUIOp>();
+    if (!minOp)
+      return;
+    auto subOp = minOp.getRhs().getDefiningOp<arith::SubIOp>();
+    if (!subOp)
+      subOp = minOp.getLhs().getDefiningOp<arith::SubIOp>();
+    if (!subOp || subOp.getRhs() != artsForIV)
+      return;
+    OpBuilder builder(inner);
+    Value newUpper = arith::AddIOp::create(builder, inner.getLoc(), artsForIV,
+                                           inner.getUpperBound());
+    inner.getLowerBoundMutable().assign(artsForIV);
+    inner.getUpperBoundMutable().assign(newUpper);
+  });
 
   AC = nullptr;
   ARTS_INFO_FOOTER(CreateDbsPass);
@@ -642,7 +693,17 @@ void CreateDbsPass::collectControlDbOps() {
     bool allDepsArePreWiredAcquires = edt.getDependencies().size() > 0;
     for (Value dep : edt.getDependencies()) {
       Operation *underlying = ValueAnalysis::getUnderlyingOperation(dep);
-      if (!underlying || !isa<DbAllocOp>(underlying)) {
+      bool dbAllocBacked = underlying && isa<DbAllocOp>(underlying);
+      if (!dbAllocBacked) {
+        if (auto acquire = dep.getDefiningOp<DbAcquireOp>()) {
+          dbAllocBacked = true;
+          Operation *sourceUnderlying =
+              ValueAnalysis::getUnderlyingOperation(acquire.getSourcePtr());
+          if (sourceUnderlying)
+            dbAllocBacked = isa<DbAllocOp>(sourceUnderlying) || dbAllocBacked;
+        }
+      }
+      if (!dbAllocBacked) {
         allDepsArePreWiredAcquires = false;
         break;
       }
@@ -676,9 +737,8 @@ void CreateDbsPass::collectControlDbOps() {
     }
 
     /// Now erase unused block arguments.
-    block.eraseArguments([&](BlockArgument arg) {
-      return llvm::is_contained(unusedArgs, arg);
-    });
+    block.eraseArguments(
+        [&](BlockArgument arg) { return llvm::is_contained(unusedArgs, arg); });
 
     /// Preserve the route operand when clearing dependencies
     SmallVector<Value> preservedOperands;
@@ -1046,8 +1106,12 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
   ARTS_DEBUG(" - Creating DbAcquire operations for "
              << externalDeps.size() << " external dependencies");
 
-  /// Accumulate dependency operands to set on the EDT
-  SmallVector<Value> dependencyOperands;
+  /// Accumulate dependency operands to set on the EDT.  The tensor-path
+  /// SDE->ARTS lowering may have already wired DbAcquire-backed dependencies
+  /// before this pass; preserve those while appending any dependencies that
+  /// CreateDbs materializes from ordinary memrefs.
+  SmallVector<Value> dependencyOperands(edt.getDependencies().begin(),
+                                        edt.getDependencies().end());
 
   /// Track which DbAllocOps have already been processed for coarse-grained
   /// acquires. For fine-grained acquires, we may need multiple acquires per

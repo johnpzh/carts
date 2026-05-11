@@ -189,9 +189,8 @@ static void processBarrierOp(BarrierOp barrier) {
 
   // Re-sort opsToMove into program order so the moveBefore sequence in the
   // epoch block preserves source order.
-  llvm::sort(opsToMove, [](Operation *a, Operation *b) {
-    return a->isBeforeInBlock(b);
-  });
+  llvm::sort(opsToMove,
+             [](Operation *a, Operation *b) { return a->isBeforeInBlock(b); });
 
   /// Create epoch and move operations into it
   Location loc = barrier.getLoc();

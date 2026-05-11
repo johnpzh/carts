@@ -105,10 +105,12 @@ if not inputs_dir:
     inputs_dir = os.path.join(project_root, "tests", "inputs")
 samples_dir = os.path.join(project_root, "samples")
 arts_config_path = os.path.join(inputs_dir, "arts_8t.cfg")
+arts_multinode_config_path = os.path.join(samples_dir, "arts_multinode.cfg")
 
 config.substitutions.append(("%inputs_dir", inputs_dir))
 config.substitutions.append(("%samples_dir", samples_dir))
 config.substitutions.append(("%arts_config", arts_config_path))
+config.substitutions.append(("%arts_multinode_config", arts_multinode_config_path))
 
 # Export a few defaults so standard substitutions such as %S/%T are available.
 config.llvm_tools_dir = llvm_bin_dir

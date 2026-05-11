@@ -150,7 +150,7 @@ static cl::opt<bool> RuntimeStaticWorkers(
              "when the module embeds a valid ARTS config"),
     cl::init(false));
 
-/// Distributed DB allocation enablement (after DbPartitioning).
+/// Distributed DB allocation enablement.
 static cl::opt<bool> DistributedDb(
     "distributed-db",
     cl::desc("Attempt distributed DB allocation "
@@ -184,7 +184,6 @@ enum class StageId {
   Concurrency,
   EdtDistribution,
   PostDistributionCleanup,
-  DbPartitioning,
   PostDbRefinement,
   LateConcurrencyCleanup,
   Epochs,
@@ -261,18 +260,30 @@ static const std::array<llvm::StringLiteral, 10>
 static const std::array<llvm::StringLiteral, 3> kInitialCleanupPasses = {
     "LowerAffine(func)", "CSE(func)", "PolygeistCanonicalizeFor(func)"};
 static const std::array<llvm::StringLiteral, 24> kOpenMPToArtsPasses = {
-    "ConvertOpenMPToSde",       "RaiseToLinalg",
-    "RaiseToTensor",            "ScopeSelection",
-    "ScheduleRefinement",       "ChunkOpt",
-    "ReductionStrategy",        "LoopInterchange",
-    "Tiling",                   "StructuredSummaries",
-    "ElementwiseFusion",        "DistributionPlanning",
-    "IterationSpaceDecomposition", "BarrierElimination",
-    "Vectorization",            "LowerToMemref",
-    "ConvertToCodelet",         "TensorCleanup",
-    "TokenModeRefine",          "ConvertSdeToArts",
-    "VerifySdeLowered",         "DeadCodeElimination",
-    "CSE",                      "VerifyEdtCreated"};
+    "ConvertOpenMPToSde",
+    "RaiseToLinalg",
+    "RaiseToTensor",
+    "ScopeSelection",
+    "ScheduleRefinement",
+    "ChunkOpt",
+    "ReductionStrategy",
+    "LoopInterchange",
+    "Tiling",
+    "StructuredSummaries",
+    "ElementwiseFusion",
+    "DistributionPlanning",
+    "IterationSpaceDecomposition",
+    "BarrierElimination",
+    "Vectorization",
+    "LowerToMemref",
+    "ConvertToCodelet",
+    "TensorCleanup",
+    "TokenModeRefine",
+    "ConvertSdeToArts",
+    "VerifySdeLowered",
+    "DeadCodeElimination",
+    "CSE",
+    "VerifyEdtCreated"};
 static const std::array<llvm::StringLiteral, 6> kEdtTransformsPasses = {
     "EdtStructuralOpt(runAnalysis=false)",
     "EdtICM",
@@ -297,8 +308,8 @@ static const std::array<llvm::StringLiteral, 4> kEdtOptPasses = {
 static const std::array<llvm::StringLiteral, 4> kConcurrencyPasses = {
     "PolygeistCanonicalize", "Concurrency", "ForOpt", "PolygeistCanonicalize"};
 static const std::array<llvm::StringLiteral, 4> kEdtDistributionPasses = {
-    "EdtDistribution", "EdtOrchestrationOpt",
-    "ForLowering", "VerifyForLowered"};
+    "EdtDistribution", "EdtOrchestrationOpt", "ForLowering",
+    "VerifyForLowered"};
 static const std::array<llvm::StringLiteral, 8> kPostDistributionCleanupPasses =
     {"EdtStructuralOpt(runAnalysis=false)",
      "DeadCodeElimination",
@@ -308,8 +319,6 @@ static const std::array<llvm::StringLiteral, 8> kPostDistributionCleanupPasses =
      "EpochOpt",
      "PolygeistCanonicalize",
      "CSE"};
-static const std::array<llvm::StringLiteral, 3> kDbPartitioningPasses = {
-    "DbPartitioning", "DbDistributedOwnership (conditional)", "DbTransforms"};
 static const std::array<llvm::StringLiteral, 7> kPostDbRefinementPasses = {
     "DbModeTightening",
     "EdtTransforms",
@@ -666,7 +675,8 @@ void buildOpenMPToArtsPipeline(PassManager &pm,
   // from tensor-native form — no bufferization wrapping needed.
   pm.addPass(arts::sde::createRaiseToTensorPass());
   pm.addPass(arts::sde::createRaiseToLinalgPass());
-  // Dep passes first (structural transforms), then effect passes (scheduling decisions).
+  // Dep passes first (structural transforms), then effect passes (scheduling
+  // decisions).
   pm.addPass(arts::sde::createLoopInterchangePass());
   pm.addPass(arts::sde::createTilingPass(costModel));
   pm.addPass(arts::sde::createStructuredSummariesPass(costModel));
@@ -784,16 +794,6 @@ void buildPostDistributionCleanupPipeline(PassManager &pm,
   pm.addPass(arts::createEdtStructuralOptPass(AM, /*runAnalysis*/ false));
   pm.addPass(arts::createEpochOptPass(AM));
   addCanonicalizeAndCSE(pm);
-}
-
-/// Partition DBs while high-level EDT/DB structure is still intact.
-void buildDbPartitioningPipeline(PassManager &pm, arts::AnalysisManager *AM) {
-  pm.addPass(arts::createDbPartitioningPass(AM));
-  /// Run distributed-ownership eligibility while EDT/DB ops are still in
-  /// high-level form so analysis can reason about DbAcquire<->Edt users.
-  if (DistributedDb)
-    pm.addPass(arts::createDbDistributedOwnershipPass(AM));
-  pm.addPass(arts::createDbTransformsPass(AM));
 }
 
 /// Tighten DB modes and persist post-partition refinement contracts.
@@ -939,7 +939,6 @@ static constexpr llvm::StringLiteral kDepCreateDbs[] = {"create-dbs"};
 static constexpr llvm::StringLiteral kDepConcurrency[] = {"concurrency"};
 static constexpr llvm::StringLiteral kDepEdtDistribution[] = {
     "edt-distribution"};
-static constexpr llvm::StringLiteral kDepDbPartitioning[] = {"db-partitioning"};
 static constexpr llvm::StringLiteral kDepPostDbRefinement[] = {
     "post-db-refinement"};
 static constexpr llvm::StringLiteral kDepPreLowering[] = {
@@ -947,7 +946,7 @@ static constexpr llvm::StringLiteral kDepPreLowering[] = {
 static constexpr llvm::StringLiteral kDepArtsToLLVM[] = {"pre-lowering"};
 
 static ArrayRef<StageDescriptor> getStageRegistry() {
-  static const std::array<StageDescriptor, 18> kStageRegistry = {{
+  static const std::array<StageDescriptor, 17> kStageRegistry = {{
       {StageId::RaiseMemRefDimensionality, "raise-memref-dimensionality",
        llvm::ArrayRef<llvm::StringLiteral>(), StageKind::Core, true, true,
        false, "Error when raising memref dimensionality",
@@ -1031,14 +1030,6 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepEdtDistribution},
-      {StageId::DbPartitioning, "db-partitioning",
-       llvm::ArrayRef<llvm::StringLiteral>(), StageKind::Core, true, true,
-       false, "Error when partitioning DBs", kDbPartitioningPasses,
-       [](PassManager &pm, const StageExecutionContext &ctx) {
-         buildDbPartitioningPipeline(pm, ctx.analysisManager);
-       },
-       isStageEnabledAlways,
-       /*dependsOn=*/kDepEdtDistribution},
       {StageId::PostDbRefinement, "post-db-refinement",
        llvm::ArrayRef<llvm::StringLiteral>(), StageKind::Core, true, true,
        false, "Error when refining post-partition DB contracts",
@@ -1047,7 +1038,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
          buildPostDbRefinementPipeline(pm, ctx.analysisManager);
        },
        isStageEnabledAlways,
-       /*dependsOn=*/kDepDbPartitioning},
+       /*dependsOn=*/kDepEdtDistribution},
       {StageId::LateConcurrencyCleanup, "late-concurrency-cleanup",
        llvm::ArrayRef<llvm::StringLiteral>(), StageKind::Core, true, true,
        false, "Error when running late concurrency cleanup",

@@ -96,9 +96,8 @@ struct ReductionStrategyPass
                      llvm::zip(*reductionKinds, op.getReductionAccumulators()),
                      [](auto pair) {
                        auto [kind, accumulator] = pair;
-                       return isAtomicCapable(kind,
-                                              getAccumulatorElementType(
-                                                  accumulator));
+                       return isAtomicCapable(
+                           kind, getAccumulatorElementType(accumulator));
                      })) {
         double atomicCost =
             static_cast<double>(workerCount) * costModel->getAtomicUpdateCost();

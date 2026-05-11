@@ -262,7 +262,8 @@ static bool raiseStencilToLinalg(sde::SdeSuIterateOp iterOp,
     if (it != memrefToTensor.end())
       return it->second;
     auto mrType = cast<MemRefType>(memref.getType());
-    auto tTy = RankedTensorType::get(mrType.getShape(), mrType.getElementType());
+    auto tTy =
+        RankedTensorType::get(mrType.getShape(), mrType.getElementType());
     Value tensor =
         sde::SdeMuMemrefToTensorOp::create(builder, loc, tTy, memref);
     memrefToTensor[memref] = tensor;
@@ -297,10 +298,9 @@ static bool raiseStencilToLinalg(sde::SdeSuIterateOp iterOp,
     }
 
     Value sliced = tensor::ExtractSliceOp::create(builder, loc, baseTensor,
-                                                   offsets, sizes, strides);
+                                                  offsets, sizes, strides);
     tensorInputs.push_back(sliced);
-    indexingMaps.push_back(
-        builder.getMultiDimIdentityMap(numDims));
+    indexingMaps.push_back(builder.getMultiDimIdentityMap(numDims));
   }
 
   // Build extract_slice for each output.
@@ -322,12 +322,11 @@ static bool raiseStencilToLinalg(sde::SdeSuIterateOp iterOp,
     }
 
     Value sliced = tensor::ExtractSliceOp::create(builder, loc, baseTensor,
-                                                   offsets, sizes, strides);
+                                                  offsets, sizes, strides);
     tensorOutputs.push_back(sliced);
     resultTypes.push_back(sliced.getType());
     fullOutputTensors.push_back(baseTensor);
-    indexingMaps.push_back(
-        builder.getMultiDimIdentityMap(numDims));
+    indexingMaps.push_back(builder.getMultiDimIdentityMap(numDims));
   }
 
   // Build linalg.generic with all-identity maps.
@@ -381,8 +380,7 @@ static bool raiseStencilToLinalg(sde::SdeSuIterateOp iterOp,
 
   // Create insert_slice for each output result.
   for (auto [idx, result] : llvm::enumerate(generic.getResults())) {
-    auto tensorTy =
-        cast<RankedTensorType>(fullOutputTensors[idx].getType());
+    auto tensorTy = cast<RankedTensorType>(fullOutputTensors[idx].getType());
     unsigned rank = tensorTy.getRank();
 
     SmallVector<OpFoldResult> offsets(rank);
@@ -394,9 +392,8 @@ static bool raiseStencilToLinalg(sde::SdeSuIterateOp iterOp,
       sizes[d] = tripCounts[d];
     }
 
-    tensor::InsertSliceOp::create(builder, loc, result,
-                                   fullOutputTensors[idx], offsets, sizes,
-                                   strides);
+    tensor::InsertSliceOp::create(builder, loc, result, fullOutputTensors[idx],
+                                  offsets, sizes, strides);
   }
 
   // Stencil carriers stay dual-representation: the scalar body (scf.for +
@@ -516,9 +513,8 @@ static bool raiseToLinalg(sde::SdeSuIterateOp iterOp,
       auto mrType = cast<MemRefType>(output.source.getType());
       tensorTy =
           RankedTensorType::get(mrType.getShape(), mrType.getElementType());
-      tensorOutput =
-          sde::SdeMuMemrefToTensorOp::create(builder, loc, tensorTy,
-                                              output.source);
+      tensorOutput = sde::SdeMuMemrefToTensorOp::create(builder, loc, tensorTy,
+                                                        output.source);
     }
     tensorOutputs.push_back(tensorOutput);
     resultTypes.push_back(tensorTy);
@@ -594,10 +590,8 @@ static bool raiseToLinalg(sde::SdeSuIterateOp iterOp,
     SmallVector<Operation *> toErase;
     for (Operation &op : llvm::reverse(computeBody->without_terminator())) {
       // Keep the carrier and its support ops.
-      if (isa<linalg::GenericOp>(op) ||
-          isa<sde::SdeMuMemrefToTensorOp>(op) ||
-          isa<bufferization::ToTensorOp>(op) ||
-          isa<tensor::EmptyOp>(op))
+      if (isa<linalg::GenericOp>(op) || isa<sde::SdeMuMemrefToTensorOp>(op) ||
+          isa<bufferization::ToTensorOp>(op) || isa<tensor::EmptyOp>(op))
         continue;
       // Erase stores/inserts (side effects but no SSA results to worry about).
       if (isa<memref::StoreOp, tensor::InsertOp>(&op)) {
@@ -654,9 +648,8 @@ struct RaiseToLinalgPass
       if (summary->supportsLinalgCarrier()) {
         bool didRaise = false;
         if (pattern == sde::SdeStructuredClassification::stencil)
-          didRaise = raiseStencilToLinalg(iterOp, summary->nest,
-                                          summary->reads, summary->writes,
-                                          summary->iterTypes);
+          didRaise = raiseStencilToLinalg(iterOp, summary->nest, summary->reads,
+                                          summary->writes, summary->iterTypes);
         else
           didRaise = raiseToLinalg(iterOp, summary->nest, summary->reads,
                                    summary->writes, summary->iterTypes);

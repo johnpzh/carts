@@ -14,10 +14,9 @@
 #include "arts/dialect/core/Analysis/edt/EpochAnalysis.h"
 #include "arts/dialect/core/Analysis/heuristics/DbHeuristics.h"
 #include "arts/dialect/core/Analysis/heuristics/EdtHeuristics.h"
-#include "arts/dialect/core/Analysis/heuristics/StructuredKernelPlanAnalysis.h"
 #include "arts/dialect/core/Analysis/loop/LoopAnalysis.h"
-#include "arts/utils/machine/RuntimeConfig.h"
 #include "arts/utils/costs/SDECostModel.h"
+#include "arts/utils/machine/RuntimeConfig.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <memory>
@@ -47,7 +46,6 @@ public:
   StringAnalysis &getStringAnalysis();
   DbHeuristics &getDbHeuristics();
   EdtHeuristics &getEdtHeuristics();
-  StructuredKernelPlanAnalysis &getStructuredKernelPlanAnalysis();
 
   /// Unified analysis queries spanning EDT and DB analyses.
   std::optional<DbAnalysis::LoopDbAccessSummary>
@@ -121,7 +119,6 @@ private:
   std::unique_ptr<EpochAnalysis> epochAnalysis;
   std::unique_ptr<DbHeuristics> dbHeuristics;
   std::unique_ptr<EdtHeuristics> edtHeuristics;
-  std::unique_ptr<StructuredKernelPlanAnalysis> structuredKernelPlanAnalysis;
   std::unique_ptr<LoopAnalysis> loopAnalysis;
   std::unique_ptr<StringAnalysis> stringAnalysis;
   /// Cached diagnostic data

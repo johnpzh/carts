@@ -112,8 +112,7 @@ struct ChunkRewrite {
   std::optional<int64_t> chunkSize;
 };
 
-struct ChunkOptPass
-    : public arts::impl::ChunkOptBase<ChunkOptPass> {
+struct ChunkOptPass : public arts::impl::ChunkOptBase<ChunkOptPass> {
   explicit ChunkOptPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 
@@ -168,10 +167,9 @@ struct ChunkOptPass
 
       auto newOp = sde::SdeSuIterateOp::create(
           rewriter, rewrite.op.getLoc(), /*resultTypes=*/TypeRange{},
-          rewrite.op.getLowerBounds(),
-          rewrite.op.getUpperBounds(), rewrite.op.getSteps(),
-          rewrite.op.getScheduleAttr(), chunkSize, rewrite.op.getNowaitAttr(),
-          rewrite.op.getReductionAccumulators(),
+          rewrite.op.getLowerBounds(), rewrite.op.getUpperBounds(),
+          rewrite.op.getSteps(), rewrite.op.getScheduleAttr(), chunkSize,
+          rewrite.op.getNowaitAttr(), rewrite.op.getReductionAccumulators(),
           rewrite.op.getReductionKindsAttr(),
           rewrite.op.getReductionStrategyAttr(),
           rewrite.op.getStructuredClassificationAttr(),
@@ -192,8 +190,7 @@ private:
 
 namespace mlir::arts::sde {
 
-std::unique_ptr<Pass>
-createChunkOptPass(sde::SDECostModel *costModel) {
+std::unique_ptr<Pass> createChunkOptPass(sde::SDECostModel *costModel) {
   return std::make_unique<ChunkOptPass>(costModel);
 }
 

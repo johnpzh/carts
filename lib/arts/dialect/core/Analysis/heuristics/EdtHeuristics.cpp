@@ -18,7 +18,8 @@ const RuntimeConfig &EdtHeuristics::getRuntimeConfig() const {
 
 DistributionStrategy
 EdtHeuristics::chooseStrategy(EdtConcurrency concurrency) const {
-  return DistributionHeuristics::analyzeStrategy(concurrency, &getRuntimeConfig());
+  return DistributionHeuristics::analyzeStrategy(concurrency,
+                                                 &getRuntimeConfig());
 }
 
 EdtDistributionKind
@@ -28,7 +29,8 @@ EdtHeuristics::chooseKind(const DistributionStrategy &strategy,
 }
 
 ParallelismDecision EdtHeuristics::resolveParallelism() const {
-  return DistributionHeuristics::resolveParallelismFromMachine(&getRuntimeConfig());
+  return DistributionHeuristics::resolveParallelismFromMachine(
+      &getRuntimeConfig());
 }
 
 std::optional<WorkerConfig>
@@ -54,16 +56,7 @@ EdtHeuristics::resolveDistributionPattern(ForOp forOp,
 LoopCoarseningDecision EdtHeuristics::computeLoopCoarseningDecision(
     ForOp forOp, const WorkerConfig &workerCfg) const {
   return DistributionHeuristics::computeLoopCoarseningDecision(
-      forOp, getAnalysisManager().getLoopAnalysis(), workerCfg,
-      getAnalysisManager().getCostModel());
-}
-
-std::optional<int64_t>
-EdtHeuristics::computeCoarsenedBlockHint(ForOp forOp,
-                                         const WorkerConfig &workerCfg) const {
-  return DistributionHeuristics::computeCoarsenedBlockHint(
-      forOp, getAnalysisManager().getLoopAnalysis(), workerCfg,
-      getAnalysisManager().getCostModel());
+      forOp, getAnalysisManager().getLoopAnalysis(), workerCfg);
 }
 
 ParallelEdtFusionDecision

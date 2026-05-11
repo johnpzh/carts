@@ -32,9 +32,6 @@ int main() {
 #pragma omp parallel
 #pragma omp single
   {
-    /// Print sequences
-    printf("seq1: %s\n", seq1);
-    printf("seq2: %s\n", seq2);
     for (int i = 1; i <= len1; i++) {
       for (int j = 1; j <= len2; j++) {
 #pragma omp task depend(                                                       \

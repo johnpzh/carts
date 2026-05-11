@@ -1137,10 +1137,8 @@ ArtsMode DbAnalysis::classifyMemrefUserAccessMode(Operation *op,
   } else if (auto store = dyn_cast<affine::AffineStoreOp>(op)) {
     hasWrite = safeGetMemrefUnderlying(store->getOperand(1)) == underlyingOp;
   } else if (auto copy = dyn_cast<memref::CopyOp>(op)) {
-    hasRead =
-        safeGetMemrefUnderlying(copy.getSource()) == underlyingOp;
-    hasWrite =
-        safeGetMemrefUnderlying(copy.getTarget()) == underlyingOp;
+    hasRead = safeGetMemrefUnderlying(copy.getSource()) == underlyingOp;
+    hasWrite = safeGetMemrefUnderlying(copy.getTarget()) == underlyingOp;
   }
 
   if (hasRead && hasWrite)

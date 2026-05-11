@@ -244,9 +244,8 @@ void ConcurrencyPass::applyEdtParallelismStrategy(EdtOp edtOp) {
         "data when setting parallelism");
   }
 
-  int nodeCount = runtimeConfig->hasValidNodeCount()
-                      ? runtimeConfig->getNodeCount()
-                      : 0;
+  int nodeCount =
+      runtimeConfig->hasValidNodeCount() ? runtimeConfig->getNodeCount() : 0;
   int workerThreads = static_cast<int>(machineDecision.workersPerNode);
   numWorkers = static_cast<int>(machineDecision.totalWorkers);
   concurrencyType = machineDecision.concurrency;

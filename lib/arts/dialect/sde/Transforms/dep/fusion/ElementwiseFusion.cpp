@@ -19,8 +19,8 @@ namespace mlir::arts {
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
-#include "mlir/Transforms/RegionUtils.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/DenseSet.h"
 
 using namespace mlir;
@@ -104,7 +104,8 @@ static bool hasDisjointWrites(ArrayRef<ElementwiseStage> stages) {
   return true;
 }
 
-static bool isElementwiseStage(sde::SdeSuIterateOp op, ElementwiseStage &stage) {
+static bool isElementwiseStage(sde::SdeSuIterateOp op,
+                               ElementwiseStage &stage) {
   if (!op || !op.getStructuredClassificationAttr() ||
       *op.getStructuredClassification() !=
           sde::SdeStructuredClassification::elementwise)
@@ -161,8 +162,8 @@ static bool isSkippableInterStageOp(Operation *op) {
   return op && op->getNumRegions() == 0 && isMemoryEffectFree(op);
 }
 
-static sde::SdeSuIterateOp
-fuseStages(MutableArrayRef<ElementwiseStage> stages, IRRewriter &rewriter) {
+static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
+                                      IRRewriter &rewriter) {
   assert(stages.size() >= 2 && "expected at least two stages");
 
   sde::SdeSuIterateOp first = stages.front().op;
@@ -170,11 +171,11 @@ fuseStages(MutableArrayRef<ElementwiseStage> stages, IRRewriter &rewriter) {
   rewriter.setInsertionPoint(stages.back().op);
 
   auto fused = sde::SdeSuIterateOp::create(
-      rewriter, loc, /*resultTypes=*/TypeRange{},
-      first.getLowerBounds(), first.getUpperBounds(),
-      first.getSteps(), first.getScheduleAttr(), first.getChunkSize(),
-      first.getNowaitAttr(), first.getReductionAccumulators(),
-      first.getReductionKindsAttr(), first.getReductionStrategyAttr(),
+      rewriter, loc, /*resultTypes=*/TypeRange{}, first.getLowerBounds(),
+      first.getUpperBounds(), first.getSteps(), first.getScheduleAttr(),
+      first.getChunkSize(), first.getNowaitAttr(),
+      first.getReductionAccumulators(), first.getReductionKindsAttr(),
+      first.getReductionStrategyAttr(),
       sde::SdeStructuredClassificationAttr::get(
           first.getContext(),
           sde::SdeStructuredClassification::elementwise_pipeline),
@@ -209,8 +210,8 @@ fuseStages(MutableArrayRef<ElementwiseStage> stages, IRRewriter &rewriter) {
     Block *srcBody = sde::getSuIterateComputeBlock(stage.op);
     IRMapping mapper;
     // Map the su_iterate block args (induction vars).
-    for (auto [srcArg, dstArg] :
-         llvm::zip(stage.op.getBody().front().getArguments(), dst.getArguments()))
+    for (auto [srcArg, dstArg] : llvm::zip(
+             stage.op.getBody().front().getArguments(), dst.getArguments()))
       mapper.map(srcArg, dstArg);
     for (Operation &nested : srcBody->without_terminator())
       rewriter.clone(nested, mapper);

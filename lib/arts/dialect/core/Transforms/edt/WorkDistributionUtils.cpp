@@ -6,7 +6,6 @@
 
 #include "arts/dialect/core/Transforms/edt/WorkDistributionUtils.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
-#include "arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.h"
 #include "arts/utils/DbUtils.h"
 #include "arts/utils/OperationAttributes.h"
 #include "arts/utils/PartitionPredicates.h"

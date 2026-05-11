@@ -22,13 +22,12 @@
 ///==========================================================================///
 
 #include "arts/Dialect.h"
-#include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "arts/dialect/core/Analysis/AccessPatternAnalysis.h"
 #include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Analysis/heuristics/DistributionHeuristics.h"
-#include "arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.h"
+#include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "arts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_FORLOWERING
 #include "arts/dialect/core/Analysis/db/OwnershipProof.h"
@@ -71,9 +70,9 @@ ARTS_DEBUG_SETUP(for_lowering);
 
 using namespace mlir::arts;
 
-static const AnalysisKind kForLowering_reads[] = {
-    AnalysisKind::DbAnalysis, AnalysisKind::EdtHeuristics,
-    AnalysisKind::RuntimeConfig};
+static const AnalysisKind kForLowering_reads[] = {AnalysisKind::DbAnalysis,
+                                                  AnalysisKind::EdtHeuristics,
+                                                  AnalysisKind::RuntimeConfig};
 [[maybe_unused]] static const AnalysisDependencyInfo kForLowering_deps = {
     kForLowering_reads, {}};
 
@@ -742,7 +741,8 @@ static Value hoistValueToBlock(Value val, Block *targetBlock,
 }
 
 /// For ForOps inside scf.if guards within a parallel EDT, hoist bound operands
-/// to the block containing the EDT so they dominate epoch code placed before it.
+/// to the block containing the EDT so they dominate epoch code placed before
+/// it.
 static void hoistForBoundsFromScfIf(ForOp forOp, EdtOp parallelEdt,
                                     OpBuilder &builder) {
   auto ifOp = forOp->getParentOfType<scf::IfOp>();
