@@ -25,11 +25,13 @@ namespace mlir::arts {
 #include "arts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::arts
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/IRMapping.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
 #include "arts/utils/Debug.h"
@@ -46,13 +48,19 @@ static bool isCarrierOp(Operation &op) {
              tensor::InsertSliceOp>(op);
 }
 
+static bool isTerminatorOp(Operation &op) {
+  return op.hasTrait<OpTrait::IsTerminator>();
+}
+
 /// Check whether a body block is carrier-authoritative: it contains a
 /// linalg.generic carrier but NO scalar executable ops (memref.load/store)
 /// anywhere in the body, including nested regions (except inside the carrier).
 static bool isCarrierAuthoritative(Block &body) {
   bool hasCarrier = false;
   bool hasScalar = false;
-  for (Operation &op : body.without_terminator()) {
+  for (Operation &op : body) {
+    if (isTerminatorOp(op))
+      continue;
     if (isa<linalg::GenericOp>(op)) {
       hasCarrier = true;
       continue;
@@ -247,7 +255,9 @@ static bool collectInnerForChain(Block &body,
   Block *current = &body;
   while (true) {
     scf::ForOp found;
-    for (Operation &op : current->without_terminator()) {
+    for (Operation &op : *current) {
+      if (isTerminatorOp(op))
+        continue;
       if (isCarrierOp(op))
         continue;
       if (auto forOp = dyn_cast<scf::ForOp>(op)) {
@@ -274,7 +284,9 @@ static bool findInnerLoopPair(Block &body, scf::ForOp &jLoop, scf::ForOp &kLoop,
   jLoop = nullptr;
   kLoop = nullptr;
 
-  for (Operation &op : body.without_terminator()) {
+  for (Operation &op : body) {
+    if (isTerminatorOp(op))
+      continue;
     if (isCarrierOp(op))
       continue;
     if (auto forOp = dyn_cast<scf::ForOp>(op)) {
@@ -290,7 +302,9 @@ static bool findInnerLoopPair(Block &body, scf::ForOp &jLoop, scf::ForOp &kLoop,
 
   // Inside the j loop, find the k loop and any prefix init ops.
   Block *jBody = jLoop.getBody();
-  for (Operation &op : jBody->without_terminator()) {
+  for (Operation &op : *jBody) {
+    if (isTerminatorOp(op))
+      continue;
     if (auto forOp = dyn_cast<scf::ForOp>(op)) {
       if (kLoop)
         return false; // multiple nested loops
@@ -304,6 +318,447 @@ static bool findInnerLoopPair(Block &body, scf::ForOp &jLoop, scf::ForOp &kLoop,
     }
   }
   return kLoop != nullptr;
+}
+
+static memref::StoreOp getImmediateScalarInitStore(scf::ForOp loop) {
+  Operation *prev = loop->getPrevNode();
+  auto store = dyn_cast_or_null<memref::StoreOp>(prev);
+  if (!store)
+    return nullptr;
+  auto type = dyn_cast<MemRefType>(store.getMemRefType());
+  if (!type || type.getRank() != 0)
+    return nullptr;
+  return store;
+}
+
+static bool usesScalarAccumulator(Operation *op, Value accumulator) {
+  if (isa<memref::LoadOp, memref::StoreOp>(op) &&
+      llvm::is_contained(op->getOperands(), accumulator))
+    return true;
+
+  for (Region &region : op->getRegions()) {
+    for (Block &block : region) {
+      for (Operation &nested : block) {
+        if (usesScalarAccumulator(&nested, accumulator))
+          return true;
+      }
+    }
+  }
+  return false;
+}
+
+static bool hasNestedScalarAccumulatorUse(Operation *op, Value accumulator) {
+  for (Region &region : op->getRegions()) {
+    for (Block &block : region) {
+      for (Operation &nested : block) {
+        if (usesScalarAccumulator(&nested, accumulator))
+          return true;
+      }
+    }
+  }
+  return false;
+}
+
+static bool promoteScalarAccumulatorLoop(scf::ForOp loop,
+                                         memref::StoreOp initStore) {
+  Value accumulator = initStore.getMemref();
+  Type accumulatorType =
+      cast<MemRefType>(accumulator.getType()).getElementType();
+  if (initStore.getValueToStore().getType() != accumulatorType)
+    return false;
+
+  SmallVector<memref::LoadOp> postLoads;
+  for (Operation *op = loop->getNextNode(); op;) {
+    Operation *next = op->getNextNode();
+    if (auto store = dyn_cast<memref::StoreOp>(op)) {
+      if (store.getMemref() == accumulator)
+        break;
+    }
+    if (auto load = dyn_cast<memref::LoadOp>(op)) {
+      if (load.getMemref() == accumulator) {
+        postLoads.push_back(load);
+        op = next;
+        continue;
+      }
+    }
+    if (hasNestedScalarAccumulatorUse(op, accumulator))
+      return false;
+    op = next;
+  }
+  if (postLoads.empty())
+    return false;
+
+  unsigned directStores = 0;
+  bool sawAccumulatorStore = false;
+  for (Operation &op : *loop.getBody()) {
+    if (isTerminatorOp(op))
+      continue;
+    if (hasNestedScalarAccumulatorUse(&op, accumulator))
+      return false;
+    if (auto load = dyn_cast<memref::LoadOp>(&op)) {
+      if (load.getMemref() == accumulator && sawAccumulatorStore)
+        return false;
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(&op)) {
+      if (store.getMemref() == accumulator) {
+        sawAccumulatorStore = true;
+        ++directStores;
+      }
+    }
+  }
+  if (directStores != 1)
+    return false;
+
+  OpBuilder builder(loop);
+  scf::ForOp promoted = scf::ForOp::create(
+      builder, loop.getLoc(), loop.getLowerBound(), loop.getUpperBound(),
+      loop.getStep(), ValueRange{initStore.getValueToStore()});
+
+  Block &oldBody = *loop.getBody();
+  Block &newBody = *promoted.getBody();
+  Value oldIv = loop.getInductionVar();
+  Value newIv = promoted.getInductionVar();
+  BlockArgument accumulatorArg = newBody.getArgument(1);
+
+  IRMapping mapping;
+  mapping.map(oldIv, newIv);
+
+  Operation *newTerminator = nullptr;
+  if (!newBody.empty() && isTerminatorOp(newBody.back()))
+    newTerminator = &newBody.back();
+
+  OpBuilder bodyBuilder(promoted.getContext());
+  if (newTerminator)
+    bodyBuilder.setInsertionPoint(newTerminator);
+  else
+    bodyBuilder.setInsertionPointToEnd(&newBody);
+
+  Value yieldedValue;
+  for (Operation &op : oldBody) {
+    if (isTerminatorOp(op))
+      continue;
+    if (auto load = dyn_cast<memref::LoadOp>(&op)) {
+      if (load.getMemref() == accumulator) {
+        mapping.map(load.getResult(), accumulatorArg);
+        continue;
+      }
+    }
+
+    if (auto store = dyn_cast<memref::StoreOp>(&op)) {
+      if (store.getMemref() == accumulator) {
+        yieldedValue = mapping.lookupOrDefault(store.getValueToStore());
+        continue;
+      }
+    }
+
+    Operation *cloned = bodyBuilder.clone(op, mapping);
+    for (auto [oldResult, newResult] :
+         llvm::zip(op.getResults(), cloned->getResults()))
+      mapping.map(oldResult, newResult);
+  }
+
+  if (!yieldedValue) {
+    promoted.erase();
+    return false;
+  }
+
+  if (newTerminator)
+    newTerminator->erase();
+  bodyBuilder.setInsertionPointToEnd(&newBody);
+  scf::YieldOp::create(bodyBuilder, loop.getLoc(), yieldedValue);
+
+  Value promotedResult = promoted.getResult(0);
+  for (memref::LoadOp load : postLoads) {
+    load.getResult().replaceAllUsesWith(promotedResult);
+    load.erase();
+  }
+
+  initStore.erase();
+  loop.erase();
+  return true;
+}
+
+static void collectScalarAccumulatorLoops(Block &body,
+                                          SmallVectorImpl<scf::ForOp> &loops) {
+  for (Operation &op : body) {
+    if (isTerminatorOp(op))
+      continue;
+    if (auto loop = dyn_cast<scf::ForOp>(op)) {
+      if (getImmediateScalarInitStore(loop))
+        loops.push_back(loop);
+    }
+    for (Region &region : op.getRegions()) {
+      for (Block &nestedBody : region)
+        collectScalarAccumulatorLoops(nestedBody, loops);
+    }
+  }
+}
+
+static unsigned promoteScalarAccumulators(Block &body) {
+  unsigned promoted = 0;
+  SmallVector<scf::ForOp> loops;
+  collectScalarAccumulatorLoops(body, loops);
+
+  for (scf::ForOp loop : loops) {
+    if (!loop || loop->getParentRegion() == nullptr)
+      continue;
+    memref::StoreOp initStore = getImmediateScalarInitStore(loop);
+    if (!initStore)
+      continue;
+    if (promoteScalarAccumulatorLoop(loop, initStore))
+      ++promoted;
+  }
+  return promoted;
+}
+
+static bool isKnownFloatZero(Value value) {
+  if (!isa<FloatType>(value.getType()))
+    return false;
+
+  if (auto constant = value.getDefiningOp<arith::ConstantOp>()) {
+    if (auto floatAttr = dyn_cast<FloatAttr>(constant.getValue()))
+      return floatAttr.getValue().isZero();
+  }
+
+  if (auto mul = value.getDefiningOp<arith::MulFOp>())
+    return isKnownFloatZero(mul.getLhs()) || isKnownFloatZero(mul.getRhs());
+
+  return false;
+}
+
+static bool
+findPromotedScalarMatmulNest(Block &body, scf::ForOp &jLoop, scf::ForOp &kLoop,
+                             SmallVectorImpl<Operation *> &prefixOps,
+                             SmallVectorImpl<Operation *> &postOps) {
+  for (Operation &op : body) {
+    if (isTerminatorOp(op) || isCarrierOp(op))
+      continue;
+
+    if (auto forOp = dyn_cast<scf::ForOp>(op)) {
+      if (jLoop)
+        return false;
+      jLoop = forOp;
+      continue;
+    }
+
+    // Dead rank-0 alloca state may remain after scalar promotion. It is
+    // cleaned up later, so do not let it block the matrix loop rewrite.
+    if (isa<memref::AllocaOp>(op))
+      continue;
+    if (auto store = dyn_cast<memref::StoreOp>(op)) {
+      auto type = dyn_cast<MemRefType>(store.getMemRefType());
+      if (type && type.getRank() == 0)
+        continue;
+    }
+
+    return false;
+  }
+  if (!jLoop)
+    return false;
+
+  bool sawKLoop = false;
+  for (Operation &op : *jLoop.getBody()) {
+    if (isTerminatorOp(op))
+      continue;
+
+    if (auto forOp = dyn_cast<scf::ForOp>(op)) {
+      if (sawKLoop)
+        return false;
+      kLoop = forOp;
+      sawKLoop = true;
+      continue;
+    }
+
+    if (!sawKLoop)
+      prefixOps.push_back(&op);
+    else
+      postOps.push_back(&op);
+  }
+
+  return kLoop && kLoop.getNumResults() == 1 && kLoop.getInitArgs().size() == 1;
+}
+
+static bool matchAccumulatorContribution(scf::ForOp kLoop, Value &contribution,
+                                         Operation *&accumulateOp) {
+  Block *body = kLoop.getBody();
+  if (body->empty())
+    return false;
+
+  auto yield = dyn_cast<scf::YieldOp>(&body->back());
+  if (!yield || yield.getResults().size() != 1)
+    return false;
+
+  auto add = yield.getResults()[0].getDefiningOp<arith::AddFOp>();
+  if (!add)
+    return false;
+
+  Value accumulator = kLoop.getRegionIterArgs()[0];
+  if (add.getLhs() == accumulator) {
+    contribution = add.getRhs();
+  } else if (add.getRhs() == accumulator) {
+    contribution = add.getLhs();
+  } else {
+    return false;
+  }
+
+  accumulateOp = add.getOperation();
+  return true;
+}
+
+static bool matchFinalStoreForZeroInitializedAccumulator(
+    scf::ForOp kLoop, ArrayRef<Operation *> postOps, memref::StoreOp &store) {
+  if (!isKnownFloatZero(kLoop.getInitArgs()[0]) || postOps.empty())
+    return false;
+
+  store = dyn_cast<memref::StoreOp>(postOps.back());
+  if (!store)
+    return false;
+
+  auto type = dyn_cast<MemRefType>(store.getMemRefType());
+  if (!type || type.getRank() < 2 || store.getIndices().size() < 2)
+    return false;
+
+  Value sum = kLoop.getResult(0);
+  Value stored = store.getValueToStore();
+  if (stored == sum)
+    return true;
+
+  auto add = stored.getDefiningOp<arith::AddFOp>();
+  if (!add)
+    return false;
+
+  Value extra;
+  if (add.getLhs() == sum)
+    extra = add.getRhs();
+  else if (add.getRhs() == sum)
+    extra = add.getLhs();
+  else
+    return false;
+
+  return isKnownFloatZero(extra);
+}
+
+static bool kBodyReadsOutputMemref(scf::ForOp kLoop, Value outputMemref) {
+  bool readsOutput = false;
+  kLoop.walk([&](memref::LoadOp load) {
+    if (load.getMemref() == outputMemref)
+      readsOutput = true;
+  });
+  return readsOutput;
+}
+
+static bool hasUnsupportedKBodySideEffects(scf::ForOp kLoop) {
+  bool unsupported = false;
+  kLoop.walk([&](Operation *op) {
+    if (isa<memref::StoreOp>(op))
+      unsupported = true;
+  });
+  return unsupported;
+}
+
+/// Rewrite a promoted matmul-style scalar accumulator:
+///
+///   for j:
+///     sum = for k iter_args(acc = 0) { yield acc + A[i,k] * B[k,j] }
+///     C[i,j] = sum
+///
+/// into:
+///
+///   for j: C[i,j] = 0
+///   for k:
+///     for j: C[i,j] += A[i,k] * B[k,j]
+///
+/// This keeps the per-element k accumulation order while making the inner loop
+/// stride-1 for the B row and C row, which is the layout CARTS receives for the
+/// PolyBench matrix kernels.
+static bool interchangePromotedScalarMatmulAccumulator(Block &body) {
+  scf::ForOp jLoop;
+  scf::ForOp kLoop;
+  SmallVector<Operation *> prefixOps;
+  SmallVector<Operation *> postOps;
+  if (!findPromotedScalarMatmulNest(body, jLoop, kLoop, prefixOps, postOps))
+    return false;
+
+  if (!prefixOps.empty())
+    return false;
+
+  Value contribution;
+  Operation *accumulateOp = nullptr;
+  if (!matchAccumulatorContribution(kLoop, contribution, accumulateOp))
+    return false;
+
+  memref::StoreOp finalStore;
+  if (!matchFinalStoreForZeroInitializedAccumulator(kLoop, postOps, finalStore))
+    return false;
+
+  if (kBodyReadsOutputMemref(kLoop, finalStore.getMemref()) ||
+      hasUnsupportedKBodySideEffects(kLoop))
+    return false;
+
+  Value oldJ = jLoop.getInductionVar();
+  Value oldK = kLoop.getInductionVar();
+  Value zero = kLoop.getInitArgs()[0];
+  Location loc = jLoop.getLoc();
+
+  OpBuilder builder(jLoop);
+
+  scf::ForOp::create(
+      builder, loc, jLoop.getLowerBound(), jLoop.getUpperBound(),
+      jLoop.getStep(), ValueRange{},
+      [&](OpBuilder &initBuilder, Location initLoc, Value newJ, ValueRange) {
+        IRMapping mapping;
+        mapping.map(oldJ, newJ);
+        SmallVector<Value> mappedIndices;
+        for (Value index : finalStore.getIndices())
+          mappedIndices.push_back(mapping.lookupOrDefault(index));
+        memref::StoreOp::create(initBuilder, initLoc, zero,
+                                finalStore.getMemref(), mappedIndices);
+        scf::YieldOp::create(initBuilder, initLoc);
+      });
+
+  scf::ForOp::create(
+      builder, loc, kLoop.getLowerBound(), kLoop.getUpperBound(),
+      kLoop.getStep(), ValueRange{},
+      [&](OpBuilder &outerBuilder, Location outerLoc, Value newK, ValueRange) {
+        scf::ForOp::create(
+            outerBuilder, outerLoc, jLoop.getLowerBound(),
+            jLoop.getUpperBound(), jLoop.getStep(), ValueRange{},
+            [&](OpBuilder &innerBuilder, Location innerLoc, Value newJ,
+                ValueRange) {
+              IRMapping mapping;
+              mapping.map(oldK, newK);
+              mapping.map(oldJ, newJ);
+
+              for (Operation &op : *kLoop.getBody()) {
+                if (isTerminatorOp(op) || &op == accumulateOp)
+                  continue;
+                Operation *cloned = innerBuilder.clone(op, mapping);
+                for (auto [oldResult, newResult] :
+                     llvm::zip(op.getResults(), cloned->getResults()))
+                  mapping.map(oldResult, newResult);
+              }
+
+              SmallVector<Value> mappedIndices;
+              for (Value index : finalStore.getIndices())
+                mappedIndices.push_back(mapping.lookupOrDefault(index));
+
+              Value oldValue =
+                  memref::LoadOp::create(innerBuilder, innerLoc,
+                                         finalStore.getMemref(), mappedIndices);
+              Value mappedContribution = mapping.lookupOrDefault(contribution);
+              Value updated = arith::AddFOp::create(
+                  innerBuilder, innerLoc, oldValue, mappedContribution);
+              memref::StoreOp::create(innerBuilder, innerLoc, updated,
+                                      finalStore.getMemref(), mappedIndices);
+              scf::YieldOp::create(innerBuilder, innerLoc);
+            });
+        scf::YieldOp::create(outerBuilder, outerLoc);
+      });
+
+  ARTS_INFO("LoopInterchange: scalar matmul accumulator rewritten to k-j "
+            "order");
+  jLoop.erase();
+  return true;
 }
 
 /// Collect prefix ops from initOps that are used by kLoop's body.
@@ -415,8 +870,11 @@ static bool interchangeLoops(scf::ForOp jLoop, scf::ForOp kLoop,
               for (Operation *op : rematerializedPrefixOps)
                 innerBuilder.clone(*op, mapping);
 
-              for (Operation &op : kLoop.getBody()->without_terminator())
+              for (Operation &op : *kLoop.getBody()) {
+                if (isTerminatorOp(op))
+                  continue;
                 innerBuilder.clone(op, mapping);
+              }
 
               scf::YieldOp::create(innerBuilder, innerLoc);
             });
@@ -427,6 +885,105 @@ static bool interchangeLoops(scf::ForOp jLoop, scf::ForOp kLoop,
 
   jLoop->erase();
   return true;
+}
+
+static bool sameIndices(ValueRange lhs, ValueRange rhs) {
+  if (lhs.size() != rhs.size())
+    return false;
+  for (auto [left, right] : llvm::zip(lhs, rhs)) {
+    if (left != right)
+      return false;
+  }
+  return true;
+}
+
+static bool indicesContain(ValueRange indices, Value value) {
+  return llvm::is_contained(indices, value);
+}
+
+static bool isDirectMemoryMatmulAccumulator(scf::ForOp jLoop, scf::ForOp kLoop,
+                                            ArrayRef<Operation *> initOps) {
+  if (initOps.empty())
+    return false;
+
+  memref::StoreOp initStore;
+  for (Operation *op : llvm::reverse(initOps)) {
+    initStore = dyn_cast<memref::StoreOp>(op);
+    if (initStore)
+      break;
+  }
+  if (!initStore)
+    return false;
+
+  auto outputType = dyn_cast<MemRefType>(initStore.getMemRefType());
+  if (!outputType || outputType.getRank() < 2)
+    return false;
+
+  Value oldJ = jLoop.getInductionVar();
+  Value oldK = kLoop.getInductionVar();
+  Value output = initStore.getMemref();
+  ValueRange outputIndices = initStore.getIndices();
+  if (!indicesContain(outputIndices, oldJ) ||
+      indicesContain(outputIndices, oldK))
+    return false;
+
+  unsigned outputLoads = 0;
+  unsigned outputStores = 0;
+  bool hasKJInputLoad = false;
+  bool hasAccumulatingStore = false;
+
+  for (Operation &op : *kLoop.getBody()) {
+    if (isTerminatorOp(op))
+      continue;
+
+    if (auto load = dyn_cast<memref::LoadOp>(op)) {
+      if (load.getMemref() == output) {
+        if (!sameIndices(load.getIndices(), outputIndices))
+          return false;
+        ++outputLoads;
+      } else if (indicesContain(load.getIndices(), oldK) &&
+                 indicesContain(load.getIndices(), oldJ)) {
+        hasKJInputLoad = true;
+      }
+      continue;
+    }
+
+    if (auto store = dyn_cast<memref::StoreOp>(op)) {
+      if (store.getMemref() != output)
+        return false;
+      if (!sameIndices(store.getIndices(), outputIndices))
+        return false;
+      ++outputStores;
+
+      if (auto add = store.getValueToStore().getDefiningOp<arith::AddFOp>()) {
+        if (auto load = add.getLhs().getDefiningOp<memref::LoadOp>();
+            load && load.getMemref() == output &&
+            sameIndices(load.getIndices(), outputIndices))
+          hasAccumulatingStore = true;
+        if (auto load = add.getRhs().getDefiningOp<memref::LoadOp>();
+            load && load.getMemref() == output &&
+            sameIndices(load.getIndices(), outputIndices))
+          hasAccumulatingStore = true;
+      }
+      continue;
+    }
+  }
+
+  return outputLoads == 1 && outputStores == 1 && hasKJInputLoad &&
+         hasAccumulatingStore;
+}
+
+static bool interchangeDirectMemoryMatmulAccumulator(Block &body) {
+  scf::ForOp jLoop;
+  scf::ForOp kLoop;
+  SmallVector<Operation *> initOps;
+  if (!findInnerLoopPair(body, jLoop, kLoop, initOps))
+    return false;
+
+  if (!isDirectMemoryMatmulAccumulator(jLoop, kLoop, initOps))
+    return false;
+
+  return interchangeLoops(jLoop, kLoop, initOps);
 }
 
 struct LoopInterchangePass
@@ -553,7 +1110,9 @@ struct LoopInterchangePass
 
     // Collect any prefix ops in the outer loop body before the inner loop
     SmallVector<Operation *> prefixOps;
-    for (Operation &op : outerLoop.getBody()->without_terminator()) {
+    for (Operation &op : *outerLoop.getBody()) {
+      if (isTerminatorOp(op))
+        continue;
       if (&op == innerLoop.getOperation())
         break;
       prefixOps.push_back(&op);
@@ -569,29 +1128,44 @@ struct LoopInterchangePass
 
     int interchangeCount = 0;
 
-    module.walk([&](sde::SdeSuIterateOp op) {
-      auto classAttr = op.getStructuredClassificationAttr();
-      if (!classAttr)
-        return;
+    SmallVector<sde::SdeSuIterateOp> iterateOps;
+    module.walk([&](sde::SdeSuIterateOp op) { iterateOps.push_back(op); });
+
+    for (sde::SdeSuIterateOp op : iterateOps) {
+      if (!op || op->getParentRegion() == nullptr)
+        continue;
 
       Block *body = sde::getSuIterateComputeBlock(op);
+      if (!body)
+        continue;
+
+      interchangeCount += promoteScalarAccumulators(*body);
+      if (interchangePromotedScalarMatmulAccumulator(*body))
+        ++interchangeCount;
+      else if (interchangeDirectMemoryMatmulAccumulator(*body))
+        ++interchangeCount;
+
+      auto classAttr = op.getStructuredClassificationAttr();
+      if (!classAttr)
+        continue;
+
       auto classification = *op.getStructuredClassification();
 
       // Phase 7B: Stencil halo ordering (no tensor carrier needed)
       if (classification == sde::SdeStructuredClassification::stencil) {
         if (tryStencilHaloInterchange(op, *body))
           ++interchangeCount;
-        return;
+        continue;
       }
 
       // Phase 7A: Carrier-based interchange for any classification
       linalg::GenericOp carrier = findTensorCarrier(*body);
       if (!carrier)
-        return;
+        continue;
 
       if (tryCarrierInterchange(op, *body, carrier))
         ++interchangeCount;
-    });
+    }
 
     ARTS_DEBUG("LoopInterchangePass: interchanged " << interchangeCount
                                                     << " loop nests");
