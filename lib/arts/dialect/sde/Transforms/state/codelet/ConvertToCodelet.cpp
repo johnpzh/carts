@@ -153,14 +153,16 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
   for (unsigned idx : tensorArgIndices)
     preMappedValues.insert(body.getArgument(idx));
 
+  DenseSet<Operation *> movedOps = sde::collectMovedOpTree(opsToMove);
+
   DenseSet<Value> materializableMemrefs;
   DenseMap<Type, unsigned> materializableMemrefTypeCounts;
-  for (auto [i, idx] : llvm::enumerate(tensorArgIndices)) {
-    if (accessModes[i] != sde::SdeAccessMode::read)
+  for (unsigned idx : tensorArgIndices) {
+    Value memref = sde::traceTensorBoundaryMemref(region.getIterArgs()[idx]);
+    if (!memref || sde::hasMemrefWriteInMovedOps(memref, opsToMove))
       continue;
-    if (Value memref =
-            sde::traceTensorBoundaryMemref(region.getIterArgs()[idx]))
-      materializableMemrefs.insert(memref);
+    materializableMemrefs.insert(memref);
+
     auto tensorTy = cast<RankedTensorType>(region.getIterArgs()[idx].getType());
     auto memrefTy =
         MemRefType::get(tensorTy.getShape(), tensorTy.getElementType());
@@ -172,20 +174,19 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
       materializableMemrefTypes.insert(entry.first);
   }
 
-  DenseSet<Operation *> movedOps = sde::collectMovedOpTree(opsToMove);
   sde::ExternalCapturePlan capturePlan;
   if (failed(sde::planExternalCaptures(
           opsToMove, preMappedValues, materializableMemrefs,
           materializableMemrefTypes, movedOps, capturePlan)))
     return failure();
 
-  for (Value capture : capturePlan.scalarCaptures)
+  for (Value capture : capturePlan.captures)
     codeletBlockArgTypes.push_back(capture.getType());
 
   // Create the codelet op after scalar capture discovery so the entry block
-  // has all token and scalar block arguments up front.
+  // has all token and explicit capture block arguments up front.
   auto codelet = sde::SdeCuCodeletOp::create(
-      bodyBuilder, loc, codeletResultTypes, tokens, capturePlan.scalarCaptures);
+      bodyBuilder, loc, codeletResultTypes, tokens, capturePlan.captures);
   Block *codeletBlock = new Block();
   SmallVector<Location> argLocs(codeletBlockArgTypes.size(), loc);
   codeletBlock->addArguments(codeletBlockArgTypes, argLocs);
@@ -197,54 +198,53 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
 
   // Build an IRMapping from old block args to codelet block args.
   IRMapping mapping;
-  DenseMap<Value, Value> readOnlyMemrefToTensorArg;
-  DenseMap<Type, Value> uniqueReadOnlyMemrefTypeToTensorArg;
-  DenseSet<Type> ambiguousReadOnlyMemrefTypes;
+  DenseMap<Value, Value> materializableMemrefToTensorArg;
+  DenseMap<Type, Value> uniqueMaterializableMemrefTypeToTensorArg;
+  DenseSet<Type> ambiguousMaterializableMemrefTypes;
   for (auto [i, idx] : llvm::enumerate(tensorArgIndices)) {
     BlockArgument oldArg = body.getArgument(idx);
     BlockArgument newArg = codeletBlock->getArgument(i);
     mapping.map(oldArg, newArg);
 
-    if (accessModes[i] != sde::SdeAccessMode::read)
+    Value memref = sde::traceTensorBoundaryMemref(region.getIterArgs()[idx]);
+    if (!memref || !materializableMemrefs.contains(memref))
       continue;
-    if (Value memref =
-            sde::traceTensorBoundaryMemref(region.getIterArgs()[idx]))
-      readOnlyMemrefToTensorArg[memref] = newArg;
+    materializableMemrefToTensorArg[memref] = newArg;
     auto tensorTy = cast<RankedTensorType>(region.getIterArgs()[idx].getType());
     auto memrefTy =
         MemRefType::get(tensorTy.getShape(), tensorTy.getElementType());
-    if (uniqueReadOnlyMemrefTypeToTensorArg.contains(memrefTy)) {
-      uniqueReadOnlyMemrefTypeToTensorArg.erase(memrefTy);
-      ambiguousReadOnlyMemrefTypes.insert(memrefTy);
-    } else if (!ambiguousReadOnlyMemrefTypes.contains(memrefTy)) {
-      uniqueReadOnlyMemrefTypeToTensorArg[memrefTy] = newArg;
+    if (uniqueMaterializableMemrefTypeToTensorArg.contains(memrefTy)) {
+      uniqueMaterializableMemrefTypeToTensorArg.erase(memrefTy);
+      ambiguousMaterializableMemrefTypes.insert(memrefTy);
+    } else if (!ambiguousMaterializableMemrefTypes.contains(memrefTy)) {
+      uniqueMaterializableMemrefTypeToTensorArg[memrefTy] = newArg;
     }
   }
-  for (auto [i, capture] : llvm::enumerate(capturePlan.scalarCaptures)) {
+  for (auto [i, capture] : llvm::enumerate(capturePlan.captures)) {
     mapping.map(capture,
                 codeletBlock->getArgument(tensorArgIndices.size() + i));
   }
 
   // Clone ops into the codelet body, handling external references by cloning
-  // pure producers, scalar-capturing non-cloneable scalar values, and
-  // materializing read-only memrefs from token block arguments.
+  // pure producers, direct captures, and
+  // materializing boundary memrefs from token block arguments.
   OpBuilder codeletBuilder(ctx);
   codeletBuilder.setInsertionPoint(placeholderYield);
   DenseMap<Value, Value> materializedMemrefs;
 
-  auto materializeReadOnlyMemref = [&](Value memref,
-                                       Location userLoc) -> Value {
-    auto tensorIt = readOnlyMemrefToTensorArg.find(memref);
+  auto materializeMemrefFromToken = [&](Value memref,
+                                        Location userLoc) -> Value {
+    auto tensorIt = materializableMemrefToTensorArg.find(memref);
     auto memrefTy = dyn_cast<MemRefType>(memref.getType());
     if (!memrefTy || !memrefTy.hasStaticShape())
       return Value();
 
     Value tensorArg;
-    if (tensorIt != readOnlyMemrefToTensorArg.end()) {
+    if (tensorIt != materializableMemrefToTensorArg.end()) {
       tensorArg = tensorIt->second;
-    } else if (!ambiguousReadOnlyMemrefTypes.contains(memrefTy)) {
-      auto typeIt = uniqueReadOnlyMemrefTypeToTensorArg.find(memrefTy);
-      if (typeIt != uniqueReadOnlyMemrefTypeToTensorArg.end())
+    } else if (!ambiguousMaterializableMemrefTypes.contains(memrefTy)) {
+      auto typeIt = uniqueMaterializableMemrefTypeToTensorArg.find(memrefTy);
+      if (typeIt != uniqueMaterializableMemrefTypeToTensorArg.end())
         tensorArg = typeIt->second;
     }
     if (!tensorArg)
@@ -267,7 +267,7 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
     if (mapping.contains(value) ||
         sde::isValueInternalToMovedOps(value, movedOps))
       return success();
-    if (materializeReadOnlyMemref(value, userLoc))
+    if (materializeMemrefFromToken(value, userLoc))
       return success();
 
     Operation *defOp = value.getDefiningOp();
@@ -293,7 +293,7 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
       return failure();
   }
   for (Value memref : capturePlan.materializedMemrefs) {
-    if (!materializeReadOnlyMemref(memref, loc))
+    if (!materializeMemrefFromToken(memref, loc))
       return failure();
   }
 
@@ -380,8 +380,11 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
           break;
         }
       }
-      if (writable && !region.getResult(idx).use_empty())
-        region.getResult(idx).replaceAllUsesWith(muDataOps[i].getHandle());
+      if (!region.getResult(idx).use_empty()) {
+        Value replacement =
+            writable ? muDataOps[i].getHandle() : region.getIterArgs()[idx];
+        region.getResult(idx).replaceAllUsesWith(replacement);
+      }
     }
 
     // Erase to_tensor ops that fed the iter_args.

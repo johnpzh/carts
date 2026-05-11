@@ -51,6 +51,8 @@ transformToContinuation(EpochOp epochOp,
   edtOp->setAttr(ContinuationForEpoch, builder.getUnitAttr());
 
   Block &edtBlock = edtOp.getBody().front();
+  for (Value dep : deps)
+    edtBlock.addArgument(dep.getType(), loc);
   builder.setInsertionPointToStart(&edtBlock);
 
   IRMapping valueMapping;

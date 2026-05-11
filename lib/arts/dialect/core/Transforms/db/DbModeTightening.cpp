@@ -381,6 +381,21 @@ static void collectAcquiresRecursive(DbAcquireNode *acqNode, DbGraph &graph,
   });
 }
 
+static bool isInsideRepeatableControl(Operation *op) {
+  if (!op)
+    return false;
+
+  for (Operation *parent = op->getParentOp(); parent;
+       parent = parent->getParentOp()) {
+    if (isa<scf::ForOp, scf::WhileOp, scf::ParallelOp, scf::ForallOp,
+            affine::AffineForOp, affine::AffineParallelOp, arts::ForOp>(
+            parent))
+      return true;
+  }
+
+  return false;
+}
+
 } // namespace
 
 ///===----------------------------------------------------------------------===///
@@ -656,28 +671,42 @@ void DbModeTighteningPass::inferDbStorageTypes() {
                    return a.order < b.order;
                  });
 
-      /// Find the first writer and check all subsequent acquires
+      /// Find the first writer and check all subsequent acquires. The
+      /// read_only_after_init runtime hint is only valid when the initializer
+      /// writer is a single dynamic write. A writer nested under repeatable
+      /// control can execute once per loop iteration/epoch, even if static IR
+      /// order shows all readers after it.
       bool foundWriter = false;
       bool allReadAfterWrite = true;
+      unsigned writerCount = 0;
+      bool writerInRepeatableControl = false;
 
       for (const auto &entry : orderedAcquires) {
-        ArtsMode mode = entry.node->getDbAcquireOp().getMode();
+        DbAcquireOp acquireOp = entry.node->getDbAcquireOp();
+        ArtsMode mode = acquireOp.getMode();
         bool isWriter = DbUtils::isWriterMode(mode);
 
         if (!foundWriter) {
-          if (isWriter)
+          if (isWriter) {
             foundWriter = true;
+            writerInRepeatableControl =
+                isInsideRepeatableControl(acquireOp.getOperation());
+          }
+          if (isWriter)
+            ++writerCount;
           continue;
         }
 
         /// After the first writer, all must be read-only
         if (isWriter) {
           allReadAfterWrite = false;
-          break;
+          ++writerCount;
+          continue;
         }
       }
 
-      if (foundWriter && allReadAfterWrite) {
+      if (foundWriter && allReadAfterWrite && writerCount == 1 &&
+          !writerInRepeatableControl) {
         allocOp->setAttr(AttrNames::Operation::ReadOnlyAfterInit,
                          UnitAttr::get(allocOp.getContext()));
         ++numDbsMarkedReadOnlyAfterInit;

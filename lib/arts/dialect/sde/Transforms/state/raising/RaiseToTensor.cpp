@@ -347,49 +347,23 @@ collectFunctionScopeAllocas(func::FuncOp func) {
 // Step 2: Initialize tensor values
 //===----------------------------------------------------------------------===//
 
-/// Create initial tensor values for each alloca and populate currentTensor.
-/// Also erases consumed scalar init stores.
-static void initializeTensorValues(OpBuilder &builder,
-                                   ArrayRef<memref::AllocaOp> allocas,
+/// Create initial tensor carrier values for each alloca and populate
+/// currentTensor.
+static void initializeTensorValues(ArrayRef<memref::AllocaOp> allocas,
                                    DenseMap<Value, Value> &currentTensor) {
   for (memref::AllocaOp alloca : allocas) {
     auto mrType = cast<MemRefType>(alloca.getType());
     RankedTensorType tensorTy = getTensorType(mrType);
     Location loc = alloca.getLoc();
 
-    // Create sde.mu_alloc with dynamic sizes from the alloca.
+    // Create sde.mu_alloc directly after the alloca it represents. Polygeist
+    // can emit stores between function-scope allocas; placing every carrier
+    // after the last alloca would make those early stores rewrite to a tensor
+    // value that does not dominate the rewritten store.
+    OpBuilder builder(alloca);
+    builder.setInsertionPointAfter(alloca);
     Value tensor = sde::SdeMuAllocOp::create(builder, loc, tensorTy,
                                              alloca.getDynamicSizes());
-
-    // For rank-0: look for an immediate init store.
-    if (mrType.getRank() == 0) {
-      for (Operation *user : llvm::make_early_inc_range(alloca->getUsers())) {
-        auto store = dyn_cast<memref::StoreOp>(user);
-        if (!store)
-          continue;
-        // Only consume stores that come right after the alloca (before any
-        // cu_region or scf.for). Check same block, positioned after alloca.
-        if (store->getBlock() != alloca->getBlock())
-          continue;
-        if (!alloca->isBeforeInBlock(store))
-          continue;
-        // Check no region-holding op between alloca and this store.
-        bool blocked = false;
-        for (auto it = std::next(alloca->getIterator()); &*it != store; ++it) {
-          if (it->getNumRegions() > 0) {
-            blocked = true;
-            break;
-          }
-        }
-        if (blocked)
-          break;
-        // Insert the value into the tensor.
-        tensor = tensor::InsertOp::create(builder, loc, store.getValueToStore(),
-                                          tensor, store.getIndices());
-        store.erase();
-        break; // only consume the first init store
-      }
-    }
 
     currentTensor[alloca.getResult()] = tensor;
   }
@@ -979,12 +953,8 @@ static unsigned raiseFunctionAllocas(func::FuncOp func) {
     return 0;
 
   Block &entry = func.getBody().front();
-  OpBuilder builder(func.getBody().front().getTerminator());
-  // Set insertion point after the last alloca.
-  builder.setInsertionPointAfter(allocas.back());
-
   DenseMap<Value, Value> currentTensor;
-  initializeTensorValues(builder, allocas, currentTensor);
+  initializeTensorValues(allocas, currentTensor);
 
   // Walk function body in program order.
   walkBlock(entry, currentTensor, allocas);

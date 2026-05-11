@@ -645,6 +645,18 @@ static DbAllocOp findBackingDbAlloc(Value tensor) {
   Value cur = tensor;
   while (auto cast = cur.getDefiningOp<tensor::CastOp>())
     cur = cast.getSource();
+  if (auto fromElements = cur.getDefiningOp<tensor::FromElementsOp>()) {
+    if (fromElements.getElements().size() == 1) {
+      Value element = fromElements.getElements().front();
+      if (auto load = element.getDefiningOp<memref::LoadOp>()) {
+        Value buffer = load.getMemref();
+        if (auto alloc = buffer.getDefiningOp<DbAllocOp>())
+          return alloc;
+        if (auto ref = buffer.getDefiningOp<DbRefOp>())
+          return ref.getSource().getDefiningOp<DbAllocOp>();
+      }
+    }
+  }
   auto toTensor = cur.getDefiningOp<bufferization::ToTensorOp>();
   if (!toTensor)
     return nullptr;
@@ -713,8 +725,16 @@ static LogicalResult lowerMuData(sde::SdeMuDataOp op) {
       /*address=*/Value{}, std::move(sizes), std::move(elementSizes));
 
   Value inner = materializeInnerPayload(builder, loc, dbAlloc.getPtr());
-  Value replacementTensor =
-      makeToTensor(builder, loc, inner, /*writable=*/true);
+  Value replacementTensor;
+  if (tensorType.getRank() == 0) {
+    Value zero = arts::createZeroIndex(builder, loc);
+    Value scalar = memref::LoadOp::create(builder, loc, inner,
+                                          SmallVector<Value>{zero});
+    replacementTensor =
+        tensor::FromElementsOp::create(builder, loc, tensorType, scalar);
+  } else {
+    replacementTensor = makeToTensor(builder, loc, inner, /*writable=*/true);
+  }
   op.getResult().replaceAllUsesWith(replacementTensor);
   op.erase();
   return success();
@@ -1109,6 +1129,26 @@ static LogicalResult emitMemrefCopy(OpBuilder &builder, Location loc,
   return success();
 }
 
+static LogicalResult emitFromElementsStore(OpBuilder &builder, Location loc,
+                                           tensor::FromElementsOp source,
+                                           Value dest) {
+  auto tensorType = dyn_cast<RankedTensorType>(source.getType());
+  auto destType = dyn_cast<MemRefType>(dest.getType());
+  if (!tensorType || !destType || tensorType.getRank() != 0 ||
+      source.getElements().size() != 1)
+    return failure();
+
+  Value scalar = source.getElements().front();
+  SmallVector<Value> indices;
+  if (destType.getRank() == 1 && destType.getDimSize(0) == 1)
+    indices.push_back(arts::createZeroIndex(builder, loc));
+  else if (destType.getRank() != 0)
+    return failure();
+
+  memref::StoreOp::create(builder, loc, scalar, dest, indices);
+  return success();
+}
+
 static void foldTensorPathToMemref(ModuleOp module) {
   // Collect target ops in IR pre-order so we can process them as they
   // appear in the instruction stream. We intentionally do not use
@@ -1153,6 +1193,16 @@ static void foldTensorPathToMemref(ModuleOp module) {
       insert.erase();
     } else if (auto mat =
                    dyn_cast<bufferization::MaterializeInDestinationOp>(op)) {
+      if (auto fromElements =
+              mat.getSource().getDefiningOp<tensor::FromElementsOp>()) {
+        OpBuilder builder(mat);
+        if (succeeded(emitFromElementsStore(builder, mat.getLoc(),
+                                            fromElements, mat.getDest()))) {
+          mat.erase();
+          continue;
+        }
+      }
+
       Value source = traceTensorToBackingMemref(mat.getSource());
       if (!source)
         continue;
@@ -1170,7 +1220,7 @@ static void foldTensorPathToMemref(ModuleOp module) {
   SmallVector<Operation *> pending;
   module.walk([&](Operation *op) {
     if (isa<bufferization::ToTensorOp, tensor::CastOp, tensor::ExtractSliceOp,
-            tensor::InsertSliceOp, tensor::EmptyOp>(op))
+            tensor::InsertSliceOp, tensor::EmptyOp, tensor::FromElementsOp>(op))
       pending.push_back(op);
   });
   // Iterate a couple of times to propagate dead-ness up a chain.

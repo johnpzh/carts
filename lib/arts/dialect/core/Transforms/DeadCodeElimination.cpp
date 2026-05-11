@@ -32,8 +32,10 @@
 #include "arts/utils/Debug.h"
 #include "arts/utils/OperationAttributes.h"
 #include "arts/utils/RemovalUtils.h"
+#include "arts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
@@ -125,6 +127,72 @@ struct DeadCodeEliminationPass
     return false;
   }
 
+  static bool sameIndexRange(ValueRange lhs, ValueRange rhs) {
+    if (lhs.size() != rhs.size())
+      return false;
+    for (auto [lhsIdx, rhsIdx] : llvm::zip_equal(lhs, rhs)) {
+      if (!ValueAnalysis::sameValue(lhsIdx, rhsIdx))
+        return false;
+    }
+    return true;
+  }
+
+  static bool onlyMemoryEffectFreeOpsBetween(Operation *producer,
+                                             Operation *consumer) {
+    if (!producer || !consumer || producer->getBlock() != consumer->getBlock())
+      return false;
+
+    for (Operation *cur = producer->getNextNode(); cur && cur != consumer;
+         cur = cur->getNextNode()) {
+      if (!isMemoryEffectFree(cur))
+        return false;
+    }
+    return producer->isBeforeInBlock(consumer);
+  }
+
+  static bool isNoOpSelfStore(memref::StoreOp store) {
+    auto load = store.getValueToStore().getDefiningOp<memref::LoadOp>();
+    if (!load)
+      return false;
+    if (load.getMemref() != store.getMemref())
+      return false;
+    if (!sameIndexRange(load.getIndices(), store.getIndices()))
+      return false;
+    return onlyMemoryEffectFreeOpsBetween(load.getOperation(),
+                                          store.getOperation());
+  }
+
+  static bool isTrivialEdtBodyOp(Operation &op) {
+    if (isa<arts::YieldOp, arts::BarrierOp, arts::DbReleaseOp>(op))
+      return true;
+
+    return false;
+  }
+
+  static bool isSideEffectFreeRegionTree(Operation &op) {
+    if (isTrivialEdtBodyOp(op))
+      return true;
+
+    if (op.getNumRegions() == 0)
+      return isMemoryEffectFree(&op);
+
+    if (isa<scf::ForOp, scf::IfOp, scf::ExecuteRegionOp,
+            affine::AffineForOp>(&op) &&
+        op.use_empty()) {
+      for (Region &region : op.getRegions()) {
+        for (Block &block : region) {
+          for (Operation &nested : block) {
+            if (!isSideEffectFreeRegionTree(nested))
+              return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    return false;
+  }
+
   void runOnOperation() override {
     auto module = getOperation();
     bool changed = true;
@@ -141,6 +209,7 @@ struct DeadCodeEliminationPass
       /// Memref DCE
       unsigned removedLoads = removeDeadLoads(module);
       unsigned removedStores = removeDeadStores(module);
+      unsigned removedNoOpStores = removeNoOpSelfStores(module);
       unsigned removedAllocas = removeDeadAllocas(module);
 
       /// ARTS-specific DCE
@@ -156,10 +225,11 @@ struct DeadCodeEliminationPass
       /// alternating-buffer pipelines).
       unsigned removedEdtDeps = 0;
 
-      unsigned removed = removedLoads + removedStores + removedAllocas +
-                         removedUndefs + removedEdts + removedDbs +
-                         removedAcquires + removedDuplicateReleases +
-                         removedPureOps + removedEdtDeps;
+      unsigned removed = removedLoads + removedStores + removedNoOpStores +
+                         removedAllocas + removedUndefs + removedEdts +
+                         removedDbs + removedAcquires +
+                         removedDuplicateReleases + removedPureOps +
+                         removedEdtDeps;
       totalRemoved += removed;
       changed = (removed > 0);
     }
@@ -217,6 +287,24 @@ struct DeadCodeEliminationPass
     });
 
     for (auto *op : toRemove)
+      op->erase();
+
+    return toRemove.size();
+  }
+
+  /// Remove stores that write back an unchanged value loaded from the exact
+  /// same memref element with no intervening side-effecting operation.
+  unsigned removeNoOpSelfStores(ModuleOp module) {
+    SmallVector<Operation *> toRemove;
+
+    module.walk([&](memref::StoreOp store) {
+      if (isNoOpSelfStore(store)) {
+        ARTS_DEBUG("Removing no-op self-store: " << store);
+        toRemove.push_back(store);
+      }
+    });
+
+    for (Operation *op : toRemove)
       op->erase();
 
     return toRemove.size();
@@ -283,9 +371,7 @@ struct DeadCodeEliminationPass
     module.walk([&](EdtOp edt) {
       bool hasWork = false;
       for (Operation &op : edt.getBody().front()) {
-        if (isa<arts::YieldOp>(op) || isa<arts::BarrierOp>(op))
-          continue;
-        if (isa<arts::DbReleaseOp>(op))
+        if (isSideEffectFreeRegionTree(op))
           continue;
         hasWork = true;
         break;

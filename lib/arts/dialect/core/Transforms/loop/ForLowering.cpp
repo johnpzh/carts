@@ -91,6 +91,49 @@ static std::optional<unsigned> inferAcquireMappedDim(DbAnalysis *dbAnalysis,
   return dbAnalysis->inferLoopMappedDim(acquire.getPtr(), forOp);
 }
 
+static bool acquireHasAccessDependingOnLoopIv(DbAcquireOp acquire,
+                                              ForOp forOp) {
+  if (!acquire || !forOp)
+    return false;
+
+  Block &forBody = forOp.getRegion().front();
+  if (forBody.getNumArguments() == 0)
+    return false;
+
+  Value loopIV = forBody.getArgument(0);
+  Region &forRegion = forOp.getRegion();
+  llvm::SetVector<Operation *> memOps;
+  DbUtils::collectReachableMemoryOps(acquire.getPtr(), memOps,
+                                     /*scope=*/nullptr);
+
+  for (Operation *memOp : memOps) {
+    Region *memRegion = memOp ? memOp->getParentRegion() : nullptr;
+    if (!memRegion)
+      continue;
+    if (memRegion != &forRegion && !forRegion.isAncestor(memRegion))
+      continue;
+
+    std::optional<DbUtils::MemoryAccessInfo> access =
+        DbUtils::getMemoryAccessInfo(memOp);
+    if (!access || access->indices.empty())
+      continue;
+
+    SmallVector<Value> indexChain;
+    Value baseMemref = ValueAnalysis::stripMemrefViewOps(access->memref);
+    if (auto dbRef = baseMemref.getDefiningOp<DbRefOp>())
+      indexChain = DbUtils::collectFullIndexChain(dbRef, memOp);
+    if (indexChain.empty())
+      indexChain.append(access->indices.begin(), access->indices.end());
+
+    for (Value index : indexChain)
+      if (ValueAnalysis::dependsOn(ValueAnalysis::stripNumericCasts(index),
+                                   loopIV))
+        return true;
+  }
+
+  return false;
+}
+
 static std::optional<AccessBoundsResult>
 inferLoopHaloBoundsFromValue(Value dep, ForOp forOp, unsigned mappedDim) {
   if (!dep || !forOp)
@@ -1327,6 +1370,9 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
     /// ForLowering preserves that mode instead of reclassifying loop-local
     /// memops and drifting away from the dependency contract.
     ArtsMode effectiveTaskMode = parentAcqOp.getMode();
+    bool forceCoarseReadOnlyDep =
+        effectiveTaskMode == ArtsMode::in &&
+        !acquireHasAccessDependingOnLoopIv(parentAcqOp, forOp);
 
     DbAcquireOp chunkAcqOp;
     bool chunkUsesStencilHalo = false;
@@ -1339,12 +1385,13 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
     LoweringContractInfo contract;
     if (auto acquireContract = resolveAcquireContract(parentAcqOp))
       contract = *acquireContract;
-    if (auto loopContract = getSemanticContract(forOp.getOperation()))
-      combineContracts(contract, *loopContract);
+    if (!forceCoarseReadOnlyDep)
+      if (auto loopContract = getSemanticContract(forOp.getOperation()))
+        combineContracts(contract, *loopContract);
 
     std::optional<unsigned> inferredMappedDim;
     /// Plan-driven path: use plan ownerDims when present.
-    if (contract.spatial.ownerDims.empty()) {
+    if (!forceCoarseReadOnlyDep && contract.spatial.ownerDims.empty()) {
       if (auto planOwnerDims = readI64ArrayAttr(
               forOp.getOperation(), AttrNames::Operation::Plan::OwnerDims)) {
         contract.spatial.ownerDims = *planOwnerDims;
@@ -1353,7 +1400,7 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
       }
     }
     /// Fallback: infer from DB analysis.
-    if (contract.spatial.ownerDims.empty())
+    if (!forceCoarseReadOnlyDep && contract.spatial.ownerDims.empty())
       if (auto mappedDim =
               inferAcquireMappedDim(&AM->getDbAnalysis(), parentAcqOp, forOp)) {
         contract.spatial.ownerDims.push_back(static_cast<int64_t>(*mappedDim));
@@ -1395,7 +1442,9 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
         effectiveTaskMode,
         rootGuidValue,
         rootPtrValue,
-        /*forceCoarseRewrite=*/singleDispatchLane && !parentHasPartitionInfo,
+        /*forceCoarseRewrite=*/
+        forceCoarseReadOnlyDep ||
+            (singleDispatchLane && !parentHasPartitionInfo),
         loopInfo.strategy.kind,
         distributionPattern,
         tiling2DGrid,
@@ -1500,7 +1549,8 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
     }
 
     applyTaskAcquireContractMetadata(
-        forOp.getOperation(), chunkAcqOp, planningInput.contract,
+        forceCoarseReadOnlyDep ? nullptr : forOp.getOperation(), chunkAcqOp,
+        planningInput.contract,
         plannedTaskBlockShape, AC->getBuilder(), loc);
     if (plannedTaskBlockShape)
       refinedTaskBlockShape = *plannedTaskBlockShape;
@@ -1955,10 +2005,17 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
       if (idx >= redInfo.privateReductionAccums.size())
         continue;
 
-      Value privateAccum =
-          redMapper.lookupOrDefault(redInfo.privateReductionAccums[idx]);
-      auto privateType = dyn_cast_or_null<MemRefType>(privateAccum.getType());
-      if (!privateAccum || !privateType ||
+      Value privateAccum = redInfo.privateReductionAccums[idx];
+      if (!privateAccum) {
+        ARTS_DEBUG("No private reduction carrier for " << redVar
+                                                       << "; body writes the "
+                                                          "worker accumulator "
+                                                          "directly");
+        continue;
+      }
+      privateAccum = redMapper.lookupOrDefault(privateAccum);
+      auto privateType = dyn_cast<MemRefType>(privateAccum.getType());
+      if (!privateType ||
           !taskEdtRegion->isAncestor(privateAccum.getParentRegion())) {
         ARTS_WARN("Skipping private reduction carrier rewrite for " << redVar);
         continue;

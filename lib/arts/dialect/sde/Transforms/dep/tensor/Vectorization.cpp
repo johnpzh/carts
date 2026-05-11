@@ -13,9 +13,9 @@
 /// element type (f32->8, f64->4, i32->8).
 ///
 /// The vector sizes passed to linalg::vectorize() must be >= the static loop
-/// ranges. We use the full static loop ranges as vector sizes so the carrier
-/// is replaced by a single vector operation per dimension. LLVM's backend
-/// will decompose large vectors into hardware-sized chunks.
+/// ranges. CARTS currently only vectorizes small live tensor expressions here:
+/// tensor carriers whose results are intentionally materialized later by
+/// LowerToMemref must stay as linalg so their output effects are preserved.
 ///==========================================================================///
 
 #include "arts/dialect/sde/Transforms/Passes.h"
@@ -67,20 +67,31 @@ static bool isCarrierAuthoritative(Block &body) {
 /// - Must have tensor semantics
 /// - Must have at least one output
 static bool canVectorize(linalg::GenericOp generic) {
+  constexpr int64_t kMaxVectorElements = 4096;
+
   for (auto iterType : generic.getIteratorTypesArray()) {
     if (iterType != utils::IteratorType::parallel)
       return false;
   }
   if (generic.hasPureBufferSemantics())
     return false;
+  bool hasLiveResult = llvm::any_of(generic.getResults(), [](Value result) {
+    return !result.use_empty();
+  });
+  if (!hasLiveResult)
+    return false;
   for (OpOperand &operand : generic->getOpOperands()) {
     auto ty = dyn_cast<RankedTensorType>(operand.get().getType());
     if (!ty || !ty.hasStaticShape())
       return false;
   }
+  int64_t vectorElements = 1;
   for (int64_t range : generic.getStaticLoopRanges()) {
     if (ShapedType::isDynamic(range))
       return false;
+    if (range <= 0 || vectorElements > kMaxVectorElements / range)
+      return false;
+    vectorElements *= range;
   }
   return generic.getNumDpsInits() > 0;
 }

@@ -256,9 +256,11 @@ LogicalResult EdtOp::verify() {
       if (getBody().isAncestor(definingOp->getParentRegion()))
         continue;
 
-      /// Allow external stack allocas; they are sunk into EDTs later in the
-      /// pipeline to keep task-local buffers private.
-      if (operand.getDefiningOp<memref::AllocaOp>())
+      /// Allow external memref allocations. Stack allocas are sunk into EDTs
+      /// later to keep task-local buffers private; heap memrefs are captured
+      /// by EdtEnvManager and packed through paramv.
+      if (operand.getDefiningOp<memref::AllocaOp>() ||
+          operand.getDefiningOp<memref::AllocOp>())
         continue;
 
       /// Allow external DbAllocOp results; EdtEnvManager already captures
@@ -1177,10 +1179,20 @@ void DbRefOp::build(OpBuilder &builder, OperationState &state, Value source,
                     ArrayRef<Value> indices) {
   auto *rawDbAlloc = DbUtils::getUnderlyingDbAlloc(source);
 
+  auto sourceMemRefType = dyn_cast<MemRefType>(source.getType());
+  if (sourceMemRefType) {
+    if (auto sourceElementType =
+            dyn_cast<MemRefType>(sourceMemRefType.getElementType())) {
+      state.addTypes(sourceElementType);
+      state.addOperands(source);
+      state.addOperands(indices);
+      return;
+    }
+  }
+
   // If source is a BlockArgument or otherwise doesn't trace to a DbAllocOp,
   // extract the result type from the source memref's element type.
   if (!rawDbAlloc) {
-    auto sourceMemRefType = dyn_cast<MemRefType>(source.getType());
     assert(sourceMemRefType && "Expected source to be a memref type");
     Type resultType = sourceMemRefType.getElementType();
     state.addTypes(resultType);
@@ -1242,19 +1254,14 @@ LogicalResult DbRefOp::verify() {
 
   /// Verify output type
   auto resultType = cast<MemRefType>(getResult().getType());
-  if (dbAllocOp) {
-    if (resultType != dbAllocOp.getAllocatedElementType())
-      return emitOpError("result type must match source element type\n")
-             << *getOperation();
-  } else {
-    // If no DbAllocOp found (e.g., source is a BlockArgument), verify that
-    // the result type matches the source memref's element type.
-    auto sourceMemRefType = cast<MemRefType>(getSource().getType());
-    if (resultType != sourceMemRefType.getElementType())
-      return emitOpError("result type must match source element type\n")
-             << *getOperation();
-  }
-  return success();
+  auto sourceMemRefType = cast<MemRefType>(getSource().getType());
+  if (resultType == sourceMemRefType.getElementType())
+    return success();
+  if (dbAllocOp && resultType == dbAllocOp.getAllocatedElementType())
+    return success();
+
+  return emitOpError("result type must match source element type\n")
+         << *getOperation();
 }
 
 /// Custom builders for DbNumElementsOp that automatically extract sizes

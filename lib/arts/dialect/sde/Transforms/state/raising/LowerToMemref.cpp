@@ -59,6 +59,25 @@ static MemRefType getMemRefType(RankedTensorType tensorTy) {
   return MemRefType::get(tensorTy.getShape(), tensorTy.getElementType());
 }
 
+static Value getAdjacentOriginalAlloca(sde::SdeMuAllocOp muAlloc,
+                                       MemRefType expectedType) {
+  Operation *prev = muAlloc->getPrevNode();
+  auto alloca = dyn_cast_or_null<memref::AllocaOp>(prev);
+  if (!alloca || alloca.getType() != expectedType)
+    return Value();
+  alloca->setAttr(AttrNames::Operation::Preserve,
+                  UnitAttr::get(muAlloc.getContext()));
+  return alloca.getResult();
+}
+
+static void markPreserveIfAlloca(Value memref) {
+  while (auto castOp = memref.getDefiningOp<memref::CastOp>())
+    memref = castOp.getSource();
+  if (auto alloca = memref.getDefiningOp<memref::AllocaOp>())
+    alloca->setAttr(AttrNames::Operation::Preserve,
+                    UnitAttr::get(alloca.getContext()));
+}
+
 /// Trace a tensor value through tensor.insert / tensor.cast chains to find
 /// the backing memref.
 static Value traceBackingMemref(Value tensor,
@@ -66,10 +85,14 @@ static Value traceBackingMemref(Value tensor,
   auto it = backingMemref.find(tensor);
   if (it != backingMemref.end())
     return it->second;
-  if (auto muToTensor = tensor.getDefiningOp<sde::SdeMuMemrefToTensorOp>())
+  if (auto muToTensor = tensor.getDefiningOp<sde::SdeMuMemrefToTensorOp>()) {
+    markPreserveIfAlloca(muToTensor.getMemref());
     return muToTensor.getMemref();
-  if (auto toTensor = tensor.getDefiningOp<bufferization::ToTensorOp>())
+  }
+  if (auto toTensor = tensor.getDefiningOp<bufferization::ToTensorOp>()) {
+    markPreserveIfAlloca(toTensor.getBuffer());
     return toTensor.getBuffer();
+  }
   if (auto insertOp = tensor.getDefiningOp<tensor::InsertOp>())
     return traceBackingMemref(insertOp.getDest(), backingMemref);
   if (auto castOp = tensor.getDefiningOp<tensor::CastOp>())
@@ -124,10 +147,12 @@ static Value getOrCreateBacking(Value initTensor, OpBuilder &builder,
   // Trace through known conversion ops.
   if (auto muToTensor =
           initTensor.getDefiningOp<sde::SdeMuMemrefToTensorOp>()) {
+    markPreserveIfAlloca(muToTensor.getMemref());
     backingMemref[initTensor] = muToTensor.getMemref();
     return muToTensor.getMemref();
   }
   if (auto toTensor = initTensor.getDefiningOp<bufferization::ToTensorOp>()) {
+    markPreserveIfAlloca(toTensor.getBuffer());
     backingMemref[initTensor] = toTensor.getBuffer();
     return toTensor.getBuffer();
   }
@@ -327,16 +352,19 @@ static void walkBlock(Block &block, DenseMap<Value, Value> &backingMemref) {
 
     if (auto muAlloc = dyn_cast<sde::SdeMuAllocOp>(&op)) {
       auto tensorTy = cast<RankedTensorType>(muAlloc.getTensor().getType());
+      MemRefType memrefTy = getMemRefType(tensorTy);
       OpBuilder b(muAlloc);
-      Value alloca =
-          memref::AllocaOp::create(b, muAlloc.getLoc(), getMemRefType(tensorTy),
-                                   muAlloc.getDynamicSizes());
+      Value alloca = getAdjacentOriginalAlloca(muAlloc, memrefTy);
+      if (!alloca)
+        alloca = memref::AllocaOp::create(b, muAlloc.getLoc(), memrefTy,
+                                          muAlloc.getDynamicSizes());
       backingMemref[muAlloc.getTensor()] = alloca;
       toErase.push_back(muAlloc);
       continue;
     }
 
     if (auto muToTensor = dyn_cast<sde::SdeMuMemrefToTensorOp>(&op)) {
+      markPreserveIfAlloca(muToTensor.getMemref());
       backingMemref[muToTensor.getTensor()] = muToTensor.getMemref();
       toErase.push_back(muToTensor);
       continue;
@@ -372,6 +400,7 @@ static void walkBlock(Block &block, DenseMap<Value, Value> &backingMemref) {
     }
 
     if (auto toTensor = dyn_cast<bufferization::ToTensorOp>(&op)) {
+      markPreserveIfAlloca(toTensor.getBuffer());
       backingMemref[toTensor.getResult()] = toTensor.getBuffer();
       toErase.push_back(toTensor);
       continue;
@@ -581,24 +610,14 @@ static void stripScfForTensorArgs(ModuleOp module,
   }
 }
 
-/// Strip tensor iter_args from cu_region ops (parallel/master only).
-/// Tensor iter_args that feed nested <single> cu_regions are preserved.
+/// Strip tensor iter_args from cu_region ops back to their backing memrefs.
+/// This includes <single> regions: scalar local state should stay tied to the
+/// user-visible memref instead of being copied into an isolated DB-backed
+/// codelet value that later host reads cannot observe.
 static void stripCuRegionTensorArgs(ModuleOp module,
                                     DenseMap<Value, Value> &backingMemref) {
   SmallVector<sde::SdeCuRegionOp> cuRegions;
   module.walk([&](sde::SdeCuRegionOp op) {
-    if (op.getKind() == sde::SdeCuKind::single) {
-      bool hasNonScalarTensorArg = false;
-      for (Value arg : op.getIterArgs()) {
-        auto tensorTy = dyn_cast<RankedTensorType>(arg.getType());
-        if (tensorTy && tensorTy.getRank() > 0) {
-          hasNonScalarTensorArg = true;
-          break;
-        }
-      }
-      if (!hasNonScalarTensorArg)
-        return; // Scalar token state is handled by ConvertToCodelet.
-    }
     for (Value arg : op.getIterArgs()) {
       if (isa<RankedTensorType>(arg.getType())) {
         cuRegions.push_back(op);
@@ -870,8 +889,8 @@ static void stripSuIterateTensorArgs(ModuleOp module,
 
 /// After tensor iter_args are stripped, <single> regions contain explicit
 /// mu_memref_to_tensor anchors for their token-backed state. Revisit those
-/// bodies so tensor.extract/tensor.insert in nested cu_task bodies become
-/// concrete memref.load/memref.store side effects before TensorCleanup.
+/// bodies so tensor.extract/tensor.insert become concrete memref.load/store
+/// side effects before cleanup, including rank-0 scalar carriers.
 static void lowerSingleRegionTensorOps(ModuleOp module,
                                        DenseMap<Value, Value> &backingMemref) {
   SmallVector<sde::SdeCuRegionOp> singleRegions;
@@ -886,27 +905,28 @@ static void lowerSingleRegionTensorOps(ModuleOp module,
 
     Block &body = cuRegion.getBody().front();
     OpBuilder builder(cuRegion);
-    bool hasNonScalarTensorState = false;
+    bool hasTensorState = false;
     for (auto [i, arg] : llvm::enumerate(cuRegion.getIterArgs())) {
       auto tensorTy = dyn_cast<RankedTensorType>(arg.getType());
-      if (!tensorTy || tensorTy.getRank() == 0)
+      if (!tensorTy)
         continue;
       if (i >= body.getNumArguments())
         continue;
       Value backing = getOrCreateBacking(arg, builder, backingMemref);
       backingMemref[body.getArgument(i)] = backing;
-      hasNonScalarTensorState = true;
+      hasTensorState = true;
     }
 
     body.walk([&](sde::SdeMuMemrefToTensorOp op) {
       auto tensorTy = dyn_cast<RankedTensorType>(op.getTensor().getType());
-      if (!tensorTy || tensorTy.getRank() == 0)
+      if (!tensorTy)
         return;
+      markPreserveIfAlloca(op.getMemref());
       backingMemref[op.getTensor()] = op.getMemref();
-      hasNonScalarTensorState = true;
+      hasTensorState = true;
     });
 
-    if (hasNonScalarTensorState)
+    if (hasTensorState)
       walkBlock(body, backingMemref);
   }
 }

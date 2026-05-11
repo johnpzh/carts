@@ -540,7 +540,6 @@ static bool tileCarrierAuthoritative(linalg::GenericOp carrier, Block &srcBody,
 
   auto iterTypes = carrier.getIteratorTypesArray();
   auto indexingMaps = carrier.getIndexingMapsArray();
-  unsigned numLoops = carrier.getNumLoops();
 
   // Build a map: carrier loop dim → (isTiled, tileBase, tileSize).
   // Only the tileDim is tiled; others keep full range.

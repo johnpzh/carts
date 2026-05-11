@@ -398,10 +398,10 @@ def SdeCuCodeletOp
       RecursiveMemoryEffects,
       AttrSizedOperandSegments
     ]> {
-  let summary = "Dataflow codelet with tensor tokens and scalar captures.";
+  let summary = "Dataflow codelet with tensor tokens and explicit captures.";
   let description = [{
     A compute unit whose only communication with the enclosing scope is
-    through `sde.mu_token` operands, scalar capture operands, and yielded
+    through `sde.mu_token` operands, explicit capture operands, and yielded
     tensor results. The name follows OCR's "codelet": a purely asynchronous,
     pure-dataflow unit of work whose inputs and outputs are entirely explicit.
 
@@ -409,7 +409,7 @@ def SdeCuCodeletOp
     captures are ordinary SSA values that are copied into the downstream EDT
     parameter pack. The body's block arguments first list one tensor view per
     token, typed as the token's `slice_type`, followed by one block argument per
-    scalar capture.
+    explicit capture.
 
     Result shape: one SSA result per `write` or `readwrite` token, of the
     same type as the source parent tensor. The op implicitly reconstructs
@@ -418,8 +418,8 @@ def SdeCuCodeletOp
 
     `IsolatedFromAbove` guarantees the body references no SSA value from
     outside its block arguments. Dependencies are SSA-visible via the token
-    operand list; scalar firstprivate-style values are SSA-visible via the
-    capture operand list.
+    operand list; firstprivate-style values and shared memref handles are
+    SSA-visible via the capture operand list.
   }];
 
   let arguments = (ins

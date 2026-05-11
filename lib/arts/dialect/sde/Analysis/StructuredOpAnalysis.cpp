@@ -450,8 +450,10 @@ bool StructuredLoopSummary::supportsLinalgCarrier() const {
     }
     return true;
   }
-  return classification != SdeStructuredClassification::reduction ||
-         supportsReductionCarrier;
+  // Reduction-only su_iterate bodies already carry the reduction dimension.
+  // Raising them to a full linalg.generic carrier here would materialize a
+  // whole-domain reduction inside each distributed iteration lane.
+  return classification != SdeStructuredClassification::reduction;
 }
 
 std::optional<StructuredLoopSummary>

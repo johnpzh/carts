@@ -238,7 +238,10 @@ EdtDistributionKind DistributionHeuristics::selectDistributionKind(
   /// Fallback to pattern-specific defaults.
   switch (pattern) {
   case EdtDistributionPattern::triangular:
-    return EdtDistributionKind::block_cyclic;
+    /// The block-cyclic triangular bounds path can collapse the inner work
+    /// range to zero for row-dependent lower bounds. Keep triangular kernels on
+    /// block decomposition until that bounds analysis is fully modeled.
+    return EdtDistributionKind::block;
   case EdtDistributionPattern::stencil:
   case EdtDistributionPattern::uniform:
   case EdtDistributionPattern::matmul:

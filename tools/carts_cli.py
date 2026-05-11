@@ -7,6 +7,40 @@ import sys
 
 from dekk import Context, Exit, Option, Typer, print_error
 
+
+def _prepend_env_path(var_name: str, paths: list[Path]) -> None:
+    entries = [str(path) for path in paths if path.is_dir()]
+    if not entries:
+        return
+
+    existing = [entry for entry in os.environ.get(var_name, "").split(":") if entry]
+    merged: list[str] = []
+    seen: set[str] = set()
+    for entry in entries + existing:
+        if entry in seen:
+            continue
+        merged.append(entry)
+        seen.add(entry)
+    os.environ[var_name] = ":".join(merged)
+
+
+def _bootstrap_runtime_library_paths() -> None:
+    carts_dir = Path(__file__).resolve().parent.parent
+    lib_paths = [Path(sys.prefix) / "lib"]
+    if conda_prefix := os.environ.get("CONDA_PREFIX"):
+        lib_paths.append(Path(conda_prefix) / "lib")
+    lib_paths.extend([
+        carts_dir / ".install" / "carts" / "lib",
+        carts_dir / ".install" / "arts" / "lib",
+    ])
+
+    _prepend_env_path("DYLD_LIBRARY_PATH", lib_paths)
+    _prepend_env_path("LD_LIBRARY_PATH",
+                      lib_paths + [carts_dir / ".install" / "llvm" / "lib"])
+
+
+_bootstrap_runtime_library_paths()
+
 from scripts.platform import get_config, set_verbose
 from scripts import run_subprocess, SUBMODULE_BENCHMARKS
 from scripts.build import build as build_cmd

@@ -19,11 +19,11 @@
 namespace mlir::arts::sde {
 
 struct ExternalCapturePlan {
-  SmallVector<Value> scalarCaptures;
+  SmallVector<Value> captures;
   SmallVector<Value> pureExternal;
   DenseSet<Value> materializedMemrefs;
 
-  DenseSet<Value> scalarCaptureSet;
+  DenseSet<Value> captureSet;
   DenseSet<Value> pureExternalSet;
 };
 
@@ -42,6 +42,9 @@ DenseSet<Operation *> collectMovedOpTree(ArrayRef<Operation *> opsToMove);
 /// Return true when a value is defined by, or scoped under, moved operations.
 bool isValueInternalToMovedOps(Value value,
                                const DenseSet<Operation *> &movedOps);
+
+/// Return true when the moved operation tree writes to the given memref value.
+bool hasMemrefWriteInMovedOps(Value memref, ArrayRef<Operation *> opsToMove);
 
 /// Plan the explicit captures needed before cloning into an isolated codelet.
 LogicalResult planExternalCaptures(

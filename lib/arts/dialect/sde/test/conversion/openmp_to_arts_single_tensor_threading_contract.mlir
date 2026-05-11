@@ -1,7 +1,8 @@
 // Verify the full tensor-first pipeline for a scalar single+wsloop pattern:
 //   1. ConvertOpenMPToSde wraps su_iterate body in cu_region <parallel>
 //   2. RaiseToTensor threads scalar alloca through cu_region <single> as tensor iter_arg
-//   3. ConvertToCodelet + ConvertSdeToArts lower to arts.edt with DB acquire/release
+//   3. ConvertToCodelet + ConvertSdeToArts preserve scalar single state on the
+//      user-visible alloca and lower the loop to arts.for
 
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 \
 // RUN:   | awk '/IR Dump After ConvertOpenMPToSde/,/IR Dump After RaiseToLinalg/' \
@@ -52,17 +53,11 @@
 // --- After ConvertSdeToArts ---
 // ARTS: func.func @main
 // ARTS: arts.edt <parallel>
-//   DB for scalar sum:
-// ARTS: %[[GUID:.+]], %[[PTR:.+]] = arts.db_alloc
-//   Single EDT wrapping the codelet:
+//   Single EDT keeps scalar state on the preserved alloca:
 // ARTS: arts.edt <single>
-// ARTS: arts.db_acquire
-//   Inner task EDT with the computation:
-// ARTS: arts.edt <task>
-// ARTS: arts.db_ref
-// ARTS: memref.load %{{.*}}[%{{.*}}] : memref<?xi32>
+// ARTS: memref.load %{{.*}}[] : memref<i32>
 // ARTS: arith.addi %{{.*}}, %{{.*}} : i32
-// ARTS: memref.store %{{.*}}, %{{.*}}[%{{.*}}] : memref<?xi32>
+// ARTS: memref.store %{{.*}}, %{{.*}}[] : memref<i32>
 //   Barrier between single and loop:
 // ARTS: arts.barrier
 //   Parallel loop:

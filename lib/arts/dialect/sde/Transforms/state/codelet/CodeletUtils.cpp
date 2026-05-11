@@ -1,14 +1,18 @@
 #include "arts/dialect/sde/Transforms/CodeletUtils.h"
 
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
 namespace mlir::arts::sde {
 namespace {
 
-static bool isScalarCaptureType(Type type) { return type.isIntOrIndexOrFloat(); }
+static bool isDirectCaptureType(Type type) {
+  return type.isIntOrIndexOrFloat() || isa<BaseMemRefType>(type);
+}
 
 static bool isInsideMovedOps(Operation *op,
                              const DenseSet<Operation *> &movedOps) {
@@ -51,9 +55,9 @@ static bool canClonePureValue(Value value,
   return true;
 }
 
-static void addScalarCapture(Value value, ExternalCapturePlan &plan) {
-  if (plan.scalarCaptureSet.insert(value).second)
-    plan.scalarCaptures.push_back(value);
+static void addDirectCapture(Value value, ExternalCapturePlan &plan) {
+  if (plan.captureSet.insert(value).second)
+    plan.captures.push_back(value);
 }
 
 static void addPureExternal(Value value, ExternalCapturePlan &plan) {
@@ -90,8 +94,8 @@ static bool planExternalValue(Value value,
     }
   }
 
-  if (isScalarCaptureType(value.getType())) {
-    addScalarCapture(value, plan);
+  if (isDirectCaptureType(value.getType())) {
+    addDirectCapture(value, plan);
     return true;
   }
 
@@ -111,11 +115,17 @@ SdeAccessMode classifyTensorAccess(BlockArgument blockArg) {
   bool hasRead = false;
   bool hasWrite = false;
   for (Operation *user : blockArg.getUsers()) {
-    if (isa<tensor::ExtractOp>(user))
+    if (isa<tensor::ExtractOp>(user)) {
       hasRead = true;
-    else if (isa<tensor::InsertOp>(user))
-      hasWrite = true;
-    else {
+    } else if (auto insert = dyn_cast<tensor::InsertOp>(user)) {
+      if (insert.getDest() == blockArg)
+        hasWrite = true;
+      else
+        hasRead = true;
+    } else if (isa<scf::YieldOp, SdeYieldOp>(user)) {
+      continue;
+    } else {
+      // Unknown tensor user: assume both so we preserve correctness.
       hasRead = true;
       hasWrite = true;
     }
@@ -150,8 +160,10 @@ Value traceTensorBoundaryMemref(Value tensor) {
 
 DenseSet<Operation *> collectMovedOpTree(ArrayRef<Operation *> opsToMove) {
   DenseSet<Operation *> movedOps;
-  for (Operation *root : opsToMove)
+  for (Operation *root : opsToMove) {
+    movedOps.insert(root);
     root->walk([&](Operation *op) { movedOps.insert(op); });
+  }
   return movedOps;
 }
 
@@ -165,6 +177,24 @@ bool isValueInternalToMovedOps(Value value,
     return false;
   if (Operation *parentOp = blockArg.getOwner()->getParentOp())
     return isInsideMovedOps(parentOp, movedOps);
+  return false;
+}
+
+bool hasMemrefWriteInMovedOps(Value memref, ArrayRef<Operation *> opsToMove) {
+  for (Operation *root : opsToMove) {
+    WalkResult result = root->walk([&](Operation *op) -> WalkResult {
+      if (auto store = dyn_cast<memref::StoreOp>(op)) {
+        if (store.getMemref() == memref)
+          return WalkResult::interrupt();
+      } else if (auto store = dyn_cast<affine::AffineStoreOp>(op)) {
+        if (store.getMemref() == memref)
+          return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+    if (result.wasInterrupted())
+      return true;
+  }
   return false;
 }
 

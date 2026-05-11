@@ -1,12 +1,9 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
-// Verify that Tiling correctly handles reduction-classified
-// loops. A pure reduction (all reduction dims in the tensor carrier) must
-// NOT be tiled, because there are no parallel dims to distribute.
-//
-// When the carrier has mixed parallel+reduction dims, only parallel dims
-// would be tiled (tested by the code path but not yet triggered by the
-// pipeline, as RaiseToLinalg only creates narrow 1-D reduction carriers).
+// Verify that Tiling leaves reduction-classified loops scalar. A pure
+// reduction must not be tiled or converted to a carrier-authoritative
+// linalg.generic inside su_iterate because that would duplicate the reduction
+// domain per distributed iteration lane.
 
 // CHECK-LABEL: // -----// IR Dump After Tiling (tiling) //----- //
 // CHECK: func.func @main
@@ -14,10 +11,12 @@
 // CHECK: arts_sde.cu_region <parallel> {
 // CHECK: arts_sde.su_iterate (%c0) to (%c128) step (%c1)
 // CHECK-SAME: classification(<reduction>)
-// The tensor carrier survives (it's used for classification only):
 // CHECK: arts_sde.cu_region <parallel> {
-// CHECK: linalg.generic
-// CHECK-SAME: iterator_types = ["reduction"]
+// CHECK: memref.load %arg0[%{{.*}}] : memref<128xf64>
+// CHECK: memref.load %{{.*}}[%c0] : memref<?xf64>
+// CHECK: arith.addf
+// CHECK: memref.store %{{.*}}, %{{.*}}[%c0] : memref<?xf64>
+// CHECK-NOT: linalg.generic
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   omp.declare_reduction @add_f64 : f64 init {

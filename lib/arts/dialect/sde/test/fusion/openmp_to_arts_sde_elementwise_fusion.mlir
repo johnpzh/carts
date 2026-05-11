@@ -21,7 +21,7 @@
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
 // ARTS: arts.edt <parallel> <intranode> route(%{{.*}})
-// ARTS: arts.for(%c0) to(%c128) step(%c16) {
+// ARTS: arts.for(%c0) to(%c128) step(%c1) {
 // ARTS: memref.load
 // ARTS: arith.addf
 // ARTS: memref.store

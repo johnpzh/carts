@@ -1,27 +1,19 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=OPT
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
-// Verify that Tiling tiles a matmul with larger dimensions
-// (64x64). The pass creates an outer tile on the leading parallel dimension
-// while loop interchange (LoopInterchange) has already reordered j-k to k-j.
-// After tiling, the su_iterate step changes from 1 to the tile size, and an
-// scf.for tile loop wraps the original body.
-
-// OPT-LABEL: // -----// IR Dump After Tiling (tiling) //----- //
-// OPT: arts_sde.su_iterate
-// OPT-SAME: classification(<matmul>)
-// OPT: arts_sde.mu_memref_to_tensor %arg0 : memref<64x64xf32>
-// OPT: arts_sde.mu_memref_to_tensor %arg1 : memref<64x64xf32>
-// OPT: arts_sde.mu_memref_to_tensor %arg2 : memref<64x64xf32>
-// OPT: tensor.extract_slice
-// OPT: tensor.extract_slice
-// OPT: tensor.extract_slice
-// OPT: linalg.generic
-// OPT-SAME: iterator_types = ["parallel", "parallel", "reduction"]
-// OPT: arith.mulf
-// OPT: arith.addf
-// OPT: linalg.yield
-// OPT: tensor.insert_slice
-// OPT-NOT: bufferization.to_tensor
+// Non-stencil elementwise and matmul loops stay on the scalar SDE path.
+// RaiseToLinalg stamps the structured classification, but does not create
+// tensor/linalg carriers unless a later pass needs that representation.
+//
+// CHECK-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
+// CHECK: func.func @main
+// CHECK: arts_sde.su_iterate
+// CHECK: memref.store
+// CHECK-NOT: linalg.generic
+// CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// CHECK: func.func @main
+// CHECK: arts.for
+// CHECK: memref.store
+// CHECK-NOT: arts_sde.
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f32, dense<32> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<64x64xf32>, %B: memref<64x64xf32>, %C: memref<64x64xf32>) {

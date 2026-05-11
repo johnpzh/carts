@@ -1,8 +1,8 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_64t.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
-// Verify that the narrow single-accumulator reduction subset gets a
-// carrier-authoritative linalg.generic carrier at the SDE layer. The scalar
-// body is erased and mu_memref_to_tensor converts memrefs at the boundary.
+// Verify that reduction-only loops stay scalar at the SDE layer. The
+// su_iterate itself owns the reduction dimension; raising a full-domain
+// linalg.generic inside it would duplicate the reduction work.
 
 // CHECK-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
 // CHECK: func.func @main
@@ -11,17 +11,11 @@
 // CHECK-SAME: reduction[#arts_sde.reduction_kind<add>](%{{.+}} : memref<?xi32>)
 // CHECK-SAME: classification(<reduction>) {
 // CHECK: arts_sde.cu_region <parallel> {
-// CHECK: %[[VALS:.+]] = arts_sde.mu_memref_to_tensor %arg0 : memref<128xi32> -> tensor<128xi32>
-// CHECK: arts_sde.mu_memref_to_tensor %{{.+}} : memref<?xi32> -> tensor<?xi32>
-// CHECK: %[[ACC2:.+]] = arts_sde.mu_memref_to_tensor %{{.+}} : memref<?xi32> -> tensor<?xi32>
-// CHECK: linalg.generic
-// CHECK-SAME: iterator_types = ["reduction"]
-// CHECK: ^bb0(%[[ARGVAL:.+]]: i32, %[[ARGACC:.+]]: i32, %{{.+}}: i32):
-// CHECK: %[[REDUCED:.+]] = arith.addi %[[ARGACC]], %[[ARGVAL]] : i32
-// CHECK: linalg.yield %[[REDUCED]] : i32
-// CHECK-NOT: memref.load
-// CHECK-NOT: memref.store
-// CHECK-NOT: arts.for
+// CHECK: memref.load %arg0[%{{.*}}] : memref<128xi32>
+// CHECK: memref.load %{{.*}}[%c0] : memref<?xi32>
+// CHECK: arith.addi
+// CHECK: memref.store %{{.*}}, %{{.*}}[%c0] : memref<?xi32>
+// CHECK-NOT: linalg.generic
 // CHECK: // -----// IR Dump After LoopInterchange
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {

@@ -8,7 +8,6 @@
 // CHECK: func.func @main
 // CHECK: arts.edt <parallel> <intranode> route(%{{.*}})
 // CHECK: arts.for(%c0) to(%c16) step(%{{.*}})
-// CHECK: scf.for
 // CHECK: memref.load
 // CHECK: memref.store
 // CHECK-NOT: arts_sde.mu_memref_to_tensor

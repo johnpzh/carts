@@ -34,6 +34,7 @@ namespace mlir::arts {
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
+#include "arts/utils/ValueAnalysis.h"
 #include "arts/utils/Debug.h"
 ARTS_DEBUG_SETUP(raise_to_linalg);
 
@@ -83,6 +84,38 @@ static std::optional<unsigned> findOperandIndex(ArrayRef<OutputOperand> outputs,
       return idx;
   }
   return std::nullopt;
+}
+
+static bool isConstantIndex(Value value, int64_t expected) {
+  int64_t actual = 0;
+  return ValueAnalysis::getConstantIndex(value, actual) && actual == expected;
+}
+
+static bool hasZeroLowerUnitStep(sde::SdeSuIterateOp iterOp,
+                                 const sde::LoopNestInfo &nest,
+                                 unsigned dim) {
+  if (dim < iterOp.getLowerBounds().size() && dim < iterOp.getSteps().size())
+    return isConstantIndex(iterOp.getLowerBounds()[dim], 0) &&
+           isConstantIndex(iterOp.getSteps()[dim], 1);
+
+  if (dim >= nest.ivs.size())
+    return false;
+  auto blockArg = dyn_cast<BlockArgument>(nest.ivs[dim]);
+  if (!blockArg)
+    return false;
+
+  auto forOp = dyn_cast_or_null<scf::ForOp>(
+      blockArg.getOwner()->getParentOp());
+  return forOp && isConstantIndex(forOp.getLowerBound(), 0) &&
+         isConstantIndex(forOp.getStep(), 1);
+}
+
+static bool loopIvsMapDirectlyToLinalgIndices(
+    sde::SdeSuIterateOp iterOp, const sde::LoopNestInfo &nest) {
+  for (unsigned dim = 0, e = nest.ivs.size(); dim < e; ++dim)
+    if (!hasZeroLowerUnitStep(iterOp, nest, dim))
+      return false;
+  return true;
 }
 
 static Value cloneScalarValueIntoRegion(Value value, Block &body,
@@ -408,11 +441,11 @@ static bool raiseStencilToLinalg(sde::SdeSuIterateOp iterOp,
   return true;
 }
 
-static bool raiseToLinalg(sde::SdeSuIterateOp iterOp,
-                          const sde::LoopNestInfo &nest,
-                          ArrayRef<sde::MemrefAccessEntry> reads,
-                          ArrayRef<sde::MemrefAccessEntry> writes,
-                          ArrayRef<utils::IteratorType> iterTypes) {
+[[maybe_unused]] static bool raiseToLinalg(
+    sde::SdeSuIterateOp iterOp, const sde::LoopNestInfo &nest,
+    ArrayRef<sde::MemrefAccessEntry> reads,
+    ArrayRef<sde::MemrefAccessEntry> writes,
+    ArrayRef<utils::IteratorType> iterTypes) {
   Block *computeBody = sde::getSuIterateComputeBlock(iterOp);
   // Find the yield terminator in the compute block (inside cu_region if
   // present, otherwise the su_iterate body directly).
@@ -473,6 +506,8 @@ static bool raiseToLinalg(sde::SdeSuIterateOp iterOp,
 
   if (outputs.empty())
     return false;
+  if (!loopIvsMapDirectlyToLinalgIndices(iterOp, nest))
+    return false;
 
   OpBuilder builder(oldYield);
 
@@ -527,6 +562,10 @@ static bool raiseToLinalg(sde::SdeSuIterateOp iterOp,
       iterTypes,
       [&](OpBuilder &nestedBuilder, Location nestedLoc, ValueRange blockArgs) {
         IRMapping mapper;
+        for (auto [dim, iv] : llvm::enumerate(nest.ivs)) {
+          auto indexOp = linalg::IndexOp::create(nestedBuilder, nestedLoc, dim);
+          mapper.map(iv, indexOp.getResult());
+        }
         for (auto [inputIdx, input] : llvm::enumerate(inputs)) {
           for (Operation *accessOp : input.accessOps) {
             if (auto loadOp = dyn_cast<memref::LoadOp>(accessOp))
@@ -647,12 +686,18 @@ struct RaiseToLinalgPass
       ++classified;
       if (summary->supportsLinalgCarrier()) {
         bool didRaise = false;
-        if (pattern == sde::SdeStructuredClassification::stencil)
+        if (pattern == sde::SdeStructuredClassification::stencil) {
           didRaise = raiseStencilToLinalg(iterOp, summary->nest, summary->reads,
                                           summary->writes, summary->iterTypes);
-        else
-          didRaise = raiseToLinalg(iterOp, summary->nest, summary->reads,
-                                   summary->writes, summary->iterTypes);
+        } else {
+          /// Non-stencil carriers currently materialize full tensor domains.
+          /// Inside su_iterate that duplicates work for each distributed IV
+          /// chunk. Keep the scalar SDE body authoritative until this path
+          /// emits explicit per-iteration tensor slices like the stencil
+          /// dual-representation path.
+          ARTS_DEBUG("skipping non-slice-aware linalg carrier for '"
+                     << stringifySdeStructuredClassification(pattern) << "'");
+        }
         if (didRaise)
           ++raised;
       }
