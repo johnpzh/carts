@@ -33,6 +33,7 @@ namespace mlir::arts {
 #include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
+#include "arts/dialect/core/Analysis/db/OwnershipProof.h"
 #include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "arts/dialect/core/Conversion/ArtsToRt/EdtLoweringInternal.h"
 #include "arts/dialect/rt/IR/RtDialect.h"
@@ -68,6 +69,8 @@ namespace mlir::arts {
 
 #include "arts/utils/Debug.h"
 ARTS_DEBUG_SETUP(edt_lowering);
+
+static constexpr int32_t kArtsRuntimeDbModeRw = 3;
 
 #include "llvm/ADT/Statistic.h"
 static llvm::Statistic numEdtsLowered{
@@ -179,6 +182,48 @@ trySynthesizeElementSlice(ArtsCodegen *AC, DbAcquireOp acquire, Location loc) {
       std::move(elementOffsets), std::move(elementSizes)};
 }
 
+static bool hasTrustedPartitionedWriteContract(DbAcquireOp acquire) {
+  if (!acquire)
+    return false;
+
+  auto mode = acquire.getPartitionMode().value_or(PartitionMode::coarse);
+  if (!usesBlockLayout(mode))
+    return false;
+  if (acquire.getPartitionOffsets().empty() ||
+      acquire.getPartitionSizes().empty())
+    return false;
+
+  if (auto contract = resolveAcquireContract(acquire))
+    if (contract->hasExplicitStencilContract() &&
+        contract->supportsBlockHalo() && contract->hasOwnerDims())
+      return true;
+
+  LoweringContractOp contractOp = getLoweringContractOp(acquire.getPtr());
+  if (!contractOp)
+    contractOp = getLoweringContractOp(acquire.getSourcePtr());
+  if (!contractOp)
+    return false;
+
+  OwnershipProof proof = readOwnershipProof(contractOp.getOperation());
+  if (!(proof.ownerDimReachability && proof.partitionAccessMapping &&
+        proof.haloLegality))
+    proof = computeOwnershipProof(contractOp);
+  return proof.ownerDimReachability && proof.partitionAccessMapping &&
+         proof.haloLegality;
+}
+
+static bool canUseUnorderedLocalWrite(DbAcquireOp acquire, EdtOp edtOp,
+                                      mlir::arts::AnalysisManager *AM) {
+  if (!acquire || !edtOp || acquire.getMode() != ArtsMode::out)
+    return false;
+  if (edtOp.getConcurrency() != EdtConcurrency::intranode)
+    return false;
+  if (AM && AM->getRuntimeConfig().hasValidNodeCount() &&
+      AM->getRuntimeConfig().getNodeCount() != 1)
+    return false;
+  return hasTrustedPartitionedWriteContract(acquire);
+}
+
 ///===----------------------------------------------------------------------===///
 /// EDT Lowering Pass Implementation
 ///===----------------------------------------------------------------------===///
@@ -223,7 +268,7 @@ private:
                             IRMapping &valueMapping);
 
   /// Dep satisfaction
-  LogicalResult insertDepManagement(Location loc, Value edtGuid,
+  LogicalResult insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
                                     const SmallVector<Value> &deps);
 
   mlir::arts::AnalysisManager &getAnalysisManager();
@@ -514,7 +559,7 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
   Value edtGuid = outlineOp.getGuid();
   AC->setInsertionPointAfter(outlineOp);
   SmallVector<Value> depsVec(edtDeps.begin(), edtDeps.end());
-  if (failed(insertDepManagement(loc, edtGuid, depsVec)))
+  if (failed(insertDepManagement(edtOp, loc, edtGuid, depsVec)))
     return edtOp.emitError("Failed to insert dependency management");
 
   /// Replace all uses of EDT with the outlined function result.
@@ -928,7 +973,7 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
 ///            arts.inc_dep %edt_guid, [%d3_guid] {access_mode = direct}
 ///===----------------------------------------------------------------------===///
 LogicalResult
-EdtLoweringPass::insertDepManagement(Location loc, Value edtGuid,
+EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
                                      const SmallVector<Value> &deps) {
   if (deps.empty())
     return success();
@@ -1114,7 +1159,14 @@ EdtLoweringPass::insertDepManagement(Location loc, Value edtGuid,
       if (allocMode == DbMode::read || allocMode == DbMode::write)
         dbMode = allocMode;
     }
-    acquireModes.push_back(static_cast<int32_t>(dbMode));
+    int32_t runtimeDbMode = static_cast<int32_t>(dbMode);
+    if (dbMode == DbMode::write &&
+        canUseUnorderedLocalWrite(dbAcquireOp, edtOp, AM)) {
+      runtimeDbMode = kArtsRuntimeDbModeRw;
+      ARTS_DEBUG("Using unordered local DB_MODE_RW for proven partitioned "
+                 "out dependency");
+    }
+    acquireModes.push_back(runtimeDbMode);
 
     int32_t depFlagBits = 0;
     if (allocForHint &&
