@@ -1517,6 +1517,10 @@ struct DepDbAcquireOpPattern : public ArtsToLLVMPattern<DepDbAcquireOp> {
   LogicalResult matchAndRewrite(DepDbAcquireOp op,
                                 PatternRewriter &rewriter) const override {
     ARTS_INFO("Lowering DepDbAcquire Op " << op);
+    for (OpOperand &use : op.getGuid().getUses())
+      if (isa<RecordDepOp>(use.getOwner()))
+        return failure();
+
     ArtsCodegen::RewriterGuard RG(*AC, rewriter);
     auto loc = op.getLoc();
     auto depStruct = op.getDepStruct();
@@ -1618,8 +1622,12 @@ struct DbGepOpPattern : public ArtsToLLVMPattern<DbGepOp> {
         AC->computeLinearIndexFromStrides(paddedStrides, indices, loc);
     Value idx64 = AC->ensureI64(linearIdx, loc);
 
-    /// Use typed GEP based on the element type; default to pointer elements
+    /// Use typed GEP based on the element type; default to pointer elements.
+    /// memref element types model ARTS pointer tables at this stage, not in-line
+    /// memref descriptors, so address those slots as pointer-sized entries.
     Type elemTy = baseMT ? baseMT.getElementType() : AC->llvmPtr;
+    if (isa<MemRefType>(elemTy))
+      elemTy = AC->llvmPtr;
     Value elemAddr = AC->create<LLVM::GEPOp>(loc, AC->llvmPtr, elemTy, basePtr,
                                              ValueRange{idx64});
 

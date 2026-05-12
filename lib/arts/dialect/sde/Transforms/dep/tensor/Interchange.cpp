@@ -361,6 +361,9 @@ static bool hasNestedScalarAccumulatorUse(Operation *op, Value accumulator) {
 
 static bool promoteScalarAccumulatorLoop(scf::ForOp loop,
                                          memref::StoreOp initStore) {
+  if (loop.getNumResults() != 0)
+    return false;
+
   Value accumulator = initStore.getMemref();
   Type accumulatorType =
       cast<MemRefType>(accumulator.getType()).getElementType();
@@ -679,6 +682,12 @@ static bool interchangePromotedScalarMatmulAccumulator(Block &body) {
   if (!findPromotedScalarMatmulNest(body, jLoop, kLoop, prefixOps, postOps))
     return false;
 
+  if (jLoop.getNumResults() != 0) {
+    ARTS_DEBUG("LoopInterchange: result-bearing matmul outer loop is not "
+               "supported");
+    return false;
+  }
+
   if (!prefixOps.empty())
     return false;
 
@@ -818,6 +827,11 @@ static bool interchangeLoops(scf::ForOp jLoop, scf::ForOp kLoop,
                              ArrayRef<Operation *> initOps) {
   if (kLoop->getParentOp() != jLoop.getOperation()) {
     ARTS_DEBUG("LoopInterchange: k loop is not directly inside j loop");
+    return false;
+  }
+
+  if (jLoop.getNumResults() != 0 || kLoop.getNumResults() != 0) {
+    ARTS_DEBUG("LoopInterchange: loop-carried values are not supported");
     return false;
   }
 

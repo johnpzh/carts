@@ -78,7 +78,9 @@ Operation *cloneEpochSlot(OpBuilder &slotBuilder, EpochSlot slot,
                           IRMapping &mapping);
 void cloneNonSlotArith(OpBuilder &builder, Block &body,
                        MutableArrayRef<EpochSlot> slots, IRMapping &mapping,
-                       ArrayRef<Operation *> sequentialOps = {});
+                       ArrayRef<Operation *> sequentialOps = {},
+                       ArrayRef<Operation *> eagerSequentialOps = {},
+                       bool restrictEagerSequentialOps = false);
 Operation *getLastNonTerminatorOp(Block &block);
 void emitAdvanceLogic(OpBuilder &builder, Location loc, Value iv,
                       Value tCurrent, Value ub, Value step, Block &body,

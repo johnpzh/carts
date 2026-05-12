@@ -135,6 +135,114 @@ static bool acquireHasAccessDependingOnLoopIv(DbAcquireOp acquire,
   return false;
 }
 
+static std::optional<AccessIndexInfo>
+buildAccessIndexInfo(Operation *memOp) {
+  std::optional<DbUtils::MemoryAccessInfo> access =
+      DbUtils::getMemoryAccessInfo(memOp);
+  if (!access || access->indices.empty())
+    return std::nullopt;
+
+  AccessIndexInfo info;
+  Value baseMemref = ValueAnalysis::stripMemrefViewOps(access->memref);
+  if (auto dbRef = baseMemref.getDefiningOp<DbRefOp>()) {
+    SmallVector<Value> indexChain = DbUtils::collectFullIndexChain(dbRef, memOp);
+    if (indexChain.empty())
+      return std::nullopt;
+    info.dbRefPrefix = dbRef.getIndices().size();
+    info.indexChain.append(indexChain.begin(), indexChain.end());
+  } else {
+    info.dbRefPrefix = 0;
+    info.indexChain.append(access->indices.begin(), access->indices.end());
+  }
+
+  return info;
+}
+
+static bool writeOwnerAccessesTrackLoopIv(Value dep, ForOp forOp,
+                                          unsigned ownerDim) {
+  if (!dep || !forOp)
+    return false;
+
+  Block &forBody = forOp.getRegion().front();
+  if (forBody.getNumArguments() == 0)
+    return false;
+
+  Value loopIV = forBody.getArgument(0);
+  Region &forRegion = forOp.getRegion();
+  llvm::SetVector<Operation *> memOps;
+  DbUtils::collectReachableMemoryOps(dep, memOps, /*scope=*/nullptr);
+
+  bool sawWrite = false;
+  for (Operation *memOp : memOps) {
+    Region *memRegion = memOp ? memOp->getParentRegion() : nullptr;
+    if (!memRegion)
+      continue;
+    if (memRegion != &forRegion && !forRegion.isAncestor(memRegion))
+      continue;
+
+    std::optional<DbUtils::MemoryAccessInfo> access =
+        DbUtils::getMemoryAccessInfo(memOp);
+    if (!access || !access->isWrite())
+      continue;
+
+    std::optional<AccessIndexInfo> accessInfo = buildAccessIndexInfo(memOp);
+    if (!accessInfo)
+      return false;
+
+    AccessBoundsResult bounds = analyzeAccessBoundsFromIndices(
+        ArrayRef<AccessIndexInfo>(&*accessInfo, 1), loopIV, loopIV, ownerDim);
+    if (!bounds.valid || bounds.hasVariableOffset)
+      return false;
+    sawWrite = true;
+  }
+
+  return sawWrite;
+}
+
+static std::optional<ArtsMode> inferLoopLocalMode(Value dep, ForOp forOp);
+
+static bool hasOwnerMismatchedWriteDep(ForOp forOp, EdtOp parallelEdt) {
+  if (!forOp || !parallelEdt)
+    return false;
+
+  ValueRange parentDeps = parallelEdt.getDependencies();
+  if (parallelEdt.getRegion().empty())
+    return false;
+  Block &parallelBlock = parallelEdt.getRegion().front();
+
+  for (auto [idx, parentDep] : llvm::enumerate(parentDeps)) {
+    if (idx >= parallelBlock.getNumArguments())
+      break;
+
+    auto parentAcqOp = parentDep.getDefiningOp<DbAcquireOp>();
+    if (!parentAcqOp)
+      continue;
+
+    BlockArgument parallelArg = parallelBlock.getArgument(idx);
+    ArtsMode effectiveMode = parentAcqOp.getMode();
+    if (effectiveMode == ArtsMode::inout)
+      if (auto loopLocalMode = inferLoopLocalMode(parallelArg, forOp))
+        effectiveMode = *loopLocalMode;
+    if (effectiveMode != ArtsMode::out && effectiveMode != ArtsMode::inout)
+      continue;
+
+    std::optional<LoweringContractInfo> contract =
+        resolveAcquireContract(parentAcqOp);
+    if (!contract || contract->spatial.ownerDims.empty())
+      continue;
+
+    int64_t rawOwnerDim = contract->spatial.ownerDims.front();
+    if (rawOwnerDim < 0)
+      continue;
+
+    if (!writeOwnerAccessesTrackLoopIv(
+            parallelArg, forOp, static_cast<unsigned>(rawOwnerDim)))
+      return true;
+  }
+
+  return false;
+}
+
 static std::optional<AccessBoundsResult>
 inferLoopHaloBoundsFromValue(Value dep, ForOp forOp, unsigned mappedDim) {
   if (!dep || !forOp)
@@ -162,20 +270,8 @@ inferLoopHaloBoundsFromValue(Value dep, ForOp forOp, unsigned mappedDim) {
     if (!access || access->indices.empty())
       continue;
 
-    AccessIndexInfo info;
-    Value baseMemref = ValueAnalysis::stripMemrefViewOps(access->memref);
-    if (auto dbRef = baseMemref.getDefiningOp<DbRefOp>()) {
-      SmallVector<Value> indexChain =
-          DbUtils::collectFullIndexChain(dbRef, memOp);
-      if (indexChain.empty())
-        continue;
-      info.dbRefPrefix = dbRef.getIndices().size();
-      info.indexChain.append(indexChain.begin(), indexChain.end());
-    } else {
-      info.dbRefPrefix = 0;
-      info.indexChain.append(access->indices.begin(), access->indices.end());
-    }
-    accesses.push_back(std::move(info));
+    if (std::optional<AccessIndexInfo> info = buildAccessIndexInfo(memOp))
+      accesses.push_back(std::move(*info));
   }
 
   if (accesses.empty())
@@ -186,6 +282,41 @@ inferLoopHaloBoundsFromValue(Value dep, ForOp forOp, unsigned mappedDim) {
   if (!bounds.valid || (bounds.minOffset == 0 && bounds.maxOffset == 0))
     return std::nullopt;
   return bounds;
+}
+
+static std::optional<ArtsMode> inferLoopLocalMode(Value dep, ForOp forOp) {
+  if (!dep || !forOp)
+    return std::nullopt;
+
+  Region &forRegion = forOp.getRegion();
+  llvm::SetVector<Operation *> memOps;
+  DbUtils::collectReachableMemoryOps(dep, memOps, /*scope=*/nullptr);
+
+  bool hasRead = false;
+  bool hasWrite = false;
+  for (Operation *memOp : memOps) {
+    Region *memRegion = memOp ? memOp->getParentRegion() : nullptr;
+    if (!memRegion)
+      continue;
+    if (memRegion != &forRegion && !forRegion.isAncestor(memRegion))
+      continue;
+
+    std::optional<DbUtils::MemoryAccessInfo> access =
+        DbUtils::getMemoryAccessInfo(memOp);
+    if (!access)
+      continue;
+
+    hasRead |= access->isRead();
+    hasWrite |= access->isWrite();
+  }
+
+  if (hasRead && hasWrite)
+    return ArtsMode::inout;
+  if (hasRead)
+    return ArtsMode::in;
+  if (hasWrite)
+    return ArtsMode::out;
+  return std::nullopt;
 }
 
 ///===----------------------------------------------------------------------===///
@@ -1091,6 +1222,17 @@ void ForLoweringPass::lowerForWithDbRewiring(ArtsCodegen &AC, ForOp forOp,
     else
       AC.setInsertionPoint(originalParallel);
 
+    bool forceSingleOwnerLane =
+        hasOwnerMismatchedWriteDep(forOp, originalParallel);
+    if (forceSingleOwnerLane) {
+      // The current block DB plan partitions the primary owner dimension. If a
+      // writer loop distributes a different dimension, splitting by workers
+      // gives each task the wrong owner slice. Keep the physical layout but
+      // execute this loop as one lane until SDE can choose a matching layout.
+      setWorkers(forOp.getOperation(), 1);
+      setWorkers(originalParallel.getOperation(), 1);
+    }
+
     /// Get numWorkers from explicit attrs or runtime queries.
     Value numWorkers =
         WorkDistributionUtils::getTotalWorkers(&AC, loc, originalParallel);
@@ -1367,10 +1509,10 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
         (!parentAcqOp.isCoarse() || parentAcqOp.getPreserveAccessMode() ||
          parentAcqOp.getPreserveDepEdge());
 
-    /// CreateDbs/Db analysis own the canonical access mode for each acquire.
-    /// ForLowering preserves that mode instead of reclassifying loop-local
-    /// memops and drifting away from the dependency contract.
     ArtsMode effectiveTaskMode = parentAcqOp.getMode();
+    if (effectiveTaskMode == ArtsMode::inout)
+      if (auto loopLocalMode = inferLoopLocalMode(parallelArg, forOp))
+        effectiveTaskMode = *loopLocalMode;
     auto sourceAlloc = dyn_cast_or_null<DbAllocOp>(
         DbUtils::getUnderlyingDbAlloc(parentAcqOp.getSourcePtr()));
     bool hasSdePhysicalLayoutPlan =

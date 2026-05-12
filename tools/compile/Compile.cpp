@@ -382,12 +382,14 @@ static const std::array<llvm::StringLiteral, 6> kPostO3OptPasses = {
     "LICM",
     "CSE",
     "PolygeistCanonicalize"};
-static const std::array<llvm::StringLiteral, 10> kLLVMIREmissionPasses = {
+static const std::array<llvm::StringLiteral, 12> kLLVMIREmissionPasses = {
     "CSE",
     "PolygeistCanonicalize",
     "ArithExpandOps",
+    "ConvertSCFToCF",
     "ConvertPolygeistToLLVM",
     "ConvertIndexToLLVM",
+    "ConvertControlFlowToLLVM",
     "ReconcileUnrealizedCasts",
     "AliasScopeGen",
     "LoopVectorizationHints",
@@ -912,8 +914,10 @@ void buildLLVMIREmissionPipeline(PassManager &pm) {
   pm.addPass(createCSEPass());
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
   pm.addPass(arith::createArithExpandOpsPass());
+  pm.addPass(createSCFToControlFlowPass());
   pm.addPass(polygeist::createConvertPolygeistToLLVMPass());
   pm.addPass(createConvertIndexToLLVMPass());
+  pm.addPass(createConvertControlFlowToLLVMPass());
   pm.addPass(createReconcileUnrealizedCastsPass());
   pm.addPass(arts::createAliasScopeGenPass());
   pm.addPass(arts::createLoopVectorizationHintsPass());

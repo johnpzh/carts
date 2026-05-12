@@ -354,9 +354,10 @@ bool tryCPSChainTransform(scf::ForOp forOp,
   OpBuilder outerBuilder = OpBuilder::atBlockTerminator(&outerBlock);
   IRMapping firstIterMapping;
   firstIterMapping.map(iv, lb);
-  cloneNonSlotArith(outerBuilder, body, slots, firstIterMapping, sequentialOps);
   cloneSequentialOpsWithExternalDefs(outerBuilder, interEpochOps.front(), &body,
                                      firstIterMapping);
+  cloneNonSlotArith(outerBuilder, body, slots, firstIterMapping, sequentialOps,
+                    interEpochOps.front(), /*restrictEagerSequentialOps=*/true);
   cloneEpochSlot(outerBuilder, slots.front(), firstIterMapping);
 
   OpBuilder chainBuilder(outerBuilder);
@@ -382,18 +383,25 @@ bool tryCPSChainTransform(scf::ForOp forOp,
     contMapping.map(iv, tCurrent);
 
     if (i == slotCount - 1) {
-      cloneNonSlotArith(contBuilder, body, slots, contMapping, sequentialOps);
       cloneSequentialOpsWithExternalDefs(
           contBuilder, interEpochOps[slotCount - 1], &body, contMapping);
       cloneSequentialOpsWithExternalDefs(contBuilder, tailOps, &body,
                                          contMapping);
+      SmallVector<Operation *> eagerSeq;
+      eagerSeq.append(interEpochOps[slotCount - 1].begin(),
+                      interEpochOps[slotCount - 1].end());
+      eagerSeq.append(tailOps.begin(), tailOps.end());
+      cloneNonSlotArith(contBuilder, body, slots, contMapping, sequentialOps,
+                        eagerSeq, /*restrictEagerSequentialOps=*/true);
       advanceSites.push_back({&contBlock, getLastNonTerminatorOp(contBlock)});
       continue;
     }
 
-    cloneNonSlotArith(contBuilder, body, slots, contMapping, sequentialOps);
     cloneSequentialOpsWithExternalDefs(contBuilder, interEpochOps[i + 1], &body,
                                        contMapping);
+    cloneNonSlotArith(contBuilder, body, slots, contMapping, sequentialOps,
+                      interEpochOps[i + 1],
+                      /*restrictEagerSequentialOps=*/true);
 
     EpochSlot &nextSlot = slots[i + 1];
     if (nextSlot.wrappingIf) {

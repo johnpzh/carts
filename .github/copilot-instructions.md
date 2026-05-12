@@ -11,7 +11,7 @@ runtime.
 - **build**: `dekk carts build` -- Build the CARTS compiler
 - **test**: `dekk carts test` -- Run all contract tests
 - **compile**: `dekk carts compile <file> -O3` -- Compile C/C++ to ARTS executable
-- **pipeline**: `dekk carts pipeline --json` -- List 18 pipeline stages
+- **pipeline**: `dekk carts pipeline --json` -- List compilation pipeline stages (16 core + 2 epilogue)
 - **doctor**: `dekk carts doctor` -- Validate toolchain and environment
 - **format**: `dekk carts format` -- Format C/C++/TableGen source files
 - **lit**: `dekk carts lit <file>` -- Run single lit regression test

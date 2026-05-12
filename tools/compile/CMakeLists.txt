@@ -54,6 +54,7 @@ set(LIBS
   MLIRGPUTransforms
   MLIRTransforms
   MLIRSCFToControlFlow
+  MLIRControlFlowToLLVM
   MLIRFuncToLLVM
   MLIRFunctionInterfaces
   MLIRAffineTransforms

@@ -25,6 +25,38 @@ using namespace mlir::arts;
 
 namespace {
 
+static bool mapsDifferByLoopOffset(AffineMap readMap, AffineMap writeMap) {
+  if (readMap.getNumResults() != writeMap.getNumResults())
+    return true;
+
+  for (auto [readExpr, writeExpr] :
+       llvm::zip(readMap.getResults(), writeMap.getResults())) {
+    auto readOffset = sde::extractDimOffset(readExpr);
+    auto writeOffset = sde::extractDimOffset(writeExpr);
+    if (!readOffset || !writeOffset)
+      return true;
+    if (readOffset->dim != writeOffset->dim ||
+        readOffset->offset != writeOffset->offset)
+      return true;
+  }
+
+  return false;
+}
+
+static bool hasInPlaceNeighborRead(
+    const sde::StructuredLoopSummary &summary) {
+  for (const sde::MemrefAccessEntry &write : summary.writes) {
+    Value writtenBase = ValueAnalysis::stripMemrefViewOps(write.memref);
+    for (const sde::MemrefAccessEntry &read : summary.reads) {
+      if (ValueAnalysis::stripMemrefViewOps(read.memref) != writtenBase)
+        continue;
+      if (mapsDifferByLoopOffset(read.indexingMap, write.indexingMap))
+        return true;
+    }
+  }
+  return false;
+}
+
 struct StructuredSummariesPass
     : public arts::impl::StructuredSummariesBase<StructuredSummariesPass> {
   explicit StructuredSummariesPass(sde::SDECostModel *costModel = nullptr)
@@ -76,6 +108,15 @@ struct StructuredSummariesPass
             op.getContext(), neighborhoodSummary->spatialDims));
         op.setWriteFootprintAttr(buildI64ArrayAttr(
             op.getContext(), neighborhoodSummary->writeFootprint));
+
+        if (hasInPlaceNeighborRead(*summary)) {
+          // In-place neighbor stencils, such as Gauss-Seidel updates, have
+          // loop-carried dependences that the current owner-strip stencil plan
+          // cannot preserve. Keep the SDE stencil facts for downstream DB
+          // planning, but force a serial worker topology until a wavefront plan
+          // is available.
+          setWorkers(op.getOperation(), 1);
+        }
 
         // Phase 15: In-place operation detection (stencil path)
         {

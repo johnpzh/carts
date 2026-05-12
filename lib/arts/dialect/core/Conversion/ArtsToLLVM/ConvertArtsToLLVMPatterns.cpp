@@ -108,6 +108,71 @@ SmallVector<Value, 4> resolveOuterSizesForGuid(Value dbGuid, ArtsCodegen *AC,
   return sizes;
 }
 
+static bool isPointerTableElement(Type type) {
+  return isa<LLVM::LLVMPointerType, MemRefType>(type);
+}
+
+static unsigned countDynamicDims(MemRefType type) {
+  unsigned count = 0;
+  for (int64_t dim : type.getShape())
+    if (dim == ShapedType::kDynamic)
+      ++count;
+  return count;
+}
+
+static SmallVector<Value> materializeDbRefElementSizes(DbRefOp op,
+                                                       ArtsCodegen *AC) {
+  auto resultType = dyn_cast<MemRefType>(op.getResult().getType());
+  if (!resultType)
+    return {};
+
+  DbAllocOp selectedAlloc = nullptr;
+  if (auto *rawAlloc = DbUtils::getUnderlyingDbAlloc(op.getSource()))
+    selectedAlloc = dyn_cast<DbAllocOp>(rawAlloc);
+  if (selectedAlloc &&
+      selectedAlloc.getElementSizes().size() !=
+          static_cast<size_t>(resultType.getRank()))
+    selectedAlloc = nullptr;
+
+  if (!selectedAlloc) {
+    Type elementType = resultType.getElementType();
+    if (auto moduleOp = op->getParentOfType<ModuleOp>()) {
+      moduleOp.walk([&](DbAllocOp alloc) {
+        if (selectedAlloc)
+          return WalkResult::interrupt();
+        if (alloc.getElementType() == elementType &&
+            alloc.getElementSizes().size() ==
+                static_cast<size_t>(resultType.getRank()))
+          selectedAlloc = alloc;
+        return WalkResult::advance();
+      });
+    }
+  }
+
+  if (!selectedAlloc || selectedAlloc.getElementSizes().empty())
+    return {};
+
+  SmallVector<Value> sizes;
+  sizes.reserve(selectedAlloc.getElementSizes().size());
+  func::FuncOp ownerFunc = op->getParentOfType<func::FuncOp>();
+  for (Value size : selectedAlloc.getElementSizes()) {
+    int64_t constantSize;
+    if (ValueAnalysis::getConstantIndex(size, constantSize)) {
+      sizes.push_back(AC->createIndexConstant(constantSize, op.getLoc()));
+      continue;
+    }
+
+    Operation *def = size.getDefiningOp();
+    if (def && ownerFunc && def->getParentOfType<func::FuncOp>() == ownerFunc) {
+      sizes.push_back(size);
+      continue;
+    }
+
+    return {};
+  }
+  return sizes;
+}
+
 Value buildArtsHintMemref(ArtsCodegen *AC, Value route, Value artsId,
                           Location loc) {
   Value hintAlloc =
@@ -866,6 +931,95 @@ private:
   }
 };
 
+/// Pattern to convert residual arts.db_ref operations.
+///
+/// Most db_ref operations inside EDT bodies are consumed while lowering the EDT
+/// region. The single-worker/CPS relaunch path can leave db_ref operations in
+/// already-outlined functions, where they must be lowered before their
+/// DbAcquireOp source is rewritten to raw dependency storage.
+struct DbRefPattern : public ArtsToLLVMPattern<DbRefOp> {
+  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+
+  LogicalResult matchAndRewrite(DbRefOp op,
+                                PatternRewriter &rewriter) const override {
+    ARTS_INFO("Lowering DbRef Op " << op);
+    ArtsCodegen::RewriterGuard RG(*AC, rewriter);
+    Location loc = op.getLoc();
+    Value source = op.getSource();
+
+    auto sourceType = dyn_cast<MemRefType>(source.getType());
+    if (!sourceType)
+      return failure();
+
+    SmallVector<Value> indices(op.getIndices().begin(), op.getIndices().end());
+    SmallVector<Value> outerSizes;
+    if (Operation *underlyingDb = DbUtils::getUnderlyingDb(source))
+      outerSizes = DbUtils::getSizesFromDb(underlyingDb);
+    if (outerSizes.empty())
+      outerSizes = materializeStaticDbOuterShape(source, AC, loc);
+
+    SmallVector<Value> strides;
+    if (!outerSizes.empty() && outerSizes.size() == indices.size())
+      strides = AC->computeStridesFromSizes(outerSizes, loc);
+    while (strides.size() < indices.size())
+      strides.push_back(AC->createIndexConstant(1, loc));
+
+    Value slotPtr =
+        AC->create<DbGepOp>(loc, AC->llvmPtr, source, indices, strides).getPtr();
+
+    Value payloadPtr = slotPtr;
+    if (isPointerTableElement(sourceType.getElementType()))
+      payloadPtr = AC->create<LLVM::LoadOp>(loc, AC->llvmPtr, slotPtr);
+
+    Type resultType = op.getResult().getType();
+    Value replacement;
+    if (auto resultMemRefType = dyn_cast<MemRefType>(resultType)) {
+      replacement =
+          AC->create<polygeist::Pointer2MemrefOp>(loc, resultType, payloadPtr)
+              .getResult();
+
+      if (countDynamicDims(resultMemRefType) > 1) {
+        SmallVector<Value> elementSizes = materializeDbRefElementSizes(op, AC);
+        if (!elementSizes.empty()) {
+          for (auto &use :
+               llvm::make_early_inc_range(op.getResult().getUses())) {
+            Operation *userOp = use.getOwner();
+            AC->setInsertionPoint(userOp);
+            if (auto loadOp = dyn_cast<memref::LoadOp>(userOp)) {
+              SmallVector<Value> loadIndices(loadOp.getIndices().begin(),
+                                             loadOp.getIndices().end());
+              auto dynLoad = AC->create<polygeist::DynLoadOp>(
+                  loadOp.getLoc(), loadOp.getResult().getType(), replacement,
+                  loadIndices, elementSizes);
+              rewriter.replaceOp(loadOp, dynLoad.getResult());
+              continue;
+            }
+            if (auto storeOp = dyn_cast<memref::StoreOp>(userOp)) {
+              SmallVector<Value> storeIndices(storeOp.getIndices().begin(),
+                                              storeOp.getIndices().end());
+              AC->create<polygeist::DynStoreOp>(
+                  storeOp.getLoc(), storeOp.getValueToStore(), replacement,
+                  storeIndices, elementSizes);
+              rewriter.eraseOp(storeOp);
+              continue;
+            }
+            use.set(replacement);
+          }
+          rewriter.eraseOp(op);
+          ++numDbOpsConverted;
+          return success();
+        }
+      }
+    } else {
+      replacement = AC->create<LLVM::LoadOp>(loc, resultType, payloadPtr);
+    }
+
+    rewriter.replaceOp(op, replacement);
+    ++numDbOpsConverted;
+    return success();
+  }
+};
+
 /// Pattern to convert arts.db_acquire operations
 struct DbAcquirePattern : public ArtsToLLVMPattern<DbAcquireOp> {
   using ArtsToLLVMPattern::ArtsToLLVMPattern;
@@ -878,6 +1032,14 @@ struct DbAcquirePattern : public ArtsToLLVMPattern<DbAcquireOp> {
 
     Value sourceGuid = op.getSourceGuid();
     Value sourcePtr = op.getSourcePtr();
+
+    auto hasDbRefUser = [](Value value) {
+      return value && llvm::any_of(value.getUsers(), [](Operation *user) {
+               return isa<DbRefOp>(user);
+             });
+    };
+    if (hasDbRefUser(op.getGuid()) || hasDbRefUser(op.getPtr()))
+      return failure();
 
     /// Get source sizes from the defining op
     auto sourceOp = sourceGuid.getDefiningOp();
@@ -1209,7 +1371,7 @@ void populateDbPatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
   MLIRContext *context = patterns.getContext();
   /// DB patterns (DbGepOp/DepDbAcquireOp moved to RtToLLVMPatterns)
   patterns.add<DbControlPattern>(context, AC);
-  patterns.add<DbAcquirePattern, DbReleasePattern>(context, AC);
+  patterns.add<DbRefPattern, DbAcquirePattern, DbReleasePattern>(context, AC);
 }
 
 void populateOtherPatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {

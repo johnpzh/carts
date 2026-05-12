@@ -600,6 +600,11 @@ struct SuIterateToArtsPattern : public OpRewritePattern<sde::SdeSuIterateOp> {
 
     copyPlanAttrsToArtsForAndParent(op.getOperation(), artsFor.getOperation());
     copySdeHintAttrs(op.getOperation(), artsFor.getOperation());
+    if (auto workers = getWorkers(op.getOperation())) {
+      setWorkers(artsFor.getOperation(), *workers);
+      if (auto parentEdt = artsFor.getOperation()->getParentOfType<EdtOp>())
+        setWorkers(parentEdt.getOperation(), *workers);
+    }
 
     ++numSuIterateConverted;
     rewriter.eraseOp(op);

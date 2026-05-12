@@ -41,6 +41,7 @@ namespace mlir::arts {
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Support/LLVM.h"
+#include "polygeist/Ops.h"
 #include <limits>
 
 #include "llvm/ADT/DenseSet.h"
@@ -491,6 +492,14 @@ void EpochLoweringPass::runOnOperation() {
                                     << " loading iter[" << info.iterIdx
                                     << "], epoch[" << info.epochIdx << "]");
 
+      auto attachToOuterEpoch = [&](EdtCreateOp edt) {
+        if (!edt || edt.getEpochGuid() || !outerEpochGuid)
+          return;
+        edt.getEpochGuidMutable().assign(outerEpochGuid);
+        ARTS_DEBUG("CPS propagation: attached child continuation EDT to "
+                   "outer epoch");
+      };
+
       /// Build a map from parent function's unpack results to their indices.
       DenseMap<Value, int64_t> unpackResultToIdx;
       if (unpackOp)
@@ -626,6 +635,7 @@ void EpochLoweringPass::runOnOperation() {
         packOp->getResult(0).replaceAllUsesWith(newPack.getMemref());
         packOp->erase();
         setCpsSchemaAttrs(edt, perm, newIterIdx, newEpochIdx);
+        attachToOuterEpoch(edt);
         ARTS_INFO("  Injected iter[" << newIterIdx << "], epoch[" << newEpochIdx
                                      << "] for child chain EDT");
 
@@ -670,6 +680,7 @@ void EpochLoweringPass::runOnOperation() {
         packOp->erase();
 
         setCpsSchemaAttrs(edt, perm, newIterIdx, newEpochIdx);
+        attachToOuterEpoch(edt);
 
         auto childFuncAttr =
             edt->getAttrOfType<StringAttr>(AttrNames::Operation::OutlinedFunc);
@@ -953,6 +964,15 @@ void EpochLoweringPass::runOnOperation() {
     auto targetOriginalPack =
         contEdtCreate.getParamMemref().getDefiningOp<EdtParamPackOp>();
 
+    auto findOriginalRecDep = [&](EdtCreateOp edt) -> RecordDepOp {
+      for (Operation *user : edt.getGuid().getUsers())
+        if (auto recordDep = dyn_cast<RecordDepOp>(user))
+          if (recordDep.getEdtGuid() == edt.getGuid())
+            return recordDep;
+      return nullptr;
+    };
+    RecordDepOp targetOriginalRecDep = findOriginalRecDep(contEdtCreate);
+
     /// Build the self-recreation param pack using the canonical carry
     /// params from CPSAdvanceOp. EpochOpt step CPS-8 ensures carry params
     /// are in the EXACT same order as EdtLowering::packParams, so we can
@@ -980,19 +1000,33 @@ void EpochLoweringPass::runOnOperation() {
       /// Plan-aware path: when the new launch state schema is present,
       /// use it to interpret the carry param layout structurally instead
       /// of relying on positional CPSParamPerm archaeology.
+      int64_t schemaNumScalars = 0;
+      int64_t schemaNumTimingDbs = 0;
+      int64_t schemaNumDataGuids = 0;
+      int64_t schemaNumDataPtrs = 0;
       if (auto stateSchema = contEdtCreate->getAttrOfType<DenseI64ArrayAttr>(
               AttrNames::Operation::LaunchState::StateSchema)) {
         ArrayRef<int64_t> schema = stateSchema.asArrayRef();
         /// schema format: [numScalars, numTimingDbs, numDataGuids, numDataPtrs]
-        int64_t numScalars = schema.size() > 0 ? schema[0] : 0;
+        schemaNumScalars = schema.size() > 0 ? schema[0] : 0;
+        schemaNumTimingDbs = schema.size() > 1 ? schema[1] : 0;
+        schemaNumDataGuids = schema.size() > 2 ? schema[2] : 0;
+        schemaNumDataPtrs = schema.size() > 3 ? schema[3] : 0;
         int64_t numTotal = 0;
         for (int64_t v : schema)
           numTotal += v;
         /// Use canonical loop-back params directly; the schema just
         /// documents the layout for debugging and downstream consumers.
         ARTS_DEBUG("CPS advance: using launch state schema — "
-                   << numScalars << " scalars, " << numTotal << " total");
+                   << schemaNumScalars << " scalars, " << numTotal
+                   << " total");
         /// Fall through to canonical path below — the schema is advisory.
+      }
+      int64_t schemaHasScratchDep = 0;
+      if (auto depSchema = contEdtCreate->getAttrOfType<DenseI64ArrayAttr>(
+              AttrNames::Operation::LaunchState::DepSchema)) {
+        ArrayRef<int64_t> schema = depSchema.asArrayRef();
+        schemaHasScratchDep = schema.size() > 1 ? schema[1] : 0;
       }
 
       auto isTargetSlotTypeCompatible = [&](unsigned slot, Value candidate) {
@@ -1209,6 +1243,236 @@ void EpochLoweringPass::runOnOperation() {
         }
       }
 
+      DenseMap<Operation *, unsigned> targetDepRootCounts;
+      if (targetOriginalRecDep) {
+        for (Value depGuid : targetOriginalRecDep.getDatablocks())
+          if (Operation *root = DbUtils::getUnderlyingDbAlloc(depGuid))
+            ++targetDepRootCounts[root];
+      }
+
+      auto resolveTargetDepSlotForPackSlot =
+          [&](unsigned packSlot) -> std::optional<unsigned> {
+        if (!targetOriginalPack || !targetOriginalRecDep ||
+            packSlot >= targetOriginalPack.getNumOperands())
+          return std::nullopt;
+        Operation *packRoot = DbUtils::getUnderlyingDbAlloc(
+            targetOriginalPack.getOperand(packSlot));
+        if (!packRoot || targetDepRootCounts.lookup(packRoot) != 1)
+          return std::nullopt;
+
+        for (auto [depIdx, depGuid] :
+             llvm::enumerate(targetOriginalRecDep.getDatablocks())) {
+          if (DbUtils::getUnderlyingDbAlloc(depGuid) == packRoot)
+            return static_cast<unsigned>(depIdx);
+        }
+        return std::nullopt;
+      };
+
+      auto resolveLocalDepSlot = [&](Value sourcePtr) -> std::optional<unsigned> {
+        sourcePtr = ValueAnalysis::stripMemrefViewOps(sourcePtr);
+        if (auto depAcquire = sourcePtr.getDefiningOp<DepDbAcquireOp>()) {
+          if (auto offset =
+                  ValueAnalysis::getConstantIndexStripped(depAcquire.getOffset()))
+            return static_cast<unsigned>(*offset);
+        }
+        if (auto blockArg = dyn_cast<BlockArgument>(sourcePtr))
+          return blockArg.getArgNumber();
+        return std::nullopt;
+      };
+
+      struct LocalDbGuidCarryCandidate {
+        Value value;
+        std::optional<unsigned> depSlot;
+      };
+      SmallVector<LocalDbGuidCarryCandidate, 4> localDbGuidCarryCandidates;
+      advanceOp.walk([&](DbAcquireOp acquire) {
+        Value sourceGuid = acquire.getSourceGuid();
+        auto sourceType = dyn_cast<MemRefType>(sourceGuid.getType());
+        if (!sourceType || !sourceType.getElementType().isInteger(64))
+          return;
+
+        Value materialized = materializeLoopBackParam(sourceGuid);
+        Value stripped = ValueAnalysis::stripNumericCasts(materialized);
+        std::optional<unsigned> depSlot =
+            resolveLocalDepSlot(acquire.getSourcePtr());
+        bool seen = llvm::any_of(localDbGuidCarryCandidates, [&](auto candidate) {
+          return ValueAnalysis::stripNumericCasts(candidate.value) == stripped &&
+                 candidate.depSlot == depSlot;
+        });
+        if (!seen)
+          localDbGuidCarryCandidates.push_back({materialized, depSlot});
+      });
+
+      struct TargetDataGuidSlot {
+        unsigned packSlot = 0;
+        int64_t partitionCount = 0;
+        int64_t scratchOffset = 0;
+        DbAllocOp alloc;
+      };
+      SmallVector<TargetDataGuidSlot, 4> targetDataGuidSlots;
+      auto stripPackedDbHandle = [&](Value value) {
+        for (unsigned depth = 0; depth < 16 && value; ++depth) {
+          if (auto ptrToInt = value.getDefiningOp<LLVM::PtrToIntOp>()) {
+            value = ptrToInt.getArg();
+            continue;
+          }
+          if (auto intToPtr = value.getDefiningOp<LLVM::IntToPtrOp>()) {
+            value = intToPtr.getArg();
+            continue;
+          }
+          if (auto memrefToPtr =
+                  value.getDefiningOp<polygeist::Memref2PointerOp>()) {
+            value = memrefToPtr.getSource();
+            continue;
+          }
+          if (auto ptrToMemref =
+                  value.getDefiningOp<polygeist::Pointer2MemrefOp>()) {
+            value = ptrToMemref.getSource();
+            continue;
+          }
+          if (auto castOp = value.getDefiningOp<memref::CastOp>()) {
+            value = castOp.getSource();
+            continue;
+          }
+          break;
+        }
+        return ValueAnalysis::stripMemrefViewOps(value);
+      };
+
+      int64_t nextScratchOffset = 0;
+      if (targetOriginalPack && schemaNumDataGuids > 0) {
+        for (auto [slot, operand] :
+             llvm::enumerate(targetOriginalPack.getOperands())) {
+          Value handle = stripPackedDbHandle(operand);
+          auto handleType = handle ? dyn_cast<MemRefType>(handle.getType())
+                                   : MemRefType();
+          if (!handleType || !handleType.getElementType().isInteger(64))
+            continue;
+
+          DbAllocOp alloc =
+              dyn_cast_or_null<DbAllocOp>(DbUtils::getUnderlyingDbAlloc(handle));
+          if (!alloc)
+            continue;
+          Value allocGuid = ValueAnalysis::stripMemrefViewOps(alloc.getGuid());
+          if (handle != allocGuid)
+            continue;
+
+          int64_t partitionCount = DbUtils::computeStaticPartitionCount(alloc);
+          if (partitionCount <= 1)
+            continue;
+
+          targetDataGuidSlots.push_back(
+              {static_cast<unsigned>(slot), partitionCount, nextScratchOffset,
+               alloc});
+          nextScratchOffset += partitionCount;
+          if (static_cast<int64_t>(targetDataGuidSlots.size()) >=
+              schemaNumDataGuids)
+            break;
+        }
+      }
+
+      SmallVector<Value, 4> synthesizedScratchGuidCarries(
+          targetDataGuidSlots.size());
+      Value scratchDepPtr;
+      auto getScratchDepPtr = [&]() -> Value {
+        if (scratchDepPtr || !parentFunc || parentFunc.getNumArguments() <= 3 ||
+            schemaHasScratchDep <= 0)
+          return scratchDepPtr;
+
+        unsigned scratchSlot = static_cast<unsigned>(
+            std::max<int64_t>(schemaNumTimingDbs, 0) +
+            std::max<int64_t>(schemaNumDataPtrs, 0));
+        Value depv = parentFunc.getArgument(3);
+        Value scratchSlotVal = AC->createIndexConstant(scratchSlot, loc);
+        auto i64MemrefTy =
+            MemRefType::get({ShapedType::kDynamic}, AC->Int64);
+        auto scratchAcquire = AC->create<DepDbAcquireOp>(
+            loc, i64MemrefTy, i64MemrefTy, depv, scratchSlotVal,
+            SmallVector<Value>{}, SmallVector<Value>{}, SmallVector<Value>{},
+            Value());
+        scratchDepPtr = scratchAcquire.getPtr();
+        return scratchDepPtr;
+      };
+
+      auto synthesizeGuidCarryFromScratch = [&](unsigned dataIdx) -> Value {
+        if (dataIdx >= targetDataGuidSlots.size())
+          return Value();
+        if (synthesizedScratchGuidCarries[dataIdx])
+          return synthesizedScratchGuidCarries[dataIdx];
+
+        Value scratchPtr = getScratchDepPtr();
+        if (!scratchPtr)
+          return Value();
+
+        TargetDataGuidSlot slot = targetDataGuidSlots[dataIdx];
+        if (slot.partitionCount <= 0)
+          return Value();
+
+        auto localType = MemRefType::get({slot.partitionCount}, AC->Int64);
+        auto localGuid = AC->create<memref::AllocOp>(loc, localType);
+        if (auto rootId = DbUtils::resolveRootAllocId(slot.alloc.getGuid(),
+                                                      slot.alloc))
+          setDbRootAllocId(localGuid.getOperation(), *rootId);
+        setDbStaticOuterShape(localGuid.getOperation(), {slot.partitionCount});
+
+        Value zero = AC->createIndexConstant(0, loc);
+        Value one = AC->createIndexConstant(1, loc);
+        Value count = AC->createIndexConstant(slot.partitionCount, loc);
+        Value base = AC->createIndexConstant(slot.scratchOffset, loc);
+        auto copyLoop = AC->create<scf::ForOp>(loc, zero, count, one);
+        {
+          OpBuilder::InsertionGuard guard(AC->getBuilder());
+          Block *loopBody = copyLoop.getBody();
+          AC->getBuilder().setInsertionPoint(loopBody->getTerminator());
+          Value i = copyLoop.getInductionVar();
+          Value scratchIdx = AC->create<arith::AddIOp>(loc, base, i);
+          Value guid =
+              AC->create<memref::LoadOp>(loc, scratchPtr,
+                                         ValueRange{scratchIdx});
+          AC->create<memref::StoreOp>(loc, guid, localGuid.getResult(),
+                                      ValueRange{i});
+        }
+
+        Value replacement = localGuid.getResult();
+        auto dynGuidTy = MemRefType::get({ShapedType::kDynamic}, AC->Int64);
+        if (replacement.getType() != dynGuidTy) {
+          auto castOp =
+              AC->create<memref::CastOp>(loc, dynGuidTy, replacement);
+          if (auto rootId = DbUtils::resolveRootAllocId(slot.alloc.getGuid(),
+                                                        slot.alloc))
+            setDbRootAllocId(castOp.getOperation(), *rootId);
+          setDbStaticOuterShape(castOp.getOperation(),
+                                {slot.partitionCount});
+          replacement = castOp.getResult();
+        }
+
+        Value materialized = materializeLoopBackParam(replacement);
+        synthesizedScratchGuidCarries[dataIdx] = materialized;
+        return materialized;
+      };
+
+      auto findScratchGuidForTargetSlot = [&](unsigned slot) -> Value {
+        for (auto [dataIdx, dataSlot] :
+             llvm::enumerate(targetDataGuidSlots)) {
+          if (dataSlot.packSlot == slot)
+            return synthesizeGuidCarryFromScratch(dataIdx);
+        }
+        return Value();
+      };
+
+      auto findLocalDbGuidForTargetSlot = [&](unsigned slot) -> Value {
+        if (auto targetDepSlot = resolveTargetDepSlotForPackSlot(slot)) {
+          for (const auto &candidate : localDbGuidCarryCandidates)
+            if (candidate.depSlot && *candidate.depSlot == *targetDepSlot)
+              return candidate.value;
+        }
+        if (Value scratchGuid = findScratchGuidForTargetSlot(slot))
+          return scratchGuid;
+        if (slot < localDbGuidCarryCandidates.size())
+          return localDbGuidCarryCandidates[slot].value;
+        return Value();
+      };
+
       Value zeroI64 = AC->createIntConstant(0, AC->Int64, loc);
       newPackParams.assign(totalPackSlots, zeroI64);
 
@@ -1281,6 +1545,17 @@ void EpochLoweringPass::runOnOperation() {
           /// schema holes. Fresh loop-back values from the current iteration
           /// must win whenever they are available.
           newPackParams[slot] = preservedIncomingCarry[canonicalIdx];
+          continue;
+        }
+        if (Value localDbGuidCandidate = findLocalDbGuidForTargetSlot(slot);
+            localDbGuidCandidate &&
+            isTargetSlotTypeCompatible(slot, localDbGuidCandidate)) {
+          /// Some CPS stencil continuations rebuild full GUID tables locally
+          /// from a compact table dependency, then relaunch the sibling chain
+          /// whose kickoff ABI still has those table handles as structural
+          /// slots. Use the rebuilt table whose dependency slot matches the
+          /// target ABI instead of relying on acquire walk order.
+          newPackParams[slot] = localDbGuidCandidate;
           continue;
         }
         ++missingCarrySlots;

@@ -33,6 +33,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#define CARTS_BENCHMARK_STRING_ARG(name) ((uintptr_t)(const void *)(name))
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -71,12 +73,13 @@ void carts_benchmarks_start(void);
 ///===----------------------------------------------------------------------===///
 
 /// Start E2E timer (stores name and start time in library-side state).
-void carts_e2e_timer_start(const char *name);
+void carts_e2e_timer_start(uintptr_t name);
 
 /// Stop E2E timer and print elapsed time.
 void carts_e2e_timer_stop(void);
 
-#define CARTS_E2E_TIMER_START(name) carts_e2e_timer_start(name)
+#define CARTS_E2E_TIMER_START(name)                                           \
+  carts_e2e_timer_start(CARTS_BENCHMARK_STRING_ARG(name))
 #define CARTS_E2E_TIMER_STOP() carts_e2e_timer_stop()
 
 ///===----------------------------------------------------------------------===///
@@ -87,18 +90,26 @@ void carts_e2e_timer_stop(void);
 ///===----------------------------------------------------------------------===///
 
 /// Start a named benchmark phase timer.
-void carts_phase_timer_start(const char *phase, const char *name);
+void carts_phase_timer_start(uintptr_t phase, uintptr_t name);
 
 /// Stop a named benchmark phase timer and print elapsed time.
-void carts_phase_timer_stop(const char *phase);
+void carts_phase_timer_stop(uintptr_t phase);
 
-#define CARTS_STARTUP_TIMER_START(name) carts_phase_timer_start("startup", name)
-#define CARTS_STARTUP_TIMER_STOP() carts_phase_timer_stop("startup")
+#define CARTS_STARTUP_TIMER_START(name)                                       \
+  carts_phase_timer_start(CARTS_BENCHMARK_STRING_ARG("startup"),             \
+                          CARTS_BENCHMARK_STRING_ARG(name))
+#define CARTS_STARTUP_TIMER_STOP()                                            \
+  carts_phase_timer_stop(CARTS_BENCHMARK_STRING_ARG("startup"))
 #define CARTS_VERIFICATION_TIMER_START(name)                                   \
-  carts_phase_timer_start("verification", name)
-#define CARTS_VERIFICATION_TIMER_STOP() carts_phase_timer_stop("verification")
-#define CARTS_CLEANUP_TIMER_START(name) carts_phase_timer_start("cleanup", name)
-#define CARTS_CLEANUP_TIMER_STOP() carts_phase_timer_stop("cleanup")
+  carts_phase_timer_start(CARTS_BENCHMARK_STRING_ARG("verification"),         \
+                          CARTS_BENCHMARK_STRING_ARG(name))
+#define CARTS_VERIFICATION_TIMER_STOP()                                       \
+  carts_phase_timer_stop(CARTS_BENCHMARK_STRING_ARG("verification"))
+#define CARTS_CLEANUP_TIMER_START(name)                                       \
+  carts_phase_timer_start(CARTS_BENCHMARK_STRING_ARG("cleanup"),             \
+                          CARTS_BENCHMARK_STRING_ARG(name))
+#define CARTS_CLEANUP_TIMER_STOP()                                            \
+  carts_phase_timer_stop(CARTS_BENCHMARK_STRING_ARG("cleanup"))
 
 ///===----------------------------------------------------------------------===///
 /// Program-Level Timing
@@ -125,21 +136,25 @@ void carts_bench_timer_print(void);
 ///===----------------------------------------------------------------------===///
 
 /// Start timing a kernel (resets accumulator).
-void carts_kernel_timer_start(const char *name);
+void carts_kernel_timer_start(uintptr_t name);
 
 /// Stop kernel timer and print elapsed time.
-void carts_kernel_timer_stop(const char *name);
+void carts_kernel_timer_stop(uintptr_t name);
 
 /// Accumulate kernel time (for iterative methods — call each iteration).
-void carts_kernel_timer_accum(const char *name);
+void carts_kernel_timer_accum(uintptr_t name);
 
 /// Print accumulated kernel time (call after all iterations).
-void carts_kernel_timer_print(const char *name);
+void carts_kernel_timer_print(uintptr_t name);
 
-#define CARTS_KERNEL_TIMER_START(name) carts_kernel_timer_start(name)
-#define CARTS_KERNEL_TIMER_STOP(name) carts_kernel_timer_stop(name)
-#define CARTS_KERNEL_TIMER_ACCUM(name) carts_kernel_timer_accum(name)
-#define CARTS_KERNEL_TIMER_PRINT(name) carts_kernel_timer_print(name)
+#define CARTS_KERNEL_TIMER_START(name)                                        \
+  carts_kernel_timer_start(CARTS_BENCHMARK_STRING_ARG(name))
+#define CARTS_KERNEL_TIMER_STOP(name)                                         \
+  carts_kernel_timer_stop(CARTS_BENCHMARK_STRING_ARG(name))
+#define CARTS_KERNEL_TIMER_ACCUM(name)                                        \
+  carts_kernel_timer_accum(CARTS_BENCHMARK_STRING_ARG(name))
+#define CARTS_KERNEL_TIMER_PRINT(name)                                        \
+  carts_kernel_timer_print(CARTS_BENCHMARK_STRING_ARG(name))
 
 ///===----------------------------------------------------------------------===///
 /// Parallel Region & Task Timing (thread-safe, per-worker)
@@ -173,21 +188,25 @@ void carts_kernel_timer_print(const char *name);
 #ifdef CARTS_ENABLE_TIMING
 
 /// Start timing a parallel region.
-void carts_parallel_timer_start(const char *name);
+void carts_parallel_timer_start(uintptr_t name);
 
 /// Stop parallel region timer and print elapsed time with worker ID.
-void carts_parallel_timer_stop(const char *name);
+void carts_parallel_timer_stop(uintptr_t name);
 
 /// Start timing a task.
-void carts_task_timer_start(const char *name);
+void carts_task_timer_start(uintptr_t name);
 
 /// Stop task timer and print elapsed time with worker ID.
-void carts_task_timer_stop(const char *name);
+void carts_task_timer_stop(uintptr_t name);
 
-#define CARTS_PARALLEL_TIMER_START(name) carts_parallel_timer_start(name)
-#define CARTS_PARALLEL_TIMER_STOP(name) carts_parallel_timer_stop(name)
-#define CARTS_TASK_TIMER_START(name) carts_task_timer_start(name)
-#define CARTS_TASK_TIMER_STOP(name) carts_task_timer_stop(name)
+#define CARTS_PARALLEL_TIMER_START(name)                                      \
+  carts_parallel_timer_start(CARTS_BENCHMARK_STRING_ARG(name))
+#define CARTS_PARALLEL_TIMER_STOP(name)                                       \
+  carts_parallel_timer_stop(CARTS_BENCHMARK_STRING_ARG(name))
+#define CARTS_TASK_TIMER_START(name)                                          \
+  carts_task_timer_start(CARTS_BENCHMARK_STRING_ARG(name))
+#define CARTS_TASK_TIMER_STOP(name)                                           \
+  carts_task_timer_stop(CARTS_BENCHMARK_STRING_ARG(name))
 
 #else /* !CARTS_ENABLE_TIMING */
 
@@ -224,7 +243,7 @@ void carts_bench_rms_error(double error);
 
 /// Print a named result value
 /// Output: "<name>: <value>"
-void carts_bench_result_named(const char *name, double value);
+void carts_bench_result_named(uintptr_t name, double value);
 
 /// Print sum (alternative to checksum for some benchmarks)
 /// Output: "sum: <value>"
@@ -262,7 +281,8 @@ int carts_bench_verify_d(double actual, double expected, double tolerance);
 #define CARTS_BENCH_RMS_ERROR(error) carts_bench_rms_error(error)
 
 /// Named result reporting
-#define CARTS_BENCH_RESULT(name, value) carts_bench_result_named(name, value)
+#define CARTS_BENCH_RESULT(name, value)                                       \
+  carts_bench_result_named(CARTS_BENCHMARK_STRING_ARG(name), value)
 
 /// Sum reporting
 #define CARTS_BENCH_SUM(value) carts_bench_sum(value)

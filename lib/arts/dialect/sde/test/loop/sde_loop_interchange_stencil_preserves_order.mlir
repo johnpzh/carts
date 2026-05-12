@@ -15,6 +15,20 @@
 // CHECK: arith.addi %[[J]], %c1
 // CHECK: memref.load
 // CHECK: memref.store
+// Result-bearing stencil loops must also remain untouched. The pass cannot
+// erase and rebuild loops whose results are used by surrounding tensor state.
+// CHECK: func.func @result_bearing_stencil
+// CHECK: arts_sde.su_iterate
+// CHECK: memref.store
+// CHECK: scf.for {{.*}} iter_args
+// CHECK: scf.for {{.*}} iter_args
+// Result-bearing loops that otherwise look like promoted matmul accumulators
+// must also remain untouched because the rewrite cannot replace the outer loop
+// result.
+// CHECK: func.func @result_bearing_promoted_accumulator
+// CHECK: arts_sde.su_iterate
+// CHECK: scf.for {{.*}} iter_args
+// CHECK: scf.for {{.*}} iter_args
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<64x64xf64>, %B: memref<64x64xf64>) {
@@ -44,6 +58,68 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
       }
       omp.terminator
     }
+    return
+  }
+
+  func.func @result_bearing_stencil(%A: memref<8x8x8xf64>) {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c7 = arith.constant 7 : index
+    %scratch = memref.alloca() : memref<f64>
+    %empty = tensor.empty() : tensor<2xf64>
+    %zero = arith.constant 0.0 : f64
+    %init = tensor.insert %zero into %empty[%c0] : tensor<2xf64>
+    %init_1 = tensor.insert %zero into %init[%c1] : tensor<2xf64>
+    %result = arts_sde.cu_region <parallel> iter_args(%arg0 = %init_1 : tensor<2xf64>) -> (tensor<2xf64>) {
+      %iter = arts_sde.su_iterate (%c1) to (%c7) step (%c1) classification(<stencil>) iter_args(%arg2 = %arg0 : tensor<2xf64>) -> (tensor<2xf64>) {
+      ^bb0(%i: index, %arg3: tensor<2xf64>):
+        memref.store %zero, %scratch[] : memref<f64>
+        %j_result = scf.for %j = %c1 to %c7 step %c1 iter_args(%j_arg = %arg3) -> (tensor<2xf64>) {
+          %k_result = scf.for %k = %c1 to %c7 step %c1 iter_args(%k_arg = %j_arg) -> (tensor<2xf64>) {
+            %loaded = memref.load %A[%i, %j, %k] : memref<8x8x8xf64>
+            memref.store %loaded, %scratch[] : memref<f64>
+            %next = tensor.insert %loaded into %k_arg[%c1] : tensor<2xf64>
+            scf.yield %next : tensor<2xf64>
+          }
+          scf.yield %k_result : tensor<2xf64>
+        }
+        arts_sde.yield %j_result : tensor<2xf64>
+      } {accessMaxOffsets = [1, 2, 1], accessMinOffsets = [-1, -2, -1], ownerDims = [0, 1, 2], spatialDims = [0, 1, 2], writeFootprint = [1, 1, 1]}
+      arts_sde.yield %iter : tensor<2xf64>
+    }
+    %out = tensor.extract %result[%c0] : tensor<2xf64>
+    memref.store %out, %A[%c0, %c0, %c0] : memref<8x8x8xf64>
+    return
+  }
+
+  func.func @result_bearing_promoted_accumulator(%A: memref<8x8xf64>, %B: memref<8x8xf64>, %C: memref<8x8xf64>) {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c8 = arith.constant 8 : index
+    %zero = arith.constant 0.0 : f64
+    %empty = tensor.empty() : tensor<1xf64>
+    %init = tensor.insert %zero into %empty[%c0] : tensor<1xf64>
+    %result = arts_sde.cu_region <parallel> iter_args(%arg0 = %init : tensor<1xf64>) -> (tensor<1xf64>) {
+      %iter = arts_sde.su_iterate (%c0) to (%c8) step (%c1) classification(<matmul>) iter_args(%arg2 = %arg0 : tensor<1xf64>) -> (tensor<1xf64>) {
+      ^bb0(%i: index, %arg3: tensor<1xf64>):
+        %j_result = scf.for %j = %c0 to %c8 step %c1 iter_args(%j_arg = %arg3) -> (tensor<1xf64>) {
+          %sum = scf.for %k = %c0 to %c8 step %c1 iter_args(%acc = %zero) -> (f64) {
+            %a = memref.load %A[%i, %k] : memref<8x8xf64>
+            %b = memref.load %B[%k, %j] : memref<8x8xf64>
+            %prod = arith.mulf %a, %b : f64
+            %next = arith.addf %acc, %prod : f64
+            scf.yield %next : f64
+          }
+          %next_state = tensor.insert %sum into %j_arg[%c0] : tensor<1xf64>
+          memref.store %sum, %C[%i, %j] : memref<8x8xf64>
+          scf.yield %next_state : tensor<1xf64>
+        }
+        arts_sde.yield %j_result : tensor<1xf64>
+      }
+      arts_sde.yield %iter : tensor<1xf64>
+    }
+    %out = tensor.extract %result[%c0] : tensor<1xf64>
+    memref.store %out, %C[%c0, %c0] : memref<8x8xf64>
     return
   }
 }

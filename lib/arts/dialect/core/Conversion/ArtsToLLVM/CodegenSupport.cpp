@@ -91,14 +91,22 @@ func::FuncOp ArtsCodegen::getOrCreateRuntimeFunction(RuntimeFunction FnID) {
   getBuilder().setInsertionPointToStart(module.getBody());
 
   func::FuncOp funcOp;
+  auto getRuntimeAbiType = [&](Type type) -> Type {
+    if (isa<MemRefType>(type))
+      return llvmPtr;
+    return type;
+  };
 #define ARTS_RTL_FUNCTIONS
 #define ARTS_RTL(Enum, Str, ReturnType, ...)                                   \
   case Enum: {                                                                 \
     SmallVector<Type, 4> argumentTypes{__VA_ARGS__};                           \
+    for (Type &argumentType : argumentTypes)                                   \
+      argumentType = getRuntimeAbiType(argumentType);                          \
+    Type resultType = getRuntimeAbiType(ReturnType);                           \
     auto fnType = getBuilder().getFunctionType(                                \
         argumentTypes, isa<mlir::NoneType>(ReturnType)                         \
                            ? ArrayRef<Type>{}                                  \
-                           : ArrayRef<Type>{ReturnType});                      \
+                           : ArrayRef<Type>{resultType});                      \
     auto funcOrError = func::lookupFnDecl(module, Str, fnType);                \
     assert(succeeded(funcOrError) &&                                           \
            "Failed to look up ARTS runtime function declaration");             \
@@ -259,6 +267,24 @@ void ArtsCodegen::initializeTypes() {
   VarName = LLVM::LLVMStructType::getLiteral(context, {__VA_ARGS__}, Packed);  \
   VarName##Ptr = MemRefType::get({ShapedType::kDynamic}, VarName);
 #include "arts/dialect/core/Conversion/ArtsToLLVM/Kinds.def"
+
+  auto edtAbiInputs = SmallVector<Type>{Int32, llvmPtr, Int32, llvmPtr};
+  EdtFn = FunctionType::get(context, edtAbiInputs, {});
+  EdtFnPtr = MemRefType::get(
+      {ShapedType::kDynamic},
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context),
+                                  edtAbiInputs, false));
+  ArtsMainFn = FunctionType::get(context, edtAbiInputs, {});
+  ArtsMainFnPtr = MemRefType::get(
+      {ShapedType::kDynamic},
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context),
+                                  edtAbiInputs, false));
+
+  auto mainAbiInputs = SmallVector<Type>{Int32, llvmPtr};
+  MainFn = FunctionType::get(context, mainAbiInputs, ArrayRef<Type>{Int32});
+  MainFnPtr = MemRefType::get(
+      {ShapedType::kDynamic},
+      LLVM::LLVMFunctionType::get(Int32, mainAbiInputs, false));
 }
 
 LogicalResult ArtsCodegen::extractDataLayouts() {
@@ -278,7 +304,32 @@ func::CallOp ArtsCodegen::createRuntimeCall(RuntimeFunction FnID,
                                             Location loc) {
   func::FuncOp func = getOrCreateRuntimeFunction(FnID);
   assert(func && "Runtime function should exist");
-  return create<func::CallOp>(loc, func, args);
+  SmallVector<Value, 8> callArgs;
+  callArgs.reserve(args.size());
+  FunctionType fnType = func.getFunctionType();
+  for (auto [idx, arg] : llvm::enumerate(args)) {
+    Type targetType = fnType.getInput(idx);
+    if (arg.getType() == targetType) {
+      callArgs.push_back(arg);
+      continue;
+    }
+
+    if (targetType == llvmPtr && isa<MemRefType>(arg.getType())) {
+      if (auto ptrToMemref =
+              arg.getDefiningOp<polygeist::Pointer2MemrefOp>()) {
+        Value source = ptrToMemref.getSource();
+        if (source.getType() == llvmPtr) {
+          callArgs.push_back(source);
+          continue;
+        }
+      }
+      callArgs.push_back(create<polygeist::Memref2PointerOp>(loc, llvmPtr, arg));
+      continue;
+    }
+
+    callArgs.push_back(arg);
+  }
+  return create<func::CallOp>(loc, func, callArgs);
 }
 
 /// EDT management
@@ -510,6 +561,37 @@ func::FuncOp ArtsCodegen::insertDistributedDbInitWorkerFn(Location loc) {
   return fn;
 }
 
+static void adaptMainArgvToRuntimePointer(func::FuncOp mainFn,
+                                          LLVM::LLVMPointerType llvmPtr,
+                                          OpBuilder &builder) {
+  if (mainFn.getNumArguments() < 2 || mainFn.getBody().empty())
+    return;
+
+  Block &entry = mainFn.getBody().front();
+  BlockArgument argvArg = entry.getArgument(1);
+  auto argvTy = dyn_cast<MemRefType>(argvArg.getType());
+  if (!argvTy || !isa<MemRefType>(argvTy.getElementType()))
+    return;
+
+  FunctionType oldType = mainFn.getFunctionType();
+  SmallVector<Type, 4> inputs(oldType.getInputs().begin(),
+                              oldType.getInputs().end());
+  inputs[1] = llvmPtr;
+  mainFn.setType(
+      FunctionType::get(mainFn.getContext(), inputs, oldType.getResults()));
+  argvArg.setType(llvmPtr);
+
+  if (argvArg.use_empty())
+    return;
+
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(&entry);
+  Value argvMemref = polygeist::Pointer2MemrefOp::create(builder,
+                                                         mainFn.getLoc(),
+                                                         argvTy, argvArg);
+  argvArg.replaceAllUsesExcept(argvMemref, argvMemref.getDefiningOp());
+}
+
 func::FuncOp ArtsCodegen::insertArtsMainFn(Location loc,
                                            func::FuncOp callback) {
   OpBuilder::InsertionGuard IG(getBuilder());
@@ -528,7 +610,10 @@ func::FuncOp ArtsCodegen::insertArtsMainFn(Location loc,
   /// from paramv[0] and paramv[1] (the runtime packs them there as uint64_t).
   auto callArgs = ValueRange{};
   if (callback.getNumArguments() > 0) {
-    Value paramv = newFn.getArgument(1); // memref<?xi64> (const uint64_t *)
+    SmallVector<Value, 2> args;
+    Value paramv = newFn.getArgument(1); // uint64_t *paramv
+    if (isa<LLVM::LLVMPointerType>(paramv.getType()))
+      paramv = create<polygeist::Pointer2MemrefOp>(loc, Int64Ptr, paramv);
     Value idx0 = create<arith::ConstantIndexOp>(loc, 0);
     Value idx1 = create<arith::ConstantIndexOp>(loc, 1);
     Value argcRaw = create<memref::LoadOp>(loc, paramv, ValueRange{idx0});
@@ -537,12 +622,20 @@ func::FuncOp ArtsCodegen::insertArtsMainFn(Location loc,
     /// argc: truncate uint64_t to i32
     Type argcTy = callback.getArgumentTypes()[0];
     Value argc = create<arith::TruncIOp>(loc, argcTy, argcRaw);
+    args.push_back(argc);
 
     /// argv: uint64_t to ptr to memref<?xi8*>
-    Type argvTy = callback.getArgumentTypes()[1];
-    Value argvPtr = create<LLVM::IntToPtrOp>(loc, llvmPtr, argvRaw);
-    Value argv = create<polygeist::Pointer2MemrefOp>(loc, argvTy, argvPtr);
-    callArgs = {argc, argv};
+    if (callback.getNumArguments() > 1) {
+      Type argvTy = callback.getArgumentTypes()[1];
+      Value argvPtr = create<LLVM::IntToPtrOp>(loc, llvmPtr, argvRaw);
+      Value argv = isa<LLVM::LLVMPointerType>(argvTy)
+                       ? argvPtr
+                       : create<polygeist::Pointer2MemrefOp>(loc, argvTy,
+                                                             argvPtr)
+                             .getResult();
+      args.push_back(argv);
+    }
+    callArgs = args;
   }
   create<func::CallOp>(loc, callback, callArgs);
 
@@ -604,6 +697,7 @@ void ArtsCodegen::initRT(Location loc) {
 
   /// Rename main function to "mainBody"
   mainFn.setName("mainBody");
+  adaptMainArgvToRuntimePointer(mainFn, llvmPtr, getBuilder());
 
   /// Insert distributed init callbacks when distributed allocations were
   /// lowered into callback helpers.

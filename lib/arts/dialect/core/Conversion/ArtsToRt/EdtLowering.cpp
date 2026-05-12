@@ -767,6 +767,12 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
   auto args = entryBlock->getArguments();
   Value paramv = args[1];
   Value depv = args[3];
+  if (isa<LLVM::LLVMPointerType>(paramv.getType()))
+    paramv = AC->create<polygeist::Pointer2MemrefOp>(loc, AC->Int64Ptr,
+                                                     paramv);
+  if (isa<LLVM::LLVMPointerType>(depv.getType()))
+    depv = AC->create<polygeist::Pointer2MemrefOp>(loc, AC->ArtsEdtDepPtr,
+                                                   depv);
 
   const auto &parameters = envManager.getParameters();
   SmallVector<Value> unpackedParams, allParams;
@@ -1469,14 +1475,68 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
                                         ? ArrayRef<Value>(accessSizes)
                                         : ArrayRef<Value>(depSlotSizes);
     const bool depIndicesAlreadySliceRelative = usePayloadIndexing;
-    /// Get the users of the dependency placeholder
+    SmallVector<unsigned, 4> depHandlePackIndices;
+    if (auto sourceAcquire =
+            originalDeps[depIndex].getDefiningOp<DbAcquireOp>()) {
+      for (Value candidate :
+           {sourceAcquire.getGuid(), sourceAcquire.getPtr()}) {
+        auto it = paramMap.find(candidate);
+        if (it != paramMap.end())
+          depHandlePackIndices.push_back(it->second);
+      }
+    } else if (auto sourceAcquire =
+                   originalDeps[depIndex].getDefiningOp<DepDbAcquireOp>()) {
+      for (Value candidate :
+           {sourceAcquire.getGuid(), sourceAcquire.getPtr()}) {
+        auto it = paramMap.find(candidate);
+        if (it != paramMap.end())
+          depHandlePackIndices.push_back(it->second);
+      }
+    }
+
+    auto tracePackedDepHandleIndex =
+        [&](Value value) -> std::optional<unsigned> {
+      for (unsigned depth = 0; depth < 8 && value; ++depth) {
+        for (unsigned packIdx : depHandlePackIndices) {
+          if (packIdx < allParams.size() && value == allParams[packIdx])
+            return packIdx;
+        }
+        if (isa<BlockArgument>(value))
+          return std::nullopt;
+        Operation *defOp = value.getDefiningOp();
+        if (!defOp || defOp->getNumOperands() != 1)
+          return std::nullopt;
+        value = defOp->getOperand(0);
+      }
+      return std::nullopt;
+    };
+
+    auto dbAcquireUsesCurrentDepWindow = [&](DbAcquireOp dbAcquire) {
+      if (dbAcquire.getSourceGuid() == placeholder)
+        return true;
+      return tracePackedDepHandleIndex(dbAcquire.getSourceGuid()).has_value();
+    };
+
+    /// Get the users of the dependency placeholder.
     SmallVector<Operation *, 16> users, dbAcquireUsers;
     SmallVector<OpOperand *, 8> nestedEdtDepUses;
     SmallVector<OpOperand *, 8> recordDepUses;
+    SmallVector<OpOperand *, 8> preservedDbAcquirePtrUses;
     for (auto &use : placeholder.getUses()) {
-      if (auto dbAcquire = dyn_cast<arts::DbAcquireOp>(use.getOwner()))
-        dbAcquireUsers.push_back(use.getOwner());
-      else if (isa<RecordDepOp>(use.getOwner()))
+      if (auto dbAcquire = dyn_cast<arts::DbAcquireOp>(use.getOwner())) {
+        if (dbAcquireUsesCurrentDepWindow(dbAcquire)) {
+          dbAcquireUsers.push_back(use.getOwner());
+        } else if (dbAcquire.getSourcePtr() == placeholder) {
+          /// CPS continuations rebuild full GUID tables from a carried table
+          /// DB, then acquire child windows using those local tables and a
+          /// parent payload pointer as the source pointer.  Forwarding that
+          /// acquire through this dependency's depv would collapse the child
+          /// window back to the continuation's compact depv slots.
+          preservedDbAcquirePtrUses.push_back(&use);
+        } else {
+          users.push_back(use.getOwner());
+        }
+      } else if (isa<RecordDepOp>(use.getOwner()))
         recordDepUses.push_back(&use);
       else if (auto edt = dyn_cast<arts::EdtOp>(use.getOwner())) {
         /// Nested EDT dependency operands must stay on the depv-backed path.
@@ -1558,11 +1618,11 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
       SmallVector<Value> sizes(dbAcquire.getSizes().begin(),
                                dbAcquire.getSizes().end());
       Value boundsValid = dbAcquire.getBoundsValid();
-      indices = resolveParam(indices, dbAcquire.getLoc());
+      indices = resolveExplicitParams(indices, dbAcquire.getLoc());
       indices = normalizeSliceIndices(indices, depIndexOffsets, depIndexSizes,
                                       depIndicesAlreadySliceRelative);
-      offsets = resolveParam(offsets, dbAcquire.getLoc());
-      sizes = resolveParam(sizes, dbAcquire.getLoc());
+      offsets = resolveExplicitParams(offsets, dbAcquire.getLoc());
+      sizes = resolveExplicitParams(sizes, dbAcquire.getLoc());
       auto depDbAcquire = AC->create<DepDbAcquireOp>(
           dbAcquire.getLoc(), dbAcquire.getResult(0).getType(),
           dbAcquire.getResult(1).getType(), depv, baseOffset, indices, offsets,
@@ -1596,7 +1656,7 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
         forwardedIndices.assign(sourceAcquire.getIndices().begin(),
                                 sourceAcquire.getIndices().end());
       }
-      forwardedIndices = resolveParam(forwardedIndices, loc);
+      forwardedIndices = resolveExplicitParams(forwardedIndices, loc);
       forwardedIndices =
           normalizeSliceIndices(forwardedIndices, depIndexOffsets,
                                 depIndexSizes, depIndicesAlreadySliceRelative);
@@ -1604,42 +1664,6 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
       return AC->create<DepDbAcquireOp>(userLoc, depGuidType, depPtrType, depv,
                                         baseOffset, forwardedIndices,
                                         depOffsets, depSizes, Value());
-    };
-
-    SmallVector<unsigned, 4> depHandlePackIndices;
-    if (auto sourceAcquire =
-            originalDeps[depIndex].getDefiningOp<DbAcquireOp>()) {
-      for (Value candidate :
-           {sourceAcquire.getGuid(), sourceAcquire.getPtr()}) {
-        auto it = paramMap.find(candidate);
-        if (it != paramMap.end())
-          depHandlePackIndices.push_back(it->second);
-      }
-    } else if (auto sourceAcquire =
-                   originalDeps[depIndex].getDefiningOp<DepDbAcquireOp>()) {
-      for (Value candidate :
-           {sourceAcquire.getGuid(), sourceAcquire.getPtr()}) {
-        auto it = paramMap.find(candidate);
-        if (it != paramMap.end())
-          depHandlePackIndices.push_back(it->second);
-      }
-    }
-
-    auto tracePackedDepHandleIndex =
-        [&](Value value) -> std::optional<unsigned> {
-      for (unsigned depth = 0; depth < 8 && value; ++depth) {
-        for (unsigned packIdx : depHandlePackIndices) {
-          if (packIdx < allParams.size() && value == allParams[packIdx])
-            return packIdx;
-        }
-        if (isa<BlockArgument>(value))
-          return std::nullopt;
-        Operation *defOp = value.getDefiningOp();
-        if (!defOp || defOp->getNumOperands() != 1)
-          return std::nullopt;
-        value = defOp->getOperand(0);
-      }
-      return std::nullopt;
     };
 
     if (!recordDepUses.empty()) {
@@ -1683,7 +1707,8 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
       return isa<arts::DbRefOp, DbGepOp, memref::LoadOp, memref::StoreOp,
                  polygeist::Memref2PointerOp, polygeist::Pointer2MemrefOp>(op);
     });
-    if (isSingleElement && !isNestedMemref && !hasIndexedUsers) {
+    if (isSingleElement && !isNestedMemref && !hasIndexedUsers &&
+        preservedDbAcquirePtrUses.empty()) {
       ARTS_DEBUG(" - Rewriting single element placeholder");
       Operation *placeholderOp = placeholder.getDefiningOp();
       AC->setInsertionPoint(placeholderOp);
@@ -1709,11 +1734,9 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
       if (auto sourceAcquire =
               originalDeps[depIndex].getDefiningOp<DbAcquireOp>()) {
         depGuidType = sourceAcquire.getResult(0).getType();
-        depPtrType = sourceAcquire.getResult(1).getType();
       } else if (auto sourceAcquire =
                      originalDeps[depIndex].getDefiningOp<DepDbAcquireOp>()) {
         depGuidType = sourceAcquire.getResult(0).getType();
-        depPtrType = sourceAcquire.getResult(1).getType();
       }
 
       auto depDbAcquire = AC->create<DepDbAcquireOp>(
@@ -1724,6 +1747,10 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
       payloadView = depDbAcquire.getResult(1);
       return payloadView;
     };
+
+    if (!preservedDbAcquirePtrUses.empty())
+      for (OpOperand *use : preservedDbAcquirePtrUses)
+        use->set(getPayloadView());
 
     Value invariantDepBasePtr;
     DenseMap<Type, Value> invariantDepMemrefViews;

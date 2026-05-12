@@ -26,6 +26,41 @@ bool isCarryRematerializableOp(Operation *op) {
              LLVM::PtrToIntOp, LLVM::IntToPtrOp>(op);
 }
 
+void rematerializeSequentialOpDefs(OpBuilder &builder, Operation *op,
+                                   Block &loopBody, IRMapping &mapping) {
+  SmallVector<Value> worklist(op->getOperands().begin(), op->getOperands().end());
+  SmallVector<Operation *> toClone;
+  DenseSet<Value> visitedValues;
+  DenseSet<Operation *> scheduled;
+
+  while (!worklist.empty()) {
+    Value current = worklist.pop_back_val();
+    if (!current || !visitedValues.insert(current).second ||
+        mapping.contains(current) || isa<BlockArgument>(current))
+      continue;
+
+    Operation *defOp = current.getDefiningOp();
+    if (!defOp || !loopBody.findAncestorOpInBlock(*defOp))
+      continue;
+    if (!isCarryRematerializableOp(defOp))
+      continue;
+    if (!scheduled.insert(defOp).second)
+      continue;
+
+    toClone.push_back(defOp);
+    for (Value operand : defOp->getOperands())
+      worklist.push_back(operand);
+  }
+
+  for (auto it = toClone.rbegin(); it != toClone.rend(); ++it) {
+    Operation *defOp = *it;
+    Operation *cloned = builder.clone(*defOp, mapping);
+    for (auto [oldRes, newRes] :
+         llvm::zip(defOp->getResults(), cloned->getResults()))
+      mapping.map(oldRes, newRes);
+  }
+}
+
 Value rematerializeCarryValueAtAdvanceSite(OpBuilder &builder, Value value,
                                            Block &loopBody,
                                            IRMapping &mapping) {
@@ -233,13 +268,36 @@ Operation *cloneEpochSlot(OpBuilder &slotBuilder, EpochSlot slot,
 
 void cloneNonSlotArith(OpBuilder &builder, Block &body,
                        MutableArrayRef<EpochSlot> slots, IRMapping &mapping,
-                       ArrayRef<Operation *> sequentialOps) {
+                       ArrayRef<Operation *> sequentialOps,
+                       ArrayRef<Operation *> eagerSequentialOps,
+                       bool restrictEagerSequentialOps) {
   DenseSet<Operation *> seqOpSet(sequentialOps.begin(), sequentialOps.end());
+  DenseSet<Operation *> eagerSeqOpSet;
+  if (restrictEagerSequentialOps)
+    eagerSeqOpSet.insert(eagerSequentialOps.begin(), eagerSequentialOps.end());
+  else if (eagerSequentialOps.empty())
+    eagerSeqOpSet.insert(sequentialOps.begin(), sequentialOps.end());
+  else
+    eagerSeqOpSet.insert(eagerSequentialOps.begin(), eagerSequentialOps.end());
+
+  auto operandsReady = [&](Operation &op) {
+    for (Value operand : op.getOperands()) {
+      if (!operand || mapping.contains(operand) || isa<BlockArgument>(operand))
+        continue;
+      Operation *defOp = operand.getDefiningOp();
+      if (!defOp)
+        continue;
+      if (body.findAncestorOpInBlock(*defOp))
+        return false;
+    }
+    return true;
+  };
 
   // Helper: ensure an operand's defining sequential op is in the mapping.
   // When a non-slot op uses a result produced by a sequential op that was
   // skipped, the clone would reference the original (out-of-scope) value.
-  // Eagerly clone such sequential ops so their results are mapped before use.
+  // Eagerly clone only the sequential ops that belong to this prefix. Other
+  // sidecar loads/stores must not be pulled before their source-order stores.
   // This is recursive: if a sequential op itself depends on another sequential
   // op, we clone the dependency first.
   std::function<void(Operation &)> ensureSeqOpsMapped = [&](Operation &op) {
@@ -247,7 +305,7 @@ void cloneNonSlotArith(OpBuilder &builder, Block &body,
       if (mapping.contains(operand))
         continue;
       Operation *defOp = operand.getDefiningOp();
-      if (!defOp || !seqOpSet.contains(defOp))
+      if (!defOp || !seqOpSet.contains(defOp) || !eagerSeqOpSet.contains(defOp))
         continue;
       // Already mapped — skip.
       bool alreadyMapped = llvm::all_of(defOp->getResults(), [&](Value res) {
@@ -270,6 +328,8 @@ void cloneNonSlotArith(OpBuilder &builder, Block &body,
     if (seqOpSet.contains(&op))
       continue;
     ensureSeqOpsMapped(op);
+    if (!operandsReady(op))
+      continue;
     Operation *cloned = builder.clone(op, mapping);
     for (auto [oldRes, newRes] :
          llvm::zip(op.getResults(), cloned->getResults()))
@@ -305,13 +365,15 @@ void emitAdvanceLogic(OpBuilder &builder, Location loc, Value iv,
   if (seedMapping)
     advanceMapping = *seedMapping;
   advanceMapping.map(iv, tNext);
-  cloneNonSlotArith(builder, body, slots, advanceMapping, allSequentialOps);
   for (Operation *seqOp : prefixSequentialOps) {
+    rematerializeSequentialOpDefs(builder, seqOp, body, advanceMapping);
     Operation *cloned = builder.clone(*seqOp, advanceMapping);
     for (auto [oldRes, newRes] :
          llvm::zip(seqOp->getResults(), cloned->getResults()))
       advanceMapping.map(oldRes, newRes);
   }
+  cloneNonSlotArith(builder, body, slots, advanceMapping, allSequentialOps,
+                    prefixSequentialOps, /*restrictEagerSequentialOps=*/true);
 
   auto i64Ty = IntegerType::get(builder.getContext(), 64);
   Value stepI64 = arith::IndexCastOp::create(builder, loc, i64Ty, step);
