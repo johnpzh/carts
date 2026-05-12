@@ -1,6 +1,6 @@
 ---
 name: carts-check-utils
-description: Before adding ANY new helper/utility function to a pass file, verify it does not already exist in shared utilities. Use when writing new code, adding static helpers, or reviewing PRs for duplicated functions.
+description: Use before adding helper or utility functions to pass files, when writing static helpers, or when reviewing PRs for duplicated functions.
 user-invocable: true
 allowed-tools: Read, Grep, Glob, Bash, Agent
 argument-hint: <function-name-or-description>

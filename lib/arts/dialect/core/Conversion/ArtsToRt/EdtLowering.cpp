@@ -30,7 +30,6 @@ namespace mlir::arts {
 #define GEN_PASS_DEF_EDTLOWERING
 #include "arts/dialect/rt/Transforms/Passes.h.inc"
 } // namespace mlir::arts
-#include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Analysis/db/OwnershipProof.h"
@@ -95,11 +94,6 @@ using AttrNames::Operation::CPSChainId;
 using AttrNames::Operation::CPSForwardDeps;
 using AttrNames::Operation::CPSParamPerm;
 using namespace mlir::arts::rt;
-
-static const AnalysisKind kEdtLowering_invalidates[] = {
-    AnalysisKind::DbAnalysis, AnalysisKind::EdtAnalysis};
-[[maybe_unused]] static const AnalysisDependencyInfo kEdtLowering_deps = {
-    {}, kEdtLowering_invalidates};
 
 using namespace mlir::arts::edt_lowering;
 

@@ -67,9 +67,6 @@ public:
   /// loops.
   std::optional<DbAccessPattern> getAllocAccessPattern(Operation *allocOp);
 
-  /// Return the canonical captured-value summary for one EDT.
-  const EdtCaptureSummary *getCaptureSummary(EdtOp edt);
-
   /// Iterate all analyzed DB allocation access patterns.
   void forEachAllocAccessPattern(
       llvm::function_ref<void(Operation *, DbAccessPattern)> fn);
@@ -89,15 +86,6 @@ public:
 
   /// Convenience: get EDT node by op (derives parent func internally).
   EdtNode *getEdtNode(EdtOp op);
-
-  /// Check if a value is invariant within an EDT region.
-  /// A value is invariant if it is defined outside the region or not modified
-  /// within it.
-  static bool isInvariantInEdt(Region &edtRegion, Value value);
-
-  /// Checks if the target operation is reachable from the source operation in
-  /// the EDT control flow graph.
-  static bool isReachable(Operation *source, Operation *target);
 
   /// Expose sub-analyses so that EdtNode / EdtGraph can reach them
   /// without storing a raw AnalysisManager pointer.

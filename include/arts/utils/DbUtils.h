@@ -259,60 +259,63 @@ public:
   static bool collectCleanupOnlyUseChain(Value source,
                                          llvm::SetVector<Operation *> &ops,
                                          Region *scope = nullptr);
-};
 
-///===----------------------------------------------------------------------===///
-/// Element-to-Block Space Slice Conversion
-///===----------------------------------------------------------------------===///
+  ///===----------------------------------------------------------------------===///
+  /// Element-to-Block Space Slice Conversion
+  ///===----------------------------------------------------------------------===///
 
-/// Convert element-space offsets and sizes to block-space offsets and sizes.
-/// For each dimension, computes:
-///   startBlock = elementOffset / blockSpan
-///   endBlock   = (elementOffset + elementSize - 1) / blockSpan
-///   blockCount = endBlock - startBlock + 1  (clamped to [0, totalBlocks])
-void convertElementSliceToBlockSlice(
-    OpBuilder &builder, Location loc, ValueRange elementOffsets,
-    ValueRange elementSizes, ValueRange blockSpans, ValueRange totalBlockCounts,
-    SmallVectorImpl<Value> &blockOffsets, SmallVectorImpl<Value> &blockSizes);
+  /// Convert element-space offsets and sizes to block-space offsets and sizes.
+  /// For each dimension, computes:
+  ///   startBlock = elementOffset / blockSpan
+  ///   endBlock   = (elementOffset + elementSize - 1) / blockSpan
+  ///   blockCount = endBlock - startBlock + 1  (clamped to [0, totalBlocks])
+  static void convertElementSliceToBlockSlice(
+      OpBuilder &builder, Location loc, ValueRange elementOffsets,
+      ValueRange elementSizes, ValueRange blockSpans,
+      ValueRange totalBlockCounts, SmallVectorImpl<Value> &blockOffsets,
+      SmallVectorImpl<Value> &blockSizes);
 
-/// Overlay a normalized owner-space prefix onto an existing DB-space slice
-/// without collapsing the source DB rank. This keeps untouched owner slots at
-/// their current range (or full-range fallback) while replacing the leading
-/// normalized slots produced by convertElementSliceToBlockSlice().
-void mergeNormalizedBlockSlice(
-    OpBuilder &builder, Location loc, ValueRange existingOffsets,
-    ValueRange existingSizes, ValueRange totalBlockCounts,
-    ValueRange normalizedOffsets, ValueRange normalizedSizes,
-    SmallVectorImpl<Value> &blockOffsets, SmallVectorImpl<Value> &blockSizes);
+  /// Overlay a normalized owner-space prefix onto an existing DB-space slice
+  /// without collapsing the source DB rank. This keeps untouched owner slots at
+  /// their current range (or full-range fallback) while replacing the leading
+  /// normalized slots produced by convertElementSliceToBlockSlice().
+  static void mergeNormalizedBlockSlice(
+      OpBuilder &builder, Location loc, ValueRange existingOffsets,
+      ValueRange existingSizes, ValueRange totalBlockCounts,
+      ValueRange normalizedOffsets, ValueRange normalizedSizes,
+      SmallVectorImpl<Value> &blockOffsets,
+      SmallVectorImpl<Value> &blockSizes);
 
-///===----------------------------------------------------------------------===///
-/// Block Size and Malloc Pattern Extraction (free functions)
-///===----------------------------------------------------------------------===///
+  ///===----------------------------------------------------------------------===///
+  /// Block Size and Malloc Pattern Extraction
+  ///===----------------------------------------------------------------------===///
 
-/// Extract block size from ForLowering's size hint.
-/// Handles direct constants, minui/minsi patterns, addi halo patterns,
-/// and maxui clamp patterns with recursive descent up to depth 4.
-std::optional<int64_t> extractBlockSizeFromHint(Value sizeHint, int depth = 0);
+  /// Extract block size from ForLowering's size hint.
+  /// Handles direct constants, minui/minsi patterns, addi halo patterns,
+  /// and maxui clamp patterns with recursive descent up to depth 4.
+  static std::optional<int64_t> extractBlockSizeFromHint(Value sizeHint,
+                                                         int depth = 0);
 
-/// Merge two DbAccessPattern values, keeping the higher-priority pattern.
-/// Priority: stencil > indexed > uniform > unknown.
-inline DbAccessPattern mergeDbAccessPattern(DbAccessPattern lhs,
+  /// Merge two DbAccessPattern values, keeping the higher-priority pattern.
+  /// Priority: stencil > indexed > uniform > unknown.
+  static DbAccessPattern mergeAccessPattern(DbAccessPattern lhs,
                                             DbAccessPattern rhs) {
-  auto rank = [](DbAccessPattern p) -> unsigned {
-    switch (p) {
-    case DbAccessPattern::stencil:
-      return 3;
-    case DbAccessPattern::indexed:
-      return 2;
-    case DbAccessPattern::uniform:
-      return 1;
-    case DbAccessPattern::unknown:
+    auto rank = [](DbAccessPattern p) -> unsigned {
+      switch (p) {
+      case DbAccessPattern::stencil:
+        return 3;
+      case DbAccessPattern::indexed:
+        return 2;
+      case DbAccessPattern::uniform:
+        return 1;
+      case DbAccessPattern::unknown:
+        return 0;
+      }
       return 0;
-    }
-    return 0;
-  };
-  return rank(rhs) > rank(lhs) ? rhs : lhs;
-}
+    };
+    return rank(rhs) > rank(lhs) ? rhs : lhs;
+  }
+};
 
 } // namespace arts
 } // namespace mlir

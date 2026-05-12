@@ -53,17 +53,6 @@ bool StringAnalysis::isStringMemRef(Value value) const {
   return stringMemRefs.contains(value);
 }
 
-const DenseSet<Value> &StringAnalysis::getStringMemRefs() const {
-  ensureAnalyzed();
-  return stringMemRefs;
-}
-
-const DenseMap<Value, LLVM::GlobalOp> &
-StringAnalysis::getGlobalSources() const {
-  ensureAnalyzed();
-  return globalSources;
-}
-
 void StringAnalysis::ensureAnalyzed() const {
   if (!built)
     const_cast<StringAnalysis *>(this)->run();

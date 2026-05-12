@@ -1,6 +1,6 @@
 ---
 name: carts-create-test
-description: Scaffold new contract tests or integration tests with correct directory placement, config selection, RUN line patterns, and CHECK blocks. Use when adding a new lit test, creating regression tests, or writing multi-stage boundary tests.
+description: Use when adding a new lit test, creating regression tests, writing multi-stage boundary tests, or choosing CARTS test placement and RUN lines.
 user-invocable: true
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit, Agent
 argument-hint: [contract <stage> | integration <name> | boundary <stage1> <stage2>]

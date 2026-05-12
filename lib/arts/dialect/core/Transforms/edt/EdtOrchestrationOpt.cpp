@@ -122,7 +122,7 @@ static void stampWaveGroup(ArrayRef<EdtOp> group, uint64_t groupId) {
     edt->setAttr(AttrNames::Operation::Orchestration::WaveIndex, waveAttr);
     edt->setAttr(AttrNames::Operation::Orchestration::WaveCount, countAttr);
 
-    for (ForOp forOp : getTopLevelForOps(edt)) {
+    for (ForOp forOp : EdtUtils::getTopLevelForOps(edt)) {
       forOp->setAttr(AttrNames::Operation::Orchestration::Kind, kindAttr);
       forOp->setAttr(AttrNames::Operation::Orchestration::GroupId, groupAttr);
       forOp->setAttr(AttrNames::Operation::Orchestration::WaveIndex, waveAttr);

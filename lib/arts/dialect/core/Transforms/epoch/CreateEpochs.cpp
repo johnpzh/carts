@@ -68,7 +68,7 @@ static void setIsTaskAttr(EdtOp op) {
 }
 
 static void wrapEdtInEpoch(EdtOp op, bool demoteToTask) {
-  if (isInsideEpoch(op))
+  if (EdtUtils::isInsideEpoch(op))
     return;
   auto loc = op.getLoc();
   OpBuilder builder(op);

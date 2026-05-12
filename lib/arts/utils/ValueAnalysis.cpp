@@ -1091,16 +1091,6 @@ static Value getUnderlyingValueImpl(Value v, SmallPtrSet<Value, 16> &visited,
 
 Value ValueAnalysis::stripMemrefViewOps(Value value) {
   while (value) {
-    if (isa<BaseMemRefType>(value.getType())) {
-      auto memrefValue = cast<mlir::MemrefValue>(value);
-      Value stripped = memref::skipFullyAliasingOperations(memrefValue);
-      stripped = memref::skipViewLikeOps(cast<mlir::MemrefValue>(stripped));
-      if (stripped != value) {
-        value = stripped;
-        continue;
-      }
-    }
-
     auto unrealized = value.getDefiningOp<UnrealizedConversionCastOp>();
     if (unrealized) {
       if (unrealized.getInputs().size() != 1)
@@ -1108,6 +1098,25 @@ Value ValueAnalysis::stripMemrefViewOps(Value value) {
       value = unrealized.getInputs().front();
       continue;
     }
+
+    if (auto castOp = value.getDefiningOp<memref::CastOp>()) {
+      value = castOp.getSource();
+      continue;
+    }
+    if (auto subviewOp = value.getDefiningOp<memref::SubViewOp>()) {
+      value = subviewOp.getSource();
+      continue;
+    }
+    if (auto viewOp = value.getDefiningOp<memref::ViewOp>()) {
+      value = viewOp.getSource();
+      continue;
+    }
+    if (auto reinterpretOp =
+            value.getDefiningOp<memref::ReinterpretCastOp>()) {
+      value = reinterpretOp.getSource();
+      continue;
+    }
+
     break;
   }
   return value;

@@ -23,7 +23,7 @@ using namespace mlir::arts;
 namespace mlir {
 namespace arts {
 
-SmallVector<ForOp, 2> getTopLevelForOps(EdtOp edt) {
+SmallVector<ForOp, 2> EdtUtils::getTopLevelForOps(EdtOp edt) {
   SmallVector<ForOp, 2> result;
   if (!edt)
     return result;
@@ -34,7 +34,7 @@ SmallVector<ForOp, 2> getTopLevelForOps(EdtOp edt) {
   return result;
 }
 
-ForOp getSingleTopLevelFor(EdtOp edt) {
+ForOp EdtUtils::getSingleTopLevelFor(EdtOp edt) {
   if (!edt)
     return nullptr;
 
@@ -51,7 +51,7 @@ ForOp getSingleTopLevelFor(EdtOp edt) {
 }
 
 std::pair<EdtOp, BlockArgument>
-getEdtBlockArgumentForAcquire(DbAcquireOp acquireOp) {
+EdtUtils::getBlockArgumentForAcquire(DbAcquireOp acquireOp) {
   /// Find the EDT that uses this acquire's pointer result
   EdtOp edtUser = nullptr;
   Value operandValue = nullptr;
@@ -85,7 +85,7 @@ getEdtBlockArgumentForAcquire(DbAcquireOp acquireOp) {
   return {edtUser, blockArg};
 }
 
-EpochOp wrapBodyInEpoch(Block &body, Location loc) {
+EpochOp EdtUtils::wrapBodyInEpoch(Block &body, Location loc) {
   SmallVector<Operation *, 8> opsToMove;
   for (Operation &op : body.without_terminator())
     opsToMove.push_back(&op);
@@ -106,7 +106,8 @@ EpochOp wrapBodyInEpoch(Block &body, Location loc) {
   return epochOp;
 }
 
-std::optional<unsigned> mapMemrefToEdtArg(EdtOp edt, Value memrefValue) {
+std::optional<unsigned> EdtUtils::mapMemrefToArg(EdtOp edt,
+                                                 Value memrefValue) {
   if (!memrefValue)
     return std::nullopt;
   Value current = ValueAnalysis::stripMemrefViewOps(memrefValue);
@@ -122,18 +123,18 @@ std::optional<unsigned> mapMemrefToEdtArg(EdtOp edt, Value memrefValue) {
   return blockArg.getArgNumber();
 }
 
-void classifyEdtArgAccesses(EdtOp edt, SmallVectorImpl<bool> &reads,
-                            SmallVectorImpl<bool> &writes) {
+void EdtUtils::classifyArgAccesses(EdtOp edt, SmallVectorImpl<bool> &reads,
+                                   SmallVectorImpl<bool> &writes) {
   reads.assign(edt.getDependencies().size(), false);
   writes.assign(edt.getDependencies().size(), false);
 
   auto markRead = [&](Value memrefValue) {
-    auto argIdx = mapMemrefToEdtArg(edt, memrefValue);
+    auto argIdx = EdtUtils::mapMemrefToArg(edt, memrefValue);
     if (argIdx && *argIdx < reads.size())
       reads[*argIdx] = true;
   };
   auto markWrite = [&](Value memrefValue) {
-    auto argIdx = mapMemrefToEdtArg(edt, memrefValue);
+    auto argIdx = EdtUtils::mapMemrefToArg(edt, memrefValue);
     if (argIdx && *argIdx < writes.size())
       writes[*argIdx] = true;
   };
@@ -187,9 +188,10 @@ static bool isCloneSafeStoreOperand(Value value, Value memref,
     return isCloneSafeStoreOperand(operand, memref, visited);
   });
 }
+
 } // namespace
 
-bool canCloneAllocaInitStore(memref::StoreOp store, Value memref) {
+bool EdtUtils::canCloneAllocaInitStore(memref::StoreOp store, Value memref) {
   if (!store || store.getMemRef() != memref)
     return false;
 
@@ -202,16 +204,58 @@ bool canCloneAllocaInitStore(memref::StoreOp store, Value memref) {
   });
 }
 
-void classifyEdtUserValues(ArrayRef<Value> userValues,
-                           llvm::SetVector<Value> &parameters,
-                           llvm::SetVector<Value> &constants,
-                           llvm::SetVector<Value> &dbHandles) {
-  for (Value val : userValues) {
-    if (auto *defOp = val.getDefiningOp()) {
-      if (isa<DbAllocOp, DbAcquireOp>(defOp)) {
-        dbHandles.insert(val);
+Value EdtUtils::traceCapturedDbHandle(Value value) {
+  DenseSet<Value> visited;
+  for (unsigned depth = 0; value && depth < 16; ++depth) {
+    if (!visited.insert(value).second)
+      break;
+
+    Operation *defOp = value.getDefiningOp();
+    if (!defOp)
+      return Value();
+
+    if (isa<DbAllocOp, DbAcquireOp, memref::AllocOp>(defOp))
+      return value;
+
+    if (auto dbRef = dyn_cast<DbRefOp>(defOp)) {
+      value = dbRef.getSource();
+      continue;
+    }
+    if (auto dbGep = dyn_cast<DbGepOp>(defOp)) {
+      value = dbGep.getBasePtr();
+      continue;
+    }
+    if (auto cast = dyn_cast<memref::CastOp>(defOp)) {
+      value = cast.getSource();
+      continue;
+    }
+    if (auto subview = dyn_cast<memref::SubViewOp>(defOp)) {
+      value = subview.getSource();
+      continue;
+    }
+    if (auto unrealized = dyn_cast<UnrealizedConversionCastOp>(defOp)) {
+      if (unrealized.getInputs().size() == 1) {
+        value = unrealized.getInputs().front();
         continue;
       }
+    }
+
+    break;
+  }
+  return Value();
+}
+
+void EdtUtils::classifyUserValues(ArrayRef<Value> userValues,
+                                  llvm::SetVector<Value> &parameters,
+                                  llvm::SetVector<Value> &constants,
+                                  llvm::SetVector<Value> &dbHandles) {
+  for (Value val : userValues) {
+    if (Value dbHandle = EdtUtils::traceCapturedDbHandle(val)) {
+      dbHandles.insert(dbHandle);
+      continue;
+    }
+
+    if (auto *defOp = val.getDefiningOp()) {
       if (isa<arith::ConstantOp>(defOp)) {
         constants.insert(val);
         continue;
@@ -223,27 +267,15 @@ void classifyEdtUserValues(ArrayRef<Value> userValues,
       continue;
     }
 
-    // Memref values produced by memref.alloc (malloc'd arrays passed to
-    // task bodies) must be packed as handle parameters, not cloned.
-    // Cloning a memref.alloc creates a NEW, SEPARATE allocation which would
-    // not share data with the original. Only handle alloc (heap) values,
-    // NOT alloca (stack) values — stack allocas for loop-local scratch
-    // should remain clonable.
-    if (isa<MemRefType>(val.getType())) {
-      if (auto *defOp = val.getDefiningOp()) {
-        if (isa<memref::AllocOp>(defOp)) {
-          dbHandles.insert(val);
-          continue;
-        }
-      }
-    }
+    // Stack allocas for loop-local scratch remain clonable. Heap memref.alloc
+    // handles are classified by traceCapturedDbHandle above.
   }
 }
 
-void analyzeEdtCapturedValues(EdtOp edt, llvm::SetVector<Value> &capturedValues,
-                              llvm::SetVector<Value> &parameters,
-                              llvm::SetVector<Value> &constants,
-                              llvm::SetVector<Value> &dbHandles) {
+void EdtUtils::analyzeCapturedValues(
+    EdtOp edt, llvm::SetVector<Value> &capturedValues,
+    llvm::SetVector<Value> &parameters, llvm::SetVector<Value> &constants,
+    llvm::SetVector<Value> &dbHandles) {
   if (!edt)
     return;
 
@@ -266,17 +298,17 @@ void analyzeEdtCapturedValues(EdtOp edt, llvm::SetVector<Value> &capturedValues,
     if (!isDefinedInsideEdt(value))
       externalCaptures.insert(value);
   capturedValues = std::move(externalCaptures);
-  classifyEdtUserValues(capturedValues.getArrayRef(), parameters, constants,
-                        dbHandles);
+  EdtUtils::classifyUserValues(capturedValues.getArrayRef(), parameters,
+                               constants, dbHandles);
 }
 
-SmallVector<Value> collectEdtPackedValues(EdtOp edt) {
+SmallVector<Value> EdtUtils::collectPackedValues(EdtOp edt) {
   llvm::SetVector<Value> capturedValues;
   llvm::SetVector<Value> parameters;
   llvm::SetVector<Value> constants;
   llvm::SetVector<Value> dbHandles;
-  analyzeEdtCapturedValues(edt, capturedValues, parameters, constants,
-                           dbHandles);
+  EdtUtils::analyzeCapturedValues(edt, capturedValues, parameters, constants,
+                                  dbHandles);
 
   SmallVector<Value> packedValues;
   packedValues.reserve(parameters.size() + dbHandles.size());

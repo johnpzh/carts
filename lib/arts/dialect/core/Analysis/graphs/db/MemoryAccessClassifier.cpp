@@ -230,8 +230,10 @@ void MemoryAccessClassifier::forEachMemoryAccess(
   collectAccessOperations(node, dbRefToMemOps);
   for (auto &[dbRef, memOps] : dbRefToMemOps) {
     for (Operation *op : memOps) {
-      bool isStore = isa<memref::StoreOp, affine::AffineStoreOp>(op);
-      callback(op, isStore);
+      auto access = DbUtils::getMemoryAccessInfo(op);
+      if (!access)
+        continue;
+      callback(op, access->isWrite());
     }
   }
 }

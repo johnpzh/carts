@@ -14,10 +14,18 @@
 // SDE-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
 // SDE: arts_sde.su_barrier {barrier_eliminated}
 // SDE: arts_sde.su_iterate
+// SDE-LABEL: func.func @write_only_successor_disjoint
+// SDE: arts_sde.su_iterate
+// SDE: arts_sde.su_barrier {barrier_eliminated}
+// SDE: arts_sde.su_iterate
 
 // After ConvertSdeToArts, the eliminated barrier is NOT lowered to arts.barrier
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
+// ARTS: arts.for
+// ARTS-NOT: arts.barrier
+// ARTS: arts.for
+// ARTS-LABEL: func.func @write_only_successor_disjoint
 // ARTS: arts.for
 // ARTS-NOT: arts.barrier
 // ARTS: arts.for
@@ -46,6 +54,34 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f32, dense<32> : 
           %v = memref.load %C[%i] : memref<128xf32>
           %r = arith.mulf %v, %cst : f32
           memref.store %r, %D[%i] : memref<128xf32>
+          omp.yield
+        }
+      }
+      omp.terminator
+    }
+    return
+  }
+
+  func.func @write_only_successor_disjoint(%A: memref<128xf32>, %B: memref<128xf32>, %C: memref<128xf32>, %D: memref<128xf32>) {
+    %c0 = arith.constant 0 : index
+    %c128 = arith.constant 128 : index
+    %c1 = arith.constant 1 : index
+    %cst = arith.constant 2.0 : f32
+    omp.parallel {
+      // Loop A: reads A, writes B.
+      omp.wsloop {
+        omp.loop_nest (%i) : index = (%c0) to (%c128) step (%c1) {
+          %v = memref.load %A[%i] : memref<128xf32>
+          %r = arith.addf %v, %cst : f32
+          memref.store %r, %B[%i] : memref<128xf32>
+          omp.yield
+        }
+      }
+      // Loop B only writes D. The old analysis saw an empty successor read set
+      // and kept the barrier; the full read/write conflict check can remove it.
+      omp.wsloop {
+        omp.loop_nest (%i) : index = (%c0) to (%c128) step (%c1) {
+          memref.store %cst, %D[%i] : memref<128xf32>
           omp.yield
         }
       }

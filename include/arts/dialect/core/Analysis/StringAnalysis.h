@@ -29,8 +29,6 @@ public:
   void invalidate() override;
 
   bool isStringMemRef(Value value) const;
-  const DenseSet<Value> &getStringMemRefs() const;
-  const DenseMap<Value, LLVM::GlobalOp> &getGlobalSources() const;
 
 private:
   void ensureAnalyzed() const;

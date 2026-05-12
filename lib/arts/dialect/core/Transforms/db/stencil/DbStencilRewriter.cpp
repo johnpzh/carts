@@ -100,7 +100,7 @@ void DbStencilRewriter::transformAcquire(const DbRewriteAcquire &info,
     acquire.getPtr().setType(newPtrType);
 
     /// Also update EDT block argument type if this acquire feeds an EDT
-    auto [edt, blockArg] = getEdtBlockArgumentForAcquire(acquire);
+    auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
     if (blockArg && blockArg.getType() != newPtrType)
       blockArg.setType(newPtrType);
   }
@@ -199,8 +199,8 @@ void DbStencilRewriter::transformAcquire(const DbRewriteAcquire &info,
     }
 
     bool singleBlock = false;
-    auto constElemSzUpper = arts::extractBlockSizeFromHint(ownedSpan);
-    auto constPlanBs = arts::extractBlockSizeFromHint(planBlockSize);
+    auto constElemSzUpper = arts::DbUtils::extractBlockSizeFromHint(ownedSpan);
+    auto constPlanBs = arts::DbUtils::extractBlockSizeFromHint(planBlockSize);
     bool isAligned =
         arts::isAlignedToBlock(ownedBaseForAlignment, planBlockSize);
     if (constElemSzUpper && constPlanBs && *constElemSzUpper <= *constPlanBs &&
@@ -322,7 +322,7 @@ void DbStencilRewriter::transformAcquire(const DbRewriteAcquire &info,
 
     addHaloAcquireToEdt(acquire, leftHalo, builder);
     /// Track left halo block arg index (it's the last one added)
-    auto [edt, blockArg] = getEdtBlockArgumentForAcquire(acquire);
+    auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
     if (edt)
       leftHaloArgIdx = edt.getBody().front().getNumArguments() - 1;
     ARTS_DEBUG("  Created left halo acquire, argIdx=" << leftHaloArgIdx);
@@ -352,14 +352,14 @@ void DbStencilRewriter::transformAcquire(const DbRewriteAcquire &info,
 
     addHaloAcquireToEdt(acquire, rightHalo, builder);
     /// Track right halo block arg index (it's the last one added)
-    auto [edt, blockArg] = getEdtBlockArgumentForAcquire(acquire);
+    auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
     if (edt)
       rightHaloArgIdx = edt.getBody().front().getNumArguments() - 1;
     ARTS_DEBUG("  Created right halo acquire, argIdx=" << rightHaloArgIdx);
   }
 
   /// Store halo block arg indices for the 3-buffer selection approach
-  auto [edt, ownedBlockArg] = getEdtBlockArgumentForAcquire(acquire);
+  auto [edt, ownedBlockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
   if (edt && (haloLeftVal > 0 || haloRightVal > 0)) {
     unsigned ownedArgIdx = ownedBlockArg.getArgNumber();
 
@@ -575,7 +575,7 @@ void DbStencilRewriter::transformAcquireAsBlock(const DbRewriteAcquire &info,
 
 bool DbStencilRewriter::rebaseEdtUsersAsBlock(DbAcquireOp acquire,
                                               OpBuilder &builder) {
-  auto [edt, blockArg] = getEdtBlockArgumentForAcquire(acquire);
+  auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
   if (!blockArg)
     return false;
 
@@ -799,7 +799,7 @@ bool DbStencilRewriter::rebaseEdtUsers(DbAcquireOp acquire, OpBuilder &builder,
                                        bool /*isSingleChunk*/) {
   ARTS_DEBUG("DbStencilRewriter::rebaseEdtUsers (3-buffer mode)");
 
-  auto [edt, blockArg] = getEdtBlockArgumentForAcquire(acquire);
+  auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
   Value localView = blockArg ? Value(blockArg) : acquire.getPtr();
   if (!edt)
     edt = acquire->getParentOfType<EdtOp>();
@@ -922,7 +922,7 @@ void DbStencilRewriter::addHaloAcquireToEdt(DbAcquireOp originalAcq,
   ARTS_DEBUG("DbStencilRewriter::addHaloAcquireToEdt");
 
   /// Find the EDT that uses the original acquire
-  auto [edt, blockArg] = getEdtBlockArgumentForAcquire(originalAcq);
+  auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(originalAcq);
   if (!edt) {
     ARTS_DEBUG("  No EDT found for acquire - skipping halo addition");
     return;

@@ -1,6 +1,6 @@
 ---
 name: carts-contract-refresh
-description: Refresh contract test fixture snapshots after IR-affecting pass changes. Use when contract tests fail due to legitimate IR changes, after refactoring passes, or when git status shows stale Output/ fixtures.
+description: Use when contract tests fail due to legitimate IR changes, after refactoring passes, or when git status shows stale Output/ fixtures.
 user-invocable: true
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<test-pattern> | --all | --changed]

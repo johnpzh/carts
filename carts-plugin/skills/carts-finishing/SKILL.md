@@ -1,6 +1,6 @@
 ---
 name: carts-finishing
-description: Drive the CARTS project to completion by iterating one fix at a time across the 11-phase plan that brings every sample and benchmark green in single-node and multinode. Use whenever the user asks to advance/continue/finish CARTS work, when they ask "what's next" or "what should we work on" in this codebase, when they invoke /loop on bringing samples or benchmarks green, when they ask "where does this fix belong?" or "which dialect owns X?", when a fix has just been applied and they need the regression-guard run before advancing, or when they reference the carts-finishing plan or phase order. Always prefer this skill over ad-hoc planning when the user wants forward progress on the CARTS finish-line work.
+description: Use when advancing, continuing, or finishing CARTS work; choosing the next fix; asking where a fix belongs; applying regression guards; or referencing the carts-finishing plan.
 user-invocable: true
 allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Agent, Skill, TaskList, TaskGet, TaskCreate, TaskUpdate, ScheduleWakeup, AskUserQuestion
 argument-hint: [next | status | charter | triage <symptom> | regression-guard]

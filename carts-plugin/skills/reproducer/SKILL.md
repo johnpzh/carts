@@ -1,8 +1,7 @@
 ---
 name: carts-reproducer
-description: Reduce failing CARTS programs, benchmarks, or stage dumps into small C, MLIR, or lit reproducers while preserving the original symptom and stage boundary. Use when a large case needs to become a minimal contract test before or alongside a fix.
+description: Use when a large failing program, benchmark, or stage dump needs to become a minimal C, MLIR, or lit reproducer.
 user-invocable: true
-workflow: workflows/regression_hunter.py
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<input-file | benchmark-path>]
 parameters:

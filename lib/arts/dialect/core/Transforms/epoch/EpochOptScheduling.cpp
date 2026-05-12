@@ -214,7 +214,7 @@ bool tryCPSLoopTransform(scf::ForOp forOp, const EpochAnalysis &epochAnalysis) {
     }
   }
 
-  SmallVector<Value> loopBackParams = collectEdtPackedValues(kickoffEdt);
+  SmallVector<Value> loopBackParams = EdtUtils::collectPackedValues(kickoffEdt);
   auto iterIt = llvm::find(loopBackParams, lb);
   if (iterIt != loopBackParams.end()) {
     unsigned iterIdx = std::distance(loopBackParams.begin(), iterIt);

@@ -75,7 +75,7 @@ unsigned sinkExternalAllocasInEdt(EdtOp edt) {
         /// should not prevent sinking — they are the reason we want to sink.
         if (edt.getBody().isAncestor(store->getParentRegion()))
           continue;
-        if (!canCloneAllocaInitStore(store, allocaOp.getResult())) {
+        if (!EdtUtils::canCloneAllocaInitStore(store, allocaOp.getResult())) {
           hasUnsafeStore = true;
           break;
         }

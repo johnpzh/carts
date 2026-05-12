@@ -12,9 +12,10 @@ namespace mlir::arts {
 #include "arts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::arts
 
-#include "arts/dialect/core/Analysis/KernelFamily.h"
+#include "arts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "arts/utils/LoopUtils.h"
 #include "arts/utils/OperationAttributes.h"
+#include "arts/utils/PlanContract.h"
 #include "arts/utils/StencilAttributes.h"
 #include "arts/utils/ValueAnalysis.h"
 #include "arts/utils/costs/SDECostModel.h"
@@ -88,13 +89,30 @@ static int64_t readStencilHaloForOwnerDim(sde::SdeSuIterateOp op,
   return 0;
 }
 
+static bool isInPlaceSelfReadStencil(sde::SdeSuIterateOp op) {
+  auto classification = op.getStructuredClassification();
+  if (!classification ||
+      *classification != sde::SdeStructuredClassification::stencil)
+    return false;
+
+  auto effects = sde::collectStructuredMemoryEffects(op.getBody());
+  return !effects.hasUnknownEffects && sde::hasInPlaceSelfRead(effects);
+}
+
 static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
                                      sde::SDECostModel &costModel) {
   if (costModel.getWorkerCount() <= 1)
     return;
+  if (auto plannedWorkers = getWorkers(op.getOperation());
+      plannedWorkers && *plannedWorkers <= 1)
+    return;
+  if (op->hasAttr(AttrNames::Operation::InPlaceSafe))
+    return;
   auto classification = op.getStructuredClassification();
   if (!classification ||
       *classification != sde::SdeStructuredClassification::stencil)
+    return;
+  if (isInPlaceSelfReadStencil(op))
     return;
 
   unsigned spatialRank = 1;
@@ -129,6 +147,52 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
   if (haloShape.front() > 0)
     op->setAttr(AttrNames::Operation::Plan::HaloShape,
                 buildI64ArrayAttr(ctx, haloShape));
+  op->setAttr(AttrNames::Operation::Plan::IterationTopology,
+              StringAttr::get(ctx, "owner_strip"));
+}
+
+static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
+                                     sde::SDECostModel &costModel) {
+  if ((op->hasAttr(AttrNames::Operation::Plan::OwnerDims) &&
+       op->hasAttr(AttrNames::Operation::Plan::PhysicalBlockShape)) ||
+      costModel.getWorkerCount() <= 1)
+    return;
+  auto classification = op.getStructuredClassification();
+  if (classification) {
+    if (*classification == sde::SdeStructuredClassification::stencil ||
+        *classification == sde::SdeStructuredClassification::matmul)
+      return;
+  }
+  if (auto plannedWorkers = getWorkers(op.getOperation());
+      plannedWorkers && *plannedWorkers <= 1)
+    return;
+  if (op->hasAttr(AttrNames::Operation::InPlaceSafe))
+    return;
+
+  std::optional<sde::LoopIndexedOutputPlan> outputPlan =
+      sde::findLoopIndexedOutputPlan(op);
+  if (!outputPlan || outputPlan->shape.empty() || outputPlan->shape.front() <= 0)
+    return;
+  if (!classification) {
+    auto effects = sde::collectStructuredMemoryEffects(op.getBody());
+    if (effects.hasUnknownEffects || effects.reads.contains(outputPlan->root))
+      return;
+  }
+
+  int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+  SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
+  physicalBlockShape.front() =
+      std::max<int64_t>(1,
+                        llvm::divideCeil(outputPlan->shape.front(), workers));
+
+  MLIRContext *ctx = op.getContext();
+  op->setAttr(
+      AttrNames::Operation::Plan::KernelFamily,
+      StringAttr::get(ctx, kernelFamilyToString(KernelFamily::Uniform)));
+  op->setAttr(AttrNames::Operation::Plan::OwnerDims,
+              buildI64ArrayAttr(ctx, SmallVector<int64_t, 1>{0}));
+  op->setAttr(AttrNames::Operation::Plan::PhysicalBlockShape,
+              buildI64ArrayAttr(ctx, physicalBlockShape));
   op->setAttr(AttrNames::Operation::Plan::IterationTopology,
               StringAttr::get(ctx, "owner_strip"));
 }
@@ -196,13 +260,26 @@ chooseDistributionKind(sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
   if (costModel.getWorkerCount() <= 1)
     return std::nullopt;
 
-  auto classificationAttr = op.getStructuredClassificationAttr();
-  if (!classificationAttr)
-    return std::nullopt;
-
   auto scope = getEnclosingParallelScope(op);
   if (!scope)
     return std::nullopt;
+
+  auto classificationAttr = op.getStructuredClassificationAttr();
+  if (!classificationAttr) {
+    std::optional<sde::LoopIndexedOutputPlan> outputPlan =
+        sde::findLoopIndexedOutputPlan(op);
+    if (!outputPlan)
+      return std::nullopt;
+    auto effects = sde::collectStructuredMemoryEffects(op.getBody());
+    if (effects.hasUnknownEffects || effects.reads.contains(outputPlan->root))
+      return std::nullopt;
+    if (*scope == sde::SdeConcurrencyScope::local)
+      return sde::SdeDistributionKind::blocked;
+    if (*scope == sde::SdeConcurrencyScope::distributed &&
+        hasEnoughDistributedWork(op, costModel))
+      return sde::SdeDistributionKind::blocked;
+    return std::nullopt;
+  }
 
   switch (classificationAttr.getValue()) {
   case sde::SdeStructuredClassification::elementwise:
@@ -214,6 +291,8 @@ chooseDistributionKind(sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
       return sde::SdeDistributionKind::blocked;
     return std::nullopt;
   case sde::SdeStructuredClassification::stencil:
+    if (isInPlaceSelfReadStencil(op))
+      return std::nullopt;
     if (*scope == sde::SdeConcurrencyScope::distributed &&
         hasEnoughDistributedWork(op, costModel))
       return sde::SdeDistributionKind::owner_compute;
@@ -250,6 +329,7 @@ struct DistributionPlanningPass
     SmallVector<PlannedDistribution> rewrites;
     getOperation().walk([&](sde::SdeSuIterateOp op) {
       stampStencilPhysicalPlan(op, *costModel);
+      stampUniformPhysicalPlan(op, *costModel);
       if (auto kind = chooseDistributionKind(op, *costModel))
         rewrites.push_back({op, *kind});
     });

@@ -1,6 +1,6 @@
 ---
 name: carts-benchmark
-description: Run CARTS benchmarks, check for performance regressions, list available benchmarks, and compare results. Use when the user asks about benchmarks, performance testing, regression testing, or speedup measurements.
+description: Use when the user asks about benchmarks, performance testing, regression testing, speedup measurements, benchmark listing, or benchmark comparison.
 user-invocable: true
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [list | run <name> | build | clean]

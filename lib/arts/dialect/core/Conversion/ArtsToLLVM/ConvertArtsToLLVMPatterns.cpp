@@ -75,11 +75,31 @@ SmallVector<Value, 4> resolveSourceOuterSizes(Value sourceGuid, Value sourcePtr,
                                               ArtsCodegen *AC, Location loc) {
   SmallVector<Value, 4> sizes;
 
-  if (auto allocOp = dyn_cast_or_null<DbAllocOp>(sourceGuid.getDefiningOp()))
-    sizes.assign(allocOp.getSizes().begin(), allocOp.getSizes().end());
-  else if (auto acqOp =
-               dyn_cast_or_null<DbAcquireOp>(sourceGuid.getDefiningOp()))
-    sizes.assign(acqOp.getSizes().begin(), acqOp.getSizes().end());
+  auto resolveFromDefiningDb = [&](Value handle) -> bool {
+    handle = ValueAnalysis::stripMemrefViewOps(handle);
+    if (!handle)
+      return false;
+
+    Operation *def = handle.getDefiningOp();
+    if (auto allocOp = dyn_cast_or_null<DbAllocOp>(def)) {
+      sizes.assign(allocOp.getSizes().begin(), allocOp.getSizes().end());
+      return true;
+    }
+    if (auto acqOp = dyn_cast_or_null<DbAcquireOp>(def)) {
+      sizes.assign(acqOp.getSizes().begin(), acqOp.getSizes().end());
+      return true;
+    }
+    if (auto depAcqOp = dyn_cast_or_null<DepDbAcquireOp>(def)) {
+      sizes.assign(depAcqOp.getSizes().begin(), depAcqOp.getSizes().end());
+      return true;
+    }
+    return false;
+  };
+
+  if (sourceGuid)
+    resolveFromDefiningDb(sourceGuid);
+  if (sizes.empty() && sourcePtr)
+    resolveFromDefiningDb(sourcePtr);
 
   if (sizes.empty())
     sizes = materializeStaticDbOuterShape(sourceGuid, AC, loc);
@@ -88,9 +108,40 @@ SmallVector<Value, 4> resolveSourceOuterSizes(Value sourceGuid, Value sourcePtr,
   return sizes;
 }
 
+Value resolveGuidStorageForAcquireSource(Value sourceGuid, Value sourcePtr) {
+  if (sourceGuid)
+    return sourceGuid;
+
+  sourcePtr = ValueAnalysis::stripMemrefViewOps(sourcePtr);
+  if (!sourcePtr)
+    return {};
+
+  Operation *def = sourcePtr.getDefiningOp();
+  if (auto allocOp = dyn_cast_or_null<DbAllocOp>(def))
+    return allocOp.getGuid();
+  if (auto acquireOp = dyn_cast_or_null<DbAcquireOp>(def))
+    return acquireOp.getGuid();
+  if (auto depAcquireOp = dyn_cast_or_null<DepDbAcquireOp>(def))
+    return depAcquireOp.getGuid();
+  if (auto dbRefOp = dyn_cast_or_null<DbRefOp>(def))
+    return resolveGuidStorageForAcquireSource({}, dbRefOp.getSource());
+
+  Operation *underlying = DbUtils::getUnderlyingDb(sourcePtr);
+  if (auto allocOp = dyn_cast_or_null<DbAllocOp>(underlying))
+    return allocOp.getGuid();
+  if (auto acquireOp = dyn_cast_or_null<DbAcquireOp>(underlying))
+    return acquireOp.getGuid();
+  if (auto depAcquireOp = dyn_cast_or_null<DepDbAcquireOp>(underlying))
+    return depAcquireOp.getGuid();
+
+  return {};
+}
+
 SmallVector<Value, 4> resolveOuterSizesForGuid(Value dbGuid, ArtsCodegen *AC,
                                                Location loc) {
   SmallVector<Value, 4> sizes;
+  if (!dbGuid)
+    return sizes;
 
   if (auto allocOp = DbUtils::getAllocOpFromGuid(dbGuid)) {
     sizes.assign(allocOp.getSizes().begin(), allocOp.getSizes().end());
@@ -1032,6 +1083,8 @@ struct DbAcquirePattern : public ArtsToLLVMPattern<DbAcquireOp> {
 
     Value sourceGuid = op.getSourceGuid();
     Value sourcePtr = op.getSourcePtr();
+    Value guidStorage =
+        resolveGuidStorageForAcquireSource(sourceGuid, sourcePtr);
 
     auto hasDbRefUser = [](Value value) {
       return value && llvm::any_of(value.getUsers(), [](Operation *user) {
@@ -1042,14 +1095,23 @@ struct DbAcquirePattern : public ArtsToLLVMPattern<DbAcquireOp> {
       return failure();
 
     /// Get source sizes from the defining op
-    auto sourceOp = sourceGuid.getDefiningOp();
+    Value strippedGuidStorage = ValueAnalysis::stripMemrefViewOps(guidStorage);
+    auto sourceOp =
+        strippedGuidStorage ? strippedGuidStorage.getDefiningOp() : nullptr;
     SmallVector<Value> sourceSizes;
     if (auto allocOp = dyn_cast_or_null<DbAllocOp>(sourceOp))
       sourceSizes.assign(allocOp.getSizes().begin(), allocOp.getSizes().end());
     else if (auto acqOp = dyn_cast_or_null<DbAcquireOp>(sourceOp))
       sourceSizes.assign(acqOp.getSizes().begin(), acqOp.getSizes().end());
+    else if (auto depAcqOp = dyn_cast_or_null<DepDbAcquireOp>(sourceOp))
+      sourceSizes.assign(depAcqOp.getSizes().begin(),
+                         depAcqOp.getSizes().end());
     if (sourceSizes.empty())
-      sourceSizes = resolveSourceOuterSizes(sourceGuid, sourcePtr, AC, loc);
+      sourceSizes = resolveSourceOuterSizes(guidStorage, sourcePtr, AC, loc);
+
+    if (!guidStorage)
+      return op.emitOpError("cannot lower without a source_guid or a "
+                            "source_ptr that preserves a paired GUID handle");
 
     if (!sourceSizes.empty()) {
       SmallVector<Value> indices(op.getIndices().begin(),
@@ -1062,7 +1124,7 @@ struct DbAcquirePattern : public ArtsToLLVMPattern<DbAcquireOp> {
       auto llvmGuidType = LLVM::LLVMPointerType::get(
           AC->getContext(), origGuidMT.getMemorySpaceAsInt());
       auto loadedGuid =
-          AC->create<DbGepOp>(loc, llvmGuidType, sourceGuid, indices, strides);
+          AC->create<DbGepOp>(loc, llvmGuidType, guidStorage, indices, strides);
       /// Ptr llvm type - same: underlying storage is linear
       auto origPtrMT = dyn_cast<MemRefType>(op.getPtr().getType());
       auto llvmPtrType = LLVM::LLVMPointerType::get(
@@ -1080,8 +1142,11 @@ struct DbAcquirePattern : public ArtsToLLVMPattern<DbAcquireOp> {
           AC->create<polygeist::Pointer2MemrefOp>(loc, ptrMT, loadedPtr);
       rewriter.replaceOp(op, ValueRange{guidMemref, ptrMemref});
     } else {
+      if (!op.getIndices().empty())
+        return op.emitOpError(
+            "cannot lower indexed acquire without source DB shape");
       /// Fallback: just forward the source values
-      rewriter.replaceOp(op, ValueRange{sourceGuid, sourcePtr});
+      rewriter.replaceOp(op, ValueRange{guidStorage, sourcePtr});
     }
 
     ++numDbOpsConverted;

@@ -31,7 +31,8 @@ dekk carts install
 
 This creates or syncs the project-local conda environment, fetches submodules,
 builds the full toolchain, installs the bootstrap `clang`/`clang++` pair
-required for the LLVM 23 build, and makes the `dekk carts ...` commands
+required for the pinned LLVM/MLIR build, and makes the `dekk carts ...`
+commands
 available for the project:
 
 ```bash
@@ -710,7 +711,7 @@ free(data);
 
 CARTS includes an extensive test suite with working examples. These examples demonstrate various parallelization patterns and memory layouts:
 
-**Location**: `tests/examples/`
+**Location**: `samples/`
 
 ### Key Examples to Study
 
@@ -718,7 +719,7 @@ CARTS includes an extensive test suite with working examples. These examples dem
    - Demonstrates 2D array-of-arrays pattern
    - Block-level task dependencies
 
-2. **`chunk-deps/`** - Array section dependencies
+2. **`array/chunks/` and `rows/chunks/`** - Chunked array/row examples
    - Shows how to use chunk/section syntax: `A[i:SIZE][j:SIZE]`
    - Multi-neighbor dependencies
 
@@ -743,7 +744,7 @@ CARTS includes an extensive test suite with working examples. These examples dem
    - Single array element per task
    - Sequential dependencies
 
-8. **`rowdep/`** - Row-wise dependencies
+8. **`rows/deps/`** - Row-wise dependencies
    - Row dependencies in matrix operations
 
 All examples in this directory follow CARTS-compatible patterns and can be used as templates for your own code.
@@ -800,7 +801,7 @@ All examples in this directory follow CARTS-compatible patterns and can be used 
    - Enables fine-grained data dependencies
 
 4. **Test with CARTS examples**
-   - Start with examples from `tests/examples/`
+   - Start with examples from `samples/`
    - Modify incrementally to match your needs
 
 5. **Follow C/C++ best practices**

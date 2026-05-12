@@ -1,8 +1,7 @@
 ---
 name: carts-benchmark-triage
-description: Triage CARTS benchmark failures by rerunning the benchmark, locating runner artifacts, checking the OpenMP baseline built with carts clang, dumping selected pipeline stages, and reading the pass/heuristic ownership docs. Use when a benchmark fails, times out, produces wrong checksums, shows suspicious speedups, or needs pass-by-pass/runtime diagnosis.
+description: Use when a benchmark fails, times out, produces wrong checksums, shows suspicious speedups, or needs pass-by-pass/runtime diagnosis.
 user-invocable: true
-workflow: workflows/benchmark_optimizer.py
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<benchmark-path>]
 parameters:

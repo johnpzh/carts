@@ -16,7 +16,7 @@ dekk carts install
 
 `dekk carts install` creates or synchronizes the project-local Conda
 environment from `environment.yml`, including the bootstrap `clang`/`clang++`
-toolchain used to build LLVM 23.
+toolchain used to build the pinned LLVM/MLIR toolchain.
 
 Use the project through dekk's project runner:
 
@@ -65,7 +65,7 @@ See **[Getting Started](docs/getting-started.md)** for the full walkthrough.
 | `dekk carts update` | Update git submodules |
 | `dekk carts docker <cmd>` | Docker operations (build, start, stop, exec) |
 | `dekk carts examples <cmd>` | List or run bundled examples |
-| `dekk carts agents <cmd>` | Generate/install agent resources from `.agents/` |
+| `dekk carts skills <cmd>` | Generate and inspect agent skill resources |
 | `dekk carts worktree <cmd>` | Manage dekk-aware CARTS worktrees |
 
 ## Documentation

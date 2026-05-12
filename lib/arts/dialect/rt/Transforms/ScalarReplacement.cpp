@@ -49,7 +49,7 @@ struct ReductionPattern {
   scf::ForOp forOp;
   Operation *loadOp;          /// memref.load or polygeist.load
   Operation *storeOp;         /// memref.store or polygeist.store
-  Operation *reduceOp;        /// arith.addf/mulf/etc.
+  Value valueToYield;         /// SSA value that replaces the loop-carried store
   Value memref;               /// The memref being accessed
   SmallVector<Value> indices; /// Loop-invariant indices
 };
@@ -183,7 +183,7 @@ detectReductionPattern(scf::ForOp forOp) {
           isLoopInvariant(forOp, storeMemref)) {
         pattern.loadOp = loadOp;
         pattern.storeOp = storeOp;
-        pattern.reduceOp = accOp;
+        pattern.valueToYield = storedValue;
         pattern.memref = storeMemref;
         pattern.indices = storeIndices;
 
@@ -258,7 +258,8 @@ static unsigned forwardScalarScratchLoadsInBlock(Block &block) {
     // inside the nested regions (e.g., loop-carried accumulators).
     if (!op.getRegions().empty()) {
       SmallVector<Value, 4> toErase;
-      for (auto &[allocaVal, _] : availableValueByScratch) {
+      for (auto &entry : availableValueByScratch) {
+        Value allocaVal = entry.first;
         for (Region &region : op.getRegions()) {
           bool modified = false;
           region.walk([&](memref::StoreOp store) {
@@ -332,6 +333,7 @@ static LogicalResult transformReduction(ReductionPattern &pattern,
         rewriter, loc, dynLoad.getResult().getType(), dynLoad.getMemref(),
         dynLoad.getIndices(), dynLoad.getSizes());
   }
+  Operation *initOp = initValue ? initValue.getDefiningOp() : nullptr;
 
   /// Create new ForOp with iter_args
   SmallVector<Value> iterArgs = {initValue};
@@ -364,25 +366,27 @@ static LogicalResult transformReduction(ReductionPattern &pattern,
 
   rewriter.setInsertionPointToEnd(newBody);
 
-  /// Clone operations except the load and store
-  Value newAccValue;
+  /// Clone operations except the load and store.
   for (Operation &op : oldBody->without_terminator()) {
     if (&op == pattern.loadOp)
       continue; /// Skip the load - replaced by iter_arg
     if (&op == pattern.storeOp)
       continue; /// Skip the store - replaced by yield
 
-    Operation *cloned = rewriter.clone(op, mapper);
-
-    /// Track the accumulation result
-    if (&op == pattern.reduceOp)
-      newAccValue = cloned->getResult(0);
+    rewriter.clone(op, mapper);
   }
 
-  /// Create yield with the accumulated value
-  if (!newAccValue) {
-    /// This can happen if reduceOp is inside a nested region - shouldn't reach
-    /// here with our detection checks, but guard against it anyway
+  /// Create yield with the accumulated value.
+  Value newAccValue = mapper.lookupOrDefault(pattern.valueToYield);
+  if (!newAccValue || newAccValue == pattern.valueToYield) {
+    /// This can happen if the stored value was not cloned into the new loop body.
+    /// Keep the failure path transactional: remove the speculative loop and
+    /// its preheader load before giving another pattern a chance to match.
+    scf::YieldOp::create(rewriter, loc, ValueRange{accArg});
+    rewriter.setInsertionPointAfter(newForOp);
+    rewriter.eraseOp(newForOp);
+    if (initOp && initOp->use_empty())
+      rewriter.eraseOp(initOp);
     return failure();
   }
   scf::YieldOp::create(rewriter, loc, ValueRange{newAccValue});

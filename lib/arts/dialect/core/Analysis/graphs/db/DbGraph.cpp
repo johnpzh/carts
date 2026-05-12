@@ -59,19 +59,6 @@ void DbGraph::build() {
   version.fetch_add(1, std::memory_order_relaxed);
 }
 
-void DbGraph::buildNodesOnly() {
-  if (built.load(std::memory_order_acquire) &&
-      !needsRebuild.load(std::memory_order_acquire))
-    return;
-  ARTS_DEBUG("Building DB hierarchy (nodes only)");
-  invalidate();
-  collectNodes();
-  computeOpOrder();
-  built.store(true, std::memory_order_release);
-  needsRebuild.store(false, std::memory_order_release);
-  version.fetch_add(1, std::memory_order_relaxed);
-}
-
 void DbGraph::invalidate() {
   version.fetch_add(1, std::memory_order_relaxed);
   allocNodes.clear();
@@ -218,12 +205,6 @@ void DbGraph::forEachAcquireNode(
     const std::function<void(DbAcquireNode *)> &fn) const {
   for (const auto &pair : acquireNodeMap)
     fn(pair.second);
-}
-
-const DbAllocNode &DbGraph::getAllocInfo(DbAllocOp alloc) const {
-  auto it = allocNodes.find(alloc);
-  assert(it != allocNodes.end() && "Allocation not found in graph");
-  return *it->second;
 }
 
 void DbGraph::print(llvm::raw_ostream &os) {

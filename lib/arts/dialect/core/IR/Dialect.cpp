@@ -18,6 +18,7 @@
 #include "arts/Dialect.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/utils/DbUtils.h"
+#include "arts/utils/EdtUtils.h"
 #include "arts/utils/StencilAttributes.h"
 #include "arts/utils/Utils.h"
 #include "arts/utils/ValueAnalysis.h"
@@ -267,6 +268,15 @@ LogicalResult EdtOp::verify() {
       /// these as dbHandles and packs them through paramv.
       if (operand.getDefiningOp<DbAllocOp>())
         continue;
+
+      /// Allow external DB/heap view chains rooted in an allocation handle.
+      /// EdtEnvManager packs the root handle through paramv and EdtLowering
+      /// rematerializes the view chain inside the outlined EDT function.
+      /// Do not permit DbAcquire roots here: acquired pointers must still be
+      /// modeled as explicit EDT dependencies and used through block args.
+      if (Value handle = EdtUtils::traceCapturedDbHandle(operand))
+        if (!handle.getDefiningOp<DbAcquireOp>())
+          continue;
 
       /// DbAcquire source handles may intentionally reference outer-scope
       /// datablock handles to derive nested views inside EDTs.

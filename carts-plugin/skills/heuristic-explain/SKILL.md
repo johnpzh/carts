@@ -1,6 +1,6 @@
 ---
 name: carts-heuristic-explain
-description: Explain why the compiler made a specific partitioning or distribution decision. Trace H1 partition heuristics, H2 distribution strategy selection, and cost thresholds. Use when a benchmark has unexpected partitioning, wrong distribution mode, or performance anomalies.
+description: Use when a benchmark has unexpected partitioning, wrong distribution mode, heuristic drift, or performance anomalies.
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Glob, Agent
 argument-hint: [partition <file> | distribution <file> | thresholds]

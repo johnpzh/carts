@@ -281,8 +281,8 @@ inline bool isValueBoundedByBlockSpan(Value value, Value blockSize,
   if (valueConst && blockConst)
     return *valueConst <= *blockConst;
 
-  auto valueHint = arts::extractBlockSizeFromHint(value);
-  auto blockHint = arts::extractBlockSizeFromHint(blockSize);
+  auto valueHint = arts::DbUtils::extractBlockSizeFromHint(value);
+  auto blockHint = arts::DbUtils::extractBlockSizeFromHint(blockSize);
   if (valueHint && blockHint)
     return *valueHint <= *blockHint;
 

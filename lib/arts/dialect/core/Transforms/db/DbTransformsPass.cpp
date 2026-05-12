@@ -24,7 +24,6 @@
 #include "mlir/Pass/Pass.h"
 /// Arts
 #include "arts/Dialect.h"
-#include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Analysis/graphs/db/DbGraph.h"
@@ -63,13 +62,6 @@ static llvm::Statistic numDeadDbRootsEliminated{
 using namespace mlir;
 using namespace mlir::func;
 using namespace mlir::arts;
-
-static const AnalysisKind kDbTransforms_reads[] = {AnalysisKind::DbAnalysis,
-                                                   AnalysisKind::EdtAnalysis};
-static const AnalysisKind kDbTransforms_invalidates[] = {
-    AnalysisKind::DbAnalysis};
-[[maybe_unused]] static const AnalysisDependencyInfo kDbTransforms_deps = {
-    kDbTransforms_reads, kDbTransforms_invalidates};
 
 namespace {
 struct DbTransformsPass : public impl::DbTransformsBase<DbTransformsPass> {

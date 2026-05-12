@@ -901,7 +901,7 @@ bool PartitionBoundsAnalyzer::shouldPreserveDistributedContract(
   if (!explicitBlockMode)
     return false;
 
-  auto [edt, blockArg] = getEdtBlockArgumentForAcquire(acquire);
+  auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
   auto distributionKind =
       edt ? getEdtDistributionKind(edt.getOperation()) : std::nullopt;
   auto distributionPattern =

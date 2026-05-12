@@ -4,7 +4,6 @@
 ///==========================================================================///
 
 #include "arts/dialect/core/Analysis/db/DbAliasAnalysis.h"
-#include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Analysis/graphs/db/DbGraph.h"
 #include "arts/dialect/core/Analysis/graphs/db/DbNode.h"
 #include "arts/utils/Utils.h"
@@ -13,24 +12,25 @@
 #include "arts/utils/Debug.h"
 ARTS_DEBUG_SETUP(db_alias_analysis);
 
-#include <algorithm>
+#include <cassert>
 #include <optional>
-#include <utility>
 
 using namespace mlir;
 using namespace mlir::arts;
 
 namespace {
-std::pair<Value, Value> makeOrderedPair(Value a, Value b) {
-  /// Use pointer comparison for ordering
-  return a.getAsOpaquePointer() < b.getAsOpaquePointer() ? std::make_pair(a, b)
-                                                         : std::make_pair(b, a);
-}
-
 struct ConstantSlice {
   SmallVector<int64_t, 4> offsets;
   SmallVector<int64_t, 4> sizes;
 };
+
+const DbAllocNode *getRootAlloc(const NodeBase &node) {
+  if (auto *acquire = dyn_cast<DbAcquireNode>(&node))
+    return acquire->getRootAlloc();
+  if (auto *alloc = dyn_cast<DbAllocNode>(&node))
+    return alloc;
+  return nullptr;
+}
 
 std::optional<ConstantSlice> extractConstantSlice(DbAcquireOp op) {
   ConstantSlice slice;
@@ -133,11 +133,6 @@ refineOverlapWithPartitionRanges(const DbAcquireNode *a,
 
 } // namespace
 
-DbAliasAnalysis::DbAliasAnalysis(DbAnalysis *analysis) {
-  assert(analysis && "Analysis cannot be null");
-  dbAnalysis = analysis;
-}
-
 static const char *aliasResultToString(DbAliasAnalysis::AliasResult res) {
   switch (res) {
   case DbAliasAnalysis::AliasResult::NoAlias:
@@ -153,14 +148,11 @@ static const char *aliasResultToString(DbAliasAnalysis::AliasResult res) {
 ///===----------------------------------------------------------------------===///
 /// Alias Classification - Main Entry Point
 ///
-/// This method implements a multi-stage alias analysis pipeline:
-/// 1. Check cache for previous result
-/// 2. Compare underlying allocation roots
-/// 3. Analyze slice information (offsets, sizes)
-/// 4. Apply metadata-based refinement
-/// 5. Use access pattern analysis
-/// 6. Perform detailed offset range comparison
-/// 7. Fall back to conservative overlap estimation
+/// This method implements memory-region aliasing for DB graph nodes:
+/// 1. Identical nodes must alias.
+/// 2. Different root allocations do not alias.
+/// 3. Acquires on the same root are refined by slice/partition overlap.
+/// 4. Everything else is conservatively may-alias.
 ///
 /// Returns: NoAlias (definitely disjoint), MustAlias (identical), or
 ///          MayAlias (possibly overlapping, conservative)
@@ -168,191 +160,38 @@ static const char *aliasResultToString(DbAliasAnalysis::AliasResult res) {
 DbAliasAnalysis::AliasResult
 DbAliasAnalysis::classifyAlias(const NodeBase &a, const NodeBase &b,
                                const std::string &indent) {
-  Value ptrA = getUnderlyingValue(a);
-  Value ptrB = getUnderlyingValue(b);
-
   ARTS_INFO("Analyzing alias between: " << a.getHierId() << " -- "
                                         << b.getHierId());
 
-  /// Check cache
-  auto key = makeOrderedPair(ptrA, ptrB);
-  auto it = aliasCache.find(key);
-  if (it != aliasCache.end()) {
-    ARTS_INFO("  Result: " << aliasResultToString(it->second) << " (cache hit)"
-                           << indent);
-    return it->second;
-  }
-
-  /// Same value aliases with itself
-  if (ptrA == ptrB) {
-    aliasCache[key] = AliasResult::MustAlias;
-    ARTS_INFO("  Result: MUST ALIAS (same pointer)" << indent);
+  if (&a == &b || a.getOp() == b.getOp()) {
+    ARTS_INFO("  Result: MUST ALIAS (same node)" << indent);
     return AliasResult::MustAlias;
   }
 
-  /// Start with conservative assumption (may alias)
-  AliasResult result = AliasResult::MayAlias;
-  ARTS_INFO("  Step 1: Checking slice information" << indent);
+  const DbAllocNode *allocA = getRootAlloc(a);
+  const DbAllocNode *allocB = getRootAlloc(b);
+  if (allocA && allocB && allocA != allocB) {
+    ARTS_INFO("  Result: NO ALIAS (different DB roots)" << indent);
+    return AliasResult::NoAlias;
+  }
 
-  /// Use metadata for quick alias refinement
-  if (result == AliasResult::MayAlias) {
-    /// Get root alloc nodes for metadata access
-    auto getRootAlloc = [](const NodeBase &n) -> const DbAllocNode * {
-      if (auto *acq = dyn_cast<DbAcquireNode>(&n))
-        return acq->getRootAlloc();
-      if (auto *alloc = dyn_cast<DbAllocNode>(&n))
-        return alloc;
-      return nullptr;
-    };
-
-    auto *allocA = getRootAlloc(a);
-    auto *allocB = getRootAlloc(b);
-
-    /// Use metadata to quickly rule out aliases
-    if (allocA && allocB && allocA != allocB) {
-      bool metadataRefinement = false;
-
-      /// Different access patterns suggest different regions
-      if (allocA->dominantAccessPattern && allocB->dominantAccessPattern) {
-        auto patA = *allocA->dominantAccessPattern;
-        auto patB = *allocB->dominantAccessPattern;
-
-        /// Sequential + Random -> likely disjoint
-        if ((patA == AccessPatternType::Sequential &&
-             patB == AccessPatternType::Random) ||
-            (patA == AccessPatternType::Random &&
-             patB == AccessPatternType::Sequential)) {
-          ARTS_INFO("  Metadata: Different access patterns (Sequential vs "
-                    "Random) suggest NoAlias"
-                    << indent);
-          result = AliasResult::NoAlias;
-          metadataRefinement = true;
-        }
-      }
-
-      /// Very different spatial locality -> likely different regions
-      if (!metadataRefinement && allocA->spatialLocality &&
-          allocB->spatialLocality) {
-        auto locA = *allocA->spatialLocality;
-        auto locB = *allocB->spatialLocality;
-
-        if ((locA == SpatialLocalityLevel::Excellent &&
-             locB == SpatialLocalityLevel::Poor) ||
-            (locA == SpatialLocalityLevel::Poor &&
-             locB == SpatialLocalityLevel::Excellent)) {
-          ARTS_INFO("  Metadata: Very different spatial locality suggests "
-                    "different regions"
-                    << indent);
-          /// Don't set to NoAlias, but note the hint
-        }
-      }
-
-      /// Very different temporal locality -> different access times
-      if (!metadataRefinement && allocA->temporalLocality &&
-          allocB->temporalLocality) {
-        auto tempA = *allocA->temporalLocality;
-        auto tempB = *allocB->temporalLocality;
-
-        if ((tempA == TemporalLocalityLevel::Excellent &&
-             tempB == TemporalLocalityLevel::Poor) ||
-            (tempA == TemporalLocalityLevel::Poor &&
-             tempB == TemporalLocalityLevel::Excellent)) {
-          ARTS_INFO("  Metadata: Very different temporal locality noted"
-                    << indent);
-        }
-      }
-
-      if (metadataRefinement) {
-        ARTS_INFO("  Step 1.5 Result: Refined using metadata" << indent);
-      }
+  const auto *acqA = dyn_cast<DbAcquireNode>(&a);
+  const auto *acqB = dyn_cast<DbAcquireNode>(&b);
+  if (acqA && acqB) {
+    OverlapKind overlap = estimateOverlap(acqA, acqB);
+    if (overlap == OverlapKind::Disjoint) {
+      ARTS_INFO("  Result: NO ALIAS (disjoint DB slices)" << indent);
+      return AliasResult::NoAlias;
+    }
+    if (overlap == OverlapKind::Full) {
+      ARTS_INFO("  Result: MUST ALIAS (same DB slice)" << indent);
+      return AliasResult::MustAlias;
     }
   }
 
-  /// If still unknown, use our overlap estimator for acquires
-  if (result == AliasResult::MayAlias) {
-    const auto *acqA = dyn_cast<DbAcquireNode>(&a);
-    const auto *acqB = dyn_cast<DbAcquireNode>(&b);
-    if (acqA && acqB) {
-      if (auto sliceResult = refineAliasWithSlices(acqA, acqB)) {
-        if (*sliceResult != AliasResult::MayAlias) {
-          ARTS_INFO("  Step 2: Constant slice refinement -> "
-                    << aliasResultToString(*sliceResult) << indent);
-          result = *sliceResult;
-        }
-      }
-    }
-
-    if (acqA && acqB) {
-      ARTS_INFO("  Step 2a: Using DbAliasAnalysis::estimateOverlap" << indent);
-      auto k = estimateOverlap(acqA, acqB);
-      const char *kindStr = k == OverlapKind::Disjoint  ? "DISJOINT"
-                            : k == OverlapKind::Partial ? "PARTIAL"
-                            : k == OverlapKind::Full    ? "FULL"
-                                                        : "UNKNOWN";
-      ARTS_INFO("  Step 2a Result: " << kindStr << indent);
-
-      if (k == OverlapKind::Disjoint)
-        result = AliasResult::NoAlias;
-      else if (k == OverlapKind::Full)
-        result = AliasResult::MustAlias;
-    }
-
-    /// Step 2b: Partition range disjointness from depend-clause partition
-    /// offsets/sizes. These are element-space ranges and may prove disjointness
-    /// even when regular offsets/sizes are dynamic or absent.
-    if (result == AliasResult::MayAlias && acqA && acqB) {
-      if (auto partResult = refineOverlapWithPartitionRanges(acqA, acqB)) {
-        if (*partResult == OverlapKind::Disjoint) {
-          ARTS_INFO("  Step 2b: Partition range disjointness -> NoAlias"
-                    << indent);
-          result = AliasResult::NoAlias;
-        }
-      }
-    }
-
-    /// Step 2c: Contract-based refinement via DbAnalysis.
-    /// When both acquires are on the same allocation and have ownerDims from
-    /// their lowering contracts, matching ownerDims with disjoint partition
-    /// ranges proves non-overlap.
-    if (result == AliasResult::MayAlias && acqA && acqB && dbAnalysis) {
-      auto summaryA =
-          dbAnalysis->getAcquireContractSummary(acqA->getDbAcquireOp());
-      auto summaryB =
-          dbAnalysis->getAcquireContractSummary(acqB->getDbAcquireOp());
-      if (summaryA && summaryB &&
-          !summaryA->contract.spatial.ownerDims.empty() &&
-          !summaryB->contract.spatial.ownerDims.empty()) {
-        /// Same ownerDims; disjointness was not proved above. Log for
-        /// diagnostics.
-        if (summaryA->contract.spatial.ownerDims ==
-            summaryB->contract.spatial.ownerDims) {
-          ARTS_DEBUG("  Step 2c: Both acquires share ownerDims (count="
-                     << summaryA->contract.spatial.ownerDims.size()
-                     << "), partition on same dims");
-        }
-      }
-    }
-  }
-
-  /// Cache the result
-  aliasCache[key] = result;
-  ARTS_INFO("  => FINAL RESULT: " << aliasResultToString(result) << " (cached)"
-                                  << indent);
-  return result;
-}
-
-Value DbAliasAnalysis::getUnderlyingValue(const NodeBase &node) {
-  Operation *op = node.getOp();
-  if (isa<DbAllocOp>(op)) {
-    return op->getResult(0);
-  } else if (isa<DbAcquireOp>(op)) {
-    Value sourcePtr = cast<DbAcquireOp>(op).getSourcePtr();
-    return ValueAnalysis::getUnderlyingValue(sourcePtr);
-  } else if (isa<DbReleaseOp>(op)) {
-    Value source = cast<DbReleaseOp>(op).getSource();
-    return ValueAnalysis::getUnderlyingValue(source);
-  }
-  ARTS_UNREACHABLE("Invalid DB node type");
+  ARTS_INFO("  Result: " << aliasResultToString(AliasResult::MayAlias)
+                         << indent);
+  return AliasResult::MayAlias;
 }
 
 DbAliasAnalysis::OverlapKind
@@ -373,18 +212,6 @@ DbAliasAnalysis::estimateOverlap(const DbAcquireNode *a,
   if (opA && opB) {
     if (opA.getPtr() == opB.getPtr())
       return OverlapKind::Full;
-    if (opA.getSourcePtr() && opB.getSourcePtr() &&
-        opA.getSourcePtr() == opB.getSourcePtr())
-      return OverlapKind::Full;
-  }
-
-  if (a->endIndex < b->beginIndex || b->endIndex < a->beginIndex)
-    return OverlapKind::Disjoint;
-
-  /// Partition range disjointness: when both acquires have constant partition
-  /// offsets and sizes on the same allocation, check if their partition ranges
-  /// are provably disjoint in any dimension.
-  if (opA && opB && allocA && allocB && allocA == allocB) {
     if (auto sliceResult = refineAliasWithSlices(a, b)) {
       if (*sliceResult == AliasResult::NoAlias)
         return OverlapKind::Disjoint;
@@ -403,5 +230,3 @@ DbAliasAnalysis::estimateOverlap(const DbAcquireNode *a,
 
   return OverlapKind::Partial;
 }
-
-void DbAliasAnalysis::resetCache() { aliasCache.clear(); }

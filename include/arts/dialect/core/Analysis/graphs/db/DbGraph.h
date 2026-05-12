@@ -35,7 +35,6 @@ public:
   ~DbGraph();
 
   void build();
-  void buildNodesOnly();
   void invalidate();
   void print(llvm::raw_ostream &os);
   llvm::json::Value exportToJsonValue(bool includeAnalysis = false) const;
@@ -54,9 +53,6 @@ public:
   /// Apply a function to every node (alloc/acquire)
   void forEachAllocNode(const std::function<void(DbAllocNode *)> &fn) const;
   void forEachAcquireNode(const std::function<void(DbAcquireNode *)> &fn) const;
-
-  /// Get allocation info for a given allocation operation
-  const DbAllocNode &getAllocInfo(DbAllocOp alloc) const;
 
   /// Get operation order for ordering comparisons
   unsigned getOpOrder(Operation *op) const {

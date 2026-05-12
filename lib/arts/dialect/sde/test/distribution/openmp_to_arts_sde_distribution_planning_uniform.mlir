@@ -4,6 +4,9 @@
 // Verify that SDE authors a blocked distribution advisory for a local
 // elementwise loop, and that ConvertSdeToArts materializes that advisory as an
 // ARTS distribution kind without leaving `arts_sde.su_distribute` in the IR.
+// It should also author the physical DB layout for independent output-vector
+// loops whose bodies contain loop-local scratch/reduction work and therefore
+// are not classified as pure elementwise linalg kernels.
 
 // SDE-LABEL: // -----// IR Dump After ScopeSelection (scope-selection) //----- //
 // SDE: func.func @main
@@ -16,6 +19,13 @@
 // SDE: arts_sde.cu_region <parallel> scope(<local>) {
 // SDE: arts_sde.su_distribute <blocked> {
 // SDE: arts_sde.su_iterate (%c0) to (%c128) step (%{{.+}}) classification(<elementwise>) {
+
+// SDE-LABEL: func.func @sample_map_with_scratch
+// SDE: arts_sde.su_distribute <blocked> {
+// SDE: arts_sde.su_iterate
+// SDE: } {arts.plan.iteration_topology = "owner_strip", arts.plan.kernel_family = "uniform"
+// SDE-SAME: arts.plan.owner_dims = [0]
+// SDE-SAME: arts.plan.physical_block_shape = [8]
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
@@ -45,4 +55,38 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     }
     return
   }
+
+  func.func @sample_map_with_scratch() -> i32 attributes {llvm.linkage = #llvm.linkage<external>} {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c4 = arith.constant 4 : index
+    %c64 = arith.constant 64 : index
+    %c0_i32 = arith.constant 0 : i32
+    %cst = arith.constant 0.000000e+00 : f64
+    %out = memref.alloc() : memref<64xf64>
+    omp.parallel {
+      omp.wsloop {
+        omp.loop_nest (%s) : index = (%c0) to (%c64) step (%c1) {
+          %scratch = memref.alloc() : memref<4xf64>
+          memref.store %cst, %scratch[%c0] : memref<4xf64>
+          scf.for %i = %c0 to %c4 step %c1 {
+            %v = memref.load %scratch[%c0] : memref<4xf64>
+            %next = arith.addf %v, %cst : f64
+            memref.store %next, %scratch[%c0] : memref<4xf64>
+          }
+          %sum = memref.load %scratch[%c0] : memref<4xf64>
+          memref.store %sum, %out[%s] : memref<64xf64>
+          memref.dealloc %scratch : memref<4xf64>
+          omp.yield
+        }
+      }
+      omp.terminator
+    }
+    %check = memref.load %out[%c0] : memref<64xf64>
+    func.call @use(%check) : (f64) -> ()
+    memref.dealloc %out : memref<64xf64>
+    return %c0_i32 : i32
+  }
+
+  func.func private @use(f64) attributes {llvm.linkage = #llvm.linkage<external>}
 }

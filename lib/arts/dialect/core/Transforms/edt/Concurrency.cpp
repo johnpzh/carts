@@ -17,7 +17,6 @@
 ///==========================================================================///
 
 #include "arts/Dialect.h"
-#include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/graphs/edt/EdtNode.h"
 #define GEN_PASS_DEF_CONCURRENCY
@@ -34,14 +33,6 @@
 ARTS_DEBUG_SETUP(concurrency)
 
 using namespace mlir::arts;
-
-static const AnalysisKind kConcurrency_reads[] = {
-    AnalysisKind::DbAnalysis, AnalysisKind::EdtAnalysis,
-    AnalysisKind::EdtHeuristics, AnalysisKind::RuntimeConfig};
-static const AnalysisKind kConcurrency_invalidates[] = {
-    AnalysisKind::DbAnalysis};
-[[maybe_unused]] static const AnalysisDependencyInfo kConcurrency_deps = {
-    kConcurrency_reads, kConcurrency_invalidates};
 
 static llvm::Statistic numEdtsAssignedInternode{
     "concurrency", "NumEdtsAssignedInternode",

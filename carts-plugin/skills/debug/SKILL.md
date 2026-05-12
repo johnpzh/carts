@@ -1,8 +1,7 @@
 ---
 name: carts-debug
-description: General CARTS debugging entrypoint for compiler or runtime issues when the failure is not yet clearly classified. Use when the user asks to debug, diagnose, inspect, troubleshoot, profile, or analyze CARTS behavior and you still need to determine whether the issue is a miscompile, runtime failure, benchmark regression, or analysis/invalidation bug.
+description: Use when the user asks to debug, diagnose, inspect, troubleshoot, profile, or analyze CARTS behavior and the failure is not yet classified.
 user-invocable: true
-workflow: workflows/master_debugger.py
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<input-file>]
 parameters:

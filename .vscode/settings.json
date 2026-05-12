@@ -3,5 +3,8 @@
     "EDTIR",
     "EDTMDs"
   ],
+  "git.ignoredRepositories": [
+    "/home/raherrer/projects/carts/external/Polygeist/llvm-project"
+  ],
   "makefile.configureOnOpen": false
 }

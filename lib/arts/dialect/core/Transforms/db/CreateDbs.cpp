@@ -43,7 +43,6 @@
 ///==========================================================================///
 
 #include "arts/Dialect.h"
-#include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
@@ -87,11 +86,6 @@
 ARTS_DEBUG_SETUP(create_dbs);
 
 using namespace mlir::arts;
-
-static const AnalysisKind kCreateDbs_reads[] = {AnalysisKind::DbAnalysis,
-                                                AnalysisKind::DbHeuristics};
-[[maybe_unused]] static const AnalysisDependencyInfo kCreateDbs_deps = {
-    kCreateDbs_reads, {}};
 
 static llvm::Statistic numDbAllocsCreated{
     "create_dbs", "NumDbAllocsCreated",
@@ -504,13 +498,15 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
   if (!alloc || alloc->getNumResults() == 0)
     return nullptr;
 
-  auto touchesAlloc = [&](Operation *root) {
+  auto writesAlloc = [&](Operation *root) {
     bool found = false;
     root->walk([&](Operation *nested) {
       if (found)
         return WalkResult::interrupt();
       auto access = DbUtils::getMemoryAccessInfo(nested);
       if (!access)
+        return WalkResult::advance();
+      if (!access->isWrite())
         return WalkResult::advance();
       Operation *underlying =
           ValueAnalysis::getUnderlyingOperation(access->memref);
@@ -527,7 +523,7 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
   module.walk([&](ForOp forOp) {
     if (!hasPhysicalDbLayoutPlan(forOp.getOperation()))
       return WalkResult::advance();
-    if (!touchesAlloc(forOp.getOperation()))
+    if (!writesAlloc(forOp.getOperation()))
       return WalkResult::advance();
     selected = forOp.getOperation();
     return WalkResult::interrupt();
@@ -538,7 +534,7 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
   module.walk([&](EdtOp edt) {
     if (!hasPhysicalDbLayoutPlan(edt.getOperation()))
       return WalkResult::advance();
-    if (!touchesAlloc(edt.getOperation()))
+    if (!writesAlloc(edt.getOperation()))
       return WalkResult::advance();
     selected = edt.getOperation();
     return WalkResult::interrupt();

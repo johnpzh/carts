@@ -33,7 +33,7 @@ dekk carts build --arts --debug 3      # Build ARTS with full debug logging
 # Testing
 dekk carts compile simple.cpp -o simple # Full compilation pipeline
 dekk carts test                        # Run all tests
-dekk carts lit tests/contracts/<file>.mlir # Run focused lit regressions
+dekk carts lit lib/arts/dialect/core/test/<file>.mlir # Run focused lit regressions
 dekk carts lit --suite contracts       # Run the maintained contracts suite
 make check-doc-flags                   # Validate docs flags against carts-compile options
 
@@ -58,17 +58,17 @@ dekk carts install                                        # setup + build
 
 dekk auto-detects the project, creates or syncs the conda environment from
 `environment.yml`, activates `.dekk.toml` paths/env vars, installs the
-bootstrap `clang`/`clang++` toolchain for the LLVM 23 build, and builds the
-rest of the stack. Add `--wrap` to generate the optional project-local
+bootstrap `clang`/`clang++` toolchain for the pinned LLVM/MLIR build, and
+builds the rest of the stack. Add `--wrap` to generate the optional project-local
 `./.install/carts` wrapper. Dekk does not modify your shell `PATH` as part of
 `dekk carts install`.
 
-Agent configuration is managed through dekk:
+Agent skill configuration is managed through dekk:
 
 ```bash
-dekk carts agents status
-dekk carts agents generate
-dekk carts agents install
+dekk carts skills status
+dekk carts skills generate
+dekk carts skills list
 ```
 
 ### Key Commands
@@ -99,17 +99,17 @@ Follow LLVM conventions:
 
 ## Testing Guidelines
 
-1. **MLIR regression tests** → `tests/contracts/<area>/`
-   - Use `// RUN: %carts opt ...` with FileCheck
+1. **MLIR regression tests** → `lib/arts/dialect/<dialect>/test/`
+   - Use the nearby lit style and FileCheck patterns
    - Cover new ops/passes with positive and negative cases
 
-2. **Integration tests** → `tests/examples/<name>/`
-   - Include source files, `arts.cfg`, and expected MLIR
-   - Document in per-directory README
+2. **End-to-end tests** → `tests/e2e/` and `tests/e2e_multinode/`
+   - Use focused cases for compile-and-run behavior
+   - Keep sample source programs in `samples/`
 
-3. **Always run** `dekk carts lit tests/contracts/<changed-test>.mlir` for focused compiler changes, and `dekk carts test` before submitting
-4. **For distributed changes**, run the 3-mode benchmark workflow in:
-   - `docs/benchmarks/modes.md`
+3. **Always run** `dekk carts lit <changed-test>` for focused compiler changes, and `dekk carts test` before submitting
+4. **For distributed changes**, run the smallest local case first, then the
+   relevant `tests/e2e_multinode/` or benchmark workflow.
 
 ## Commit Guidelines
 

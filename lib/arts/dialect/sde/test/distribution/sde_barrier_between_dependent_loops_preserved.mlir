@@ -13,10 +13,17 @@
 // SDE: arts_sde.su_barrier
 // SDE-NOT: barrier_eliminated
 // SDE: arts_sde.su_iterate
+// SDE-LABEL: func.func @write_after_write_preserved
+// SDE: arts_sde.su_iterate
+// SDE: arts_sde.su_barrier
+// SDE-NOT: barrier_eliminated
+// SDE: arts_sde.su_iterate
 
 // After ConvertSdeToArts, arts.barrier must be present
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
+// ARTS: arts.barrier
+// ARTS-LABEL: func.func @write_after_write_preserved
 // ARTS: arts.barrier
 // ARTS-NOT: arts_sde.
 
@@ -43,6 +50,36 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f32, dense<32> : 
           %v = memref.load %B[%i] : memref<128xf32>
           %r = arith.mulf %v, %cst : f32
           memref.store %r, %A[%i] : memref<128xf32>
+          omp.yield
+        }
+      }
+      omp.terminator
+    }
+    return
+  }
+
+  func.func @write_after_write_preserved(%A: memref<128xf32>, %B: memref<128xf32>) {
+    %c0 = arith.constant 0 : index
+    %c128 = arith.constant 128 : index
+    %c1 = arith.constant 1 : index
+    %cst = arith.constant 2.0 : f32
+    omp.parallel {
+      // Loop A writes B.
+      omp.wsloop {
+        omp.loop_nest (%i) : index = (%c0) to (%c128) step (%c1) {
+          %v = memref.load %A[%i] : memref<128xf32>
+          %r = arith.addf %v, %cst : f32
+          memref.store %r, %B[%i] : memref<128xf32>
+          omp.yield
+        }
+      }
+      // Loop B also writes B. The barrier orders the final value; removing it
+      // would make the two writer loops race.
+      omp.wsloop {
+        omp.loop_nest (%i) : index = (%c0) to (%c128) step (%c1) {
+          %v = memref.load %A[%i] : memref<128xf32>
+          %r = arith.mulf %v, %cst : f32
+          memref.store %r, %B[%i] : memref<128xf32>
           omp.yield
         }
       }

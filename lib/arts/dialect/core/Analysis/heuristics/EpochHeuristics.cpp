@@ -7,10 +7,10 @@
 ///==========================================================================///
 
 #include "arts/dialect/core/Analysis/heuristics/EpochHeuristics.h"
-#include "arts/dialect/core/Analysis/KernelFamily.h"
 #include "arts/utils/DbUtils.h"
 #include "arts/utils/LoopUtils.h"
 #include "arts/utils/OperationAttributes.h"
+#include "arts/utils/PlanContract.h"
 #include "arts/utils/StencilAttributes.h"
 #include "arts/utils/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"

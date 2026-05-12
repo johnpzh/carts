@@ -46,9 +46,6 @@ public:
   double getHaloExchangeCostPerByte() const override {
     return machine.isDistributed() ? 0.5 : 0.01;
   }
-  double getAllocationCost() const override {
-    return machine.isDistributed() ? 2000.0 : 1500.0;
-  }
 
   // --- Scheduling ---
   double getSchedulingOverhead(sde::SdeScheduleKind kind,
@@ -67,16 +64,7 @@ public:
 
   // --- Hardware parameters ---
   int getVectorWidth() const override { return 4; } // 256-bit SIMD / 64-bit
-  int getCacheLineSize() const override { return 64; }
-  int64_t getL1CacheSize() const override { return 32768; }  // 32KB
   int64_t getL2CacheSize() const override { return 262144; } // 256KB
-
-  // --- Reduction splitting ---
-  int64_t getReductionSplitFactor(int64_t tripCount) const override {
-    return std::max<int64_t>(
-        1, std::min<int64_t>(tripCount,
-                             static_cast<int64_t>(getWorkerCount()) / 4));
-  }
 
   // --- Topology ---
   int getWorkerCount() const override {

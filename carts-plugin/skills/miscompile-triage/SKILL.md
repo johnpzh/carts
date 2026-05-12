@@ -1,8 +1,7 @@
 ---
 name: carts-miscompile-triage
-description: Triage CARTS wrong-code bugs by comparing OpenMP vs ARTS behavior, bisecting the pipeline, inspecting DB/distribution contracts, and isolating the first stage where semantics diverge. Use when a program compiles but produces wrong output, checksum mismatches, phase-equivalence failures, or suspicious partitioning/distribution decisions.
+description: Use when a program compiles but produces wrong output, checksum mismatches, phase-equivalence failures, or suspicious partitioning/distribution decisions.
 user-invocable: true
-workflow: workflows/edt_lifecycle_debugger.py
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<input-file | benchmark-path>]
 parameters:

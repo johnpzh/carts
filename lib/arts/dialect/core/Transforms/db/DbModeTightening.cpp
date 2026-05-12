@@ -22,7 +22,6 @@
 #include "mlir/IR/Dominance.h"
 /// Arts
 #include "arts/Dialect.h"
-#include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/OwnershipProof.h"
 #include "arts/dialect/core/Analysis/graphs/db/DbGraph.h"
@@ -49,13 +48,6 @@ using namespace mlir::arts;
 #include "arts/passes/Passes.h.inc"
 
 ARTS_DEBUG_SETUP(db_mode_tightening);
-
-static const AnalysisKind kDbModeTightening_reads[] = {
-    AnalysisKind::DbAnalysis, AnalysisKind::LoopAnalysis};
-static const AnalysisKind kDbModeTightening_invalidates[] = {
-    AnalysisKind::DbAnalysis};
-[[maybe_unused]] static const AnalysisDependencyInfo kDbModeTightening_deps = {
-    kDbModeTightening_reads, kDbModeTightening_invalidates};
 
 #include "llvm/ADT/Statistic.h"
 static llvm::Statistic numAcquiresTightenedToRead{

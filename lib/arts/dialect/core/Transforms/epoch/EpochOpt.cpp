@@ -7,7 +7,6 @@
 
 #define GEN_PASS_DEF_EPOCHOPT
 
-#include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Transforms/EpochOptInternal.h"
 #include "arts/passes/Passes.h"
@@ -19,14 +18,6 @@
 ARTS_DEBUG_SETUP(epoch_opt);
 
 using namespace mlir::arts;
-
-static const AnalysisKind kEpochOpt_reads[] = {AnalysisKind::EpochAnalysis};
-static const AnalysisKind kEpochOpt_invalidates[] = {
-    AnalysisKind::DbAnalysis,    AnalysisKind::EdtAnalysis,
-    AnalysisKind::EpochAnalysis, AnalysisKind::LoopAnalysis,
-    AnalysisKind::DbHeuristics,  AnalysisKind::EdtHeuristics};
-[[maybe_unused]] static const AnalysisDependencyInfo kEpochOpt_deps = {
-    kEpochOpt_reads, kEpochOpt_invalidates};
 
 using namespace mlir;
 using namespace mlir::arts::epoch_opt;

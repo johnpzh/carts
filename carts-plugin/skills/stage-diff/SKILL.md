@@ -1,6 +1,6 @@
 ---
 name: carts-stage-diff
-description: Compare MLIR IR between pipeline stages to find where semantics diverge, identify what a pass changed, or bisect which stage introduces a bug. Use when debugging miscompiles, verifying pass correctness, or understanding pipeline transformations.
+description: Use when debugging miscompiles, verifying pass correctness, comparing MLIR between pipeline stages, or finding where semantics diverge.
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Glob, Agent
 argument-hint: [<file> <stage1> <stage2> | bisect <file> | all <file>]

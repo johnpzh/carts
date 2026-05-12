@@ -1,8 +1,7 @@
 ---
 name: carts-runtime-triage
-description: Debug CARTS runtime failures in generated ARTS executables, including hangs, deadlocks, crashes, missing EDT completion, epoch stalls, distributed ownership issues, and counter anomalies. Use when compilation succeeds but the produced program fails only at runtime.
+description: Use when compilation succeeds but the generated ARTS executable hangs, deadlocks, crashes, stalls, or reports anomalous runtime counters.
 user-invocable: true
-workflow: workflows/edt_lifecycle_debugger.py
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<binary | benchmark-path>]
 parameters:

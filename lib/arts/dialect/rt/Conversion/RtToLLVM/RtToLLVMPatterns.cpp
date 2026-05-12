@@ -1520,6 +1520,10 @@ struct DepDbAcquireOpPattern : public ArtsToLLVMPattern<DepDbAcquireOp> {
     for (OpOperand &use : op.getGuid().getUses())
       if (isa<RecordDepOp>(use.getOwner()))
         return failure();
+    for (Operation *user : op.getPtr().getUsers())
+      if (auto acquire = dyn_cast<DbAcquireOp>(user))
+        if (!acquire.getSourceGuid())
+          return failure();
 
     ArtsCodegen::RewriterGuard RG(*AC, rewriter);
     auto loc = op.getLoc();

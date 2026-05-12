@@ -173,7 +173,7 @@ DbAcquireNode::DbAcquireNode(DbAcquireOp op, NodeBase *parent,
   }
 
   /// Use utility function to get EDT and block argument
-  auto [edt, blockArg] = getEdtBlockArgumentForAcquire(dbAcquireOp);
+  auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(dbAcquireOp);
   edtUserOp = edt.getOperation();
   useInEdt = blockArg;
 
@@ -673,68 +673,6 @@ bool DbAcquireNode::isWorkerIndexedAccess() const {
     return false;
 
   return isa<BlockArgument>(partitionIdx);
-}
-
-bool DbAcquireNode::hasDisjointPartitionWith(const DbAcquireNode *other) const {
-  if (!other)
-    return false;
-
-  DbAcquireOp acqA = dbAcquireOp;
-  DbAcquireOp acqB = other->getDbAcquireOp();
-  if (!acqA || !acqB)
-    return false;
-
-  auto getPartitionIdx = [](DbAcquireOp acq) -> Value {
-    if (!acq.getIndices().empty())
-      return acq.getIndices().front();
-    if (!acq.getOffsets().empty())
-      return acq.getOffsets().front();
-    return nullptr;
-  };
-  auto getPartitionSize = [](DbAcquireOp acq) -> Value {
-    if (!acq.getSizes().empty())
-      return acq.getSizes().front();
-    return nullptr;
-  };
-
-  Value partIdxA = getPartitionIdx(acqA);
-  Value partSizeA = getPartitionSize(acqA);
-  Value partIdxB = getPartitionIdx(acqB);
-  Value partSizeB = getPartitionSize(acqB);
-
-  if (!partIdxA || !partSizeA || !partIdxB || !partSizeB)
-    return false;
-
-  int64_t idxAVal = 0, sizeAVal = 0, idxBVal = 0, sizeBVal = 0;
-  if (ValueAnalysis::getConstantIndex(partIdxA, idxAVal) &&
-      ValueAnalysis::getConstantIndex(partSizeA, sizeAVal) &&
-      ValueAnalysis::getConstantIndex(partIdxB, idxBVal) &&
-      ValueAnalysis::getConstantIndex(partSizeB, sizeBVal)) {
-    if (sizeAVal == sizeBVal && idxAVal != idxBVal)
-      return true;
-    int64_t startA = idxAVal;
-    int64_t endA = startA + sizeAVal;
-    int64_t startB = idxBVal;
-    int64_t endB = startB + sizeBVal;
-    if (endA <= startB || endB <= startA)
-      return true;
-  }
-
-  int64_t sizeAConst = 0, sizeBConst = 0;
-  bool sizeAIsOne =
-      ValueAnalysis::getConstantIndex(partSizeA, sizeAConst) && sizeAConst == 1;
-  bool sizeBIsOne =
-      ValueAnalysis::getConstantIndex(partSizeB, sizeBConst) && sizeBConst == 1;
-
-  if (sizeAIsOne && sizeBIsOne) {
-    auto blockArgA = dyn_cast<BlockArgument>(partIdxA);
-    auto blockArgB = dyn_cast<BlockArgument>(partIdxB);
-    if (blockArgA && blockArgB && blockArgA != blockArgB &&
-        blockArgA.getOwner() != blockArgB.getOwner())
-      return true;
-  }
-
-  return false;
 }
 
 bool DbAcquireNode::accessIndexDependsOn(Value idx) {

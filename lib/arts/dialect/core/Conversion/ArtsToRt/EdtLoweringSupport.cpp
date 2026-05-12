@@ -95,14 +95,14 @@ void normalizeTaskDepSlice(ArtsCodegen *AC, DbAcquireOp acquire,
   }
 
   SmallVector<Value, 4> offsets, sizes;
-  convertElementSliceToBlockSlice(AC->getBuilder(), loc, dimElementOffsets,
+  DbUtils::convertElementSliceToBlockSlice(AC->getBuilder(), loc, dimElementOffsets,
                                   dimElementSizes, dimBlockSpans,
                                   dimTotalBlocks, offsets, sizes);
   SmallVector<Value, 4> mergedOffsets, mergedSizes;
   /// normalizeTaskDepSlice may refine only a leading owner-space prefix from
   /// partition_* metadata. Preserve the remaining owner slots so N-D acquires
   /// keep the same DB rank that DbPartitioning established.
-  mergeNormalizedBlockSlice(AC->getBuilder(), loc, acquire.getOffsets(),
+  DbUtils::mergeNormalizedBlockSlice(AC->getBuilder(), loc, acquire.getOffsets(),
                             acquire.getSizes(), outerSizes, offsets, sizes,
                             mergedOffsets, mergedSizes);
 

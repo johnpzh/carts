@@ -182,7 +182,6 @@ public:
 
   /// Operation accessors
   DbAllocOp getDbAllocOp() const { return dbAllocOp; }
-  DbFreeOp getDbFreeOp() const { return dbFreeOp; }
   bool isStringDatablock() const { return isStringBacked; }
   NodeKind getKind() const override { return NodeKind::DbAlloc; }
   static bool classof(const NodeBase *N) {
@@ -196,8 +195,6 @@ public:
 
   /// Patterns summary
   AcquirePatternSummary summarizeAcquirePatterns() const;
-  bool hasStencilAccess() const;
-  bool hasMixedAccessPatterns() const;
 
   /// Analysis metadata
   uint64_t inCount = 0, outCount = 0;
@@ -228,7 +225,6 @@ public:
 
 private:
   DbAllocOp dbAllocOp;
-  DbFreeOp dbFreeOp;
   Operation *op;
   DbAnalysis *analysis;
   std::string hierId;
@@ -357,9 +353,6 @@ public:
   /// sizes[1]. This pattern is inherently disjoint across workers.
   bool isWorkerIndexedAccess() const;
 
-  /// Check if this acquire has disjoint partition info with another acquire
-  bool hasDisjointPartitionWith(const DbAcquireNode *other) const;
-
   /// Check if any access index within this acquire depends on the given value.
   /// Used to validate that partition indices match actual memory accesses.
   bool accessIndexDependsOn(Value idx);
@@ -392,13 +385,6 @@ public:
     invalidatePartitionFacts();
   }
   bool getHasNonConstantOffset() const { return hasNonConstantOffset; }
-  void setAccessPatternCache(AccessPattern pat) const {
-    accessPattern = pat;
-    invalidatePartitionFacts();
-  }
-  const std::optional<AccessPattern> &getAccessPatternCache() const {
-    return accessPattern;
-  }
 
 private:
   friend class PartitionBoundsAnalyzer;

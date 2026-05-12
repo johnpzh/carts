@@ -1,8 +1,7 @@
 ---
 name: carts-analysis-triage
-description: Diagnose stale-analysis, invalidation, and pass-ordering bugs in CARTS by tracing AnalysisManager reads, invalidation boundaries, and phase dependencies. Use when behavior depends on pass order, graphs look stale, metadata is inconsistent, or a pass likely needs AnalysisDependencies or narrower invalidation.
+description: Use when behavior depends on pass order, graphs look stale, metadata is inconsistent, or a pass likely needs AnalysisDependencies or narrower invalidation.
 user-invocable: true
-workflow: workflows/pipeline_explorer.py
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<pass-name | file>]
 parameters:

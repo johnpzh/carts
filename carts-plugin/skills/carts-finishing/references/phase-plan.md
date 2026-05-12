@@ -196,5 +196,5 @@ Each sub-step must pass regression-guard against ALL samples and benchmarks in s
 | 6 | per item: `carts-distributed-triage` (always start here for multinode), then `carts-miscompile-triage` if the symptom reduces to wrong output |
 | 7 | `carts-benchmark-triage` |
 | 8 | `carts-distributed-triage` + `carts-benchmark-triage` |
-| 9 | `carts-refactor-utils`, `carts-pass-dev`; consult `carts-review-conventions` before merging |
+| 9 | `carts-refactor-utils`, `carts-pass-dev`; consult `carts-review` before merging |
 | 10 | none — direct user dialogue + git |

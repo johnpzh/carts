@@ -57,8 +57,7 @@ collectAllAcquireNodes(const SmallVector<std::unique_ptr<DbAcquireNode>, 4>
 /// DbAllocNode
 ///===----------------------------------------------------------------------===///
 DbAllocNode::DbAllocNode(DbAllocOp op, DbAnalysis *analysis)
-    : dbAllocOp(op), dbFreeOp(nullptr), op(op.getOperation()),
-      analysis(analysis) {
+    : dbAllocOp(op), op(op.getOperation()), analysis(analysis) {
   assert(op && "DbAllocOp is required to create DbAllocNode");
   assert(op.getOperation() && "Operation is required to create DbAllocNode");
 
@@ -67,14 +66,6 @@ DbAllocNode::DbAllocNode(DbAllocOp op, DbAnalysis *analysis)
     isStringBacked = stringAnalysis.isStringMemRef(address);
   }
 
-  /// Find the corresponding DbFreeOp for this DbAllocOp
-  Value dbVal = dbAllocOp.getPtr();
-  for (Operation *user : dbVal.getUsers()) {
-    if (auto freeOp = dyn_cast<DbFreeOp>(user)) {
-      dbFreeOp = freeOp;
-      break;
-    }
-  }
 }
 
 void DbAllocNode::print(llvm::raw_ostream &os) const {
@@ -418,9 +409,6 @@ bool DbAllocNode::canProveNonOverlapping() const {
           continue;
       }
 
-      if (acqA->hasDisjointPartitionWith(acqB))
-        continue;
-
       return false;
     }
   }
@@ -485,12 +473,4 @@ AcquirePatternSummary DbAllocNode::summarizeAcquirePatterns() const {
                                       << ", hasStencil=" << summary.hasStencil
                                       << ", hasIndexed=" << summary.hasIndexed);
   return summary;
-}
-
-bool DbAllocNode::hasStencilAccess() const {
-  return summarizeAcquirePatterns().hasStencil;
-}
-
-bool DbAllocNode::hasMixedAccessPatterns() const {
-  return summarizeAcquirePatterns().isMixed();
 }

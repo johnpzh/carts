@@ -121,7 +121,7 @@ void DbBlockRewriter::transformAcquire(const DbRewriteAcquire &info,
     acquire.getPtr().setType(newPtrType);
 
     /// Also update EDT block argument type if this acquire feeds an EDT
-    auto [edt, blockArg] = getEdtBlockArgumentForAcquire(acquire);
+    auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
     if (blockArg && blockArg.getType() != newPtrType)
       blockArg.setType(newPtrType);
   }
@@ -268,8 +268,8 @@ void DbBlockRewriter::transformAcquire(const DbRewriteAcquire &info,
     /// Check if single-block for this dimension
     auto constElemSz = ValueAnalysis::tryFoldConstantIndex(elemSz);
     auto constElemSzUpper =
-        constElemSz ? constElemSz : arts::extractBlockSizeFromHint(elemSz);
-    auto constBs = arts::extractBlockSizeFromHint(bs);
+        constElemSz ? constElemSz : arts::DbUtils::extractBlockSizeFromHint(elemSz);
+    auto constBs = arts::DbUtils::extractBlockSizeFromHint(bs);
     bool isAligned = arts::isAlignedToBlock(elemOff, bs);
     ARTS_DEBUG("  dim " << d << " elemOff=" << elemOff << " elemSz=" << elemSz
                         << " bs=" << bs << " blockCount=" << blockCount
@@ -419,7 +419,7 @@ bool DbBlockRewriter::rebaseEdtUsers(DbAcquireOp acquire, OpBuilder &builder,
   ARTS_DEBUG("DbBlockRewriter::rebaseEdtUsers (isSingleBlock=" << isSingleBlock
                                                                << ")");
 
-  auto [edt, blockArg] = getEdtBlockArgumentForAcquire(acquire);
+  auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
   Value localView = blockArg ? Value(blockArg) : acquire.getPtr();
   if (!edt)
     edt = acquire->getParentOfType<EdtOp>();

@@ -413,15 +413,25 @@ Operation *DbUtils::getUnderlyingDbAlloc(Value v) {
 }
 
 DbAllocOp DbUtils::getAllocOpFromGuid(Value dbGuid) {
+  if (!dbGuid)
+    return nullptr;
+
   if (auto dbAcquireOp = dbGuid.getDefiningOp<DbAcquireOp>())
-    return dbAcquireOp.getSourceGuid().getDefiningOp<DbAllocOp>();
+    return dbAcquireOp.getSourceGuid()
+               ? dbAcquireOp.getSourceGuid().getDefiningOp<DbAllocOp>()
+               : nullptr;
   if (auto depDbAcquireOp = dbGuid.getDefiningOp<DepDbAcquireOp>())
-    return depDbAcquireOp.getGuid().getDefiningOp<DbAllocOp>();
+    return depDbAcquireOp.getGuid()
+               ? depDbAcquireOp.getGuid().getDefiningOp<DbAllocOp>()
+               : nullptr;
   return nullptr;
 }
 
 std::optional<SmallVector<int64_t, 4>>
 DbUtils::getStaticDbOuterShape(Value dbHandle) {
+  if (!dbHandle)
+    return std::nullopt;
+
   auto dbAlloc = dbHandle.getDefiningOp<DbAllocOp>();
   if (!dbAlloc)
     return std::nullopt;
@@ -1021,11 +1031,7 @@ bool DbUtils::collectCleanupOnlyUseChain(Value source,
   return true;
 }
 
-///===----------------------------------------------------------------------===///
-/// Block Size and Malloc Pattern Extraction (free functions)
-///===----------------------------------------------------------------------===///
-
-void arts::convertElementSliceToBlockSlice(
+void arts::DbUtils::convertElementSliceToBlockSlice(
     OpBuilder &builder, Location loc, ValueRange elementOffsets,
     ValueRange elementSizes, ValueRange blockSpans, ValueRange totalBlockCounts,
     SmallVectorImpl<Value> &blockOffsets, SmallVectorImpl<Value> &blockSizes) {
@@ -1076,7 +1082,7 @@ void arts::convertElementSliceToBlockSlice(
   }
 }
 
-void arts::mergeNormalizedBlockSlice(
+void arts::DbUtils::mergeNormalizedBlockSlice(
     OpBuilder &builder, Location loc, ValueRange existingOffsets,
     ValueRange existingSizes, ValueRange totalBlockCounts,
     ValueRange normalizedOffsets, ValueRange normalizedSizes,
@@ -1123,14 +1129,8 @@ void arts::mergeNormalizedBlockSlice(
   }
 }
 
-///===----------------------------------------------------------------------===///
-/// Block Size and Malloc Pattern Extraction (free functions)
-///===----------------------------------------------------------------------===///
-
-namespace mlir {
-namespace arts {
-
-std::optional<int64_t> extractBlockSizeFromHint(Value sizeHint, int depth) {
+std::optional<int64_t> arts::DbUtils::extractBlockSizeFromHint(Value sizeHint,
+                                                               int depth) {
   if (!sizeHint || depth > 4)
     return std::nullopt;
 
@@ -1150,8 +1150,8 @@ std::optional<int64_t> extractBlockSizeFromHint(Value sizeHint, int depth) {
     if (rhsFolded)
       return rhsFolded;
 
-    auto lhsExtracted = extractBlockSizeFromHint(lhs, depth + 1);
-    auto rhsExtracted = extractBlockSizeFromHint(rhs, depth + 1);
+    auto lhsExtracted = DbUtils::extractBlockSizeFromHint(lhs, depth + 1);
+    auto rhsExtracted = DbUtils::extractBlockSizeFromHint(rhs, depth + 1);
     if (lhsExtracted && rhsExtracted)
       return std::max(*lhsExtracted, *rhsExtracted);
     if (lhsExtracted)
@@ -1178,15 +1178,17 @@ std::optional<int64_t> extractBlockSizeFromHint(Value sizeHint, int depth) {
 
     /// If one operand is a small constant (halo), recurse on the other.
     if (rhsFolded && std::abs(*rhsFolded) <= 16) {
-      return extractBlockSizeFromHint(addOp.getLhs(), depth + 1);
+      return DbUtils::extractBlockSizeFromHint(addOp.getLhs(), depth + 1);
     }
     if (lhsFolded && std::abs(*lhsFolded) <= 16) {
-      return extractBlockSizeFromHint(addOp.getRhs(), depth + 1);
+      return DbUtils::extractBlockSizeFromHint(addOp.getRhs(), depth + 1);
     }
 
     /// Both constants or both large — try both sides.
-    auto lhsExtracted = extractBlockSizeFromHint(addOp.getLhs(), depth + 1);
-    auto rhsExtracted = extractBlockSizeFromHint(addOp.getRhs(), depth + 1);
+    auto lhsExtracted =
+        DbUtils::extractBlockSizeFromHint(addOp.getLhs(), depth + 1);
+    auto rhsExtracted =
+        DbUtils::extractBlockSizeFromHint(addOp.getRhs(), depth + 1);
     if (lhsExtracted)
       return lhsExtracted;
     if (rhsExtracted)
@@ -1199,7 +1201,7 @@ std::optional<int64_t> extractBlockSizeFromHint(Value sizeHint, int depth) {
   if (auto subOp = sizeHint.getDefiningOp<arith::SubIOp>()) {
     auto rhsFolded = ValueAnalysis::tryFoldConstantIndex(subOp.getRhs());
     if (rhsFolded && std::abs(*rhsFolded) <= 16)
-      return extractBlockSizeFromHint(subOp.getLhs(), depth + 1);
+      return DbUtils::extractBlockSizeFromHint(subOp.getLhs(), depth + 1);
   }
 
   /// Case 5: maxui pattern — clamp minimum; return larger constant as upper
@@ -1211,21 +1213,25 @@ std::optional<int64_t> extractBlockSizeFromHint(Value sizeHint, int depth) {
     if (lhsFolded && rhsFolded)
       return std::max(*lhsFolded, *rhsFolded);
     if (lhsFolded && !rhsFolded) {
-      auto rhsExtracted = extractBlockSizeFromHint(maxOp.getRhs(), depth + 1);
+      auto rhsExtracted =
+          DbUtils::extractBlockSizeFromHint(maxOp.getRhs(), depth + 1);
       if (rhsExtracted)
         return rhsExtracted;
       return lhsFolded;
     }
     if (rhsFolded && !lhsFolded) {
-      auto lhsExtracted = extractBlockSizeFromHint(maxOp.getLhs(), depth + 1);
+      auto lhsExtracted =
+          DbUtils::extractBlockSizeFromHint(maxOp.getLhs(), depth + 1);
       if (lhsExtracted)
         return lhsExtracted;
       return rhsFolded;
     }
 
     /// Recurse for nested maxui.
-    auto lhsExtracted = extractBlockSizeFromHint(maxOp.getLhs(), depth + 1);
-    auto rhsExtracted = extractBlockSizeFromHint(maxOp.getRhs(), depth + 1);
+    auto lhsExtracted =
+        DbUtils::extractBlockSizeFromHint(maxOp.getLhs(), depth + 1);
+    auto rhsExtracted =
+        DbUtils::extractBlockSizeFromHint(maxOp.getRhs(), depth + 1);
     if (lhsExtracted && rhsExtracted)
       return std::max(*lhsExtracted, *rhsExtracted);
     if (lhsExtracted)
@@ -1236,6 +1242,3 @@ std::optional<int64_t> extractBlockSizeFromHint(Value sizeHint, int depth) {
 
   return std::nullopt;
 }
-
-} // namespace arts
-} // namespace mlir

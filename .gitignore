@@ -25,7 +25,7 @@ CMakeFiles/
 /agents/
 /.dekk/
 
-.cursor/*
+.cursor*/*
 !.cursor/rules/
 .codex/
 .vscode/
@@ -37,6 +37,9 @@ results/
 .results/
 .artsPrintLock
 .findings/
+
+# CARTS scratch outputs
+/.carts/outputs/
 
 # External dependencies
 external/*/build/
@@ -53,6 +56,8 @@ external/*/cmake_install.cmake
 !tests/contracts/*.mlir
 !tests/contracts/**/*.mlir
 !tests/contracts/partitioning/safety/specfem3d_stress_block_halo_contract.mlir
+!lib/arts/dialect/*/test/*.mlir
+!lib/arts/dialect/*/test/**/*.mlir
 
 # CARTS generated executables
 *_arts

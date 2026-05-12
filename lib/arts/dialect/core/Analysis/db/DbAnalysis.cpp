@@ -441,7 +441,7 @@ bool DbAnalysis::isTiling2DTaskAcquire(DbAcquireOp acquire) {
   }
   if (auto kind = getEdtDistributionKind(acquire.getOperation()))
     return *kind == EdtDistributionKind::tiling_2d;
-  auto [edt, blockArg] = getEdtBlockArgumentForAcquire(acquire);
+  auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
   (void)blockArg;
   if (!edt)
     return false;
@@ -451,7 +451,7 @@ bool DbAnalysis::isTiling2DTaskAcquire(DbAcquireOp acquire) {
 
 DbAnalysis::DbAnalysis(AnalysisManager &AM) : ArtsAnalysis(AM) {
   ARTS_DEBUG("Initializing DbAnalysis");
-  dbAliasAnalysis = std::make_unique<DbAliasAnalysis>(this);
+  dbAliasAnalysis = std::make_unique<DbAliasAnalysis>();
 }
 
 DbAnalysis::~DbAnalysis() { ARTS_DEBUG("Destroying DbAnalysis"); }
@@ -488,8 +488,6 @@ bool DbAnalysis::invalidateGraph(func::FuncOp func) {
       std::unique_lock<std::shared_mutex> summaryLock(accessSummaryMutex);
       loopAccessSummaryByOp.clear();
     }
-    if (dbAliasAnalysis)
-      dbAliasAnalysis->resetCache();
     return true;
   }
   return false;
@@ -503,8 +501,6 @@ void DbAnalysis::invalidate() {
     std::unique_lock<std::shared_mutex> summaryLock(accessSummaryMutex);
     loopAccessSummaryByOp.clear();
   }
-  if (dbAliasAnalysis)
-    dbAliasAnalysis->resetCache();
 }
 
 void DbAnalysis::print(func::FuncOp func) {
@@ -609,15 +605,15 @@ DbAnalysis::analyzeLoopDbAccessPatterns(ForOp forOp) {
         if (bounds.isStencil || bounds.minOffset != 0 ||
             bounds.maxOffset != 0) {
           combinedPattern =
-              mergeDbAccessPattern(combinedPattern, DbAccessPattern::stencil);
+              DbUtils::mergeAccessPattern(combinedPattern, DbAccessPattern::stencil);
           summary.hasStencilOffset = true;
         } else {
           combinedPattern =
-              mergeDbAccessPattern(combinedPattern, DbAccessPattern::uniform);
+              DbUtils::mergeAccessPattern(combinedPattern, DbAccessPattern::uniform);
         }
       } else if (bounds.hasVariableOffset) {
         combinedPattern =
-            mergeDbAccessPattern(combinedPattern, DbAccessPattern::indexed);
+            DbUtils::mergeAccessPattern(combinedPattern, DbAccessPattern::indexed);
       }
     }
 
@@ -625,7 +621,7 @@ DbAnalysis::analyzeLoopDbAccessPatterns(ForOp forOp) {
     if (it == summary.allocPatterns.end()) {
       summary.allocPatterns[allocOp] = combinedPattern;
     } else {
-      it->second = mergeDbAccessPattern(it->second, combinedPattern);
+      it->second = DbUtils::mergeAccessPattern(it->second, combinedPattern);
     }
   });
 
@@ -1436,40 +1432,7 @@ DbAcquireNode *DbAnalysis::getDbAcquireNode(DbAcquireOp acquire) {
 }
 
 bool DbAnalysis::hasDbConflict(Operation *a, Operation *b) {
-  if (!a || !b)
-    return false;
-
-  /// Collect DB accesses for each operation: alloc -> isWriter.
-  DenseMap<Operation *, bool> accessesA;
-  DenseMap<Operation *, bool> accessesB;
-
-  auto collectAccesses = [](Operation *op,
-                            DenseMap<Operation *, bool> &accesses) {
-    op->walk([&](DbAcquireOp acq) {
-      Operation *alloc = DbUtils::getUnderlyingDbAlloc(acq.getSourcePtr());
-      if (!alloc)
-        return;
-      bool write = DbUtils::isWriterMode(acq.getMode());
-      auto it = accesses.find(alloc);
-      if (it == accesses.end())
-        accesses[alloc] = write;
-      else if (write)
-        it->second = true;
-    });
-  };
-
-  collectAccesses(a, accessesA);
-  collectAccesses(b, accessesB);
-
-  /// Check for conflicts: same alloc, at least one writer.
-  for (const auto &entryA : accessesA) {
-    auto it = accessesB.find(entryA.first);
-    if (it == accessesB.end())
-      continue;
-    if (entryA.second || it->second)
-      return true;
-  }
-  return false;
+  return DbUtils::hasSharedWritableRootConflict(a, b);
 }
 
 ///===----------------------------------------------------------------------===///

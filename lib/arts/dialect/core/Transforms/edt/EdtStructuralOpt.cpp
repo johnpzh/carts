@@ -25,7 +25,6 @@
 #include "mlir/Support/LLVM.h"
 /// Arts
 #include "arts/Dialect.h"
-#include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Analysis/graphs/edt/EdtGraph.h"
@@ -49,11 +48,6 @@ using namespace mlir::arts;
 #include "arts/passes/Passes.h.inc"
 
 ARTS_DEBUG_SETUP(edt_structural_opt);
-
-static const AnalysisKind kEdtStructuralOpt_reads[] = {
-    AnalysisKind::EdtAnalysis, AnalysisKind::EdtHeuristics};
-[[maybe_unused]] static const AnalysisDependencyInfo kEdtStructuralOpt_deps = {
-    kEdtStructuralOpt_reads, {}};
 
 static llvm::Statistic numExternalAllocasSunkStat{
     "edt_structural_opt", "NumExternalAllocasSunk",
@@ -149,7 +143,7 @@ unsigned sinkExternalAllocasInEdt(EdtOp edt) {
           hasUnsafeStore = true;
           break;
         }
-        if (!canCloneAllocaInitStore(store, allocaOp.getResult())) {
+        if (!EdtUtils::canCloneAllocaInitStore(store, allocaOp.getResult())) {
           hasUnsafeStore = true;
           break;
         }
@@ -226,7 +220,7 @@ unsigned sinkExternalAllocasInEdt(EdtOp edt) {
 static unsigned fuseConsecutiveParallelEdts(Block &block,
                                             const EdtHeuristics &heuristics) {
   unsigned fusedPairs = 0;
-  (void)fuseConsecutivePairs<EdtOp>(
+  (void)EdtUtils::fuseConsecutivePairs<EdtOp>(
       block,
       [&](EdtOp a, EdtOp b) {
         ParallelEdtFusionDecision decision =
@@ -238,7 +232,7 @@ static unsigned fuseConsecutiveParallelEdts(Block &block,
       [&](EdtOp a, EdtOp b) {
         Block &firstBody = a.getBody().front();
         Block &secondBody = b.getBody().front();
-        spliceBodyBeforeTerminator(secondBody, firstBody);
+        EdtUtils::spliceBodyBeforeTerminator(secondBody, firstBody);
         ARTS_DEBUG("Fused consecutive parallel EDTs");
         ++fusedPairs;
         b.erase();
@@ -439,6 +433,12 @@ bool EdtStructuralOptPass::inlineNoDepEdts() {
     if (edt.getType() != arts::EdtType::task &&
         edt.getType() != arts::EdtType::sync)
       return;
+    /// A dependency-free task inside an epoch is still a scheduled unit of
+    /// parallel work. Inlining it into the epoch body serializes the dispatch
+    /// loop and erases the runtime work distribution that ForLowering/EDT
+    /// distribution just created.
+    if (EdtUtils::isInsideEpoch(edt))
+      return;
     if (!edt.getDependencies().empty())
       return;
     candidates.push_back(edt);
@@ -590,7 +590,7 @@ bool EdtStructuralOptPass::convertParallelIntoSingle(EdtOp &op) {
   /// If nested EDTs were present and we had a trailing barrier, wrap top-level
   /// tasks in an epoch to preserve ordering without relying on barriers.
   if (needsBarrier)
-    wrapBodyInEpoch(newEdt.getRegion().front(), op.getLoc());
+    EdtUtils::wrapBodyInEpoch(newEdt.getRegion().front(), op.getLoc());
 
   /// Replace the parallel EDT with the new EDT and erase the single EDT
   op->replaceAllUsesWith(newEdt);
@@ -738,7 +738,7 @@ bool EdtStructuralOptPass::convertParallelWithAcquiresToSync(
   /// If nested EDTs were present and we had a trailing barrier, wrap top-level
   /// tasks in an epoch to preserve ordering without relying on barriers.
   if (needsBarrier)
-    wrapBodyInEpoch(syncBody, loc);
+    EdtUtils::wrapBodyInEpoch(syncBody, loc);
 
   /// Add yield terminator if needed
   if (syncBody.empty() || !syncBody.back().hasTrait<OpTrait::IsTerminator>())

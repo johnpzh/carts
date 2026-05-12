@@ -128,7 +128,7 @@ void fuseEpochs(EpochOp first, EpochOp second) {
 
   Block &firstBlock = first.getBody().front();
   Block &secondBlock = second.getBody().front();
-  spliceBodyBeforeTerminator(secondBlock, firstBlock);
+  EdtUtils::spliceBodyBeforeTerminator(secondBlock, firstBlock);
 
   second.erase();
 }
@@ -148,7 +148,7 @@ bool isFusableWorkerLoop(scf::ForOp a, scf::ForOp b) {
 void fuseLoops(scf::ForOp first, scf::ForOp second) {
   Block &firstBody = first.getRegion().front();
   Block &secondBody = second.getRegion().front();
-  spliceBodyBeforeTerminator(secondBody, firstBody);
+  EdtUtils::spliceBodyBeforeTerminator(secondBody, firstBody);
 
   Value oldIv = secondBody.getArgument(0);
   Value newIv = firstBody.getArgument(0);
@@ -293,7 +293,7 @@ bool epochSupportsRepetitionAmortization(EpochOp epochOp) {
     ++edtCount;
     SmallVector<bool> argReads;
     SmallVector<bool> argWrites;
-    classifyEdtArgAccesses(edt, argReads, argWrites);
+    EdtUtils::classifyArgAccesses(edt, argReads, argWrites);
 
     ValueRange deps = edt.getDependencies();
     if (deps.size() != argReads.size()) {
@@ -420,7 +420,7 @@ unsigned processRegionForEpochFusion(Region &region,
 unsigned fuseWorkerLoopsInEpoch(EpochOp epoch) {
   Block &body = epoch.getBody().front();
   unsigned fusedPairs = 0;
-  (void)fuseConsecutivePairs<scf::ForOp>(
+  (void)EdtUtils::fuseConsecutivePairs<scf::ForOp>(
       body,
       [](scf::ForOp a, scf::ForOp b) {
         return isFusableWorkerLoop(a, b) && !DbAnalysis::hasDbConflict(a, b);

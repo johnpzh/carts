@@ -210,6 +210,10 @@ constexpr llvm::StringLiteral BarrierEliminated = "barrier_eliminated";
 /// Marks operations whose input/output can safely alias (in-place update).
 constexpr llvm::StringLiteral InPlaceSafe = "in_place_safe";
 
+/// Marks local OpenMP-compatible in-place loops that intentionally share one
+/// coarse backing store as task state instead of creating serializing deps.
+constexpr llvm::StringLiteral InPlaceSharedState = "in_place_shared_state";
+
 /// SDE-specific semantic attributes stamped by SDE transforms.
 namespace Sde {
 using namespace llvm;
@@ -222,14 +226,15 @@ constexpr StringLiteral InterleaveCount = "sde.interleave_count";
 
 } // namespace AttrNames
 
-/// Forward SDE loop optimization hints (vectorize_width, unroll_factor,
-/// interleave_count) from one operation to another.
+/// Forward SDE-authored loop execution hints from one operation to another.
 inline void copySdeHintAttrs(Operation *source, Operation *dest) {
   if (!source || !dest)
     return;
   for (StringRef attrName : {AttrNames::Operation::Sde::VectorizeWidth,
                              AttrNames::Operation::Sde::UnrollFactor,
-                             AttrNames::Operation::Sde::InterleaveCount}) {
+                             AttrNames::Operation::Sde::InterleaveCount,
+                             AttrNames::Operation::InPlaceSafe,
+                             AttrNames::Operation::InPlaceSharedState}) {
     if (auto attr = source->getAttr(attrName))
       dest->setAttr(attrName, attr);
   }

@@ -38,7 +38,6 @@
 #include "mlir/Pass/Pass.h"
 /// Arts
 #include "arts/Dialect.h"
-#include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Analysis/edt/EdtInfo.h"
@@ -68,10 +67,6 @@ using namespace mlir::arts;
 #include "arts/passes/Passes.h.inc"
 
 ARTS_DEBUG_SETUP(edt_transforms);
-
-static const AnalysisKind kEdtTransforms_reads[] = {AnalysisKind::EdtAnalysis};
-[[maybe_unused]] static const AnalysisDependencyInfo kEdtTransforms_deps = {
-    kEdtTransforms_reads, {}};
 
 static llvm::Statistic numGranularityAnnotations{
     "edt_transforms", "NumGranularityAnnotations",
@@ -465,7 +460,7 @@ unsigned EdtTransformsPass::selectReductionStrategies() {
           continue;
 
         /// Find the block argument inside the EDT body for this acquire.
-        auto [edtForArg, blockArg] = getEdtBlockArgumentForAcquire(acquire);
+        auto [edtForArg, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
         if (!edtForArg || edtForArg != edt || !blockArg)
           continue;
 

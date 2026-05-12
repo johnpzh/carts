@@ -11,11 +11,11 @@ namespace mlir::arts {
 #include "arts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::arts
 
+#include "arts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "arts/utils/ValueAnalysis.h"
 
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
@@ -73,26 +73,6 @@ static Value getWriteRoot(Value value) {
   return ValueAnalysis::stripMemrefViewOps(value);
 }
 
-/// Trace a carrier tensor operand back to its backing memref root through
-/// mu_memref_to_tensor and tensor.cast chains.
-static Value traceCarrierOperandToMemref(Value tensorOperand) {
-  Value cur = tensorOperand;
-  while (cur) {
-    if (auto muOp = cur.getDefiningOp<sde::SdeMuMemrefToTensorOp>())
-      return getWriteRoot(muOp.getMemref());
-    if (auto castOp = cur.getDefiningOp<tensor::CastOp>()) {
-      cur = castOp.getSource();
-      continue;
-    }
-    if (auto sliceOp = cur.getDefiningOp<tensor::ExtractSliceOp>()) {
-      cur = sliceOp.getSource();
-      continue;
-    }
-    break;
-  }
-  return {};
-}
-
 static bool hasDisjointWrites(ArrayRef<ElementwiseStage> stages) {
   llvm::DenseSet<Value> writtenTargets;
   for (const ElementwiseStage &stage : stages) {
@@ -128,7 +108,7 @@ static bool isElementwiseStage(sde::SdeSuIterateOp op,
 
   if (carrier) {
     for (Value output : carrier.getDpsInits()) {
-      Value target = traceCarrierOperandToMemref(output);
+      Value target = sde::traceCarrierTensorToMemrefRoot(output);
       if (!target)
         return false;
       if (!seenWrites.insert(target).second) {

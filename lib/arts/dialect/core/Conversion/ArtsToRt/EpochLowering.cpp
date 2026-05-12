@@ -1001,7 +1001,6 @@ void EpochLoweringPass::runOnOperation() {
       /// use it to interpret the carry param layout structurally instead
       /// of relying on positional CPSParamPerm archaeology.
       int64_t schemaNumScalars = 0;
-      int64_t schemaNumTimingDbs = 0;
       int64_t schemaNumDataGuids = 0;
       int64_t schemaNumDataPtrs = 0;
       if (auto stateSchema = contEdtCreate->getAttrOfType<DenseI64ArrayAttr>(
@@ -1009,7 +1008,6 @@ void EpochLoweringPass::runOnOperation() {
         ArrayRef<int64_t> schema = stateSchema.asArrayRef();
         /// schema format: [numScalars, numTimingDbs, numDataGuids, numDataPtrs]
         schemaNumScalars = schema.size() > 0 ? schema[0] : 0;
-        schemaNumTimingDbs = schema.size() > 1 ? schema[1] : 0;
         schemaNumDataGuids = schema.size() > 2 ? schema[2] : 0;
         schemaNumDataPtrs = schema.size() > 3 ? schema[3] : 0;
         int64_t numTotal = 0;
@@ -1023,9 +1021,11 @@ void EpochLoweringPass::runOnOperation() {
         /// Fall through to canonical path below — the schema is advisory.
       }
       int64_t schemaHasScratchDep = 0;
+      int64_t schemaNumTimingDepSlots = 0;
       if (auto depSchema = contEdtCreate->getAttrOfType<DenseI64ArrayAttr>(
               AttrNames::Operation::LaunchState::DepSchema)) {
         ArrayRef<int64_t> schema = depSchema.asArrayRef();
+        schemaNumTimingDepSlots = schema.size() > 0 ? schema[0] : 0;
         schemaHasScratchDep = schema.size() > 1 ? schema[1] : 0;
       }
 
@@ -1287,6 +1287,8 @@ void EpochLoweringPass::runOnOperation() {
       SmallVector<LocalDbGuidCarryCandidate, 4> localDbGuidCarryCandidates;
       advanceOp.walk([&](DbAcquireOp acquire) {
         Value sourceGuid = acquire.getSourceGuid();
+        if (!sourceGuid)
+          return;
         auto sourceType = dyn_cast<MemRefType>(sourceGuid.getType());
         if (!sourceType || !sourceType.getElementType().isInteger(64))
           return;
@@ -1373,6 +1375,7 @@ void EpochLoweringPass::runOnOperation() {
 
       SmallVector<Value, 4> synthesizedScratchGuidCarries(
           targetDataGuidSlots.size());
+      Value synthesizedScratchCarry;
       Value scratchDepPtr;
       auto getScratchDepPtr = [&]() -> Value {
         if (scratchDepPtr || !parentFunc || parentFunc.getNumArguments() <= 3 ||
@@ -1380,7 +1383,7 @@ void EpochLoweringPass::runOnOperation() {
           return scratchDepPtr;
 
         unsigned scratchSlot = static_cast<unsigned>(
-            std::max<int64_t>(schemaNumTimingDbs, 0) +
+            std::max<int64_t>(schemaNumTimingDepSlots, 0) +
             std::max<int64_t>(schemaNumDataPtrs, 0));
         Value depv = parentFunc.getArgument(3);
         Value scratchSlotVal = AC->createIndexConstant(scratchSlot, loc);
@@ -1392,6 +1395,40 @@ void EpochLoweringPass::runOnOperation() {
             Value());
         scratchDepPtr = scratchAcquire.getPtr();
         return scratchDepPtr;
+      };
+
+      auto synthesizeScratchCarry = [&]() -> Value {
+        if (synthesizedScratchCarry)
+          return synthesizedScratchCarry;
+        if (schemaHasScratchDep <= 0 || nextScratchOffset <= 0)
+          return Value();
+
+        Value scratchPtr = getScratchDepPtr();
+        if (!scratchPtr)
+          return Value();
+
+        auto localType = MemRefType::get({nextScratchOffset}, AC->Int64);
+        auto localScratch = AC->create<memref::AllocOp>(loc, localType);
+        setDbStaticOuterShape(localScratch.getOperation(), {nextScratchOffset});
+
+        Value zero = AC->createIndexConstant(0, loc);
+        Value one = AC->createIndexConstant(1, loc);
+        Value count = AC->createIndexConstant(nextScratchOffset, loc);
+        auto copyLoop = AC->create<scf::ForOp>(loc, zero, count, one);
+        {
+          OpBuilder::InsertionGuard guard(AC->getBuilder());
+          Block *loopBody = copyLoop.getBody();
+          AC->getBuilder().setInsertionPoint(loopBody->getTerminator());
+          Value i = copyLoop.getInductionVar();
+          Value guid = AC->create<memref::LoadOp>(loc, scratchPtr,
+                                                  ValueRange{i});
+          AC->create<memref::StoreOp>(loc, guid, localScratch.getResult(),
+                                      ValueRange{i});
+        }
+
+        synthesizedScratchCarry =
+            materializeLoopBackParam(localScratch.getResult());
+        return synthesizedScratchCarry;
       };
 
       auto synthesizeGuidCarryFromScratch = [&](unsigned dataIdx) -> Value {
@@ -1512,6 +1549,14 @@ void EpochLoweringPass::runOnOperation() {
           }
           if (matchedOriginalSlot)
             continue;
+        }
+
+        if (schemaHasScratchDep > 0 && canonicalIdx == 0) {
+          if (Value scratchCarry = synthesizeScratchCarry();
+              scratchCarry && isTargetSlotTypeCompatible(slot, scratchCarry)) {
+            newPackParams[slot] = scratchCarry;
+            continue;
+          }
         }
 
         if (canonicalIdx >= 0 &&
@@ -1867,14 +1912,18 @@ void EpochLoweringPass::runOnOperation() {
 
         if (hasScratch && guidDataStart < routing.size()) {
           int64_t carryIdx = routing[guidDataStart];
-          if (carryIdx >= 0 && paramStart + carryIdx < nextParams.size()) {
-            Value scratchGuid = nextParams[paramStart + carryIdx];
-            std::optional<unsigned> fallbackSlot = std::nullopt;
-            if (!originalRecDep)
-              fallbackSlot = static_cast<unsigned>(numTimingDbs);
-            emitMappedCarryDep(carryIdx, scratchGuid, fallbackSlot,
-                               /*fallbackMode=*/1,
-                               /*fallbackFlags=*/std::nullopt);
+          if (carryIdx >= 0) {
+            size_t paramIdx =
+                static_cast<size_t>(paramStart) + static_cast<size_t>(carryIdx);
+            if (paramIdx < nextParams.size()) {
+              Value scratchGuid = nextParams[paramIdx];
+              std::optional<unsigned> fallbackSlot = std::nullopt;
+              if (!originalRecDep)
+                fallbackSlot = static_cast<unsigned>(numTimingDbs);
+              emitMappedCarryDep(carryIdx, scratchGuid, fallbackSlot,
+                                 /*fallbackMode=*/1,
+                                 /*fallbackFlags=*/std::nullopt);
+            }
           }
           ++guidDataStart;
         }
@@ -1884,9 +1933,13 @@ void EpochLoweringPass::runOnOperation() {
           if (routingIdx >= routing.size())
             break;
           int64_t carryIdx = routing[routingIdx];
-          if (carryIdx < 0 || paramStart + carryIdx >= nextParams.size())
+          if (carryIdx < 0)
             continue;
-          Value timingGuid = nextParams[paramStart + carryIdx];
+          size_t paramIdx =
+              static_cast<size_t>(paramStart) + static_cast<size_t>(carryIdx);
+          if (paramIdx >= nextParams.size())
+            continue;
+          Value timingGuid = nextParams[paramIdx];
           std::optional<unsigned> fallbackSlot = std::nullopt;
           if (!originalRecDep)
             fallbackSlot = static_cast<unsigned>(t);

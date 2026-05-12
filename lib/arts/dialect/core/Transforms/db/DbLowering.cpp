@@ -133,11 +133,11 @@ static void normalizeBlockHaloAcquireSlice(ArtsCodegen *AC, DbAcquireOp acquire,
   }
 
   SmallVector<Value, 4> offsets, sizes;
-  convertElementSliceToBlockSlice(AC->getBuilder(), loc, dimElementOffsets,
+  DbUtils::convertElementSliceToBlockSlice(AC->getBuilder(), loc, dimElementOffsets,
                                   dimElementSizes, dimBlockSpans,
                                   dimTotalBlocks, offsets, sizes);
   SmallVector<Value, 4> mergedOffsets, mergedSizes;
-  mergeNormalizedBlockSlice(AC->getBuilder(), loc, acquire.getOffsets(),
+  DbUtils::mergeNormalizedBlockSlice(AC->getBuilder(), loc, acquire.getOffsets(),
                             acquire.getSizes(), outerSizes, offsets, sizes,
                             mergedOffsets, mergedSizes);
 
@@ -520,7 +520,7 @@ void DbLoweringPass::updateAcquireUsers(DbAcquireOp acquireOp, Value newGuid,
     }
   };
 
-  auto [edtUser, blockArg] = getEdtBlockArgumentForAcquire(acquireOp);
+  auto [edtUser, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquireOp);
   if (!edtUser || !blockArg) {
     ARTS_DEBUG("  - Acquire has no EDT consumer; replacing uses directly");
     rewriteBlockUses(acquireOp.getPtr(), newPtr ? newPtr : acquireOp.getPtr());

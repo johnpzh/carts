@@ -1,6 +1,6 @@
 ---
 name: carts-runtime-first
-description: Understand the ARTS runtime execution model first, write correct code by hand, verify it runs, then make the compiler generate that exact pattern. Use when compiler-generated code crashes at runtime and the fix requires understanding how the ARTS runtime expects EDTs, DBs, epochs, and dependencies to be structured.
+description: Use when compiler-generated code crashes at runtime and the fix requires understanding how ARTS expects EDTs, DBs, epochs, and dependencies to be structured.
 user-invocable: true
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<benchmark-name | bug-description>]
@@ -39,13 +39,14 @@ compiler to emit that exact pattern.
    - Use `artsDbGet` to acquire DB data inside EDTs
    - Use epochs correctly (`artsInitializeAndStartEpoch` / `artsWaitOnEpoch`)
    - Work in both single-node and distributed modes
-3. Place the hand-written code in `tests/examples/manual/` or a temp directory.
+3. Place the hand-written code under `.carts/outputs/runtime-first/` or promote
+   it to `samples/` only after it becomes a maintained example.
 
 ### Phase 3 — Verify It Runs
 
 1. Compile the hand-written code:
    ```bash
-   dekk carts compile tests/examples/manual/<file>.c -O3 --arts-only
+   dekk carts compile .carts/outputs/runtime-first/<file>.c -O3 --arts-only
    ```
    Or compile directly against the ARTS runtime:
    ```bash
@@ -53,7 +54,7 @@ compiler to emit that exact pattern.
    ```
 2. Run with the standard ARTS config:
    ```bash
-   ARTS_CONFIG=tests/examples/arts.cfg ./<file>_manual
+   ARTS_CONFIG=samples/arts.cfg ./<file>_manual
    ```
 3. Verify: no crashes, correct output, clean shutdown.
 

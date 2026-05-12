@@ -9,25 +9,11 @@
 
 #include "arts/Dialect.h"
 #include "mlir/IR/Operation.h"
-#include "mlir/IR/Region.h"
-#include "mlir/IR/Value.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/SmallVector.h"
 #include <cstdint>
 
 namespace mlir {
 namespace arts {
-
-/// Canonical capture contract for one EDT before lowering rewrites mutate the
-/// region around nested task creation.
-struct EdtCaptureSummary {
-  llvm::SmallVector<Value, 8> capturedValues;
-  llvm::SmallVector<Value, 8> parameters;
-  llvm::SmallVector<Value, 8> constants;
-  llvm::SmallVector<Value, 8> dbHandles;
-  llvm::SmallVector<Value, 8> dependencies;
-};
 
 /// Base info aggregated for an EDT region.
 struct EdtInfo {
@@ -42,7 +28,6 @@ struct EdtInfo {
   /// EDT-level summary pattern (unknown if mixed or not classified).
   EdtDistributionPattern dominantDistributionPattern =
       EdtDistributionPattern::unknown;
-  EdtCaptureSummary captureSummary;
 };
 } // namespace arts
 } // namespace mlir

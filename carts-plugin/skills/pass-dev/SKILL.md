@@ -1,8 +1,7 @@
 ---
 name: carts-pass-dev
-description: Guide for developing new CARTS compiler passes. Use when the user wants to create a new pass, modify an existing pass, understand pass architecture, or work on compiler transforms.
+description: Use when creating a new pass, modifying an existing pass, understanding pass architecture, or working on compiler transforms.
 user-invocable: true
-workflow: workflows/new_pass_designer.py
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit, Agent
 argument-hint: [<pass-name> | new <pass-name>]
 parameters:

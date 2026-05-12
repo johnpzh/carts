@@ -8,7 +8,6 @@
 ///==========================================================================///
 
 #include "arts/Dialect.h"
-#include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/heuristics/DistributionHeuristics.h"
 #include "arts/utils/ValueAnalysis.h"
@@ -37,12 +36,6 @@ ARTS_DEBUG_SETUP(distributed_host_loop_outlining);
 
 using namespace mlir;
 using namespace mlir::arts;
-
-static const AnalysisKind kDistributedHostLoopOutlining_reads[] = {
-    AnalysisKind::RuntimeConfig, AnalysisKind::EdtHeuristics};
-[[maybe_unused]] static const AnalysisDependencyInfo
-    kDistributedHostLoopOutlining_deps = {kDistributedHostLoopOutlining_reads,
-                                          {}};
 
 namespace {
 

@@ -19,6 +19,7 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <numeric>
 
 using namespace mlir;
 using namespace mlir::arts;
@@ -184,6 +185,30 @@ static Value castToIndexType(OpBuilder &builder, Location loc, Value v) {
   if (v.getType().isIndex())
     return v;
   return arith::IndexCastOp::create(builder, loc, builder.getIndexType(), v);
+}
+
+static Value combinePhysicalBlockAlignment(ArtsCodegen *AC, Location loc,
+                                           Value lhs, Value rhs) {
+  if (!lhs)
+    return rhs;
+  if (!rhs)
+    return lhs;
+
+  auto lhsConst = ValueAnalysis::tryFoldConstantIndex(lhs);
+  auto rhsConst = ValueAnalysis::tryFoldConstantIndex(rhs);
+  if (lhsConst && rhsConst && *lhsConst > 0 && *rhsConst > 0) {
+    int64_t gcd = std::gcd(*lhsConst, *rhsConst);
+    if (gcd > 0 && *lhsConst <= std::numeric_limits<int64_t>::max() /
+                                      (*rhsConst / gcd)) {
+      int64_t lcm = *lhsConst / gcd * *rhsConst;
+      return AC->createIndexConstant(std::max<int64_t>(1, lcm), loc);
+    }
+  }
+
+  /// For dynamic or overflow-prone spans, prefer the coarser hard alignment.
+  /// This is conservative: it avoids making worker chunks smaller than a
+  /// physical DB block even when we cannot form an exact LCM in SSA.
+  return AC->create<arith::MaxUIOp>(loc, lhs, rhs);
 }
 
 } // namespace
@@ -636,7 +661,8 @@ Value WorkDistributionUtils::computeDbAlignmentBlockSize(
     return Value();
 
   Value one = AC->createIndexConstant(1, loc);
-  Value hintBlockSize;
+  Value hardBlockAlignment;
+  Value softHintBlockSize;
   LoweringContractInfo loopContract =
       resolveLoopDistributionContract(forOp.getOperation());
 
@@ -681,16 +707,34 @@ Value WorkDistributionUtils::computeDbAlignmentBlockSize(
     }
 
     ownerExtent = AC->castToIndex(ownerExtent, loc);
-    Value adjusted = AC->create<arith::AddIOp>(
-        loc, ownerExtent, AC->create<arith::SubIOp>(loc, numPartitions, one));
-    Value candidate = AC->create<arith::DivUIOp>(loc, adjusted, numPartitions);
-    candidate = AC->create<arith::MaxUIOp>(loc, candidate, one);
 
-    if (!hintBlockSize)
-      hintBlockSize = candidate;
-    else
-      hintBlockSize = AC->create<arith::MinUIOp>(loc, hintBlockSize, candidate);
+    Value candidate;
+    PartitionMode allocPartitionMode =
+        allocOp.getPartitionMode().value_or(PartitionMode::coarse);
+    if (usesBlockLayout(allocPartitionMode)) {
+      /// Block/stencil allocations already store a physical per-DB block span
+      /// in elementSizes. This is a hard alignment requirement: worker chunks
+      /// smaller than any physical DB block make adjacent workers share DBs at
+      /// chunk boundaries.
+      candidate = ownerExtent;
+      hardBlockAlignment =
+          combinePhysicalBlockAlignment(AC, loc, hardBlockAlignment, candidate);
+    } else {
+      Value adjusted = AC->create<arith::AddIOp>(
+          loc, ownerExtent, AC->create<arith::SubIOp>(loc, numPartitions, one));
+      candidate = AC->create<arith::DivUIOp>(loc, adjusted, numPartitions);
+      candidate = AC->create<arith::MaxUIOp>(loc, candidate, one);
+
+      if (!softHintBlockSize)
+        softHintBlockSize = candidate;
+      else
+        softHintBlockSize =
+            AC->create<arith::MinUIOp>(loc, softHintBlockSize, candidate);
+    }
   }
+
+  Value hintBlockSize = hardBlockAlignment ? hardBlockAlignment
+                                           : softHintBlockSize;
 
   if (auto loopBlockHint = getExplicitLoopBlockHint(forOp);
       loopBlockHint &&

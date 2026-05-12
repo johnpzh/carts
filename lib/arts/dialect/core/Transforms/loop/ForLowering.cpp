@@ -23,7 +23,6 @@
 
 #include "arts/Dialect.h"
 #include "arts/dialect/core/Analysis/AccessPatternAnalysis.h"
-#include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Analysis/heuristics/DistributionHeuristics.h"
@@ -70,12 +69,6 @@
 ARTS_DEBUG_SETUP(for_lowering);
 
 using namespace mlir::arts;
-
-static const AnalysisKind kForLowering_reads[] = {AnalysisKind::DbAnalysis,
-                                                  AnalysisKind::EdtHeuristics,
-                                                  AnalysisKind::RuntimeConfig};
-[[maybe_unused]] static const AnalysisDependencyInfo kForLowering_deps = {
-    kForLowering_reads, {}};
 
 using namespace mlir;
 using namespace mlir::func;
@@ -241,6 +234,35 @@ static bool hasOwnerMismatchedWriteDep(ForOp forOp, EdtOp parallelEdt) {
   }
 
   return false;
+}
+
+static bool shouldShareCoarseInPlaceDb(ForOp forOp, EdtOp parallelEdt,
+                                       DbAcquireOp parentAcquire,
+                                       DbAllocOp sourceAlloc,
+                                       ArtsMode effectiveTaskMode,
+                                       bool parentHasPartitionInfo) {
+  if (!forOp || !parallelEdt || !parentAcquire || !sourceAlloc)
+    return false;
+  if (!forOp->hasAttr(AttrNames::Operation::InPlaceSharedState))
+    return false;
+  if (parallelEdt.getConcurrency() != EdtConcurrency::intranode)
+    return false;
+  if (effectiveTaskMode != ArtsMode::inout)
+    return false;
+  if (parentHasPartitionInfo || parentAcquire.getPreserveDepEdge())
+    return false;
+  if (hasPhysicalDbLayoutPlan(sourceAlloc.getOperation()) ||
+      hasDistributedDbAllocation(sourceAlloc.getOperation()))
+    return false;
+
+  if (auto allocMode = sourceAlloc.getPartitionMode())
+    if (usesBlockLayout(*allocMode))
+      return false;
+  if (auto acquireMode = parentAcquire.getPartitionMode())
+    if (usesBlockLayout(*acquireMode))
+      return false;
+
+  return true;
 }
 
 static std::optional<AccessBoundsResult>
@@ -419,8 +441,8 @@ static bool haveCompatibleOrchestrationContract(EdtOp lhs, EdtOp rhs) {
   if (lhsRoute && !ValueAnalysis::sameValue(lhsRoute, rhsRoute))
     return false;
 
-  SmallVector<ForOp, 2> lhsForOps = getTopLevelForOps(lhs);
-  SmallVector<ForOp, 2> rhsForOps = getTopLevelForOps(rhs);
+  SmallVector<ForOp, 2> lhsForOps = EdtUtils::getTopLevelForOps(lhs);
+  SmallVector<ForOp, 2> rhsForOps = EdtUtils::getTopLevelForOps(rhs);
   if (lhsForOps.size() != 1 || rhsForOps.size() != 1)
     return false;
 
@@ -587,7 +609,7 @@ static void cloneExternalAllocasIntoEdt(Region *taskEdtRegion, Block &taskBlock,
       if (auto store = dyn_cast<memref::StoreOp>(user)) {
         if (store.getMemRef() != originalMem)
           continue;
-        if (!canCloneAllocaInitStore(store, originalMem)) {
+        if (!EdtUtils::canCloneAllocaInitStore(store, originalMem)) {
           hasUnsafeStore = true;
           break;
         }
@@ -1527,6 +1549,20 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
         effectiveTaskMode == ArtsMode::in && !preservePlannedBlockRead &&
         !acquireHasAccessDependingOnLoopIv(parentAcqOp, forOp);
 
+    if (shouldShareCoarseInPlaceDb(forOp, originalParallel, parentAcqOp,
+                                   sourceAlloc, effectiveTaskMode,
+                                   parentHasPartitionInfo)) {
+      /// SDE marks local OpenMP-compatible in-place loops when the source
+      /// intentionally shares one backing store across worker iterations.
+      /// Rewriting each worker to an inout block acquire over the one coarse
+      /// DB maps every task to the same dependency slot and serializes that
+      /// shared-memory work. Capture the coarse DB handle as task state
+      /// instead; physical owner-strip plans still use normal DB deps.
+      parallelArgToAcquire.push_back({parallelArg, rootPtrValue});
+      ARTS_DEBUG("    - Sharing coarse in-place DB state for dep " << idx);
+      continue;
+    }
+
     DbAcquireOp chunkAcqOp;
     bool chunkUsesStencilHalo = false;
 
@@ -1931,8 +1967,11 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
 
   /// Map parallelArg → taskArg for cloning pre-for operations
   for (auto [parallelArg, acquirePtr] : parallelArgToAcquire) {
-    if (Value taskArg = mapper.lookupOrNull(acquirePtr))
+    if (Value taskArg = mapper.lookupOrNull(acquirePtr)) {
       mapper.map(parallelArg, taskArg);
+      continue;
+    }
+    mapper.map(parallelArg, acquirePtr);
   }
 
   Value insideTotalWorkers =

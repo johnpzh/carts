@@ -26,4 +26,4 @@
 - C/C++ only if the frontend matters
 - MLIR if the failure is already after frontend lowering
 - `tests/contracts/*.mlir` for stage-local compiler behavior
-- `tests/examples/*` only when runtime execution is required
+- `tests/e2e/*` or `samples/*` only when runtime execution is required

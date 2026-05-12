@@ -12,6 +12,7 @@ CMake's lit.site.cfg.py, paths come from CMake variables.
 """
 
 import os
+import shutil
 
 import lit.formats
 import lit.util
@@ -87,7 +88,6 @@ if not filecheck_tool:
 
 required_tools = [
     ("%carts-compile", carts_compile_tool),
-    ("%carts", os.path.join(install_root, "bin", "carts")),
     ("%FileCheck", filecheck_tool),
 ]
 
@@ -98,6 +98,19 @@ for subst, tool in required_tools:
             "Run `dekk carts build` so the toolchain under .install/ is up to date."
         )
     config.substitutions.append((subst, tool))
+
+carts_tool = getattr(config, "carts_tool", None)
+if not carts_tool:
+    carts_wrapper = os.path.join(install_root, "bin", "carts")
+    if os.path.exists(carts_wrapper):
+        carts_tool = carts_wrapper
+    else:
+        dekk_tool = shutil.which("dekk")
+        if dekk_tool:
+            carts_tool = f"{dekk_tool} carts"
+
+if carts_tool:
+    config.substitutions.append(("%carts", carts_tool))
 
 # --- Test data substitutions ---
 inputs_dir = getattr(config, "carts_inputs_dir", None)

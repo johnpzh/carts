@@ -5,12 +5,11 @@
 ///==========================================================================///
 
 #include "arts/dialect/sde/Analysis/StructuredOpAnalysis.h"
+#include "arts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "arts/dialect/sde/Transforms/Passes.h"
 #include "arts/utils/OperationAttributes.h"
 #include "arts/utils/StencilAttributes.h"
-#include "arts/utils/ValueAnalysis.h"
 #include "arts/utils/costs/SDECostModel.h"
-#include "llvm/ADT/DenseSet.h"
 
 namespace mlir::arts {
 #define GEN_PASS_DEF_STRUCTUREDSUMMARIES
@@ -25,34 +24,14 @@ using namespace mlir::arts;
 
 namespace {
 
-static bool mapsDifferByLoopOffset(AffineMap readMap, AffineMap writeMap) {
-  if (readMap.getNumResults() != writeMap.getNumResults())
-    return true;
-
-  for (auto [readExpr, writeExpr] :
-       llvm::zip(readMap.getResults(), writeMap.getResults())) {
-    auto readOffset = sde::extractDimOffset(readExpr);
-    auto writeOffset = sde::extractDimOffset(writeExpr);
-    if (!readOffset || !writeOffset)
-      return true;
-    if (readOffset->dim != writeOffset->dim ||
-        readOffset->offset != writeOffset->offset)
-      return true;
-  }
-
-  return false;
-}
-
-static bool hasInPlaceNeighborRead(
-    const sde::StructuredLoopSummary &summary) {
-  for (const sde::MemrefAccessEntry &write : summary.writes) {
-    Value writtenBase = ValueAnalysis::stripMemrefViewOps(write.memref);
-    for (const sde::MemrefAccessEntry &read : summary.reads) {
-      if (ValueAnalysis::stripMemrefViewOps(read.memref) != writtenBase)
-        continue;
-      if (mapsDifferByLoopOffset(read.indexingMap, write.indexingMap))
-        return true;
-    }
+static bool hasLocalParallelScope(sde::SdeSuIterateOp op) {
+  for (Operation *current = op->getParentOp(); current;
+       current = current->getParentOp()) {
+    auto cuRegion = dyn_cast<sde::SdeCuRegionOp>(current);
+    if (!cuRegion || cuRegion.getKind() != sde::SdeCuKind::parallel)
+      continue;
+    auto scope = cuRegion.getConcurrencyScope();
+    return !scope || *scope == sde::SdeConcurrencyScope::local;
   }
   return false;
 }
@@ -68,6 +47,9 @@ struct StructuredSummariesPass
           sde::analyzeStructuredLoop(op);
       if (!summary)
         return;
+
+      op->removeAttr(AttrNames::Operation::InPlaceSafe);
+      op->removeAttr(AttrNames::Operation::InPlaceSharedState);
 
       sde::SdeStructuredClassification classification = summary->classification;
       if (auto existingClassification = op.getStructuredClassification();
@@ -109,42 +91,12 @@ struct StructuredSummariesPass
         op.setWriteFootprintAttr(buildI64ArrayAttr(
             op.getContext(), neighborhoodSummary->writeFootprint));
 
-        if (hasInPlaceNeighborRead(*summary)) {
-          // In-place neighbor stencils, such as Gauss-Seidel updates, have
-          // loop-carried dependences that the current owner-strip stencil plan
-          // cannot preserve. Keep the SDE stencil facts for downstream DB
-          // planning, but force a serial worker topology until a wavefront plan
-          // is available.
-          setWorkers(op.getOperation(), 1);
-        }
-
-        // Phase 15: In-place operation detection (stencil path)
-        {
-          llvm::DenseSet<Value> writtenBases;
-          llvm::DenseSet<Value> readBases;
-
-          op.getBody().walk([&](memref::StoreOp storeOp) {
-            writtenBases.insert(
-                ValueAnalysis::stripMemrefViewOps(storeOp.getMemref()));
-          });
-          op.getBody().walk([&](memref::LoadOp loadOp) {
-            readBases.insert(
-                ValueAnalysis::stripMemrefViewOps(loadOp.getMemref()));
-          });
-
-          bool inPlaceSafe = !writtenBases.empty();
-          for (Value written : writtenBases) {
-            if (!readBases.contains(written)) {
-              inPlaceSafe = false;
-              break;
-            }
-          }
-
-          if (inPlaceSafe) {
-            op->setAttr(AttrNames::Operation::InPlaceSafe,
-                        UnitAttr::get(op.getContext()));
-          }
-        }
+        auto memoryEffects = sde::collectStructuredMemoryEffects(op.getBody());
+        if (!memoryEffects.hasUnknownEffects &&
+            sde::hasInPlaceSelfRead(memoryEffects) &&
+            hasLocalParallelScope(op))
+          op->setAttr(AttrNames::Operation::InPlaceSharedState,
+                      UnitAttr::get(op.getContext()));
 
         ARTS_DEBUG("stamped generic SDE structured summary on su_iterate");
         return;
@@ -194,37 +146,10 @@ struct StructuredSummariesPass
                     IntegerAttr::get(IndexType::get(&getContext()), 4));
       }
 
-      // Phase 15: In-place operation detection
-      // Check if any output memref is the same as an input memref
-      // (read-modify-write pattern that can be done in-place)
-      {
-        llvm::DenseSet<Value> writtenBases;
-        llvm::DenseSet<Value> readBases;
-
-        op.getBody().walk([&](memref::StoreOp storeOp) {
-          writtenBases.insert(
-              ValueAnalysis::stripMemrefViewOps(storeOp.getMemref()));
-        });
-        op.getBody().walk([&](memref::LoadOp loadOp) {
-          readBases.insert(
-              ValueAnalysis::stripMemrefViewOps(loadOp.getMemref()));
-        });
-
-        // In-place safe if ALL written memrefs are also read (RMW pattern)
-        // and no other memref is aliased with the output
-        bool inPlaceSafe = !writtenBases.empty();
-        for (Value written : writtenBases) {
-          if (!readBases.contains(written)) {
-            inPlaceSafe = false;
-            break;
-          }
-        }
-
-        if (inPlaceSafe) {
-          op->setAttr(AttrNames::Operation::InPlaceSafe,
-                      UnitAttr::get(op.getContext()));
-        }
-      }
+      auto memoryEffects = sde::collectStructuredMemoryEffects(op.getBody());
+      if (!memoryEffects.hasUnknownEffects && memoryEffects.allWritesAreRead())
+        op->setAttr(AttrNames::Operation::InPlaceSafe,
+                    UnitAttr::get(op.getContext()));
 
       ARTS_DEBUG("refreshed SDE structured classification on su_iterate");
     });

@@ -1,6 +1,6 @@
 ---
 name: carts-dialect-trace
-description: Trace an MLIR operation through the 18-stage pipeline to understand its lifecycle — where it is created, which passes transform it, and where it is lowered or erased. Use when debugging lowering paths, understanding op placement across the 3 dialects (SDE, core, RT), or verifying dialect boundary invariants.
+description: Use when debugging lowering paths, understanding operation placement across SDE/Core/RT, or verifying dialect boundary invariants.
 user-invocable: true
 allowed-tools: Read, Grep, Glob, Bash, Agent
 argument-hint: [<op-name> | boundary | verify]

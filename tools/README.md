@@ -30,12 +30,12 @@ tools/
 
 ```bash
 dekk carts install
-dekk carts agents generate
+dekk carts skills generate
 
 dekk carts build
 dekk carts compile simple.c -O3 -o simple_arts
 dekk carts test
-dekk carts lit tests/contracts/example.mlir
+dekk carts lit lib/arts/dialect/core/test/<case>.mlir
 dekk carts benchmarks list
 ```
 

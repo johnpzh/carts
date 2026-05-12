@@ -1,6 +1,6 @@
 ---
 name: carts-test
-description: Run CARTS test suite, lit tests, or individual test files. Use when the user asks to test, run tests, validate, check, or verify changes.
+description: Use when the user asks to test, run tests, validate, check, verify changes, run lit, or run a focused CARTS suite.
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Glob
 argument-hint: [<test-file.mlir> | --suite contracts | -v]

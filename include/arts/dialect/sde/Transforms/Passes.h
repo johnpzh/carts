@@ -13,6 +13,7 @@
 #define ARTS_DIALECT_SDE_TRANSFORMS_PASSES_H
 
 #include "arts/Dialect.h"
+#include "arts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "arts/dialect/sde/IR/SdeDialect.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -48,20 +49,6 @@ inline NamedAttrList getRewrittenAttrs(SdeSuIterateOp op) {
   NamedAttrList attrs(op->getAttrs());
   attrs.erase(op.getOperandSegmentSizesAttrName().getValue());
   return attrs;
-}
-
-/// Get the computation block inside su_iterate, looking through an optional
-/// cu_region <parallel> wrapper. Returns the innermost block containing
-/// user compute ops.
-inline Block *getSuIterateComputeBlock(SdeSuIterateOp op) {
-  Block &body = op.getBody().front();
-  // Check if the body starts with a cu_region <parallel> wrapper.
-  for (Operation &inner : body.without_terminator()) {
-    if (auto cuRegion = dyn_cast<SdeCuRegionOp>(inner);
-        cuRegion && cuRegion.getKind() == SdeCuKind::parallel)
-      return &cuRegion.getBody().front();
-  }
-  return &body;
 }
 
 class SDECostModel;

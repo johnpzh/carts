@@ -140,7 +140,7 @@ static void markLeadingDynamicDims(DbAcquireNode *node,
 }
 
 static bool hasDistributionContract(DbAcquireOp acquire) {
-  auto [edt, blockArg] = getEdtBlockArgumentForAcquire(acquire);
+  auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
   (void)blockArg;
   if (edt && (getEdtDistributionKind(edt.getOperation()) ||
               getEdtDistributionPattern(edt.getOperation())))

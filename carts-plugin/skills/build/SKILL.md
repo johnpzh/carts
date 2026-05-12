@@ -1,6 +1,6 @@
 ---
 name: carts-build
-description: Build the CARTS project (compiler, runtime, LLVM, Polygeist). Use when the user asks to build, compile the project, rebuild, or fix build errors.
+description: Use when the user asks to build, compile the project, rebuild CARTS/ARTS/LLVM/Polygeist, or fix build errors.
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Glob
 argument-hint: [--clean | --arts | --polygeist | --llvm]

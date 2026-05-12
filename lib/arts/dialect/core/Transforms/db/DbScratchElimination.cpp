@@ -222,7 +222,7 @@ matchScratchCandidate(DbAllocOp alloc, DominanceInfo &domInfo) {
     if (mode && requiresWorkerBoundsPlanning(*mode))
       return std::nullopt;
 
-    auto [edt, blockArg] = getEdtBlockArgumentForAcquire(acquire);
+    auto [edt, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
     if (!edt || !blockArg || acquire.getPtr().use_empty() ||
         !acquire.getPtr().hasOneUse())
       return std::nullopt;

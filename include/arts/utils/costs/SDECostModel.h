@@ -35,7 +35,6 @@ public:
   virtual double getLocalDataAccessCost() const = 0;
   virtual double getRemoteDataAccessCost() const = 0;
   virtual double getHaloExchangeCostPerByte() const = 0;
-  virtual double getAllocationCost() const = 0;
 
   // --- Scheduling costs ---
   virtual double getSchedulingOverhead(SdeScheduleKind kind,
@@ -48,12 +47,7 @@ public:
 
   // --- Hardware parameters ---
   virtual int getVectorWidth() const = 0;
-  virtual int getCacheLineSize() const = 0;
-  virtual int64_t getL1CacheSize() const = 0;
   virtual int64_t getL2CacheSize() const = 0;
-
-  // --- Reduction splitting ---
-  virtual int64_t getReductionSplitFactor(int64_t tripCount) const = 0;
 
   // --- Derived thresholds (computed, not hardcoded) ---
   virtual int64_t getMinIterationsPerWorker() const {

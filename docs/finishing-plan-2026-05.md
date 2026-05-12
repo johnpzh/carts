@@ -330,6 +330,8 @@ The existing skills under `carts-plugin/skills/` cover much of this. Specificall
 - `carts-stage-diff` — for IR diffing across stages
 - `carts-analysis-triage` — for stale-analysis bugs
 - `carts-pass-dev` — for new pass authoring (codelet capture, scf.if threading)
+- `carts-simplify` and `carts-review` — for final complexity, utility, and
+  regression-risk checks before calling a change done
 
 A new skill may be useful: `carts-rt-lowering-triage` for matrixmul-class
 epoch/dependency-registration issues. Filing as future work.

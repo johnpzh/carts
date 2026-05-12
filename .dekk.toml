@@ -3,7 +3,7 @@
 # Canonical project lifecycle entrypoints:
 #   python -m pip install --upgrade dekk
 #   dekk carts install
-#   dekk carts agents generate
+#   dekk carts skills generate
 #   dekk carts build
 #   dekk carts worktree list
 #

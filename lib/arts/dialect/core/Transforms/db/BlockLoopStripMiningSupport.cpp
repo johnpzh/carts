@@ -39,7 +39,7 @@ static std::optional<int64_t> resolveBlockSizeHint(Value value) {
     return std::nullopt;
   if (auto folded = ValueAnalysis::getConstantIndexStripped(value))
     return folded;
-  return extractBlockSizeFromHint(value);
+  return DbUtils::extractBlockSizeFromHint(value);
 }
 
 static bool sameBlockSizeFamily(Value lhsValue, std::optional<int64_t> lhsConst,

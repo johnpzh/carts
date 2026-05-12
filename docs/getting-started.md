@@ -50,7 +50,7 @@ dekk carts install
 
 1. **Creates or syncs the project environment** -- ensures `.dekk/env` matches
    `environment.yml`, including the bootstrap `clang`/`clang++` toolchain used
-   for the LLVM 23 build
+   for the pinned LLVM/MLIR build
 2. **Initializes git submodules** -- ARTS, Polygeist, LLVM, carts-benchmarks
 3. **Builds the full toolchain** in order:
    - LLVM + MLIR + OpenMP (longest step, ~30-60 min)
@@ -99,7 +99,7 @@ pre-LLVM-23 artifacts can produce mismatched TableGen/CMake failures.
 CARTS compiles OpenMP-annotated C/C++ into ARTS task-based executables:
 
 ```bash
-dekk carts compile tests/examples/dotproduct/dotproduct.c -O3 -o dotproduct
+dekk carts compile samples/dotproduct/dotproduct.c -O3 -o dotproduct
 ./dotproduct
 ```
 
@@ -145,7 +145,7 @@ List available examples:
 dekk carts examples list
 ```
 
-All examples live in `tests/examples/` and serve as reference patterns for
+All examples live in `samples/` and serve as reference patterns for
 writing your own CARTS programs.
 
 ## Project structure
@@ -156,8 +156,9 @@ carts/
   lib/arts/            Core MLIR dialect, analysis, and passes
   tools/               CLI entry point (carts_cli.py) and scripts
   tools/compile/       C++ compilation driver (carts-compile)
-  tests/contracts/     MLIR regression tests (FileCheck)
-  tests/examples/      End-to-end C/C++ example programs
+  lib/arts/dialect/*/test/ MLIR regression tests (FileCheck)
+  tests/e2e/          End-to-end C/C++ compile-and-run tests
+  samples/            Example C/C++ programs
   external/            Vendored deps (ARTS, Polygeist, LLVM)
   docs/                Architecture and pipeline documentation
   docker/              Multi-node Docker cluster setup
@@ -196,7 +197,7 @@ Run `dekk carts --help` for the full command list. Key commands:
 | `dekk carts update` | Update git submodules |
 | `dekk carts docker` | Multi-node Docker operations |
 | `dekk carts format` | Format source files |
-| `dekk carts agents` | Generate and install agent resources |
+| `dekk carts skills` | Generate and inspect agent skill resources |
 | `dekk carts worktree` | Create and manage project worktrees |
 
 ## Next steps

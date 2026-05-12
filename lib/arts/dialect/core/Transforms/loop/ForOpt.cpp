@@ -12,7 +12,6 @@
 ///==========================================================================///
 
 #include "arts/Dialect.h"
-#include "arts/dialect/core/Analysis/AnalysisDependencies.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #define GEN_PASS_DEF_FOROPT
 #include "arts/passes/Passes.h"
@@ -26,12 +25,6 @@
 ARTS_DEBUG_SETUP(for_opt);
 
 using namespace mlir::arts;
-
-static const AnalysisKind kForOpt_reads[] = {AnalysisKind::DbAnalysis,
-                                             AnalysisKind::EdtHeuristics};
-static const AnalysisKind kForOpt_invalidates[] = {AnalysisKind::DbAnalysis};
-[[maybe_unused]] static const AnalysisDependencyInfo kForOpt_deps = {
-    kForOpt_reads, kForOpt_invalidates};
 
 static llvm::Statistic numLoopsAnnotatedWithHints{
     "for_opt", "NumLoopsAnnotatedWithHints",

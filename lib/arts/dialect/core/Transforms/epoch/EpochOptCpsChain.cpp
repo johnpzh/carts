@@ -446,12 +446,12 @@ bool tryCPSChainTransform(scf::ForOp forOp,
 
   SmallVector<Value> loopBackParams;
   if (firstContinuation) {
-    loopBackParams = collectEdtPackedValues(firstContinuation);
+    loopBackParams = EdtUtils::collectPackedValues(firstContinuation);
     if (loopBackParams.empty()) {
       llvm::SetVector<Value> originalCaptured;
       llvm::SetVector<Value> parameters, constants, dbHandles;
       getUsedValuesDefinedAbove(forOp.getRegion(), originalCaptured);
-      classifyEdtUserValues(originalCaptured.getArrayRef(), parameters,
+      EdtUtils::classifyUserValues(originalCaptured.getArrayRef(), parameters,
                             constants, dbHandles);
 
       loopBackParams.reserve(originalCaptured.size());
@@ -621,7 +621,7 @@ bool tryCPSChainTransform(scf::ForOp forOp,
         break;
 
       SmallVector<Value> updatedLoopBackParams =
-          collectEdtPackedValues(firstContinuation);
+          EdtUtils::collectPackedValues(firstContinuation);
       if (sameValueSequence(loopBackParams, updatedLoopBackParams)) {
         loopBackParamsStabilized = true;
         break;
@@ -990,7 +990,7 @@ bool tryCPSChainTransform(scf::ForOp forOp,
     };
 
     SmallVector<Value> reorderedCarry =
-        collectEdtPackedValues(firstContinuation);
+        EdtUtils::collectPackedValues(firstContinuation);
 
     ARTS_INFO("CPS Chain: Re-analyzed " << firstChainId << " captures — "
                                         << reorderedCarry.size()

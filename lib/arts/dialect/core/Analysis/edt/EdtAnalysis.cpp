@@ -10,16 +10,12 @@
 #include "arts/dialect/core/Analysis/graphs/edt/EdtNode.h"
 #include "arts/dialect/core/Analysis/loop/LoopAnalysis.h"
 #include "arts/utils/DbUtils.h"
-#include "arts/utils/EdtUtils.h"
 #include "arts/utils/OperationAttributes.h"
-#include "arts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "llvm/ADT/SetVector.h"
-#include "llvm/ADT/SmallPtrSet.h"
 
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
@@ -79,21 +75,6 @@ void EdtAnalysis::analyzeFunc(func::FuncOp func) {
 
     info.loopDistributionPatterns.clear();
     info.dominantDistributionPattern = EdtDistributionPattern::unknown;
-    info.captureSummary = EdtCaptureSummary{};
-
-    llvm::SetVector<Value> capturedValues;
-    llvm::SetVector<Value> parameters;
-    llvm::SetVector<Value> constants;
-    llvm::SetVector<Value> dbHandles;
-    analyzeEdtCapturedValues(edt, capturedValues, parameters, constants,
-                             dbHandles);
-    info.captureSummary.capturedValues.assign(capturedValues.begin(),
-                                              capturedValues.end());
-    info.captureSummary.parameters.assign(parameters.begin(), parameters.end());
-    info.captureSummary.constants.assign(constants.begin(), constants.end());
-    info.captureSummary.dbHandles.assign(dbHandles.begin(), dbHandles.end());
-    info.captureSummary.dependencies.assign(edt.getDependencies().begin(),
-                                            edt.getDependencies().end());
 
     bool sawLoop = false;
     bool mixed = false;
@@ -111,7 +92,7 @@ void EdtAnalysis::analyzeFunc(func::FuncOp func) {
         if (it == allocPatternByOp.end()) {
           allocPatternByOp[allocOp] = pattern;
         } else {
-          it->second = mergeDbAccessPattern(it->second, pattern);
+          it->second = DbUtils::mergeAccessPattern(it->second, pattern);
         }
       }
 
@@ -220,15 +201,6 @@ EdtAnalysis::getAllocAccessPattern(Operation *allocOp) {
   return it->second;
 }
 
-const EdtCaptureSummary *EdtAnalysis::getCaptureSummary(EdtOp edt) {
-  if (!edt)
-    return nullptr;
-  if (!analyzed.load(std::memory_order_acquire))
-    analyze();
-  auto *edtNode = getEdtNode(edt);
-  return edtNode ? &edtNode->getInfo().captureSummary : nullptr;
-}
-
 void EdtAnalysis::forEachAllocAccessPattern(
     llvm::function_ref<void(Operation *, DbAccessPattern)> fn) {
   if (!analyzed.load(std::memory_order_acquire))
@@ -287,124 +259,6 @@ EdtNode *EdtAnalysis::getEdtNode(EdtOp op) {
 
 LoopAnalysis &EdtAnalysis::getLoopAnalysis() {
   return getAnalysisManager().getLoopAnalysis();
-}
-
-///==========================================================================///
-/// EDT invariance and reachability queries.
-///==========================================================================///
-
-/// Check if a block argument is invariant with respect to an EDT region.
-static bool isBlockArgInvariant(Region &edtRegion, BlockArgument blockArg) {
-  Block *owner = blockArg.getOwner();
-  if (!owner)
-    return false;
-  Region *ownerRegion = owner->getParent();
-  if (!ownerRegion)
-    return false;
-
-  /// Entry block arguments of the EDT region are considered invariant
-  /// because their defining value is outside the region.
-  if (ownerRegion == &edtRegion && owner == &edtRegion.front())
-    return true;
-
-  /// Block arguments that belong to regions outside of this EDT are also
-  /// treated as invariant inputs.
-  return !edtRegion.isAncestor(ownerRegion);
-}
-
-/// Check if an operation's result is invariant with respect to an EDT region.
-/// Recursive helper for isInvariantInEdt.
-static bool isDefOpInvariant(Region &edtRegion, Value v,
-                             SmallPtrSetImpl<Value> &visited) {
-  if (!v)
-    return false;
-  if (!visited.insert(v).second)
-    return true;
-
-  if (ValueAnalysis::isValueConstant(v))
-    return true;
-
-  if (auto blockArg = dyn_cast<BlockArgument>(v))
-    return isBlockArgInvariant(edtRegion, blockArg);
-
-  Operation *defOp = v.getDefiningOp();
-  if (!defOp)
-    return false;
-
-  if (!edtRegion.isAncestor(defOp->getParentRegion()))
-    return true;
-
-  if (isa<arith::ConstantIndexOp, arith::ConstantIntOp>(defOp))
-    return true;
-
-  if (isa<arith::AddIOp, arith::SubIOp, arith::MulIOp, arith::DivSIOp,
-          arith::DivUIOp, arith::IndexCastOp, arith::ExtSIOp, arith::ExtUIOp,
-          arith::TruncIOp>(defOp)) {
-    for (Value operand : defOp->getOperands())
-      if (!isDefOpInvariant(edtRegion, operand, visited))
-        return false;
-    return true;
-  }
-
-  return false;
-}
-
-bool EdtAnalysis::isInvariantInEdt(Region &edtRegion, Value value) {
-  SmallPtrSet<Value, 16> visited;
-
-  if (!isDefOpInvariant(edtRegion, value, visited))
-    return false;
-
-  /// Check for pointer-like types and their users
-  if (!isa<MemRefType, UnrankedMemRefType>(value.getType()))
-    return true;
-
-  for (Operation *user : value.getUsers()) {
-    if (!edtRegion.isAncestor(user->getParentRegion()))
-      continue;
-
-    if (auto store = dyn_cast<memref::StoreOp>(user))
-      if (store.getMemref() == value)
-        return false;
-
-    if (auto atomicRmw = dyn_cast<memref::AtomicRMWOp>(user))
-      if (atomicRmw.getMemref() == value)
-        return false;
-  }
-
-  return true;
-}
-
-bool EdtAnalysis::isReachable(Operation *source, Operation *target) {
-  if (!source || !target)
-    return false;
-  if (source == target)
-    return true;
-
-  if (!source->getBlock() || !target->getBlock())
-    return false;
-
-  if (source->getBlock() == target->getBlock())
-    return source->isBeforeInBlock(target);
-
-  auto srcEdt = source->getParentOfType<EdtOp>();
-  auto tgtEdt = target->getParentOfType<EdtOp>();
-  if (srcEdt != tgtEdt)
-    return false;
-
-  Operation *src = source;
-  Operation *tgt = target;
-  while (true) {
-    if (src->getBlock() == tgt->getBlock())
-      return src->isBeforeInBlock(tgt);
-    if (src == srcEdt && tgt == tgtEdt)
-      break;
-    if (src->getParentOp() != srcEdt)
-      src = src->getParentOp();
-    if (tgt->getParentOp() != tgtEdt)
-      tgt = tgt->getParentOp();
-  }
-  return false;
 }
 
 ///==========================================================================///

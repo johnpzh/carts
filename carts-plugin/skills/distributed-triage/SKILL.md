@@ -1,6 +1,6 @@
 ---
 name: carts-distributed-triage
-description: Debug CARTS multi-node and distributed-db issues by checking ownership eligibility, routed work placement, distributed init, node-level logs, and remote counters. Use when a failure only appears with `--distributed-db`, multiple nodes, distributed host outlining, or uneven remote work distribution.
+description: Use when a failure only appears with `--distributed-db`, multiple nodes, distributed host outlining, or uneven remote work distribution.
 user-invocable: true
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<input-file | benchmark-path>]
