@@ -13,6 +13,7 @@
 #define ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
 
 #include "arts/dialect/core/Transforms/db/DbRewriter.h"
+#include "arts/utils/LoweringContractUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/ValueRange.h"
@@ -31,6 +32,21 @@ FailureOr<DbRewritePlan> resolvePhysicalDbLayoutPlan(Operation *planSource,
                                                      ValueRange elementSizes,
                                                      OpBuilder &builder,
                                                      Location loc);
+
+/// Return true when a read task's owner layout names the same source owner
+/// dimensions but uses a different physical block shape. This is a layout
+/// translation case: Core should keep worker-local dependency windows and
+/// convert logical element windows into source DB block coordinates.
+bool hasReadOnlySourceLayoutMismatch(DbAllocOp sourceAlloc,
+                                     Operation *taskPlanSource,
+                                     const LoweringContractInfo &contract);
+
+/// Project the source allocation's physical block shape onto the contract's
+/// owner dimensions. Returns nullopt when source layout attrs cannot prove a
+/// compatible owner mapping.
+std::optional<SmallVector<int64_t, 4>>
+getSourceOwnerBlockShape(DbAllocOp sourceAlloc,
+                         const LoweringContractInfo &contract);
 
 } // namespace arts
 } // namespace mlir

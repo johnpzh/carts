@@ -177,17 +177,24 @@ std::optional<LoweringContractInfo> resolveAcquireContract(DbAcquireOp acquire);
 /// Check if an acquire should apply stencil halo extension to worker-local
 /// read slices. Returns true when mode=in and contract supports block halo.
 bool shouldApplyStencilHalo(const LoweringContractInfo &contract,
+                            ArtsMode effectiveMode);
+bool shouldApplyStencilHalo(const LoweringContractInfo &contract,
                             DbAcquireOp acquire);
 
 /// Check if an acquire should use partition_offsets/partition_sizes as the
 /// dependency window instead of offsets/sizes. Returns true for stencil-mode
 /// read acquires with explicit stencil contracts or wavefront inout acquires.
 bool shouldUsePartitionSliceAsDepWindow(const LoweringContractInfo &contract,
+                                        ArtsMode effectiveMode,
+                                        PartitionMode partitionMode);
+bool shouldUsePartitionSliceAsDepWindow(const LoweringContractInfo &contract,
                                         DbAcquireOp acquire);
 
 /// Check if an acquire should preserve the parent dependency range instead
 /// of using the worker-local partition slice. Returns true for read acquires
 /// without explicit stencil contracts and without narrowable_dep annotation.
+bool shouldPreserveParentDepRange(const LoweringContractInfo &contract,
+                                  ArtsMode effectiveMode);
 bool shouldPreserveParentDepRange(const LoweringContractInfo &contract,
                                   DbAcquireOp acquire);
 

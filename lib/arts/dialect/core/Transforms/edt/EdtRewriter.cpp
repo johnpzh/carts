@@ -17,6 +17,7 @@
 ///==========================================================================///
 
 #include "arts/dialect/core/Transforms/edt/EdtRewriter.h"
+#include "arts/dialect/core/Transforms/db/DbLayoutPlanUtils.h"
 #include "arts/utils/DbUtils.h"
 #include "arts/utils/LoweringContractUtils.h"
 #include "arts/utils/OperationAttributes.h"
@@ -377,9 +378,10 @@ mlir::arts::planTaskAcquireRewrite(TaskAcquireRewritePlanInput input) {
   /// Check if we should apply stencil halo extension. Some pipelines stamp the
   /// full stencil contract on the loop/task shape, so the halo bounds may be
   /// present even before explicit applyStencilHalo enablement.
-  bool applyStencilHalo = shouldApplyStencilHalo(contract, input.parentAcquire);
+  bool applyStencilHalo =
+      shouldApplyStencilHalo(contract, input.effectiveMode);
   bool preserveParentDepRange =
-      shouldPreserveParentDepRange(contract, input.parentAcquire);
+      shouldPreserveParentDepRange(contract, input.effectiveMode);
 
   auto haloMinOffsets = contract.getStaticMinOffsets();
   auto haloMaxOffsets = contract.getStaticMaxOffsets();
@@ -418,7 +420,13 @@ mlir::arts::planTaskAcquireRewrite(TaskAcquireRewritePlanInput input) {
           bool tinyReadOnlyStencil =
               allocPattern && *allocPattern == DbAccessPattern::stencil &&
               totalElemCount && *totalElemCount > 0 && *totalElemCount <= 8;
-          if (tinyReadOnlyStencil)
+          bool hasWorkerLocalStencilDataContract =
+              contract.supportsBlockHalo() ||
+              contract.hasExplicitStencilContract() ||
+              contract.analysis.narrowableDep ||
+              !contract.spatial.ownerDims.empty() ||
+              hasPhysicalDbLayoutPlan(dbAlloc.getOperation());
+          if (tinyReadOnlyStencil && !hasWorkerLocalStencilDataContract)
             forceCoarseRewrite = true;
         }
 
@@ -782,7 +790,7 @@ DbAcquireOp mlir::arts::rewriteAcquire(AcquireRewriteInput &in,
        dependencySizes.size() != sourceRank) &&
       in.parentAcquire.getOffsets().size() == sourceRank &&
       in.parentAcquire.getSizes().size() == sourceRank) {
-    if (in.effectiveMode == ArtsMode::in) {
+    if (in.effectiveMode == ArtsMode::in && in.preserveParentDepRange) {
       dependencyOffsets.assign(in.parentAcquire.getOffsets().begin(),
                                in.parentAcquire.getOffsets().end());
       dependencySizes.assign(in.parentAcquire.getSizes().begin(),

@@ -13,6 +13,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include <algorithm>
 #include <cassert>
 
 #include "arts/Dialect.h"
@@ -581,15 +582,36 @@ void DbAcquireOp::copyPartitionSegmentsFrom(DbAcquireOp source) {
     setPartitionEntryModesAttr(builder.getDenseI32ArrayAttr(*modes));
 }
 
+static size_t getSegmentEntryCount(std::optional<ArrayRef<int32_t>> segments) {
+  if (!segments || segments->empty())
+    return 0;
+  return segments->size();
+}
+
+static size_t getPartitionEntryModeCount(
+    std::optional<ArrayRef<int32_t>> modes) {
+  if (!modes || modes->empty())
+    return 0;
+  return modes->size();
+}
+
 bool DbAcquireOp::hasMultiplePartitionEntries() {
-  auto segments = getPartitionIndicesSegments();
-  return segments && segments->size() > 1;
+  return getNumPartitionEntries() > 1;
 }
 
 size_t DbAcquireOp::getNumPartitionEntries() {
-  auto segments = getPartitionIndicesSegments();
-  if (segments && !segments->empty())
-    return segments->size();
+  size_t segmentedEntries = 0;
+  segmentedEntries =
+      std::max(segmentedEntries, getSegmentEntryCount(getPartitionIndicesSegments()));
+  segmentedEntries =
+      std::max(segmentedEntries, getSegmentEntryCount(getPartitionOffsetsSegments()));
+  segmentedEntries =
+      std::max(segmentedEntries, getSegmentEntryCount(getPartitionSizesSegments()));
+  segmentedEntries =
+      std::max(segmentedEntries, getPartitionEntryModeCount(getPartitionEntryModes()));
+  if (segmentedEntries > 0)
+    return segmentedEntries;
+
   if (!getPartitionIndices().empty() || !getPartitionOffsets().empty() ||
       !getPartitionSizes().empty())
     return 1;
@@ -1102,6 +1124,58 @@ LogicalResult DbAcquireOp::verify() {
     return emitOpError("Number of DB-space offsets (")
            << numOffsets << ") must match Number of DB-space sizes ("
            << numSizes << ")";
+  }
+
+  size_t numPartitionEntries = getNumPartitionEntries();
+  auto verifyPartitionSegments =
+      [&](std::optional<ArrayRef<int32_t>> segments, OperandRange operands,
+          StringRef name) -> LogicalResult {
+    if (!segments || segments->empty()) {
+      if (numPartitionEntries > 1 && !operands.empty())
+        return emitOpError()
+               << name << " is required when partition operands are split "
+               << "across " << numPartitionEntries << " entries";
+      return success();
+    }
+
+    if (segments->size() != numPartitionEntries)
+      return emitOpError()
+             << name << " entry count (" << segments->size()
+             << ") must match logical partition entry count ("
+             << numPartitionEntries << ")";
+
+    int64_t segmentTotal = 0;
+    for (int32_t segmentSize : *segments) {
+      if (segmentSize < 0)
+        return emitOpError()
+               << name << " contains negative segment size: " << segmentSize;
+      segmentTotal += segmentSize;
+    }
+
+    if (segmentTotal != static_cast<int64_t>(operands.size()))
+      return emitOpError()
+             << name << " segment sum (" << segmentTotal
+             << ") must match operand count (" << operands.size() << ")";
+    return success();
+  };
+
+  if (failed(verifyPartitionSegments(getPartitionIndicesSegments(),
+                                     getPartitionIndices(),
+                                     "partition_indices_segments")) ||
+      failed(verifyPartitionSegments(getPartitionOffsetsSegments(),
+                                     getPartitionOffsets(),
+                                     "partition_offsets_segments")) ||
+      failed(verifyPartitionSegments(getPartitionSizesSegments(),
+                                     getPartitionSizes(),
+                                     "partition_sizes_segments")))
+    return failure();
+
+  if (auto modes = getPartitionEntryModes()) {
+    if (modes->size() != numPartitionEntries)
+      return emitOpError()
+             << "partition_entry_modes count (" << modes->size()
+             << ") must match logical partition entry count ("
+             << numPartitionEntries << ")";
   }
 
   /// Skip validation for partition hints only mode (no indices or sizes)

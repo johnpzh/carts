@@ -5,7 +5,9 @@ If this file disagrees with the compiler source or `dekk carts pipeline --json`,
 the live compiler wins.
 
 For layer-specific optimization planning, see [`sde/`](./sde/),
-[`core/`](./core/), and [`rt/`](./rt/).
+[`core/`](./core/), and [`rt/`](./rt/). For the target split that removes Core
+`arts.for` and keeps SDE/Core/RT responsibilities separate, see
+[`dialect-layering-vision.md`](./dialect-layering-vision.md).
 
 ## CLI Introspection
 

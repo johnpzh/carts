@@ -361,10 +361,8 @@ private:
     Value depElementSize = AC->create<polygeist::TypeSizeOp>(
         loc, IndexType::get(AC->getContext()), AC->ArtsEdtDep);
     depElementSize = AC->castToInt(AC->PtrSize, depElementSize, loc);
-
     ArtsCodegen::RuntimeCallBuilder RCB(*AC, loc);
-    return RCB.call(types::ARTSRTL_arts_calloc,
-                    {depCountSize, depElementSize});
+    return RCB.call(types::ARTSRTL_arts_calloc, {depCountSize, depElementSize});
   }
 
   void freeReadyLocalDepBuffer(Value depBuffer, Location loc) const {

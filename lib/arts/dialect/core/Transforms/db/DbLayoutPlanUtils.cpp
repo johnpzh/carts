@@ -49,6 +49,33 @@ static std::optional<unsigned> findOwnerPosition(ArrayRef<int64_t> ownerDims,
   return std::nullopt;
 }
 
+static bool ownerDimsContain(ArrayRef<int64_t> ownerDims, unsigned dim) {
+  for (int64_t ownerDim : ownerDims)
+    if (ownerDim >= 0 && static_cast<unsigned>(ownerDim) == dim)
+      return true;
+  return false;
+}
+
+static std::optional<int64_t>
+getBlockShapeForOwnerDim(ArrayRef<int64_t> blockShape,
+                         ArrayRef<int64_t> ownerDims, unsigned ownerSlot) {
+  if (blockShape.empty())
+    return std::nullopt;
+  if (blockShape.size() == ownerDims.size()) {
+    if (ownerSlot < blockShape.size() && blockShape[ownerSlot] > 0)
+      return blockShape[ownerSlot];
+    return std::nullopt;
+  }
+  if (ownerSlot >= ownerDims.size())
+    return std::nullopt;
+  int64_t ownerDim = ownerDims[ownerSlot];
+  if (ownerDim < 0 || static_cast<size_t>(ownerDim) >= blockShape.size())
+    return std::nullopt;
+  if (blockShape[static_cast<size_t>(ownerDim)] <= 0)
+    return std::nullopt;
+  return blockShape[static_cast<size_t>(ownerDim)];
+}
+
 static Value blockSizeForPhysicalDim(const DbRewritePlan &plan,
                                      unsigned physicalDim) {
   for (auto [idx, dim] : llvm::enumerate(plan.partitionedDims))
@@ -100,6 +127,90 @@ bool mlir::arts::hasPhysicalDbLayoutPlan(Operation *op) {
   if (!op)
     return false;
   return getPlanOwnerDimsAttr(op) && getPlanPhysicalBlockShapeAttr(op);
+}
+
+bool mlir::arts::hasReadOnlySourceLayoutMismatch(
+    DbAllocOp sourceAlloc, Operation *taskPlanSource,
+    const LoweringContractInfo &contract) {
+  if (!sourceAlloc || contract.spatial.ownerDims.empty())
+    return false;
+  if (!(contract.isStencilFamily() || contract.usesStencilDistribution() ||
+        contract.supportsBlockHalo()))
+    return false;
+
+  auto sourceOwnerDims =
+      readI64ArrayAttr(getPlanOwnerDimsAttr(sourceAlloc.getOperation()));
+  auto sourceBlockShape =
+      readI64ArrayAttr(getPlanPhysicalBlockShapeAttr(sourceAlloc.getOperation()));
+  std::optional<SmallVector<int64_t, 4>> taskOwnerDims =
+      taskPlanSource ? readI64ArrayAttr(getPlanOwnerDimsAttr(taskPlanSource))
+                     : std::nullopt;
+  std::optional<SmallVector<int64_t, 4>> taskPlanBlockShape =
+      taskPlanSource
+          ? readI64ArrayAttr(getPlanPhysicalBlockShapeAttr(taskPlanSource))
+          : std::nullopt;
+  auto contractBlockShape = contract.getStaticBlockShape();
+
+  ArrayRef<int64_t> effectiveTaskOwnerDims =
+      (taskOwnerDims && !taskOwnerDims->empty()) ? ArrayRef<int64_t>(*taskOwnerDims)
+                                                 : contract.spatial.ownerDims;
+  ArrayRef<int64_t> effectiveTaskBlockShape =
+      (taskPlanBlockShape && !taskPlanBlockShape->empty())
+          ? ArrayRef<int64_t>(*taskPlanBlockShape)
+          : (contractBlockShape ? ArrayRef<int64_t>(*contractBlockShape)
+                                : ArrayRef<int64_t>{});
+  if (!sourceOwnerDims || sourceOwnerDims->empty() || !sourceBlockShape ||
+      sourceBlockShape->empty() || effectiveTaskBlockShape.empty())
+    return false;
+
+  for (auto [ownerSlot, ownerDim] : llvm::enumerate(effectiveTaskOwnerDims)) {
+    if (ownerDim < 0)
+      return true;
+    if (!ownerDimsContain(*sourceOwnerDims, static_cast<unsigned>(ownerDim)))
+      return true;
+
+    auto sourceBlock =
+        getBlockShapeForOwnerDim(*sourceBlockShape, *sourceOwnerDims, ownerSlot);
+    auto taskBlock = getBlockShapeForOwnerDim(
+        effectiveTaskBlockShape, effectiveTaskOwnerDims, ownerSlot);
+    if (sourceBlock && taskBlock && *sourceBlock != *taskBlock)
+      return true;
+  }
+
+  return false;
+}
+
+std::optional<SmallVector<int64_t, 4>>
+mlir::arts::getSourceOwnerBlockShape(DbAllocOp sourceAlloc,
+                                     const LoweringContractInfo &contract) {
+  if (!sourceAlloc || contract.spatial.ownerDims.empty())
+    return std::nullopt;
+
+  auto sourceOwnerDims =
+      readI64ArrayAttr(getPlanOwnerDimsAttr(sourceAlloc.getOperation()));
+  auto sourceBlockShape =
+      readI64ArrayAttr(getPlanPhysicalBlockShapeAttr(sourceAlloc.getOperation()));
+  if (!sourceOwnerDims || sourceOwnerDims->empty() || !sourceBlockShape ||
+      sourceBlockShape->empty())
+    return std::nullopt;
+
+  SmallVector<int64_t, 4> blockShape;
+  blockShape.reserve(contract.spatial.ownerDims.size());
+  for (auto [ownerSlot, ownerDim] : llvm::enumerate(contract.spatial.ownerDims)) {
+    if (ownerDim < 0)
+      return std::nullopt;
+    if (!ownerDimsContain(*sourceOwnerDims, static_cast<unsigned>(ownerDim)))
+      return std::nullopt;
+    auto sourceBlock =
+        getBlockShapeForOwnerDim(*sourceBlockShape, *sourceOwnerDims, ownerSlot);
+    if (!sourceBlock)
+      return std::nullopt;
+    blockShape.push_back(*sourceBlock);
+  }
+
+  if (blockShape.empty())
+    return std::nullopt;
+  return blockShape;
 }
 
 FailureOr<DbRewritePlan>

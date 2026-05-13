@@ -85,9 +85,30 @@ static std::optional<unsigned> inferAcquireMappedDim(DbAnalysis *dbAnalysis,
   return dbAnalysis->inferLoopMappedDim(acquire.getPtr(), forOp);
 }
 
-static bool acquireHasAccessDependingOnLoopIv(DbAcquireOp acquire,
+static void collectLoopReachableMemoryOps(ArrayRef<Value> deps, ForOp forOp,
+                                          llvm::SetVector<Operation *> &memOps) {
+  if (!forOp)
+    return;
+
+  Region &forRegion = forOp.getRegion();
+  llvm::SetVector<Operation *> candidates;
+  for (Value dep : deps)
+    if (dep)
+      DbUtils::collectReachableMemoryOps(dep, candidates, /*scope=*/nullptr);
+
+  for (Operation *memOp : candidates) {
+    Region *memRegion = memOp ? memOp->getParentRegion() : nullptr;
+    if (!memRegion)
+      continue;
+    if (memRegion != &forRegion && !forRegion.isAncestor(memRegion))
+      continue;
+    memOps.insert(memOp);
+  }
+}
+
+static bool valuesHaveAccessDependingOnLoopIv(ArrayRef<Value> deps,
                                               ForOp forOp) {
-  if (!acquire || !forOp)
+  if (deps.empty() || !forOp)
     return false;
 
   Block &forBody = forOp.getRegion().front();
@@ -95,17 +116,10 @@ static bool acquireHasAccessDependingOnLoopIv(DbAcquireOp acquire,
     return false;
 
   Value loopIV = forBody.getArgument(0);
-  Region &forRegion = forOp.getRegion();
   llvm::SetVector<Operation *> memOps;
-  DbUtils::collectReachableMemoryOps(acquire.getPtr(), memOps,
-                                     /*scope=*/nullptr);
+  collectLoopReachableMemoryOps(deps, forOp, memOps);
 
   for (Operation *memOp : memOps) {
-    Region *memRegion = memOp ? memOp->getParentRegion() : nullptr;
-    if (!memRegion)
-      continue;
-    if (memRegion != &forRegion && !forRegion.isAncestor(memRegion))
-      continue;
 
     std::optional<DbUtils::MemoryAccessInfo> access =
         DbUtils::getMemoryAccessInfo(memOp);
@@ -192,7 +206,8 @@ static bool writeOwnerAccessesTrackLoopIv(Value dep, ForOp forOp,
   return sawWrite;
 }
 
-static std::optional<ArtsMode> inferLoopLocalMode(Value dep, ForOp forOp);
+static std::optional<ArtsMode> inferLoopLocalMode(ArrayRef<Value> deps,
+                                                  ForOp forOp);
 
 static bool hasOwnerMismatchedWriteDep(ForOp forOp, EdtOp parallelEdt) {
   if (!forOp || !parallelEdt)
@@ -212,9 +227,10 @@ static bool hasOwnerMismatchedWriteDep(ForOp forOp, EdtOp parallelEdt) {
       continue;
 
     BlockArgument parallelArg = parallelBlock.getArgument(idx);
+    SmallVector<Value, 2> depAliases{parentAcqOp.getPtr(), parallelArg};
     ArtsMode effectiveMode = parentAcqOp.getMode();
     if (effectiveMode == ArtsMode::inout)
-      if (auto loopLocalMode = inferLoopLocalMode(parallelArg, forOp))
+      if (auto loopLocalMode = inferLoopLocalMode(depAliases, forOp))
         effectiveMode = *loopLocalMode;
     if (effectiveMode != ArtsMode::out && effectiveMode != ArtsMode::inout)
       continue;
@@ -301,8 +317,9 @@ static bool shouldShareCoarseInPlaceDb(ForOp forOp, EdtOp parallelEdt,
 }
 
 static std::optional<AccessBoundsResult>
-inferLoopHaloBoundsFromValue(Value dep, ForOp forOp, unsigned mappedDim) {
-  if (!dep || !forOp)
+inferLoopHaloBoundsFromValues(ArrayRef<Value> deps, ForOp forOp,
+                              unsigned mappedDim) {
+  if (deps.empty() || !forOp)
     return std::nullopt;
 
   Block &forBody = forOp.getRegion().front();
@@ -310,18 +327,11 @@ inferLoopHaloBoundsFromValue(Value dep, ForOp forOp, unsigned mappedDim) {
     return std::nullopt;
 
   Value loopIV = forBody.getArgument(0);
-  Region &forRegion = forOp.getRegion();
   llvm::SetVector<Operation *> memOps;
-  DbUtils::collectReachableMemoryOps(dep, memOps, /*scope=*/nullptr);
+  collectLoopReachableMemoryOps(deps, forOp, memOps);
 
   SmallVector<AccessIndexInfo, 16> accesses;
   for (Operation *memOp : memOps) {
-    Region *memRegion = memOp ? memOp->getParentRegion() : nullptr;
-    if (!memRegion)
-      continue;
-    if (memRegion != &forRegion && !forRegion.isAncestor(memRegion))
-      continue;
-
     std::optional<DbUtils::MemoryAccessInfo> access =
         DbUtils::getMemoryAccessInfo(memOp);
     if (!access || access->indices.empty())
@@ -341,23 +351,17 @@ inferLoopHaloBoundsFromValue(Value dep, ForOp forOp, unsigned mappedDim) {
   return bounds;
 }
 
-static std::optional<ArtsMode> inferLoopLocalMode(Value dep, ForOp forOp) {
-  if (!dep || !forOp)
+static std::optional<ArtsMode> inferLoopLocalMode(ArrayRef<Value> deps,
+                                                  ForOp forOp) {
+  if (deps.empty() || !forOp)
     return std::nullopt;
 
-  Region &forRegion = forOp.getRegion();
   llvm::SetVector<Operation *> memOps;
-  DbUtils::collectReachableMemoryOps(dep, memOps, /*scope=*/nullptr);
+  collectLoopReachableMemoryOps(deps, forOp, memOps);
 
   bool hasRead = false;
   bool hasWrite = false;
   for (Operation *memOp : memOps) {
-    Region *memRegion = memOp ? memOp->getParentRegion() : nullptr;
-    if (!memRegion)
-      continue;
-    if (memRegion != &forRegion && !forRegion.isAncestor(memRegion))
-      continue;
-
     std::optional<DbUtils::MemoryAccessInfo> access =
         DbUtils::getMemoryAccessInfo(memOp);
     if (!access)
@@ -554,6 +558,39 @@ static int64_t countMemrefsWithLoopCarriedDeps(arts::ForOp forOp) {
       ++count;
   }
   return count;
+}
+
+template <typename Fn>
+static void collectForControlValues(ForOp forOp, Fn &&collectValue) {
+  for (Value value : forOp.getLowerBound())
+    collectValue(value);
+  for (Value value : forOp.getUpperBound())
+    collectValue(value);
+  for (Value value : forOp.getStep())
+    collectValue(value);
+  if (Value chunk = forOp.getChunkSize())
+    collectValue(chunk);
+}
+
+static void materializeTrailingForDimensions(ArtsCodegen *AC, ForOp forOp,
+                                             IRMapping &mapper) {
+  if (!AC || !forOp || forOp.getRegion().empty())
+    return;
+
+  Block &forBody = forOp.getRegion().front();
+  unsigned rank =
+      std::min<unsigned>({static_cast<unsigned>(forOp.getLowerBound().size()),
+                          static_cast<unsigned>(forOp.getUpperBound().size()),
+                          static_cast<unsigned>(forOp.getStep().size()),
+                          forBody.getNumArguments()});
+  for (unsigned dim = 1; dim < rank; ++dim) {
+    Value lower = mapper.lookupOrDefault(forOp.getLowerBound()[dim]);
+    Value upper = mapper.lookupOrDefault(forOp.getUpperBound()[dim]);
+    Value step = mapper.lookupOrDefault(forOp.getStep()[dim]);
+    auto nested = AC->create<scf::ForOp>(forOp.getLoc(), lower, upper, step);
+    mapper.map(forBody.getArgument(dim), nested.getInductionVar());
+    AC->setInsertionPointToStart(nested.getBody());
+  }
 }
 
 /// ForLowering Pass Implementation
@@ -1014,6 +1051,7 @@ void ForLoweringPass::cloneLoopBody(ArtsCodegen *AC, ForOp forOp,
     BlockArgument forIV = forBody.getArgument(0);
     mapper.map(forIV, globalIdx);
   }
+  materializeTrailingForDimensions(AC, forOp, mapper);
 
   /// Collect constants used in the loop body that are defined outside
   /// and clone them inside the EDT region
@@ -1383,9 +1421,10 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
         (!parentAcqOp.isCoarse() || parentAcqOp.getPreserveAccessMode() ||
          parentAcqOp.getPreserveDepEdge());
 
+    SmallVector<Value, 2> depAliases{parentAcqOp.getPtr(), parallelArg};
     ArtsMode effectiveTaskMode = parentAcqOp.getMode();
     if (effectiveTaskMode == ArtsMode::inout)
-      if (auto loopLocalMode = inferLoopLocalMode(parallelArg, forOp))
+      if (auto loopLocalMode = inferLoopLocalMode(depAliases, forOp))
         effectiveTaskMode = *loopLocalMode;
     auto sourceAlloc = dyn_cast_or_null<DbAllocOp>(
         DbUtils::getUnderlyingDbAlloc(parentAcqOp.getSourcePtr()));
@@ -1401,16 +1440,47 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
         inferAcquireMappedDim(&AM->getDbAnalysis(), parentAcqOp, forOp);
     std::optional<LoweringContractInfo> loopSemanticContract =
         getSemanticContract(forOp.getOperation());
+    /// Resolve the effective contract by combining acquire + alloc + loop
+    /// contracts before deciding whether a read-only dependency may fall back
+    /// to the parent coarse range. Explicit stencil, owner, or narrowable
+    /// contracts are authoritative worker-local dependency-window requests.
+    LoweringContractInfo contract;
+    if (auto acquireContract = resolveAcquireContract(parentAcqOp))
+      contract = *acquireContract;
+    if (loopSemanticContract)
+      combineContracts(contract, *loopSemanticContract);
+    if (contract.spatial.ownerDims.empty()) {
+      if (auto planOwnerDims =
+              readI64ArrayAttr(getPlanOwnerDimsAttr(forOp.getOperation()))) {
+        contract.spatial.ownerDims = *planOwnerDims;
+      }
+    }
+    if (contract.spatial.ownerDims.empty())
+      if (accessMappedDim)
+        contract.spatial.ownerDims.push_back(
+            static_cast<int64_t>(*accessMappedDim));
+
+    std::optional<LoweringContractInfo> resolvedContractForOwnerDims = contract;
     SmallVector<int64_t, 4> loopOwnerDims =
         getLoopOwnerDimsFromContractOrPlan(forOp.getOperation(),
-                                           loopSemanticContract);
+                                           resolvedContractForOwnerDims);
     bool readOnlyOwnerMismatchedDep =
         effectiveTaskMode == ArtsMode::in && preservePlannedBlockRead &&
         accessMappedDim && !loopOwnerDims.empty() &&
         !ownerDimsContain(loopOwnerDims, *accessMappedDim);
+    bool readOnlyLayoutMismatchedDep =
+        effectiveTaskMode == ArtsMode::in &&
+        hasReadOnlySourceLayoutMismatch(sourceAlloc, forOp.getOperation(),
+                                        contract);
+    bool hasWorkerLocalReadContract =
+        effectiveTaskMode == ArtsMode::in &&
+        (contract.supportsBlockHalo() || contract.hasExplicitStencilContract() ||
+         contract.analysis.narrowableDep || !contract.spatial.ownerDims.empty() ||
+         parentAcqOp.getPreserveDepEdge());
     bool forceCoarseReadOnlyDep =
-        effectiveTaskMode == ArtsMode::in && !preservePlannedBlockRead &&
-        !acquireHasAccessDependingOnLoopIv(parentAcqOp, forOp);
+        effectiveTaskMode == ArtsMode::in &&
+        !preservePlannedBlockRead && !hasWorkerLocalReadContract &&
+        !valuesHaveAccessDependingOnLoopIv(depAliases, forOp);
 
     if (shouldShareCoarseInPlaceDb(forOp, originalParallel, parentAcqOp,
                                    sourceAlloc, effectiveTaskMode,
@@ -1474,15 +1544,6 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
     std::optional<EdtDistributionPattern> distributionPattern =
         loopInfo.distributionContract.getEffectiveDistributionPattern();
 
-    /// Resolve the effective contract by combining acquire + alloc + loop
-    /// contracts.
-    LoweringContractInfo contract;
-    if (auto acquireContract = resolveAcquireContract(parentAcqOp))
-      contract = *acquireContract;
-    if (!forceCoarseReadOnlyDep)
-      if (loopSemanticContract)
-        combineContracts(contract, *loopSemanticContract);
-
     std::optional<unsigned> inferredMappedDim = accessMappedDim;
     /// Plan-driven path: use plan ownerDims when present.
     if (!forceCoarseReadOnlyDep && contract.spatial.ownerDims.empty()) {
@@ -1522,8 +1583,8 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
       /// Prefer the persisted acquire/loop contract. When it is still
       /// incomplete, infer a conservative loop-local halo directly from IR
       /// uses instead of consulting graph-only partition facts here.
-      if (auto bounds = inferLoopHaloBoundsFromValue(parentAcqOp.getPtr(),
-                                                     forOp, *ownerDimForHalo)) {
+      if (auto bounds = inferLoopHaloBoundsFromValues(depAliases, forOp,
+                                                      *ownerDimForHalo)) {
         patchContract(contract, {}, {bounds->minOffset}, {bounds->maxOffset});
       }
     }
@@ -1632,7 +1693,11 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
 
     applyTaskAcquireContractMetadata(
         forceCoarseReadOnlyDep ? nullptr : forOp.getOperation(), chunkAcqOp,
-        planningInput.contract, plannedTaskBlockShape, AC->getBuilder(), loc);
+        planningInput.contract,
+        readOnlyLayoutMismatchedDep
+            ? getSourceOwnerBlockShape(sourceAlloc, planningInput.contract)
+            : plannedTaskBlockShape,
+        AC->getBuilder(), loc);
     if (plannedTaskBlockShape)
       refinedTaskBlockShape = *plannedTaskBlockShape;
 
@@ -1703,9 +1768,7 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
       }
     };
 
-    collectWithDeps(origStep);
-    collectWithDeps(origLowerBound);
-    collectWithDeps(origUpperBound);
+    collectForControlValues(forOp, collectWithDeps);
     collectWithDeps(chunkLowerBoundVal);
     collectWithDeps(workerOffsetVal);
     taskLoopLowering->collectExtraExternalValues(taskLoopInput, externalValues);
@@ -1778,6 +1841,7 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
 
     if (forBody.getNumArguments() > 0)
       directMapper.map(forBody.getArgument(0), globalIdx);
+    materializeTrailingForDimensions(AC, forOp, directMapper);
 
     for (Operation &op : forBody.without_terminator()) {
       if (opsToSkip.contains(&op))
@@ -1936,9 +2000,7 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
     }
   };
 
-  collectWithDeps(origStep);
-  collectWithDeps(origLowerBound);
-  collectWithDeps(origUpperBound);
+  collectForControlValues(forOp, collectWithDeps);
   collectWithDeps(chunkLowerBoundVal);
   collectWithDeps(workerOffsetVal);
 
@@ -2040,6 +2102,7 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
 
   if (forBody.getNumArguments() > 0)
     redMapper.map(forBody.getArgument(0), globalIdx);
+  materializeTrailingForDimensions(AC, forOp, redMapper);
 
   /// No per-iteration bounds check needed: loop bounds already clamped.
 

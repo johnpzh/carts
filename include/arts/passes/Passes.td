@@ -474,6 +474,25 @@ def VerifyForLowered : Pass<"verify-for-lowered", "mlir::ModuleOp"> {
   let constructor = "mlir::arts::createVerifyForLoweredPass()";
 }
 
+def VerifyCoreObjectsOnly : Pass<"verify-core-objects-only", "mlir::ModuleOp"> {
+  let summary = "Verify the SDE/Core boundary contains only Core ARTS objects";
+  let description = [{
+    Reports or rejects temporary scheduler carriers that violate the target
+    dialect layering contract: no residual SDE operations, no semantic
+    arts.for loop carriers, and no semantic parallel EDT wrappers at the
+    SDE/Core boundary.
+  }];
+  let dependentDialects = [
+    "::mlir::arts::ArtsDialect",
+    "::mlir::arts::sde::ArtsSdeDialect"
+  ];
+  let options = [
+    Option<"reportOnly", "report-only", "bool", "false",
+           "Emit boundary debt diagnostics without failing the pass">
+  ];
+  let constructor = "mlir::arts::createVerifyCoreObjectsOnlyPass()";
+}
+
 def VerifyPreLowered : Pass<"verify-pre-lowered", "mlir::ModuleOp"> {
   let summary = "Verify pre-lowering removed high-level scheduler ops";
   let dependentDialects = ["::mlir::arts::ArtsDialect"];

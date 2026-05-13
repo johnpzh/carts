@@ -5,6 +5,11 @@ runtime-call optimization planning. RT is not a semantic planning layer. It
 receives a DB/EDT/epoch shape chosen by SDE and Core, then lowers and tightens
 the runtime-call representation.
 
+For the target dialect split, see
+[`../dialect-layering-vision.md`](../dialect-layering-vision.md). RT should
+only lower runtime API shape after SDE has chosen logical work and Core has
+bound that work to ARTS EDT/DB/Epoch objects.
+
 ## Boundary
 
 RT owns:

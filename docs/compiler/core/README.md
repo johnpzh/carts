@@ -5,6 +5,12 @@ Core is the ARTS-machine-aware layer after SDE and before RT-shaped lowering.
 It materializes SDE-authored plans into concrete DB, EDT, dependency, and epoch
 structure, then refines that structure with Core analyses.
 
+For the target dialect split, including the plan to remove Core `arts.for`,
+semantic `arts.edt<parallel>`, `ForLowering`, and related scheduler scaffolding,
+see [`../dialect-layering-vision.md`](../dialect-layering-vision.md). This
+README also describes current compatibility responsibilities that should shrink
+as that migration lands.
+
 ## Boundary
 
 Core owns:
@@ -13,8 +19,10 @@ Core owns:
 - DB, EDT, loop, epoch, and distributed-orchestration analyses.
 - DB mode tightening, DB/EDT transforms, dependency-window lowering, and
   contract validation.
-- EDT distribution, orchestration, `ForLowering`, and host/machine-aware
-  outlining decisions.
+- Current compatibility passes such as EDT distribution, orchestration,
+  `ForLowering`, and host/machine-aware outlining decisions. In the target
+  architecture, semantic planning moves to SDE and Core only materializes
+  EDT/DB/Epoch objects from the SDE work plan.
 - Epoch creation, CPS/continuation structure, and Core-side epoch cleanup.
 
 Core must not own:

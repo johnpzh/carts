@@ -55,6 +55,23 @@ using namespace mlir;
 
 namespace {
 
+static bool hasMultiDimensionalOwnerTilePlan(ForOp forOp) {
+  if (!forOp || forOp.getInPlaceSharedState())
+    return false;
+  if (forOp.getLowerBound().size() < 2 || forOp.getUpperBound().size() < 2 ||
+      forOp.getStep().size() < 2)
+    return false;
+
+  auto topology = getPlanIterationTopologyAttr(forOp.getOperation());
+  if (!topology ||
+      (topology.getValue() != ArtsPlanIterationTopology::owner_tile &&
+       topology.getValue() != ArtsPlanIterationTopology::owner_tile_2d))
+    return false;
+
+  auto ownerDims = readI64ArrayAttr(getPlanOwnerDimsAttr(forOp.getOperation()));
+  return ownerDims && ownerDims->size() >= 2;
+}
+
 static void globalizeChunkLocalInnerLoopBounds(ModuleOp module) {
   // When arts.for has block distribution but the acquire is coarse (no
   // per-task slice geometry), the SDE-generated body can use chunk-local
@@ -154,13 +171,12 @@ struct EdtDistributionPass
                 EdtDistributionPattern::unknown));
         EdtDistributionKind kind =
             existingKind.value_or(heuristics.chooseKind(strategy, pattern));
-        /// Keep distribution_kind focused on execution decomposition.
-        /// 2-D stencil owner semantics already flow through the
-        /// stencil/lowering contract attrs (owner dims, halo, block shape).
-        /// Overloading `tiling_2d` here forces stencil loops such as Seidel
-        /// through the matmul-oriented Tile2DTaskLoopLowering path even when
-        /// they only need block-style task distribution with N-D ownership
-        /// preserved.
+        /// SDE owns the legality of multi-owner tiled iteration spaces. When it
+        /// stamps an owner-tile plan on a true multi-IV arts.for, Core can use
+        /// the generic 2-D worker decomposition instead of rediscovering stencil
+        /// structure in ForLowering.
+        if (!existingKind && hasMultiDimensionalOwnerTilePlan(forOp))
+          kind = EdtDistributionKind::tiling_2d;
         if (!existingKind)
           setEdtDistributionKind(forOp.getOperation(), kind);
         if (!existingPattern && parentPattern)

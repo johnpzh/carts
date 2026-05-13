@@ -134,7 +134,6 @@ void promoteAllocsForCPSChain(scf::ForOp forOp,
 
     Value allocValue = allocOp ? allocOp.getResult() : allocaOp.getResult();
     MemRefType memRefType = cast<MemRefType>(allocValue.getType());
-    Type elementType = memRefType.getElementType();
     SmallVector<Value> dynamicSizes;
     if (allocOp)
       dynamicSizes.append(allocOp.getDynamicSizes().begin(),
@@ -256,6 +255,83 @@ struct CpsDbInfo {
   DbAllocOp alloc;
   bool isGuid;
 };
+
+SmallVector<Value> getMemRefShapeValues(OpBuilder &builder, Location loc,
+                                        Value memref, DbAllocOp alloc) {
+  SmallVector<Value> shape;
+  auto memRefType = dyn_cast<MemRefType>(memref.getType());
+  if (!memRefType)
+    return shape;
+
+  SmallVector<Value> allocSizes;
+  if (alloc)
+    allocSizes.append(alloc.getSizes().begin(), alloc.getSizes().end());
+
+  shape.reserve(memRefType.getRank());
+  for (unsigned dim = 0; dim < static_cast<unsigned>(memRefType.getRank());
+       ++dim) {
+    if (dim < allocSizes.size()) {
+      shape.push_back(allocSizes[dim]);
+      continue;
+    }
+    if (memRefType.isDynamicDim(dim)) {
+      shape.push_back(memref::DimOp::create(builder, loc, memref, dim));
+      continue;
+    }
+    shape.push_back(arith::ConstantIndexOp::create(
+        builder, loc, memRefType.getDimSize(dim)));
+  }
+  return shape;
+}
+
+SmallVector<Value> getDynamicShapeValues(MemRefType memRefType,
+                                         ArrayRef<Value> shape) {
+  SmallVector<Value> dynamicShape;
+  dynamicShape.reserve(memRefType.getNumDynamicDims());
+  for (unsigned dim = 0; dim < static_cast<unsigned>(memRefType.getRank());
+       ++dim) {
+    if (!memRefType.isDynamicDim(dim))
+      continue;
+    if (dim < shape.size())
+      dynamicShape.push_back(shape[dim]);
+  }
+  return dynamicShape;
+}
+
+SmallVector<Value> delinearizeRowMajor(OpBuilder &builder, Location loc,
+                                       Value linearIndex,
+                                       ArrayRef<Value> shape) {
+  if (shape.empty())
+    return {};
+  if (shape.size() == 1)
+    return {linearIndex};
+
+  SmallVector<Value> indices(shape.size());
+  Value residual = linearIndex;
+  for (int64_t dim = static_cast<int64_t>(shape.size()) - 1; dim > 0; --dim) {
+    indices[dim] = arith::RemUIOp::create(builder, loc, residual, shape[dim]);
+    residual = arith::DivUIOp::create(builder, loc, residual, shape[dim]);
+  }
+  indices.front() = residual;
+  return indices;
+}
+
+SmallVector<Value> getLinearizedMemRefIndices(OpBuilder &builder, Location loc,
+                                              Value memref, DbAllocOp alloc,
+                                              Value linearIndex) {
+  return delinearizeRowMajor(builder, loc, linearIndex,
+                             getMemRefShapeValues(builder, loc, memref, alloc));
+}
+
+std::pair<SmallVector<Value>, SmallVector<Value>>
+getFullDbRange(OpBuilder &builder, Location loc, Value dbPtr, DbAllocOp alloc) {
+  SmallVector<Value> sizes = getMemRefShapeValues(builder, loc, dbPtr, alloc);
+  SmallVector<Value> offsets;
+  offsets.reserve(sizes.size());
+  for (unsigned i = 0; i < sizes.size(); ++i)
+    offsets.push_back(arith::ConstantIndexOp::create(builder, loc, 0));
+  return {std::move(offsets), std::move(sizes)};
+}
 
 } // namespace
 
@@ -545,6 +621,7 @@ bool tryCPSChainTransform(scf::ForOp forOp,
 
         for (unsigned g = 0; g < dataGuids.size(); ++g) {
           Value guidArray = dataGuids[g].first;
+          auto &guidInfo = dataGuids[g].second;
           auto [offset, count] = guidArrayLayout[g];
 
           auto loop = scf::ForOp::create(
@@ -553,8 +630,11 @@ bool tryCPSChainTransform(scf::ForOp forOp,
               arith::ConstantIndexOp::create(preEpochBuilder, loc, 1));
           OpBuilder loopBody = OpBuilder::atBlockTerminator(loop.getBody());
           Value i = loop.getInductionVar();
-          Value guid =
-              memref::LoadOp::create(loopBody, loc, guidArray, ValueRange{i});
+          SmallVector<Value> guidIndices =
+              getLinearizedMemRefIndices(loopBody, loc, guidArray,
+                                         guidInfo.alloc, i);
+          Value guid = memref::LoadOp::create(loopBody, loc, guidArray,
+                                              guidIndices);
           Value scratchIdx = arith::AddIOp::create(loopBody, loc, offset, i);
           memref::StoreOp::create(loopBody, loc, guid, scratchView,
                                   ValueRange{scratchIdx});
@@ -628,8 +708,6 @@ bool tryCPSChainTransform(scf::ForOp forOp,
       !timingDbs.empty() || !dataGuids.empty() || !dataPtrs.empty();
   if (hasDbHandles && firstContinuation) {
     OpBuilder preEpochBuilder(outerEpoch);
-    Value zero = arith::ConstantIndexOp::create(preEpochBuilder, loc, 0);
-    Value one = arith::ConstantIndexOp::create(preEpochBuilder, loc, 1);
     SmallVector<Value> contDeps;
     Value scratchDepGuid;
     DenseSet<Operation *> releasedDbRoots;
@@ -654,13 +732,15 @@ bool tryCPSChainTransform(scf::ForOp forOp,
         continue;
       }
       emitEarlyRelease(info.alloc.getPtr());
+      auto [offsets, sizes] =
+          getFullDbRange(preEpochBuilder, loc, info.alloc.getPtr(), info.alloc);
       auto acq = DbAcquireOp::create(preEpochBuilder, loc, ArtsMode::inout,
                                      info.alloc.getGuid(), info.alloc.getPtr(),
                                      info.alloc.getPtr().getType(),
                                      /*partitionMode=*/std::nullopt,
                                      /*indices=*/SmallVector<Value>{},
-                                     /*offsets=*/SmallVector<Value>{zero},
-                                     /*sizes=*/SmallVector<Value>{one});
+                                     /*offsets=*/offsets,
+                                     /*sizes=*/sizes);
       contDeps.push_back(acq.getPtr());
     }
 
@@ -672,25 +752,30 @@ bool tryCPSChainTransform(scf::ForOp forOp,
       if (!allocPtr || !routedDataPtrRoots.insert(allocPtr).second)
         continue;
       emitEarlyRelease(allocPtr);
+      auto [offsets, sizes] =
+          getFullDbRange(preEpochBuilder, loc, allocPtr, info.alloc);
       auto acq = DbAcquireOp::create(preEpochBuilder, loc, ArtsMode::in,
                                      info.alloc.getGuid(), allocPtr,
                                      allocPtr.getType(),
                                      /*partitionMode=*/std::nullopt,
                                      /*indices=*/SmallVector<Value>{},
-                                     /*offsets=*/SmallVector<Value>{zero},
-                                     /*sizes=*/SmallVector<Value>{one});
+                                     /*offsets=*/offsets,
+                                     /*sizes=*/sizes);
       contDeps.push_back(acq.getPtr());
     }
 
     if (scratchAlloc) {
       emitEarlyRelease(scratchAlloc.getPtr());
+      auto [offsets, sizes] =
+          getFullDbRange(preEpochBuilder, loc, scratchAlloc.getPtr(),
+                         scratchAlloc);
       auto scratchAcq = DbAcquireOp::create(
           preEpochBuilder, loc, ArtsMode::in, scratchAlloc.getGuid(),
           scratchAlloc.getPtr(), scratchAlloc.getPtr().getType(),
           /*partitionMode=*/std::nullopt,
           /*indices=*/SmallVector<Value>{},
-          /*offsets=*/SmallVector<Value>{zero},
-          /*sizes=*/SmallVector<Value>{one});
+          /*offsets=*/offsets,
+          /*sizes=*/sizes);
       scratchDepGuid = scratchAcq.getGuid();
       contDeps.push_back(scratchAcq.getPtr());
     }
@@ -885,8 +970,12 @@ bool tryCPSChainTransform(scf::ForOp forOp,
           if (!origMemrefTy)
             continue;
 
+          SmallVector<Value> guidShape =
+              getMemRefShapeValues(bodyBuilder, loc, origGuidArray,
+                                   guidInfo.alloc);
           Value localGuids = memref::AllocOp::create(
-              bodyBuilder, loc, i64MemrefTy, ValueRange{count});
+              bodyBuilder, loc, origMemrefTy,
+              getDynamicShapeValues(origMemrefTy, guidShape));
           if (auto allocId =
                   DbUtils::resolveRootAllocId(origGuidArray, guidInfo.alloc))
             setDbRootAllocId(localGuids.getDefiningOp(), *allocId);
@@ -900,8 +989,11 @@ bool tryCPSChainTransform(scf::ForOp forOp,
           Value scratchIdx = arith::AddIOp::create(copyBody, loc, offset, ci2);
           Value guidVal = memref::LoadOp::create(copyBody, loc, scratchView,
                                                  ValueRange{scratchIdx});
+          SmallVector<Value> localGuidIndices =
+              getLinearizedMemRefIndices(copyBody, loc, localGuids,
+                                         guidInfo.alloc, ci2);
           memref::StoreOp::create(copyBody, loc, guidVal, localGuids,
-                                  ValueRange{ci2});
+                                  localGuidIndices);
 
           Value replacement = localGuids;
           if (replacement.getType() != origMemrefTy) {

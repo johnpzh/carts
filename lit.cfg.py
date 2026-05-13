@@ -52,22 +52,26 @@ config.test_subdirs = [
 ]
 
 # Keep llvm-lit resilient to interrupted writes or stray blank lines in the
-# per-suite timing cache.
-test_times_path = os.path.join(tests_dir, ".lit_test_times.txt")
-if os.path.exists(test_times_path):
-    with open(test_times_path, "r") as time_file:
-        cleaned_lines = []
-        for line in time_file:
-            fields = line.split(maxsplit=1)
-            if len(fields) != 2:
-                continue
-            try:
-                float(fields[0])
-            except ValueError:
-                continue
-            cleaned_lines.append(line)
-    with open(test_times_path, "w") as time_file:
-        time_file.writelines(cleaned_lines)
+# per-suite timing cache. TestTimes.py prefers the exec-root cache and falls
+# back to the source-root cache.
+for test_times_path in (
+    os.path.join(config.test_exec_root, ".lit_test_times.txt"),
+    os.path.join(config.test_source_root, ".lit_test_times.txt"),
+):
+    if os.path.exists(test_times_path):
+        with open(test_times_path, "r") as time_file:
+            cleaned_lines = []
+            for line in time_file:
+                fields = line.split(maxsplit=1)
+                if len(fields) != 2:
+                    continue
+                try:
+                    float(fields[0])
+                except ValueError:
+                    continue
+                cleaned_lines.append(line)
+        with open(test_times_path, "w") as time_file:
+            time_file.writelines(cleaned_lines)
 
 # --- Tool paths ---
 install_root = os.path.join(project_root, ".install")

@@ -150,6 +150,12 @@ static cl::opt<bool> RuntimeStaticWorkers(
              "when the module embeds a valid ARTS config"),
     cl::init(false));
 
+static cl::opt<bool> ReportCoreObjectBoundary(
+    "report-core-object-boundary",
+    cl::desc("Emit report-only diagnostics for non-Core objects after "
+             "SDE-to-ARTS conversion"),
+    cl::init(false));
+
 /// Distributed DB allocation enablement.
 static cl::opt<bool> DistributedDb(
     "distributed-db",
@@ -259,7 +265,7 @@ static const std::array<llvm::StringLiteral, 10>
                                         "CSE"};
 static const std::array<llvm::StringLiteral, 3> kInitialCleanupPasses = {
     "LowerAffine(func)", "CSE(func)", "PolygeistCanonicalizeFor(func)"};
-static const std::array<llvm::StringLiteral, 24> kOpenMPToArtsPasses = {
+static const std::array<llvm::StringLiteral, 25> kOpenMPToArtsPasses = {
     "ConvertOpenMPToSde",
     "RaiseToTensor",
     "RaiseToLinalg",
@@ -281,6 +287,7 @@ static const std::array<llvm::StringLiteral, 24> kOpenMPToArtsPasses = {
     "TokenModeRefine",
     "ConvertSdeToArts",
     "VerifySdeLowered",
+    "VerifyCoreObjectsOnly(report-only, conditional)",
     "DeadCodeElimination",
     "CSE",
     "VerifyEdtCreated"};
@@ -701,6 +708,8 @@ void buildOpenMPToArtsPipeline(PassManager &pm,
   // changes IR shapes that downstream CHECK patterns depend on.
   pm.addPass(arts::sde::createConvertSdeToArtsPass());
   pm.addPass(arts::sde::createVerifySdeLoweredPass());
+  if (ReportCoreObjectBoundary)
+    pm.addPass(arts::createVerifyCoreObjectsOnlyPass(/*reportOnly=*/true));
   pm.addPass(arts::createDCEPass());
   pm.addPass(createCSEPass());
   pm.addPass(arts::createVerifyEdtCreatedPass());

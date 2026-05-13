@@ -8,6 +8,12 @@ effect summaries, task shape, and physical DB layout policy before
 until SDE/Core plans are present and traces still show launch, CPS, dependency,
 or runtime scheduling overhead.
 
+For the target dialect split, including SDE logical-worker planning and the
+migration away from Core `arts.for`, see
+[`../dialect-layering-vision.md`](../dialect-layering-vision.md). SDE should
+model logical worker capacity, not ARTS nodes, routes, workers-per-node, or
+runtime API queries.
+
 ## Current SDE Spine
 
 The live SDE pass order is inside `openmp-to-arts`:

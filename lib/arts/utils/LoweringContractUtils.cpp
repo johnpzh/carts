@@ -812,44 +812,62 @@ mlir::arts::resolveAcquireContract(DbAcquireOp acquire) {
 }
 
 bool mlir::arts::shouldApplyStencilHalo(const LoweringContractInfo &contract,
-                                        DbAcquireOp acquire) {
-  if (!acquire || acquire.getMode() != ArtsMode::in)
+                                        ArtsMode effectiveMode) {
+  if (effectiveMode != ArtsMode::in)
     return false;
   return contract.supportsBlockHalo();
+}
+
+bool mlir::arts::shouldApplyStencilHalo(const LoweringContractInfo &contract,
+                                        DbAcquireOp acquire) {
+  if (!acquire)
+    return false;
+  return shouldApplyStencilHalo(contract, acquire.getMode());
+}
+
+bool mlir::arts::shouldUsePartitionSliceAsDepWindow(
+    const LoweringContractInfo &contract, ArtsMode effectiveMode,
+    PartitionMode partitionMode) {
+  const bool hasExplicitStencilContract = contract.hasExplicitStencilContract();
+  const bool applyStencilHalo = shouldApplyStencilHalo(contract, effectiveMode);
+
+  if (effectiveMode == ArtsMode::in && hasExplicitStencilContract &&
+      !applyStencilHalo && partitionMode == PartitionMode::stencil)
+    return true;
+
+  if (effectiveMode == ArtsMode::inout && contract.isWavefrontStencilContract())
+    return true;
+
+  return false;
 }
 
 bool mlir::arts::shouldUsePartitionSliceAsDepWindow(
     const LoweringContractInfo &contract, DbAcquireOp acquire) {
   if (!acquire)
     return false;
-
-  const bool hasExplicitStencilContract = contract.hasExplicitStencilContract();
-  const bool applyStencilHalo = shouldApplyStencilHalo(contract, acquire);
-
-  if (acquire.getMode() == ArtsMode::in && hasExplicitStencilContract &&
-      !applyStencilHalo &&
-      acquire.getPartitionMode().value_or(PartitionMode::coarse) ==
-          PartitionMode::stencil)
-    return true;
-
-  if (acquire.getMode() == ArtsMode::inout &&
-      contract.isWavefrontStencilContract())
-    return true;
-
-  return false;
+  return shouldUsePartitionSliceAsDepWindow(
+      contract, acquire.getMode(),
+      acquire.getPartitionMode().value_or(PartitionMode::coarse));
 }
 
 bool mlir::arts::shouldPreserveParentDepRange(
-    const LoweringContractInfo &contract, DbAcquireOp acquire) {
-  if (!acquire || acquire.getMode() != ArtsMode::in)
+    const LoweringContractInfo &contract, ArtsMode effectiveMode) {
+  if (effectiveMode != ArtsMode::in)
     return false;
 
-  const bool applyStencilHalo = shouldApplyStencilHalo(contract, acquire);
+  const bool applyStencilHalo = shouldApplyStencilHalo(contract, effectiveMode);
   const bool hasExplicitStencilContract = contract.hasExplicitStencilContract();
   const bool prefersWorkerLocalReadSlice = contract.analysis.narrowableDep;
 
   return !applyStencilHalo && !hasExplicitStencilContract &&
          !prefersWorkerLocalReadSlice;
+}
+
+bool mlir::arts::shouldPreserveParentDepRange(
+    const LoweringContractInfo &contract, DbAcquireOp acquire) {
+  if (!acquire)
+    return false;
+  return shouldPreserveParentDepRange(contract, acquire.getMode());
 }
 
 LoweringContractOp
