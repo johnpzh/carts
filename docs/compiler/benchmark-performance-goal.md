@@ -573,8 +573,8 @@ Compiler optimization priorities from the final sweep:
   and still bottlenecked; likely candidates are EDT launch/CPS continuation
   overhead and dependency-window handling, not benchmark-source changes.
 
-The concrete SDE-first optimization proposal is maintained in
-[`sde-physical-layout-optimization-plan.md`](./sde-physical-layout-optimization-plan.md).
+The concrete SDE-first optimization proposal is maintained under
+[`sde/`](./sde/).
 
 ## Detailed Triage Notes
 

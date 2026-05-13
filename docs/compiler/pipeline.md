@@ -1,29 +1,25 @@
-# CARTS Compiler Pipeline (Pipeline Order)
+# CARTS Compiler Pipeline
 
-This document mirrors the actual `carts-compile` pipeline-step order defined in
-`tools/compile/Compile.cpp` (`getStageRegistry()` and the `k*Passes` arrays).
+This document mirrors the pipeline order defined in `tools/compile/Compile.cpp`.
+If this file disagrees with the compiler source or `dekk carts pipeline --json`,
+the live compiler wins.
 
-Use it as the canonical checklist when auditing pass ordering, ownership, and
-cross-step contracts. If this file disagrees with Compile.cpp, Compile.cpp
-wins — open a PR to update this page.
-
-For an example-driven view of how concrete loop/kernel families travel through
-the pipeline, see [`optimization-patterns.md`](./optimization-patterns.md).
+For SDE optimization planning, see [`sde/`](./sde/).
 
 ## CLI Introspection
 
 - `dekk carts pipeline`: show pipeline order and pass counts.
-- `dekk carts pipeline --pipeline=<step>`: show passes for one pipeline step.
-- `carts-compile --print-pipeline-manifest-json`: print the machine-readable
-  manifest consumed by the Python CLI.
+- `dekk carts pipeline --json`: print the machine-readable manifest.
+- `dekk carts compile <file> --all-pipelines`: dump stage and pass outputs for
+  a focused input.
 
-## Pipeline Order (`--pipeline` / `--start-from`)
+## Pipeline Order
 
-16 core stages (always run), followed by 2 epilogue stages (conditional):
+Core stages:
 
 1. `raise-memref-dimensionality`
 2. `initial-cleanup`
-3. `openmp-to-arts` *(entire SDE lifecycle lives inside this stage)*
+3. `openmp-to-arts`
 4. `edt-transforms`
 5. `create-dbs`
 6. `db-opt`
@@ -31,246 +27,246 @@ the pipeline, see [`optimization-patterns.md`](./optimization-patterns.md).
 8. `concurrency`
 9. `edt-distribution`
 10. `post-distribution-cleanup`
-11. `db-partitioning`
-12. `post-db-refinement`
-13. `late-concurrency-cleanup`
-14. `epochs`
-15. `pre-lowering`
-16. `arts-to-llvm`
+11. `post-db-refinement`
+12. `late-concurrency-cleanup`
+13. `epochs`
+14. `pre-lowering`
+15. `arts-to-llvm`
 
-Epilogue (conditional, token shown after stage name):
-- `complete-mlir` — post-O3 function-level cleanup (only when `--O3`)
-- `emit-llvm` — final MLIR-to-LLVM-IR emission (only when `--emit-llvm`)
+`--pipeline` also accepts the sentinel `complete`. `--start-from` accepts core
+stages only.
 
-## Pipeline Controls
+Conditional epilogues:
 
-- `--pipeline=<step>`: run up to and including the selected pipeline step.
-- `--start-from=<step>`: skip all earlier pipeline steps and start at the
-  selected pipeline step.
-- `--all-pipelines` (`.mlir` input only): emits one `.mlir` per stage
-  (`<stem>_<stage>.mlir`), the final `<stem>_complete.mlir`, `<stem>.ll`,
-  and a `<stem>_passes/<NN>_<stage>/NNN_<PassClass>.mlir` hierarchy with
-  one dump per executed pass. Nested pass managers (e.g. `initial-cleanup`
-  running `LowerAffinePass` once per `func::FuncOp`) are captured as
-  separate files. The fastest way to bisect a failing pipeline.
-- Invalid ranges are rejected: `--start-from` cannot be later than
-  `--pipeline`.
+- `post-o3-opt`: runs when `--O3` is active.
+- `llvm-ir-emission`: runs when LLVM IR emission is requested.
 
-## Per-Step Pass Summary
+## Stage Summaries
 
-### 1) raise-memref-dimensionality
-1. `LowerAffine` (nested func)
-2. `CSE`
-3. `ArtsInliner`
-4. `PolygeistCanonicalize`
-5. `RaiseMemRefDimensionality`
-6. `HandleDeps`
-7. `DeadCodeElimination`
-8. `CSE`
+### `raise-memref-dimensionality`
 
-### 2) initial-cleanup
-1. `LowerAffine` (nested func)
-2. `CSE` (nested func)
-3. `PolygeistCanonicalizeFor` (nested func)
+```text
+LowerAffine(func)
+CSE
+ArtsInliner
+PolygeistCanonicalize
+ScalarForwarding
+PolygeistCanonicalize
+RaiseMemRefDimensionality
+HandleDeps
+DeadCodeElimination
+CSE
+```
 
-### 3) openmp-to-arts
-The complete SDE lifecycle (OMP → SDE → Core) runs inside this single stage.
-All SDE passes live in `lib/arts/dialect/sde/Transforms/` under the
-`mlir::arts::sde` namespace — the `Sde` prefix on class names has been
-dropped since the dialect location already carries that information.
+### `initial-cleanup`
 
-1. `ConvertOpenMPToSde`
-2. `ScopeSelection`
-3. `ScheduleRefinement`
-4. `ChunkOpt`
-5. `ReductionStrategy`
-6. `RaiseToLinalg`
-7. `RaiseToTensor`
-8. `LoopInterchange`
-9. `Tiling`
-10. `StructuredSummaries`
-11. `ElementwiseFusion`
-12. `DistributionPlanning`
-13. `IterationSpaceDecomposition`
-14. `BarrierElimination`
-15. `ConvertSdeToArts`
-16. `VerifySdeLowered`
-17. `DeadCodeElimination`
-18. `CSE`
-19. `VerifyEdtCreated`
+```text
+LowerAffine(func)
+CSE(func)
+PolygeistCanonicalizeFor(func)
+```
 
-### 4) edt-transforms
-1. `EdtStructuralOpt(runAnalysis=false)`
-2. `EdtICM`
-3. `DeadCodeElimination`
-4. `SymbolDCE`
-5. `CSE`
-6. `EdtPtrRematerialization`
+### `openmp-to-arts`
 
-### 5) create-dbs
-1. `DistributedHostLoopOutlining` (conditional — multinode / `--distributed-db`)
-2. `CreateDbs`
-3. `CSE` (bridge cleanup, conditional)
-4. `PolygeistCanonicalize`
-5. `CSE`
-6. `SymbolDCE`
-7. `Mem2Reg`
-8. `PolygeistCanonicalize`
+The complete SDE lifecycle lives inside this stage.
 
-*No structural verifier here.* The old `VerifyDbCreated` pass enforced
-"any EDT ⇒ some DB must exist", which is too strict: `ConvertSdeToArts`
-legitimately produces zero-memory EDTs for degenerate parallel regions
-(samples whose body is only external calls / prints). Downstream stages
-(`db-opt`, `db-partitioning`, `post-db-refinement`, `pre-lowering`) surface
-real missing-DB bugs at their own level, so the structural smoke-test was
-removed rather than relaxed.
+```text
+ConvertOpenMPToSde
+RaiseToTensor
+RaiseToLinalg
+LoopInterchange
+Tiling
+StructuredSummaries
+ElementwiseFusion
+ScopeSelection
+ScheduleRefinement
+ChunkOpt
+ReductionStrategy
+DistributionPlanning
+IterationSpaceDecomposition
+BarrierElimination
+Vectorization
+LowerToMemref
+ConvertToCodelet
+TensorCleanup
+TokenModeRefine
+ConvertSdeToArts
+VerifySdeLowered
+DeadCodeElimination
+CSE
+VerifyEdtCreated
+```
 
-### 6) db-opt
-1. `DbModeTightening`
-2. `PolygeistCanonicalize`
-3. `CSE`
-4. `Mem2Reg`
+### `edt-transforms`
 
-### 7) edt-opt
-1. `PolygeistCanonicalize`
-2. `EdtStructuralOpt(runAnalysis=true)`
-3. `LoopFusion`
-4. `CSE`
+```text
+EdtStructuralOpt(runAnalysis=false)
+EdtICM
+DeadCodeElimination
+SymbolDCE
+CSE
+EdtPtrRematerialization
+```
 
-### 8) concurrency
-1. `PolygeistCanonicalize`
-2. `Concurrency`
-3. `ForOpt`
-4. `PolygeistCanonicalize`
+### `create-dbs`
 
-### 9) edt-distribution
-1. `EdtDistribution`
-2. `EdtOrchestrationOpt`
-3. `ForLowering`
-4. `VerifyForLowered`
+```text
+DistributedHostLoopOutlining (conditional)
+CreateDbs
+CSE (bridge cleanup, conditional)
+PolygeistCanonicalize
+CSE
+SymbolDCE
+Mem2Reg
+PolygeistCanonicalize
+```
 
-### 10) post-distribution-cleanup
-1. `EdtStructuralOpt(runAnalysis=false)`
-2. `DeadCodeElimination`
-3. `PolygeistCanonicalize`
-4. `CSE`
-5. `EdtStructuralOpt(runAnalysis=false)` (second pass)
-6. `EpochOpt`
-7. `PolygeistCanonicalize`
-8. `CSE`
+### `db-opt`
 
-### 11) db-partitioning
-1. `DbPartitioning`
-2. `DbDistributedOwnership` (conditional — `--distributed-db`)
-3. `DbTransforms`
+```text
+DbModeTightening
+PolygeistCanonicalize
+CSE
+Mem2Reg
+```
 
-### 12) post-db-refinement
-1. `DbModeTightening`
-2. `EdtTransforms`
-3. `DbTransforms`
-4. `ContractValidation`
-5. `DbScratchElimination`
-6. `PolygeistCanonicalize`
-7. `CSE`
+### `edt-opt`
 
-### 13) late-concurrency-cleanup
-1. `BlockLoopStripMining` (nested func)
-2. `Hoisting`
-3. `PolygeistCanonicalize`
-4. `CSE`
-5. `EdtAllocaSinking`
-6. `DeadCodeElimination`
-7. `Mem2Reg`
+```text
+PolygeistCanonicalize
+EdtStructuralOpt(runAnalysis=true)
+LoopFusion
+CSE
+```
 
-### 14) epochs
-1. `PolygeistCanonicalize`
-2. `CreateEpochs`
-3. `EpochOpt[scheduling]` (conditional)
-4. `PolygeistCanonicalize`
+### `concurrency`
 
-### 15) pre-lowering
-1. `EdtAllocaSinking`
-2. `ParallelEdtLowering`
-3. `EpochOpt[scheduling]` (conditional)
-4. `PolygeistCanonicalize`
-5. `CSE`
-6. `DbLowering`
-7. `PolygeistCanonicalize`
-8. `CSE`
-9. `EdtLowering`
-10. `PolygeistCanonicalize`
-11. `CSE`
-12. `LICM`
-13. `DataPtrHoisting`
-14. `PolygeistCanonicalize`
-15. `CSE`
-16. `ScalarReplacement`
-17. `PolygeistCanonicalize`
-18. `CSE`
-19. `EpochLowering`
-20. `PolygeistCanonicalize`
-21. `CSE`
-22. `VerifyPreLowered`
+```text
+PolygeistCanonicalize
+Concurrency
+ForOpt
+PolygeistCanonicalize
+```
 
-### 16) arts-to-llvm
-1. `ConvertArtsToLLVM`
-2. `LoweringContractCleanup`
-3. `GuidRangCallOpt`
-4. `RuntimeCallOpt`
-5. `DataPtrHoisting`
-6. `PolygeistCanonicalize`
-7. `CSE`
-8. `Mem2Reg`
-9. `PolygeistCanonicalize`
-10. `ControlFlowSink`
-11. `PolygeistCanonicalize`
-12. `VerifyLowered`
+### `edt-distribution`
 
-### Epilogue A) `complete-mlir` (post-O3, only when `--O3`)
-1. `PolygeistCanonicalize`
-2. `ControlFlowSink`
-3. `PolygeistCanonicalize`
-4. `LICM`
-5. `CSE`
-6. `PolygeistCanonicalize`
+```text
+EdtDistribution
+EdtOrchestrationOpt
+ForLowering
+VerifyForLowered
+```
 
-### Epilogue B) `emit-llvm` (only when `--emit-llvm`)
-1. `CSE`
-2. `PolygeistCanonicalize`
-3. `ArithExpandOps`
-4. `ConvertPolygeistToLLVM`
-5. `ConvertIndexToLLVM`
-6. `ReconcileUnrealizedCasts`
-7. `AliasScopeGen`
-8. `LoopVectorizationHints`
-9. `PolygeistCanonicalize`
-10. `CSE`
+### `post-distribution-cleanup`
+
+```text
+EdtStructuralOpt(runAnalysis=false)
+DeadCodeElimination
+PolygeistCanonicalize
+CSE
+EdtStructuralOpt(runAnalysis=false)
+EpochOpt
+PolygeistCanonicalize
+CSE
+```
+
+### `post-db-refinement`
+
+```text
+DbModeTightening
+EdtTransforms
+DbTransforms
+ContractValidation
+DbScratchElimination
+PolygeistCanonicalize
+CSE
+```
+
+### `late-concurrency-cleanup`
+
+```text
+BlockLoopStripMining(func)
+Hoisting
+PolygeistCanonicalize
+CSE
+EdtAllocaSinking
+DeadCodeElimination
+Mem2Reg
+```
+
+### `epochs`
+
+```text
+PolygeistCanonicalize
+CreateEpochs
+EpochOpt (conditional)
+PolygeistCanonicalize
+```
+
+### `pre-lowering`
+
+```text
+EdtAllocaSinking
+ParallelEdtLowering
+EpochOpt (conditional)
+PolygeistCanonicalize
+CSE
+DbLowering
+PolygeistCanonicalize
+CSE
+EdtLowering
+PolygeistCanonicalize
+CSE
+LICM
+DataPtrHoisting
+PolygeistCanonicalize
+CSE
+ScalarReplacement
+PolygeistCanonicalize
+CSE
+EpochLowering
+PolygeistCanonicalize
+CSE
+VerifyPreLowered
+```
+
+### `arts-to-llvm`
+
+```text
+ConvertArtsToLLVM
+LoweringContractCleanup
+GuidRangCallOpt
+RuntimeCallOpt
+DataPtrHoisting
+PolygeistCanonicalize
+CSE
+Mem2Reg
+PolygeistCanonicalize
+ControlFlowSink
+PolygeistCanonicalize
+VerifyLowered
+```
 
 ## Stage Dependencies
 
-- `initial-cleanup` depends on `raise-memref-dimensionality`
-- `openmp-to-arts` depends on `initial-cleanup`
-- `edt-transforms` depends on `openmp-to-arts`
-- `create-dbs` depends on `openmp-to-arts` *(sibling of `edt-transforms`)*
-- `db-opt`, `edt-opt`, `concurrency` all depend on `create-dbs`
-- `edt-distribution` depends on `concurrency`
-- `post-distribution-cleanup`, `db-partitioning` depend on `edt-distribution`
-- `post-db-refinement` depends on `db-partitioning`
-- `late-concurrency-cleanup` depends on `post-db-refinement`
-- `pre-lowering` depends on `epochs` AND `late-concurrency-cleanup`
-- `arts-to-llvm` depends on `pre-lowering`
+- `initial-cleanup` depends on `raise-memref-dimensionality`.
+- `openmp-to-arts` depends on `initial-cleanup`.
+- `edt-transforms` depends on `openmp-to-arts`.
+- `create-dbs` depends on `openmp-to-arts`.
+- `db-opt`, `edt-opt`, and `concurrency` depend on `create-dbs`.
+- `edt-distribution` depends on `concurrency`.
+- `post-distribution-cleanup` and `post-db-refinement` depend on
+  `edt-distribution`.
+- `late-concurrency-cleanup` depends on `post-db-refinement`.
+- `pre-lowering` depends on `epochs` and `late-concurrency-cleanup`.
+- `arts-to-llvm` depends on `pre-lowering`.
 
-## Utility Ownership Notes
+## Ownership Notes
 
-- Machine/config parsing belongs to `AbstractMachine`.
-- Semantic pattern classification happens inside `openmp-to-arts` — the SDE
-  passes (`ScopeSelection`, `ScheduleRefinement`, `DistributionPlanning`,
-  etc.) seed contracts that later ARTS-core stages consume. There is no
-  separate "pattern-pipeline" stage; legacy references elsewhere are stale.
-- Analysis and heuristics speak contract vocabulary:
-  `DistributionHeuristics`, `PartitioningHeuristics`, `DbAnalysis`.
-- IR lowering details belong to pass/transform layers:
-  `ForLowering` (inside `edt-distribution`), DB/EDT lowerings (inside
-  `pre-lowering`), `ConvertArtsToLLVM` (inside `arts-to-llvm`).
-- Type cast helpers should prefer shared utility methods (`ArtsCodegen` or
-  `ValueUtils`) instead of pass-local duplicates.
+- SDE inside `openmp-to-arts` owns semantic decomposition, structured summaries,
+  state planning, dependency/effect proofs, and physical DB layout policy.
+- `CreateDbs` materializes SDE-authored DB layouts. It should not invent tensor
+  partition policy that was visible to SDE.
+- Core owns DB/EDT/epoch orchestration and analysis-backed refinement.
+- RT-facing lowering belongs in `pre-lowering` and `arts-to-llvm`, after the
+  compiler has already chosen the DB and task shape.
