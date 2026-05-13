@@ -1,11 +1,12 @@
 # SDE Optimization Notes
 
-This directory is the compiler-facing home for SDE optimization planning.
-SDE owns OpenMP semantics, structured state, dependence proofs, effect
-summaries, task shape, and physical DB layout policy before `ConvertSdeToArts`.
-Core materializes those plans in `CreateDbs` and preserves DB/EDT/epoch
-orchestration. RT/runtime work should wait until SDE/Core plans are present and
-traces still show launch, CPS, dependency, or runtime scheduling overhead.
+This directory is the compiler-facing home for SDE optimization planning. SDE is
+runtime-agnostic: it owns OpenMP semantics, structured state, dependence proofs,
+effect summaries, task shape, and physical DB layout policy before
+`ConvertSdeToArts`. Core is ARTS-machine-aware and materializes those plans in
+`CreateDbs`, preserving DB/EDT/epoch orchestration. RT/runtime work should wait
+until SDE/Core plans are present and traces still show launch, CPS, dependency,
+or runtime scheduling overhead.
 
 ## Current SDE Spine
 

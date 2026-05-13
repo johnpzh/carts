@@ -4,7 +4,8 @@ This document mirrors the pipeline order defined in `tools/compile/Compile.cpp`.
 If this file disagrees with the compiler source or `dekk carts pipeline --json`,
 the live compiler wins.
 
-For SDE optimization planning, see [`sde/`](./sde/).
+For layer-specific optimization planning, see [`sde/`](./sde/),
+[`core/`](./core/), and [`rt/`](./rt/).
 
 ## CLI Introspection
 
