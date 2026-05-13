@@ -686,22 +686,19 @@ struct LoopVectorizationHintsPass
           (funcOp.getNumArguments() >= 4) ? funcOp.getArgument(3) : Value{};
       SmallVector<LLVM::AccessGroupAttr> parallelAccessGroups;
 
-      // SDE is the single source of truth for loop optimization hints.
-      // Read SDE-stamped attrs from the EDT function; these were forwarded
-      // from StructuredSummaries → ConvertSdeToArts → ForLowering →
-      // EdtLowering.
-      unsigned sdeVecWidth = 0;
-      unsigned sdeUnrollFactor = 0;
-      unsigned sdeInterleaveCount = 0;
+      // RT reads only RT-facing hints translated from Core EDT attrs.
+      unsigned rtVecWidth = 0;
+      unsigned rtUnrollFactor = 0;
+      unsigned rtInterleaveCount = 0;
       if (auto attr = funcOp->getAttrOfType<IntegerAttr>(
-              AttrNames::Operation::Sde::VectorizeWidth))
-        sdeVecWidth = attr.getInt();
+              AttrNames::Operation::Rt::VectorizeWidth))
+        rtVecWidth = attr.getInt();
       if (auto attr = funcOp->getAttrOfType<IntegerAttr>(
-              AttrNames::Operation::Sde::UnrollFactor))
-        sdeUnrollFactor = attr.getInt();
+              AttrNames::Operation::Rt::UnrollFactor))
+        rtUnrollFactor = attr.getInt();
       if (auto attr = funcOp->getAttrOfType<IntegerAttr>(
-              AttrNames::Operation::Sde::InterleaveCount))
-        sdeInterleaveCount = attr.getInt();
+              AttrNames::Operation::Rt::InterleaveCount))
+        rtInterleaveCount = attr.getInt();
 
       int innermostCount = 0;
       int outerCount = 0;
@@ -731,11 +728,11 @@ struct LoopVectorizationHintsPass
         // SDE attrs are authoritative. Fall back to LLVM load-type analysis
         // only for non-SDE loops (e.g. runtime helper loops).
         unsigned width, unrollCount, interleave;
-        if (sdeVecWidth) {
-          width = sdeVecWidth;
-          unrollCount = sdeUnrollFactor ? sdeUnrollFactor : 2;
+        if (rtVecWidth) {
+          width = rtVecWidth;
+          unrollCount = rtUnrollFactor ? rtUnrollFactor : 2;
           interleave =
-              sdeInterleaveCount ? sdeInterleaveCount : interleaveCount;
+              rtInterleaveCount ? rtInterleaveCount : interleaveCount;
         } else {
           auto typeInfo = analyzeLoadTypes(loopBlocks);
           width = vectorWidth ? vectorWidth : typeInfo.vectorWidth;

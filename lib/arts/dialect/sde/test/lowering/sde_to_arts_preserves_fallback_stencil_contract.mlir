@@ -6,12 +6,14 @@
 // CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // CHECK: func.func @main
 // CHECK: arts.edt <parallel> <intranode> route(%{{.*}}) attributes {
-// CHECK-SAME: arts.pattern_revision = 7 : i64
-// CHECK-SAME: arts.plan.owner_dims = [0]
-// CHECK-SAME: arts.plan.physical_block_shape = [2, 16]
+// CHECK-SAME: arts.pattern_revision = 1 : i64
 // CHECK-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // CHECK-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
 // CHECK-SAME: no_verify = #arts.no_verify
+// CHECK-SAME: planHaloShape = [1]
+// CHECK-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_strip>
+// CHECK-SAME: planOwnerDims = [0]
+// CHECK-SAME: planPhysicalBlockShape = [2, 16]
 // CHECK-SAME: stencil_block_shape = [2]
 // CHECK-SAME: stencil_max_offsets = [1]
 // CHECK-SAME: stencil_min_offsets = [-1]
@@ -19,12 +21,14 @@
 // CHECK-SAME: stencil_spatial_dims = [0, 1]
 // CHECK-SAME: stencil_supported_block_halo
 // CHECK-SAME: stencil_write_footprint = [1]
-// CHECK: arts.for(%c1) to(%c15) step(%c1) {
-// CHECK: } {arts.pattern_revision = 7 : i64
-// CHECK-SAME: arts.plan.owner_dims = [0]
-// CHECK-SAME: arts.plan.physical_block_shape = [2, 16]
+// CHECK: arts.for(%c1) to(%c15) step(%{{.*}}) {
+// CHECK: } {arts.pattern_revision = 1 : i64
 // CHECK-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // CHECK-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
+// CHECK-SAME: planHaloShape = [1]
+// CHECK-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_strip>
+// CHECK-SAME: planOwnerDims = [0]
+// CHECK-SAME: planPhysicalBlockShape = [2, 16]
 // CHECK-SAME: stencil_block_shape = [2]
 // CHECK-SAME: stencil_max_offsets = [1]
 // CHECK-SAME: stencil_min_offsets = [-1]
@@ -58,7 +62,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
           memref.store %sum, %B[%i, %j] : memref<16x16xf64>
         }
         arts_sde.yield
-      } {arts.pattern_revision = 7 : i64, depPattern = #arts.dep_pattern<stencil_tiling_nd>, distribution_pattern = #arts.distribution_pattern<stencil>, stencil_max_offsets = [1, 1], stencil_min_offsets = [-1, -1], stencil_owner_dims = [0, 1], stencil_spatial_dims = [0, 1], stencil_supported_block_halo, stencil_write_footprint = [1, 1]}
+      } {accessMaxOffsets = [1, 1], accessMinOffsets = [-1, -1], depFamily = #arts_sde.dep_family<stencil_tiling_nd>, iterationTopology = #arts_sde.iteration_topology<owner_strip>, ownerDims = [0, 1], physicalBlockShape = [2, 16], physicalHaloShape = [1], physicalOwnerDims = [0], spatialDims = [0, 1], writeFootprint = [1, 1]}
       arts_sde.yield
     }
     return

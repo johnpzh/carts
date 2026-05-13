@@ -12,11 +12,11 @@
 // SDE: arts_sde.su_iterate
 
 // SDE-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
-// SDE: arts_sde.su_barrier {barrier_eliminated}
+// SDE: arts_sde.su_barrier {barrierEliminated, barrierReason = #arts_sde.barrier_reason<redundant>}
 // SDE: arts_sde.su_iterate
 // SDE-LABEL: func.func @write_only_successor_disjoint
 // SDE: arts_sde.su_iterate
-// SDE: arts_sde.su_barrier {barrier_eliminated}
+// SDE: arts_sde.su_barrier {barrierEliminated, barrierReason = #arts_sde.barrier_reason<redundant>}
 // SDE: arts_sde.su_iterate
 
 // After ConvertSdeToArts, the eliminated barrier is NOT lowered to arts.barrier

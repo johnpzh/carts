@@ -22,7 +22,8 @@ namespace arts {
 ///   - lowering contracts + typed DB IR attrs own canonical semantics
 ///   - DbAnalysis supplies derived legality/profitability evidence
 ///   - DbPartitioning builds this normalized snapshot
-///   - DbBlockPlanResolver consumes it to resolve concrete block geometry
+///   - DbLayoutPlanUtils consumes SDE/Core plan attrs to materialize concrete
+///     block geometry
 struct AcquirePartitionInfo {
   DbAcquireOp acquire;
   PartitionMode mode = PartitionMode::coarse;

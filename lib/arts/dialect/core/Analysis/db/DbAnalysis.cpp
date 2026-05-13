@@ -654,13 +654,6 @@ DbAnalysis::getLoopDbAccessSummary(ForOp forOp) {
   return analyzeLoopDbAccessPatterns(forOp);
 }
 
-std::optional<EdtDistributionPattern>
-DbAnalysis::getLoopDistributionPattern(ForOp forOp) {
-  if (!forOp)
-    return std::nullopt;
-  return analyzeLoopDbAccessPatterns(forOp).distributionPattern;
-}
-
 bool DbAnalysis::hasNonInternodeConsumerForWrittenDb(EdtOp producerEdt) {
   if (!producerEdt)
     return false;

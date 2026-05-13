@@ -24,9 +24,9 @@
 // OPENMP-NOT: arts.for
 // OPENMP: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // OPENMP: arts.edt <parallel> <intranode>
-// OPENMP-SAME: arts.plan.owner_dims = [0]
-// OPENMP-SAME: arts.plan.physical_block_shape = [8, 64]
 // OPENMP-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
+// OPENMP-SAME: planOwnerDims = [0]
+// OPENMP-SAME: planPhysicalBlockShape = [8, 64]
 // OPENMP-SAME: stencil_block_shape = [8]
 // OPENMP-SAME: stencil_max_offsets = [1]
 // OPENMP-SAME: stencil_min_offsets = [-1]

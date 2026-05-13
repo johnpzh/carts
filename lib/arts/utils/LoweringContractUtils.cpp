@@ -392,8 +392,7 @@ mlir::arts::getSemanticContract(Operation *op) {
   info.pattern.depPattern = getDepPattern(op);
   info.pattern.distributionKind = getEdtDistributionKind(op);
   info.pattern.distributionPattern = getEdtDistributionPattern(op);
-  if (auto version = op->getAttrOfType<IntegerAttr>(
-          AttrNames::Operation::DistributionVersion))
+  if (auto version = getDistributionVersionAttr(op))
     info.pattern.distributionVersion = version.getInt();
   info.pattern.revision = getPatternRevision(op);
   if (auto ownerDims = getStencilOwnerDims(op))
@@ -463,8 +462,7 @@ mlir::arts::resolveLoopDistributionContract(Operation *op) {
     }
 
     if (!info.pattern.distributionVersion) {
-      if (auto version = current->getAttrOfType<IntegerAttr>(
-              AttrNames::Operation::DistributionVersion))
+      if (auto version = getDistributionVersionAttr(current))
         info.pattern.distributionVersion = version.getInt();
     }
 

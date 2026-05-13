@@ -8,22 +8,22 @@
 // SDE-LABEL: // -----// IR Dump After StructuredSummaries (structured-summaries) //----- //
 // SDE: func.func @main
 // SDE: arts_sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
-// SDE: } {accessMaxOffsets = [1, 1], accessMinOffsets = [-1, -1], ownerDims = [0, 1], spatialDims = [0, 1], writeFootprint = [1, 1]}
+// SDE: } {accessMaxOffsets = [1, 1], accessMinOffsets = [-1, -1], depFamily = #arts_sde.dep_family<stencil_tiling_nd>, ownerDims = [0, 1], spatialDims = [0, 1], writeFootprint = [1, 1]}
 // SDE: func.func @in_place_neighbor_stencil
 // SDE: arts_sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
 // SDE: } {
 // SDE-SAME: accessMaxOffsets = [1, 1]
-// SDE-SAME: in_place_shared_state
+// SDE-SAME: inPlaceSharedState
 // SDE-SAME: writeFootprint = [1, 1]
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
 // ARTS: arts.edt <parallel> <intranode> route(%{{.*}}) attributes {
 // ARTS-SAME: arts.pattern_revision = 1 : i64
-// ARTS-SAME: arts.plan.owner_dims = [0]
-// ARTS-SAME: arts.plan.physical_block_shape = [8, 64]
 // ARTS-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
+// ARTS-SAME: planOwnerDims = [0]
+// ARTS-SAME: planPhysicalBlockShape = [8, 64]
 // ARTS-SAME: stencil_block_shape = [8]
 // ARTS-SAME: stencil_max_offsets = [1]
 // ARTS-SAME: stencil_min_offsets = [-1]
@@ -33,10 +33,10 @@
 // ARTS-SAME: stencil_write_footprint = [1]
 // ARTS: arts.for(%c1) to(%c63) step(%c1) {
 // ARTS: } {arts.pattern_revision = 1 : i64
-// ARTS-SAME: arts.plan.owner_dims = [0]
-// ARTS-SAME: arts.plan.physical_block_shape = [8, 64]
 // ARTS-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
+// ARTS-SAME: planOwnerDims = [0]
+// ARTS-SAME: planPhysicalBlockShape = [8, 64]
 // ARTS-SAME: stencil_block_shape = [8]
 // ARTS-SAME: stencil_max_offsets = [1]
 // ARTS-SAME: stencil_min_offsets = [-1]
@@ -47,7 +47,7 @@
 // ARTS: func.func @in_place_neighbor_stencil
 // ARTS: arts.edt <parallel> <intranode> route(%{{.*}}) attributes {
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
-// ARTS-NOT: arts.plan.physical_block_shape
+// ARTS-NOT: planPhysicalBlockShape
 // ARTS: arts.for(%c1) to(%c63) step(%c1) {
 // ARTS: } {
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>

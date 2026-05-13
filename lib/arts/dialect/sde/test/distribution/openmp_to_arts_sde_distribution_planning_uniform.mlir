@@ -23,9 +23,12 @@
 // SDE-LABEL: func.func @sample_map_with_scratch
 // SDE: arts_sde.su_distribute <blocked> {
 // SDE: arts_sde.su_iterate
-// SDE: } {arts.plan.iteration_topology = "owner_strip", arts.plan.kernel_family = "uniform"
-// SDE-SAME: arts.plan.owner_dims = [0]
-// SDE-SAME: arts.plan.physical_block_shape = [8]
+// SDE: } {
+// SDE-SAME: iterationTopology = #arts_sde.iteration_topology<owner_strip>
+// SDE-SAME: physicalBlockShape = [8]
+// SDE-SAME: physicalOwnerDims = [0]
+// SDE-NOT: {{plan[A-Z]}}
+// SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main

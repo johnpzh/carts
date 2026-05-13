@@ -14,14 +14,31 @@
 // SDE: arts_sde.cu_region <parallel> scope(<distributed>) {
 // SDE: arts_sde.su_distribute <owner_compute> {
 // SDE: arts_sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
+// SDE: } {accessMaxOffsets
+// SDE-SAME: depFamily = #arts_sde.dep_family<stencil_tiling_nd>
+// SDE-SAME: iterationTopology = #arts_sde.iteration_topology<owner_strip>
+// SDE-SAME: logicalWorkerSlice = [4, 64]
+// SDE-SAME: physicalBlockShape = [4, 64]
+// SDE-SAME: physicalHaloShape = [1]
+// SDE-SAME: physicalOwnerDims = [0]
+// SDE-NOT: {{plan[A-Z]}}
+// SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
 // ARTS: arts.edt <parallel> <internode> route(%{{.*}}) attributes {
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
+// ARTS-SAME: {{.*}}planHaloShape = [1]
+// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [4, 64]
+// ARTS-SAME: {{.*}}planOwnerDims = [0]
+// ARTS-SAME: {{.*}}planPhysicalBlockShape = [4, 64]
 // ARTS: arts.for(%c1) to(%c63) step(%c1) {
 // ARTS: } {arts.pattern_revision = 1 : i64
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
+// ARTS-SAME: {{.*}}planHaloShape = [1]
+// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [4, 64]
+// ARTS-SAME: {{.*}}planOwnerDims = [0]
+// ARTS-SAME: {{.*}}planPhysicalBlockShape = [4, 64]
 // ARTS-NOT: arts_sde.
 
 // LOCAL-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
@@ -29,8 +46,8 @@
 // LOCAL: arts_sde.su_iterate
 // LOCAL-SAME: classification(<stencil>)
 // LOCAL: } {accessMaxOffsets
-// LOCAL-SAME: in_place_shared_state
-// LOCAL-NOT: arts.plan.physical_block_shape
+// LOCAL-SAME: inPlaceSharedState
+// LOCAL-NOT: physicalBlockShape
 // LOCAL-LABEL: // -----// IR Dump After IterationSpaceDecomposition
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {

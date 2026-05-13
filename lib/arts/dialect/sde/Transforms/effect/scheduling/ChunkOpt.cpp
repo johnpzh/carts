@@ -173,9 +173,23 @@ struct ChunkOptPass : public arts::impl::ChunkOptBase<ChunkOptPass> {
           rewrite.op.getReductionKindsAttr(),
           rewrite.op.getReductionStrategyAttr(),
           rewrite.op.getStructuredClassificationAttr(),
+          rewrite.op.getDepFamilyAttr(),
           rewrite.op.getAccessMinOffsetsAttr(),
           rewrite.op.getAccessMaxOffsetsAttr(), rewrite.op.getOwnerDimsAttr(),
-          rewrite.op.getSpatialDimsAttr(), rewrite.op.getWriteFootprintAttr());
+          rewrite.op.getSpatialDimsAttr(), rewrite.op.getWriteFootprintAttr(),
+          rewrite.op.getPhysicalOwnerDimsAttr(),
+          rewrite.op.getPhysicalBlockShapeAttr(),
+          rewrite.op.getLogicalWorkerSliceAttr(),
+          rewrite.op.getPhysicalHaloShapeAttr(),
+          rewrite.op.getIterationTopologyAttr(),
+          rewrite.op.getRepetitionStructureAttr(),
+          rewrite.op.getAsyncStrategyAttr(),
+          rewrite.op.getDistributionKindAttr(),
+          rewrite.op.getInPlaceSafeAttr(),
+          rewrite.op.getInPlaceSharedStateAttr(),
+          rewrite.op.getVectorizeWidthAttr(),
+          rewrite.op.getUnrollFactorAttr(),
+          rewrite.op.getInterleaveCountAttr());
       newOp->setAttrs(sde::getRewrittenAttrs(rewrite.op));
       newOp.getBody().takeBody(rewrite.op.getBody());
       rewriter.eraseOp(rewrite.op);

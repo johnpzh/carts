@@ -19,7 +19,8 @@
 // ARTS-SAME: arts.reduction_strategy = "atomic"
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
 // ARTS: arts.for(%c0) to(%c128) step(%c1) reduction(%{{.*}} : memref<?xi32>)
-// ARTS: } {arts.reduction_kinds = [0 : i32], arts.reduction_strategy = "atomic"
+// ARTS: arts.reduction_kinds = [0 : i32]
+// ARTS-SAME: arts.reduction_strategy = "atomic"
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
 // ARTS-NOT: arts_sde.
 

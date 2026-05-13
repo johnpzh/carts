@@ -63,12 +63,9 @@ getRepeatedWaveSignature(EdtOp edt) {
   ForOp forOp = analysis.forOps.front();
   if (!forOp.getReductionAccumulators().empty())
     return std::nullopt;
-  if (!hasPlanAttrValue(forOp.getOperation(),
-                        AttrNames::Operation::Plan::KernelFamily, "uniform"))
-    return std::nullopt;
-  if (!hasPlanAttrValue(forOp.getOperation(),
-                        AttrNames::Operation::Plan::RepetitionStructure,
-                        "full_timestep")) {
+  auto repetition = getPlanRepetitionStructureAttr(forOp.getOperation());
+  if (!repetition ||
+      repetition.getValue() != ArtsPlanRepetitionStructure::full_timestep) {
     return std::nullopt;
   }
   if (edt->hasAttr(AttrNames::Operation::ControlDep) ||
@@ -79,6 +76,9 @@ getRepeatedWaveSignature(EdtOp edt) {
   auto distributionKind = getEdtDistributionKind(forOp.getOperation());
   auto distributionPattern = getEdtDistributionPattern(forOp.getOperation());
   if (!depPattern || !distributionKind || !distributionPattern)
+    return std::nullopt;
+  if (!isUniformFamilyDepPattern(*depPattern) ||
+      *distributionPattern != EdtDistributionPattern::uniform)
     return std::nullopt;
 
   return RepeatedWaveSignature{edt.getConcurrency(),

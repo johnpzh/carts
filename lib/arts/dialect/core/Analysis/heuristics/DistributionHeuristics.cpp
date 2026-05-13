@@ -197,21 +197,6 @@ DistributionHeuristics::resolveLoweringStrategy(EdtOp originalParallel,
   return strategy;
 }
 
-std::optional<EdtDistributionPattern>
-DistributionHeuristics::resolveDistributionPattern(AnalysisManager *AM,
-                                                   ForOp forOp,
-                                                   EdtOp originalParallel) {
-  if (auto pattern = getEdtDistributionPattern(forOp.getOperation()))
-    return pattern;
-  if (AM) {
-    if (auto pattern = AM->getLoopDistributionPattern(forOp.getOperation());
-        pattern && *pattern != EdtDistributionPattern::unknown) {
-      return pattern;
-    }
-  }
-  return getEdtDistributionPattern(originalParallel.getOperation());
-}
-
 EdtDistributionKind DistributionHeuristics::selectDistributionKind(
     const DistributionStrategy &strategy, EdtDistributionPattern pattern) {
   /// Matmul override: prefer tiling_2d for TwoLevel, block otherwise.

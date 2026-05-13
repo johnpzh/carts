@@ -81,7 +81,7 @@ module attributes {arts.runtime_total_nodes = 1 : i64, arts.runtime_total_worker
     %c0_i32 = arith.constant 0 : i32
     %cst = arith.constant 0.000000e+00 : f64
 
-    %guid, %ptr = arts.db_alloc[<inout>, <heap>, <write>, <block>, <indexed>] route(%c-1_i32 : i32) sizes[%c16] elementType(f64) elementSizes[%c63] {arts.plan.iteration_topology = "owner_strip", arts.plan.kernel_family = "uniform", arts.plan.owner_dims = [0], arts.plan.physical_block_shape = [63]} : (memref<?xi64>, memref<?xmemref<?xf64>>)
+    %guid, %ptr = arts.db_alloc[<inout>, <heap>, <write>, <block>, <indexed>] route(%c-1_i32 : i32) sizes[%c16] elementType(f64) elementSizes[%c63] {planIterationTopology = #arts.plan_iteration_topology<owner_strip>, planOwnerDims = [0], planPhysicalBlockShape = [63]} : (memref<?xi64>, memref<?xmemref<?xf64>>)
     %soft_guid, %soft_ptr = arts.db_alloc[<inout>, <heap>, <write>, <coarse>, <uniform>] route(%c-1_i32 : i32) sizes[%c1] elementType(f64) elementSizes[%c16] : (memref<?xi64>, memref<?xmemref<?xf64>>)
     %acq_guid, %acq_ptr = arts.db_acquire[<out>] (%guid : memref<?xi64>, %ptr : memref<?xmemref<?xf64>>) partitioning(<block>), indices[], offsets[%c0], sizes[%c16] -> (memref<?xi64>, memref<?xmemref<?xf64>>)
     %soft_acq_guid, %soft_acq_ptr = arts.db_acquire[<inout>] (%soft_guid : memref<?xi64>, %soft_ptr : memref<?xmemref<?xf64>>) partitioning(<coarse>), indices[], offsets[%c0], sizes[%c1] -> (memref<?xi64>, memref<?xmemref<?xf64>>)
@@ -93,7 +93,7 @@ module attributes {arts.runtime_total_nodes = 1 : i64, arts.runtime_total_worker
         %elem = arith.remui %iv, %c63 : index
         %dst = arts.db_ref %arg0[%block] : memref<?xmemref<?xf64>> -> memref<?xf64>
         memref.store %cst, %dst[%elem] : memref<?xf64>
-      } {arts.plan.iteration_topology = "owner_strip", arts.plan.kernel_family = "uniform", arts.plan.owner_dims = [0], arts.plan.physical_block_shape = [63]}
+      } {planIterationTopology = #arts.plan_iteration_topology<owner_strip>, planOwnerDims = [0], planPhysicalBlockShape = [63], distribution_pattern = #arts.distribution_pattern<uniform>}
       arts.db_release(%arg0) : memref<?xmemref<?xf64>>
       arts.db_release(%arg1) : memref<?xmemref<?xf64>>
     }

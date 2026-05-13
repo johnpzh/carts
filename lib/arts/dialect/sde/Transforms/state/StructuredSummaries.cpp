@@ -7,7 +7,6 @@
 #include "arts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "arts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "arts/dialect/sde/Transforms/Passes.h"
-#include "arts/utils/OperationAttributes.h"
 #include "arts/utils/StencilAttributes.h"
 #include "arts/utils/costs/SDECostModel.h"
 
@@ -36,6 +35,111 @@ static bool hasLocalParallelScope(sde::SdeSuIterateOp op) {
   return false;
 }
 
+static Value accessRoot(Value value) {
+  if (!value)
+    return {};
+  if (isa<BaseMemRefType>(value.getType()))
+    return ValueAnalysis::stripMemrefViewOps(value);
+  return value;
+}
+
+static bool sameAccessRoot(Value lhs, Value rhs) {
+  Value lhsRoot = accessRoot(lhs);
+  Value rhsRoot = accessRoot(rhs);
+  return lhsRoot && rhsRoot && lhsRoot == rhsRoot;
+}
+
+static bool hasSelfRead(const sde::StructuredLoopSummary &summary) {
+  for (const sde::MemrefAccessEntry &write : summary.writes)
+    for (const sde::MemrefAccessEntry &read : summary.reads)
+      if (sameAccessRoot(write.memref, read.memref))
+        return true;
+  return false;
+}
+
+static unsigned countHaloDims(const sde::StructuredNeighborhoodInfo &info) {
+  unsigned count = 0;
+  for (auto [minOffset, maxOffset] :
+       llvm::zip(info.minOffsets, info.maxOffsets))
+    if (minOffset != 0 || maxOffset != 0)
+      ++count;
+  return count;
+}
+
+static bool hasHigherOrderHalo(const sde::StructuredNeighborhoodInfo &info) {
+  for (auto [minOffset, maxOffset] :
+       llvm::zip(info.minOffsets, info.maxOffsets))
+    if (minOffset < -1 || maxOffset > 1)
+      return true;
+  return false;
+}
+
+static bool isWavefront2D(const sde::StructuredLoopSummary &summary,
+                          const sde::StructuredNeighborhoodInfo &info) {
+  if (info.ownerDims.size() != 2 || !hasSelfRead(summary))
+    return false;
+
+  SmallVector<bool, 4> sawNegative(summary.nest.ivs.size(), false);
+  bool sawPositiveSelfReadOffset = false;
+  for (const sde::MemrefAccessEntry &write : summary.writes) {
+    for (const sde::MemrefAccessEntry &read : summary.reads) {
+      if (!sameAccessRoot(write.memref, read.memref))
+        continue;
+      for (AffineExpr result : read.indexingMap.getResults()) {
+        auto dimOffset = sde::extractDimOffset(result);
+        if (!dimOffset || !dimOffset->dim)
+          continue;
+        unsigned dim = *dimOffset->dim;
+        if (dim >= sawNegative.size())
+          continue;
+        if (dimOffset->offset < 0)
+          sawNegative[dim] = true;
+        if (dimOffset->offset > 0)
+          sawPositiveSelfReadOffset = true;
+      }
+    }
+  }
+
+  if (sawPositiveSelfReadOffset)
+    return false;
+
+  unsigned negativeOwnerDims = 0;
+  for (int64_t dim : info.ownerDims)
+    if (dim >= 0 && static_cast<size_t>(dim) < sawNegative.size() &&
+        sawNegative[dim])
+      ++negativeOwnerDims;
+  return negativeOwnerDims == 2;
+}
+
+static sde::SdeDepFamily
+deriveDepFamily(const sde::StructuredLoopSummary &summary,
+                sde::SdeStructuredClassification classification,
+                std::optional<sde::StructuredNeighborhoodInfo> neighborhood) {
+  switch (classification) {
+  case sde::SdeStructuredClassification::elementwise:
+    return sde::SdeDepFamily::uniform;
+  case sde::SdeStructuredClassification::elementwise_pipeline:
+    return sde::SdeDepFamily::elementwise_pipeline;
+  case sde::SdeStructuredClassification::matmul:
+    return sde::SdeDepFamily::matmul;
+  case sde::SdeStructuredClassification::reduction:
+    return sde::SdeDepFamily::reduction;
+  case sde::SdeStructuredClassification::stencil:
+    break;
+  }
+
+  if (!neighborhood)
+    return sde::SdeDepFamily::stencil_tiling_nd;
+
+  if (isWavefront2D(summary, *neighborhood))
+    return sde::SdeDepFamily::wavefront_2d;
+  if (hasHigherOrderHalo(*neighborhood))
+    return sde::SdeDepFamily::higher_order_stencil;
+  if (countHaloDims(*neighborhood) >= 3)
+    return sde::SdeDepFamily::cross_dim_stencil_3d;
+  return sde::SdeDepFamily::stencil_tiling_nd;
+}
+
 struct StructuredSummariesPass
     : public arts::impl::StructuredSummariesBase<StructuredSummariesPass> {
   explicit StructuredSummariesPass(sde::SDECostModel *costModel = nullptr)
@@ -48,12 +152,23 @@ struct StructuredSummariesPass
       if (!summary)
         return;
 
-      op->removeAttr(AttrNames::Operation::InPlaceSafe);
-      op->removeAttr(AttrNames::Operation::InPlaceSharedState);
+      op->removeAttr(op.getInPlaceSafeAttrName());
+      op->removeAttr(op.getInPlaceSharedStateAttrName());
 
       sde::SdeStructuredClassification classification = summary->classification;
+      bool hasExplicitStencilContract = false;
       if (auto existingClassification = op.getStructuredClassification();
           existingClassification &&
+          *existingClassification ==
+              sde::SdeStructuredClassification::stencil &&
+          op.getAccessMinOffsetsAttr() && op.getAccessMaxOffsetsAttr() &&
+          op.getOwnerDimsAttr() && op.getWriteFootprintAttr()) {
+        // An explicit SDE stencil stamp carries semantic intent plus the
+        // neighborhood contract. Do not let a later scalar-shape refresh
+        // rediscover a different family and lose the authored stencil meaning.
+        classification = *existingClassification;
+        hasExplicitStencilContract = true;
+      } else if (existingClassification &&
           *existingClassification ==
               sde::SdeStructuredClassification::elementwise_pipeline &&
           classification == sde::SdeStructuredClassification::elementwise) {
@@ -74,11 +189,27 @@ struct StructuredSummariesPass
           sde::SdeStructuredClassificationAttr::get(&getContext(),
                                                     classification));
 
+      std::optional<sde::StructuredNeighborhoodInfo> neighborhoodSummary;
       if (classification == sde::SdeStructuredClassification::stencil) {
-        std::optional<sde::StructuredNeighborhoodInfo> neighborhoodSummary =
-            sde::extractNeighborhoodSummary(*summary);
-        if (!neighborhoodSummary)
+        neighborhoodSummary = sde::extractNeighborhoodSummary(*summary);
+        if (!neighborhoodSummary) {
+          if (hasExplicitStencilContract) {
+            if (!op.getDepFamilyAttr())
+              op.setDepFamilyAttr(sde::SdeDepFamilyAttr::get(
+                  &getContext(), sde::SdeDepFamily::stencil_tiling_nd));
+            ARTS_DEBUG("preserved explicit SDE stencil summary on su_iterate");
+          }
           return;
+        }
+
+        op.setDepFamilyAttr(sde::SdeDepFamilyAttr::get(
+            &getContext(),
+            deriveDepFamily(*summary, classification, neighborhoodSummary)));
+
+        if (hasExplicitStencilContract) {
+          ARTS_DEBUG("preserved explicit SDE stencil summary on su_iterate");
+          return;
+        }
 
         op.setAccessMinOffsetsAttr(buildI64ArrayAttr(
             op.getContext(), neighborhoodSummary->minOffsets));
@@ -95,12 +226,15 @@ struct StructuredSummariesPass
         if (!memoryEffects.hasUnknownEffects &&
             sde::hasInPlaceSelfRead(memoryEffects) &&
             hasLocalParallelScope(op))
-          op->setAttr(AttrNames::Operation::InPlaceSharedState,
-                      UnitAttr::get(op.getContext()));
+          op.setInPlaceSharedStateAttr(UnitAttr::get(op.getContext()));
 
         ARTS_DEBUG("stamped generic SDE structured summary on su_iterate");
         return;
       }
+
+      op.setDepFamilyAttr(sde::SdeDepFamilyAttr::get(
+          &getContext(),
+          deriveDepFamily(*summary, classification, neighborhoodSummary)));
 
       if (classification == sde::SdeStructuredClassification::elementwise ||
           classification ==
@@ -137,19 +271,17 @@ struct StructuredSummariesPass
           });
         }
 
-        op->setAttr(
-            AttrNames::Operation::Sde::VectorizeWidth,
-            IntegerAttr::get(IndexType::get(&getContext()), vectorWidth));
-        op->setAttr(AttrNames::Operation::Sde::UnrollFactor,
-                    IntegerAttr::get(IndexType::get(&getContext()), 2));
-        op->setAttr(AttrNames::Operation::Sde::InterleaveCount,
-                    IntegerAttr::get(IndexType::get(&getContext()), 4));
+        Type i64 = IntegerType::get(&getContext(), 64);
+        op.setVectorizeWidthAttr(IntegerAttr::get(i64, vectorWidth));
+        op.setUnrollFactorAttr(
+            IntegerAttr::get(i64, 2));
+        op.setInterleaveCountAttr(
+            IntegerAttr::get(i64, 4));
       }
 
       auto memoryEffects = sde::collectStructuredMemoryEffects(op.getBody());
       if (!memoryEffects.hasUnknownEffects && memoryEffects.allWritesAreRead())
-        op->setAttr(AttrNames::Operation::InPlaceSafe,
-                    UnitAttr::get(op.getContext()));
+        op.setInPlaceSafeAttr(UnitAttr::get(op.getContext()));
 
       ARTS_DEBUG("refreshed SDE structured classification on su_iterate");
     });

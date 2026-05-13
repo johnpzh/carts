@@ -300,7 +300,7 @@ private:
                                 const DbRewritePlan &plan);
   void rewriteUsesInParentEdt(MemrefInfo &memrefInfo);
   Operation *findPhysicalLayoutPlanSource(Operation *alloc);
-  void projectPlanContractToDbValue(Operation *sourceOp, DbAllocOp dbAlloc);
+  void projectStructuredPlanToDbValue(Operation *sourceOp, DbAllocOp dbAlloc);
   void rewriteUsesEverywhereWithPlan(Operation *alloc, DbAllocOp dbAlloc,
                                      const DbRewritePlan &plan);
 };
@@ -344,58 +344,6 @@ void CreateDbsPass::runOnOperation() {
 
   /// Phase 5-7: Cleanup and validation post-checks.
   cleanupAndFinalize();
-
-  // When arts.for has block distribution but the acquire is coarse (no
-  // per-task slice geometry), the SDE-generated body uses chunk-local
-  // indexing inside an inner scf.for. Globalize the inner loop bounds so
-  // each task writes to its own slice. This restores the index-translation
-  // portion of the deleted DbPartitioning pass.
-  //
-  // Conservative guards keep the transform surgical: only fire when the
-  // inner scf.for matches SDE's exact chunk-loop signature
-  //   lower = const 0
-  //   upper = arith.minui(step, arith.subi(arts_for_upper, arts_for_iv))
-  // Other inner scf.for shapes (e.g., user-written nested loops in
-  // parallel_for_loops) are left alone.
-  module.walk([](arts::ForOp artsFor) {
-    auto kind = getEdtDistributionKind(artsFor);
-    if (!kind || (*kind != EdtDistributionKind::block &&
-                  *kind != EdtDistributionKind::block_cyclic))
-      return;
-    Block *body = artsFor.getBody();
-    if (!body || body->getNumArguments() == 0)
-      return;
-    Value artsForIV = body->getArgument(0);
-    scf::ForOp inner = nullptr;
-    for (Operation &op : body->getOperations()) {
-      if (auto sf = dyn_cast<scf::ForOp>(&op)) {
-        if (inner) {
-          inner = nullptr;
-          return;
-        }
-        inner = sf;
-      }
-    }
-    if (!inner)
-      return;
-    auto lbConst =
-        inner.getLowerBound().getDefiningOp<arith::ConstantIndexOp>();
-    if (!lbConst || lbConst.value() != 0)
-      return;
-    auto minOp = inner.getUpperBound().getDefiningOp<arith::MinUIOp>();
-    if (!minOp)
-      return;
-    auto subOp = minOp.getRhs().getDefiningOp<arith::SubIOp>();
-    if (!subOp)
-      subOp = minOp.getLhs().getDefiningOp<arith::SubIOp>();
-    if (!subOp || subOp.getRhs() != artsForIV)
-      return;
-    OpBuilder builder(inner);
-    Value newUpper = arith::AddIOp::create(builder, inner.getLoc(), artsForIV,
-                                           inner.getUpperBound());
-    inner.getLowerBoundMutable().assign(artsForIV);
-    inner.getUpperBoundMutable().assign(newUpper);
-  });
 
   AC = nullptr;
   ARTS_INFO_FOOTER(CreateDbsPass);
@@ -498,6 +446,20 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
   if (!alloc || alloc->getNumResults() == 0)
     return nullptr;
 
+  auto equivalentPlan = [](Operation *lhs, Operation *rhs) {
+    return getPlanOwnerDimsAttr(lhs) == getPlanOwnerDimsAttr(rhs) &&
+           getPlanPhysicalBlockShapeAttr(lhs) ==
+               getPlanPhysicalBlockShapeAttr(rhs) &&
+           getPlanLogicalWorkerSliceAttr(lhs) ==
+               getPlanLogicalWorkerSliceAttr(rhs) &&
+           getPlanHaloShapeAttr(lhs) == getPlanHaloShapeAttr(rhs) &&
+           getPlanIterationTopologyAttr(lhs) ==
+               getPlanIterationTopologyAttr(rhs) &&
+           getPlanRepetitionStructureAttr(lhs) ==
+               getPlanRepetitionStructureAttr(rhs) &&
+           getPlanAsyncStrategyAttr(lhs) == getPlanAsyncStrategyAttr(rhs);
+  };
+
   auto writesAlloc = [&](Operation *root) {
     bool found = false;
     root->walk([&](Operation *nested) {
@@ -519,31 +481,44 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
     return found;
   };
 
-  Operation *selected = nullptr;
+  SmallVector<Operation *, 4> candidates;
   module.walk([&](ForOp forOp) {
     if (!hasPhysicalDbLayoutPlan(forOp.getOperation()))
       return WalkResult::advance();
     if (!writesAlloc(forOp.getOperation()))
       return WalkResult::advance();
-    selected = forOp.getOperation();
-    return WalkResult::interrupt();
+    candidates.push_back(forOp.getOperation());
+    return WalkResult::advance();
   });
-  if (selected)
-    return selected;
-
   module.walk([&](EdtOp edt) {
     if (!hasPhysicalDbLayoutPlan(edt.getOperation()))
       return WalkResult::advance();
     if (!writesAlloc(edt.getOperation()))
       return WalkResult::advance();
-    selected = edt.getOperation();
-    return WalkResult::interrupt();
+    candidates.push_back(edt.getOperation());
+    return WalkResult::advance();
   });
+
+  if (candidates.empty())
+    return nullptr;
+
+  Operation *selected = candidates.front();
+  for (Operation *candidate : ArrayRef<Operation *>(candidates).drop_front()) {
+    if (equivalentPlan(selected, candidate))
+      continue;
+    InFlightDiagnostic diag =
+        alloc->emitError("conflicting SDE-authored physical DB layout plans for "
+                         "one allocation");
+    diag.attachNote(selected->getLoc()) << "first layout plan source";
+    diag.attachNote(candidate->getLoc()) << "conflicting layout plan source";
+    signalPassFailure();
+    return nullptr;
+  }
   return selected;
 }
 
-void CreateDbsPass::projectPlanContractToDbValue(Operation *sourceOp,
-                                                 DbAllocOp dbAlloc) {
+void CreateDbsPass::projectStructuredPlanToDbValue(Operation *sourceOp,
+                                                   DbAllocOp dbAlloc) {
   if (!sourceOp || !dbAlloc)
     return;
   copyPlanAttrs(sourceOp, dbAlloc.getOperation());
@@ -907,20 +882,33 @@ void CreateDbsPass::createDbAllocOps() {
     PartitionMode partitionMode = PartitionMode::coarse;
     Operation *planSource = nullptr;
 
-    if (!DbUtils::hasNonPartitionableHostViewUses(allocValue)) {
-      planSource = findPhysicalLayoutPlanSource(alloc);
-      if (planSource) {
-        FailureOr<DbRewritePlan> resolvedPlan = resolvePhysicalDbLayoutPlan(
-            planSource, ValueRange(logicalElementSizes), AC->getBuilder(), loc);
-        if (succeeded(resolvedPlan)) {
-          plan = *resolvedPlan;
-          sizes.assign(plan.outerSizes.begin(), plan.outerSizes.end());
-          elementSizes.assign(plan.innerSizes.begin(), plan.innerSizes.end());
-          partitionMode = plan.mode;
-          ARTS_DEBUG(" - Using SDE-authored physical DB layout");
-        }
+    planSource = findPhysicalLayoutPlanSource(alloc);
+    if (planSource && DbUtils::hasNonPartitionableHostViewUses(allocValue)) {
+      InFlightDiagnostic diag =
+          alloc->emitError("SDE-authored physical DB layout cannot be "
+                           "materialized because the allocation still has "
+                           "whole-view host uses");
+      diag.attachNote(planSource->getLoc()) << "layout plan source";
+      signalPassFailure();
+      return;
+    }
+    if (planSource) {
+      FailureOr<DbRewritePlan> resolvedPlan = resolvePhysicalDbLayoutPlan(
+          planSource, ValueRange(logicalElementSizes), AC->getBuilder(), loc);
+      if (failed(resolvedPlan)) {
+        InFlightDiagnostic diag =
+            alloc->emitError("invalid SDE-authored physical DB layout plan");
+        diag.attachNote(planSource->getLoc()) << "layout plan source";
+        signalPassFailure();
+        return;
       }
-    } else {
+
+      plan = *resolvedPlan;
+      sizes.assign(plan.outerSizes.begin(), plan.outerSizes.end());
+      elementSizes.assign(plan.innerSizes.begin(), plan.innerSizes.end());
+      partitionMode = plan.mode;
+      ARTS_DEBUG(" - Using SDE-authored physical DB layout");
+    } else if (DbUtils::hasNonPartitionableHostViewUses(allocValue)) {
       ARTS_DEBUG(" - Keeping coarse DB layout due to host whole-view use");
     }
 
@@ -939,7 +927,7 @@ void CreateDbsPass::createDbAllocOps() {
 
     projectSemanticContractToDbValue(alloc, dbAllocOp.getOperation(),
                                      dbAllocOp.getPtr());
-    projectPlanContractToDbValue(planSource, dbAllocOp);
+    projectStructuredPlanToDbValue(planSource, dbAllocOp);
 
     /// Initialize global DBs
     initializeGlobalDbIfNeeded(alloc, dbAllocOp, plan, allocType);
@@ -1317,10 +1305,12 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
       for (const auto &dep : deps) {
         PartitionMode depPartitionMode =
             plan.usesBlockedLayout() ? plan.mode : PartitionMode::coarse;
-        if (!dep.indices.empty()) {
-          depPartitionMode = PartitionMode::fine_grained;
-        } else if (!dep.offsets.empty() && !dep.sizes.empty()) {
-          depPartitionMode = PartitionMode::block;
+        if (!plan.usesBlockedLayout()) {
+          if (!dep.indices.empty()) {
+            depPartitionMode = PartitionMode::fine_grained;
+          } else if (!dep.offsets.empty() && !dep.sizes.empty()) {
+            depPartitionMode = PartitionMode::block;
+          }
         }
         int groupIndex = -1;
         for (auto [idx, groupMode] : llvm::enumerate(depGroupModes)) {
@@ -1367,7 +1357,9 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
 
       for (const MemrefInfo::DbDep *dep : depGroup) {
         PartitionMode entryMode = PartitionMode::coarse;
-        if (!dep->indices.empty()) {
+        if (plan.usesBlockedLayout()) {
+          entryMode = plan.mode;
+        } else if (!dep->indices.empty()) {
           entryMode = PartitionMode::fine_grained;
         } else if (!dep->offsets.empty() && !dep->sizes.empty()) {
           entryMode = PartitionMode::block;
@@ -1399,7 +1391,7 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
       }
 
       PartitionMode partMode = depGroupPartitionModes[groupIdx];
-      if (!entryModes.empty())
+      if (!plan.usesBlockedLayout() && !entryModes.empty())
         partMode = static_cast<PartitionMode>(entryModes[0]);
 
       Value acqGuid = sourceGuid;

@@ -50,8 +50,6 @@ public:
   /// Unified analysis queries spanning EDT and DB analyses.
   std::optional<DbAnalysis::LoopDbAccessSummary>
   getLoopDbAccessSummary(Operation *loopOp);
-  std::optional<EdtDistributionPattern>
-  getLoopDistributionPattern(Operation *loopOp);
 
   /// Invalidate and rebuild DB graphs for all functions in the module.
   void invalidateAndRebuildGraphs(ModuleOp module);

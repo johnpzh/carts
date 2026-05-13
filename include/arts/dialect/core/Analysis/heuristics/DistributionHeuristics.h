@@ -173,12 +173,6 @@ public:
   static DistributionStrategy resolveLoweringStrategy(EdtOp originalParallel,
                                                       ForOp forOp);
 
-  /// Resolve the effective distribution pattern for one arts.for.
-  /// Prefer loop-local stamped attrs, then DB analysis, then parent EDT attrs.
-  static std::optional<EdtDistributionPattern>
-  resolveDistributionPattern(AnalysisManager *AM, ForOp forOp,
-                             EdtOp originalParallel);
-
   /// Select IR distribution kind from machine strategy + detected loop pattern.
   static EdtDistributionKind
   selectDistributionKind(const DistributionStrategy &strategy,

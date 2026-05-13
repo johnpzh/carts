@@ -10,7 +10,6 @@
 #include "arts/utils/DbUtils.h"
 #include "arts/utils/LoopUtils.h"
 #include "arts/utils/OperationAttributes.h"
-#include "arts/utils/PlanContract.h"
 #include "arts/utils/StencilAttributes.h"
 #include "arts/utils/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -116,19 +115,20 @@ static bool epochBodyIsClonable(EpochOp epoch) {
 static bool epochHasZeroExpectedLocalWork(EpochOp epoch) {
   if (!epoch)
     return false;
-  auto expectedLocalWork = epoch->getAttrOfType<IntegerAttr>(
-      AttrNames::Operation::Plan::CostExpectedLocalWork);
+  auto expectedLocalWork =
+      getPlanCostExpectedLocalWorkAttr(epoch.getOperation());
   return expectedLocalWork && expectedLocalWork.getInt() == 0;
 }
 
-static bool epochHasRepetitionStructure(EpochOp epoch,
-                                        RepetitionStructure repetition) {
+static bool
+epochHasRepetitionStructure(EpochOp epoch,
+                            ArtsPlanRepetitionStructure repetition) {
   if (!epoch)
     return false;
-  auto repetitionAttr = epoch->getAttrOfType<StringAttr>(
-      AttrNames::Operation::Plan::RepetitionStructure);
-  return repetitionAttr &&
-         repetitionAttr.getValue() == repetitionStructureToString(repetition);
+  auto repetitionAttr = getPlanRepetitionStructureAttr(epoch.getOperation());
+  if (!repetitionAttr)
+    return false;
+  return repetitionAttr.getValue() == repetition;
 }
 
 static bool epochCreatesCoordinatorWave(EpochOp epoch) {
@@ -262,8 +262,8 @@ static bool shouldAvoidCpsChainForLoop(scf::ForOp forOp,
   bool allSlotsFullTimestep =
       llvm::all_of(decision.slots, [](const EpochSlot &slot) {
         return slotMatches(slot, [](EpochOp epoch) {
-          return epochHasRepetitionStructure(epoch,
-                                             RepetitionStructure::FullTimestep);
+          return epochHasRepetitionStructure(
+              epoch, ArtsPlanRepetitionStructure::full_timestep);
         });
       });
   bool multiStageOrSidecarFullTimestepLoop =

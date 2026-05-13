@@ -243,7 +243,7 @@ static bool shouldShareCoarseInPlaceDb(ForOp forOp, EdtOp parallelEdt,
                                        bool parentHasPartitionInfo) {
   if (!forOp || !parallelEdt || !parentAcquire || !sourceAlloc)
     return false;
-  if (!forOp->hasAttr(AttrNames::Operation::InPlaceSharedState))
+  if (!forOp.getInPlaceSharedState())
     return false;
   if (parallelEdt.getConcurrency() != EdtConcurrency::intranode)
     return false;
@@ -397,8 +397,8 @@ public:
 using ReductionInfo = ReductionLoweringInfo;
 using ParallelRegionAnalysis = ParallelRegionSplitAnalysis;
 static bool hasRepeatedWaveGroupKind(Operation *op) {
-  return hasPlanAttrValue(op, AttrNames::Operation::Orchestration::Kind,
-                          AttrNames::Operation::RepeatedWaveGroup);
+  return hasStringAttrValue(op, AttrNames::Operation::Orchestration::Kind,
+                            AttrNames::Operation::RepeatedWaveGroup);
 }
 
 static std::optional<int64_t> getI64Attr(Operation *op, StringRef attrName) {
@@ -1094,7 +1094,7 @@ bool ForLoweringPass::lowerOrchestratedWaveGroup(ArrayRef<EdtOp> groupedEdts) {
   Location loc = firstEdt.getLoc();
   AC.setInsertionPointAfter(firstEdt);
 
-  auto sharedEpoch = AC.create<EpochOp>(loc);
+  auto sharedEpoch = AC.create<EpochOp>(loc, ValueRange{});
   ++numEpochsCreated;
   if (auto kindAttr = firstEdt->getAttrOfType<StringAttr>(
           AttrNames::Operation::Orchestration::Kind)) {
@@ -1323,7 +1323,7 @@ void ForLoweringPass::lowerForWithDbRewiring(ArtsCodegen &AC, ForOp forOp,
   } else {
     /// Create EpochOp wrapper for the for-body at the caller-managed insertion
     /// point so multiple arts.for regions preserve source order.
-    forEpoch = AC.create<EpochOp>(loc);
+    forEpoch = AC.create<EpochOp>(loc, ValueRange{});
     ++numEpochsCreated;
     Region &epochRegion = forEpoch->getRegion();
     if (epochRegion.empty())
@@ -1581,8 +1581,8 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
     std::optional<unsigned> inferredMappedDim;
     /// Plan-driven path: use plan ownerDims when present.
     if (!forceCoarseReadOnlyDep && contract.spatial.ownerDims.empty()) {
-      if (auto planOwnerDims = readI64ArrayAttr(
-              forOp.getOperation(), AttrNames::Operation::Plan::OwnerDims)) {
+      if (auto planOwnerDims =
+              readI64ArrayAttr(getPlanOwnerDimsAttr(forOp.getOperation()))) {
         contract.spatial.ownerDims = *planOwnerDims;
         if (!planOwnerDims->empty() && (*planOwnerDims)[0] >= 0)
           inferredMappedDim = static_cast<unsigned>((*planOwnerDims)[0]);
@@ -1938,7 +1938,7 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
   ++numTaskEdtsCreated;
   transferOperationContract(forOp.getOperation(), taskEdt.getOperation());
   copyPlanAttrs(forOp.getOperation(), taskEdt.getOperation());
-  copySdeHintAttrs(forOp.getOperation(), taskEdt.getOperation());
+  copyCoreExecutionHintAttrs(forOp.getOperation(), taskEdt.getOperation());
   if (refinedTaskBlockShape)
     setStencilBlockShape(taskEdt.getOperation(), *refinedTaskBlockShape);
 

@@ -1,8 +1,8 @@
 ///==========================================================================///
 /// File: EdtDistribution.cpp
 ///
-/// Annotates arts.for loops with distribution strategy decisions while keeping
-/// loop semantics unchanged.
+/// Completes ARTS distribution contracts while keeping loop semantics
+/// unchanged.
 ///
 /// Transformation (annotation only):
 ///   BEFORE:
@@ -18,9 +18,9 @@
 /// This pass does not create/remove dependencies; it only writes typed attrs
 ///
 /// Example:
-///   matmul loop in internode EDT -> annotation picks
-///   `distribution_kind=tiling_2d`
-/// consumed later by lowering.
+///   SDE-classified loop carrying depPattern=<matmul> and distribution_kind
+///   keeps that SDE-authored decomposition and completes the matching
+///   distribution_pattern=<matmul> contract for Core lowering.
 ///==========================================================================///
 
 #define GEN_PASS_DEF_EDTDISTRIBUTION
@@ -29,8 +29,8 @@
 #include "arts/passes/Passes.h"
 #include "arts/passes/Passes.h.inc"
 #include "arts/utils/OperationAttributes.h"
-#include "arts/utils/PlanContract.h"
-#include "arts/utils/StencilAttributes.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 #include <cassert>
@@ -50,13 +50,60 @@ static llvm::Statistic numBlockStrategiesSelected{
 static llvm::Statistic numCyclicStrategiesSelected{
     "edt_distribution", "NumCyclicStrategiesSelected",
     "Number of loops assigned cyclic distribution kind"};
-static llvm::Statistic numPlanDrivenAnnotations{
-    "edt_distribution", "NumPlanDrivenAnnotations",
-    "Number of loops annotated using structured kernel plan"};
 
 using namespace mlir;
 
 namespace {
+
+static void globalizeChunkLocalInnerLoopBounds(ModuleOp module) {
+  // When arts.for has block distribution but the acquire is coarse (no
+  // per-task slice geometry), the SDE-generated body can use chunk-local
+  // indexing inside an inner scf.for. Globalize the inner loop bounds so each
+  // task writes to its own slice. Conservative guards keep this surgical: only
+  // the SDE chunk-loop signature is rewritten.
+  module.walk([](ForOp artsFor) {
+    auto kind = getEdtDistributionKind(artsFor);
+    if (!kind || (*kind != EdtDistributionKind::block &&
+                  *kind != EdtDistributionKind::block_cyclic))
+      return;
+
+    Block *body = artsFor.getBody();
+    if (!body || body->getNumArguments() == 0)
+      return;
+    Value artsForIV = body->getArgument(0);
+
+    scf::ForOp inner = nullptr;
+    for (Operation &op : body->getOperations()) {
+      if (auto sf = dyn_cast<scf::ForOp>(&op)) {
+        if (inner)
+          return;
+        inner = sf;
+      }
+    }
+    if (!inner)
+      return;
+
+    auto lbConst =
+        inner.getLowerBound().getDefiningOp<arith::ConstantIndexOp>();
+    if (!lbConst || lbConst.value() != 0)
+      return;
+
+    auto minOp = inner.getUpperBound().getDefiningOp<arith::MinUIOp>();
+    if (!minOp)
+      return;
+    auto subOp = minOp.getRhs().getDefiningOp<arith::SubIOp>();
+    if (!subOp)
+      subOp = minOp.getLhs().getDefiningOp<arith::SubIOp>();
+    if (!subOp || subOp.getRhs() != artsForIV)
+      return;
+
+    OpBuilder builder(inner);
+    Value newUpper = arith::AddIOp::create(builder, inner.getLoc(), artsForIV,
+                                           inner.getUpperBound());
+    inner.getLowerBoundMutable().assign(artsForIV);
+    inner.getUpperBoundMutable().assign(newUpper);
+  });
+}
 
 struct EdtDistributionPass
     : public impl::EdtDistributionBase<EdtDistributionPass> {
@@ -75,9 +122,6 @@ struct EdtDistributionPass
       return;
     }
 
-    /// Query distribution patterns from DB analysis built from the current IR.
-    AM->getDbAnalysis().invalidate();
-
     module.walk([&](EdtOp edt) {
       if (edt.getType() != EdtType::parallel && edt.getType() != EdtType::task)
         return;
@@ -93,49 +137,21 @@ struct EdtDistributionPass
         auto existingKind = getEdtDistributionKind(forOp.getOperation());
         auto existingPattern = getEdtDistributionPattern(forOp.getOperation());
         if (existingKind && existingPattern) {
-          if (!forOp->hasAttr(AttrNames::Operation::DistributionVersion)) {
-            forOp->setAttr(
-                AttrNames::Operation::DistributionVersion,
-                IntegerAttr::get(IntegerType::get(forOp.getContext(), 32), 1));
-          }
+          if (!getDistributionVersionAttr(forOp.getOperation()))
+            setDistributionVersion(forOp.getOperation(), 1);
           return;
         }
 
-        /// Plan-driven path: if the structured kernel plan stamped a family,
-        /// use it to inform the distribution pattern selection.
-        EdtDistributionPattern pattern =
-            existingPattern.value_or(EdtDistributionPattern::unknown);
-        if (pattern == EdtDistributionPattern::unknown)
-          if (auto familyAttr = forOp->getAttrOfType<StringAttr>(
-                  AttrNames::Operation::Plan::KernelFamily)) {
-            auto family = parseKernelFamily(familyAttr.getValue());
-            if (family) {
-              switch (*family) {
-              case KernelFamily::Stencil:
-              case KernelFamily::Wavefront:
-              case KernelFamily::TimestepChain:
-                pattern = EdtDistributionPattern::stencil;
-                break;
-              case KernelFamily::Uniform:
-                pattern = EdtDistributionPattern::uniform;
-                break;
-              case KernelFamily::ReductionMixed:
-                pattern = EdtDistributionPattern::matmul;
-                break;
-              case KernelFamily::Unknown:
-                break;
-              }
-              ++numPlanDrivenAnnotations;
-              ARTS_DEBUG("Using plan-driven distribution pattern for family="
-                         << familyAttr.getValue());
-            }
-          }
-        /// Fallback: use heuristic analysis when no plan is present.
-        if (pattern == EdtDistributionPattern::unknown) {
-          if (auto analyzedPattern =
-                  heuristics.resolveDistributionPattern(forOp, edt))
-            pattern = *analyzedPattern;
+        std::optional<EdtDistributionPattern> parentPattern;
+        if (!existingPattern) {
+          parentPattern = getEdtDistributionPattern(edt.getOperation());
+          if (parentPattern && *parentPattern == EdtDistributionPattern::unknown)
+            parentPattern = std::nullopt;
         }
+
+        EdtDistributionPattern pattern =
+            existingPattern.value_or(parentPattern.value_or(
+                EdtDistributionPattern::unknown));
         EdtDistributionKind kind =
             existingKind.value_or(heuristics.chooseKind(strategy, pattern));
         /// Keep distribution_kind focused on execution decomposition.
@@ -147,22 +163,22 @@ struct EdtDistributionPass
         /// preserved.
         if (!existingKind)
           setEdtDistributionKind(forOp.getOperation(), kind);
-        if (!existingPattern && pattern != EdtDistributionPattern::unknown)
-          setEdtDistributionPattern(forOp.getOperation(), pattern);
+        if (!existingPattern && parentPattern)
+          setEdtDistributionPattern(forOp.getOperation(), *parentPattern);
         ++numLoopsAnnotated;
         if (kind == EdtDistributionKind::block)
           ++numBlockStrategiesSelected;
         else if (kind == EdtDistributionKind::block_cyclic)
           ++numCyclicStrategiesSelected;
-        forOp->setAttr(
-            AttrNames::Operation::DistributionVersion,
-            IntegerAttr::get(IntegerType::get(forOp.getContext(), 32), 1));
+        setDistributionVersion(forOp.getOperation(), 1);
 
         ARTS_DEBUG("Annotated arts.for with kind="
                    << static_cast<int>(kind)
                    << " pattern=" << static_cast<int>(pattern));
       });
     });
+
+    globalizeChunkLocalInnerLoopBounds(module);
   }
 
 private:

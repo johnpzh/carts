@@ -53,6 +53,13 @@ struct StructuredNeighborhoodInfo {
   SmallVector<int64_t, 4> writeFootprint;
 };
 
+struct StructuredOutputLayoutPlan {
+  Value root;
+  SmallVector<int64_t, 4> shape;
+  SmallVector<int64_t, 4> loopDimToPhysicalDim;
+  SmallVector<int64_t, 4> physicalDimToLoopDim;
+};
+
 /// Analyze one `arts_sde.su_iterate` nest and recover the structural facts
 /// needed by higher SDE passes. Returns nullopt when the loop is not a
 /// supported perfectly nested memref-based structured loop.
@@ -62,6 +69,16 @@ std::optional<StructuredLoopSummary> analyzeStructuredLoop(SdeSuIterateOp op);
 /// loop-access analysis.
 std::optional<StructuredNeighborhoodInfo>
 extractNeighborhoodSummary(const StructuredLoopSummary &summary);
+
+/// Recover a static write-backed output layout with a loop-dim to physical-dim
+/// map. Returns nullopt when external writes disagree or the layout is not
+/// statically shapeable.
+std::optional<StructuredOutputLayoutPlan>
+findCompatibleOutputLayoutPlan(const StructuredLoopSummary &summary);
+
+/// Convenience wrapper around analyzeStructuredLoop + output layout recovery.
+std::optional<StructuredOutputLayoutPlan>
+findCompatibleOutputLayoutPlan(SdeSuIterateOp op);
 
 //===----------------------------------------------------------------------===//
 // Shared affine decomposition utilities

@@ -12,6 +12,7 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "arts/utils/ValueAnalysis.h"
 #include "llvm/ADT/SmallBitVector.h"
 
 using namespace mlir;
@@ -372,6 +373,78 @@ static bool supportsReductionCarrierSubset(SdeSuIterateOp iterOp,
   return matchingReductionReads == 1;
 }
 
+static Value normalizeOutputRoot(Value value) {
+  if (!value)
+    return {};
+  if (isa<BaseMemRefType>(value.getType()))
+    return ValueAnalysis::stripMemrefViewOps(value);
+
+  while (value) {
+    if (auto cast = value.getDefiningOp<tensor::CastOp>()) {
+      value = cast.getSource();
+      continue;
+    }
+    if (auto slice = value.getDefiningOp<tensor::ExtractSliceOp>()) {
+      value = slice.getSource();
+      continue;
+    }
+    break;
+  }
+  return value;
+}
+
+static std::optional<SmallVector<int64_t, 4>>
+getStaticShape(Value value) {
+  Value root = normalizeOutputRoot(value);
+  if (!root)
+    return std::nullopt;
+  auto shapedType = dyn_cast<ShapedType>(root.getType());
+  if (!shapedType || !shapedType.hasRank() || !shapedType.hasStaticShape())
+    return std::nullopt;
+
+  SmallVector<int64_t, 4> shape;
+  shape.reserve(shapedType.getRank());
+  for (int64_t dim : shapedType.getShape())
+    shape.push_back(dim);
+  return shape;
+}
+
+static std::optional<std::pair<SmallVector<int64_t, 4>,
+                               SmallVector<int64_t, 4>>>
+buildLoopPhysicalDimMaps(AffineMap map, unsigned numLoops, unsigned rank) {
+  if (map.getNumResults() != rank)
+    return std::nullopt;
+
+  SmallVector<int64_t, 4> loopToPhysical(numLoops, -1);
+  SmallVector<int64_t, 4> physicalToLoop(rank, -1);
+  bool mappedAnyDim = false;
+
+  for (unsigned physicalDim = 0; physicalDim < rank; ++physicalDim) {
+    std::optional<AffineDimOffset> dimOffset =
+        extractDimOffset(map.getResult(physicalDim));
+    if (!dimOffset)
+      return std::nullopt;
+    if (!dimOffset->dim)
+      continue;
+    if (dimOffset->offset != 0)
+      return std::nullopt;
+
+    unsigned loopDim = *dimOffset->dim;
+    if (loopDim >= numLoops)
+      return std::nullopt;
+    if (loopToPhysical[loopDim] >= 0 ||
+        physicalToLoop[physicalDim] >= 0)
+      return std::nullopt;
+    loopToPhysical[loopDim] = static_cast<int64_t>(physicalDim);
+    physicalToLoop[physicalDim] = static_cast<int64_t>(loopDim);
+    mappedAnyDim = true;
+  }
+
+  if (!mappedAnyDim)
+    return std::nullopt;
+  return std::make_pair(std::move(loopToPhysical), std::move(physicalToLoop));
+}
+
 } // namespace
 
 std::optional<AffineDimOffset> extractDimOffset(AffineExpr expr) {
@@ -481,6 +554,58 @@ analyzeStructuredLoop(SdeSuIterateOp iterOp) {
 std::optional<StructuredNeighborhoodInfo>
 extractNeighborhoodSummary(const StructuredLoopSummary &summary) {
   return extractNeighborhoodSummary(summary.reads, summary.nest.ivs.size());
+}
+
+std::optional<StructuredOutputLayoutPlan>
+findCompatibleOutputLayoutPlan(const StructuredLoopSummary &summary) {
+  if (!summary.nest.rootIterOp || summary.writes.empty() ||
+      summary.nest.ivs.empty())
+    return std::nullopt;
+
+  std::optional<StructuredOutputLayoutPlan> selected;
+  Operation *rootOp = summary.nest.rootIterOp;
+
+  for (const MemrefAccessEntry &write : summary.writes) {
+    Value root = normalizeOutputRoot(write.memref);
+    if (!root || isDefinedInside(rootOp, root))
+      continue;
+
+    std::optional<SmallVector<int64_t, 4>> shape = getStaticShape(root);
+    if (!shape || shape->empty())
+      return std::nullopt;
+
+    auto maps = buildLoopPhysicalDimMaps(write.indexingMap,
+                                         summary.nest.ivs.size(),
+                                         shape->size());
+    if (!maps)
+      return std::nullopt;
+
+    StructuredOutputLayoutPlan candidate;
+    candidate.root = root;
+    candidate.shape = std::move(*shape);
+    candidate.loopDimToPhysicalDim = std::move(maps->first);
+    candidate.physicalDimToLoopDim = std::move(maps->second);
+
+    if (!selected) {
+      selected = std::move(candidate);
+      continue;
+    }
+
+    if (candidate.shape != selected->shape ||
+        candidate.loopDimToPhysicalDim != selected->loopDimToPhysicalDim ||
+        candidate.physicalDimToLoopDim != selected->physicalDimToLoopDim)
+      return std::nullopt;
+  }
+
+  return selected;
+}
+
+std::optional<StructuredOutputLayoutPlan>
+findCompatibleOutputLayoutPlan(SdeSuIterateOp op) {
+  std::optional<StructuredLoopSummary> summary = analyzeStructuredLoop(op);
+  if (!summary)
+    return std::nullopt;
+  return findCompatibleOutputLayoutPlan(*summary);
 }
 
 } // namespace mlir::arts::sde

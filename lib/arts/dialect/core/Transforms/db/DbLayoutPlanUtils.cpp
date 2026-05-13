@@ -84,7 +84,7 @@ static void deriveStencilInfo(Operation *source, DbRewritePlan &plan) {
   }
 
   if (std::optional<SmallVector<int64_t, 4>> haloShape =
-          readI64ArrayAttr(source, AttrNames::Operation::Plan::HaloShape)) {
+          readI64ArrayAttr(getPlanHaloShapeAttr(source))) {
     if (!haloShape->empty() && haloShape->front() > 0) {
       StencilInfo info;
       info.haloLeft = haloShape->front();
@@ -99,8 +99,7 @@ static void deriveStencilInfo(Operation *source, DbRewritePlan &plan) {
 bool mlir::arts::hasPhysicalDbLayoutPlan(Operation *op) {
   if (!op)
     return false;
-  return op->hasAttr(AttrNames::Operation::Plan::OwnerDims) &&
-         op->hasAttr(AttrNames::Operation::Plan::PhysicalBlockShape);
+  return getPlanOwnerDimsAttr(op) && getPlanPhysicalBlockShapeAttr(op);
 }
 
 FailureOr<DbRewritePlan>
@@ -111,9 +110,9 @@ mlir::arts::resolvePhysicalDbLayoutPlan(Operation *planSource,
     return failure();
 
   std::optional<SmallVector<int64_t, 4>> ownerDims =
-      readI64ArrayAttr(planSource, AttrNames::Operation::Plan::OwnerDims);
-  std::optional<SmallVector<int64_t, 4>> blockShape = readI64ArrayAttr(
-      planSource, AttrNames::Operation::Plan::PhysicalBlockShape);
+      readI64ArrayAttr(getPlanOwnerDimsAttr(planSource));
+  std::optional<SmallVector<int64_t, 4>> blockShape =
+      readI64ArrayAttr(getPlanPhysicalBlockShapeAttr(planSource));
   if (!ownerDims || ownerDims->empty() || !blockShape || blockShape->empty())
     return failure();
 

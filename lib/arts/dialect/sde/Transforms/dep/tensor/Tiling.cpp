@@ -14,7 +14,9 @@ namespace mlir::arts {
 #include "arts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::arts
 
+#include "arts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "arts/utils/LoopUtils.h"
+#include "arts/utils/StencilAttributes.h"
 #include "arts/utils/ValueAnalysis.h"
 #include "arts/utils/costs/SDECostModel.h"
 
@@ -172,6 +174,71 @@ buildPerDimTileIterations(OpBuilder &builder, Location loc,
     tileIterations.push_back(tile);
   }
   return tileIterations;
+}
+
+static int64_t ceilDivPositive(int64_t value, int64_t divisor) {
+  return llvm::divideCeil(std::max<int64_t>(1, value),
+                          std::max<int64_t>(1, divisor));
+}
+
+static int64_t chooseMatmulColumnWorkers(int64_t workers) {
+  workers = std::max<int64_t>(1, workers);
+  return std::max<int64_t>(
+      1, static_cast<int64_t>(
+             std::ceil(std::sqrt(static_cast<double>(workers)))));
+}
+
+static int64_t chooseStaticMatmulTile(int64_t extent, int64_t participants,
+                                      int64_t minIterations) {
+  if (extent <= 1)
+    return std::max<int64_t>(1, extent);
+  int64_t balanced = ceilDivPositive(extent, participants);
+  int64_t preferred =
+      std::max<int64_t>(balanced, std::max<int64_t>(1, minIterations));
+  return std::clamp<int64_t>(preferred, 1, extent);
+}
+
+struct DirectMatmulTilePlan {
+  sde::LoopIndexedOutputPlan output;
+  int64_t rowTile = 1;
+  int64_t columnTile = 1;
+  Value rowTileValue;
+  Value columnTileValue;
+};
+
+static std::optional<DirectMatmulTilePlan>
+buildDirectMatmulTilePlan(OpBuilder &builder, Location loc,
+                          sde::SdeSuIterateOp op,
+                          sde::SDECostModel &costModel) {
+  std::optional<sde::LoopIndexedOutputPlan> outputPlan =
+      sde::findLoopIndexedOutputPlan(op);
+  if (!outputPlan || outputPlan->shape.size() < 2)
+    return std::nullopt;
+
+  int64_t rows = outputPlan->shape[0];
+  int64_t columns = outputPlan->shape[1];
+  if (rows <= 1 || columns <= 1)
+    return std::nullopt;
+
+  int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+  int64_t columnWorkers = chooseMatmulColumnWorkers(workers);
+  int64_t minIterations =
+      std::max<int64_t>(1, costModel.getMinIterationsPerWorker());
+
+  DirectMatmulTilePlan plan;
+  plan.output = std::move(*outputPlan);
+  /// Keep the SDE-owned row dimension exposed to the worker distributor.
+  /// The column tile is an inner locality tile; row tiling must not collapse
+  /// the distributed task count down to the square-root worker grid.
+  plan.rowTile = chooseStaticMatmulTile(rows, workers, /*minIterations=*/1);
+  plan.columnTile =
+      chooseStaticMatmulTile(columns, columnWorkers, minIterations);
+  if (plan.rowTile <= 1 && plan.columnTile <= 1)
+    return std::nullopt;
+
+  plan.rowTileValue = getConstantIndex(builder, loc, plan.rowTile);
+  plan.columnTileValue = getConstantIndex(builder, loc, plan.columnTile);
+  return plan;
 }
 
 static bool isCarrierOp(Operation &op) {
@@ -346,6 +413,66 @@ static bool isReductionTensorCandidate(Block &body,
   return nonCarrierOps == 1;
 }
 
+static bool loopWritesOwnerColumn(scf::ForOp loop, Value outputRoot,
+                                  Value ownerIv) {
+  if (!loop || !outputRoot || !ownerIv || loop.getNumResults() != 0 ||
+      !loop.getInitArgs().empty())
+    return false;
+
+  Value loopIv = loop.getInductionVar();
+  bool matched = false;
+  loop.walk([&](memref::StoreOp store) {
+    Value root = ValueAnalysis::stripMemrefViewOps(store.getMemref());
+    if (root != outputRoot)
+      return WalkResult::advance();
+
+    ValueRange indices = store.getIndices();
+    if (indices.size() < 2)
+      return WalkResult::advance();
+    if (!ValueAnalysis::dependsOn(indices.front(), ownerIv))
+      return WalkResult::advance();
+
+    for (Value index : indices.drop_front()) {
+      if (ValueAnalysis::dependsOn(index, loopIv)) {
+        matched = true;
+        return WalkResult::interrupt();
+      }
+    }
+    return WalkResult::advance();
+  });
+  return matched;
+}
+
+static void collectDirectMatmulColumnLoops(
+    Block &body, Value outputRoot, Value ownerIv,
+    SmallVectorImpl<scf::ForOp> &columnLoops) {
+  body.walk([&](scf::ForOp loop) {
+    if (loopWritesOwnerColumn(loop, outputRoot, ownerIv))
+      columnLoops.push_back(loop);
+  });
+}
+
+static bool isDirectMemoryMatmulCandidate(sde::SdeSuIterateOp op,
+                                          Block &body) {
+  if (op.getLowerBounds().size() != 1 || op.getReductionAccumulators().size() != 0)
+    return false;
+
+  std::optional<sde::LoopIndexedOutputPlan> outputPlan =
+      sde::findLoopIndexedOutputPlan(op);
+  if (!outputPlan || outputPlan->shape.size() < 2)
+    return false;
+
+  auto effects = sde::collectStructuredMemoryEffects(op.getBody());
+  if (effects.hasUnknownEffects || !effects.writes.contains(outputPlan->root))
+    return false;
+
+  Block &suBody = op.getBody().front();
+  Value ownerIv = suBody.getArgument(0);
+  SmallVector<scf::ForOp, 4> columnLoops;
+  collectDirectMatmulColumnLoops(body, outputPlan->root, ownerIv, columnLoops);
+  return !columnLoops.empty();
+}
+
 /// Return a per-SDE-dim mask: true = parallel (should tile), false = reduction
 /// (keep original step). The su_iterate's first dim maps to the first carrier
 /// iterator type, etc.
@@ -504,8 +631,10 @@ static bool isTilingCandidate(sde::SdeSuIterateOp op, Block &body,
       return false;
     return isElementwiseTensorCandidate(body, tensorGeneric, numSuDims);
   case sde::SdeStructuredClassification::matmul:
-    if (!tensorGeneric || op.getReductionAccumulators().size() != 0)
+    if (op.getReductionAccumulators().size() != 0)
       return false;
+    if (!tensorGeneric)
+      return isDirectMemoryMatmulCandidate(op, body);
     return isMatmulTensorCandidate(body, tensorGeneric);
   case sde::SdeStructuredClassification::reduction:
     if (!tensorGeneric)
@@ -678,6 +807,74 @@ static void cloneBodyIntoTileLoop(Block &srcBody, IRMapping &mapper,
   }
 }
 
+static bool stripMineLoop(scf::ForOp loop, Value tileIterations) {
+  if (!loop || !tileIterations || loop.getNumResults() != 0 ||
+      !loop.getInitArgs().empty())
+    return false;
+
+  int64_t tileConstant = 0;
+  if (ValueAnalysis::getConstantIndex(tileIterations, tileConstant) &&
+      tileConstant <= 1)
+    return false;
+
+  OpBuilder builder(loop);
+  Location loc = loop.getLoc();
+  Value originalStep = loop.getStep();
+  Value tileStep =
+      arith::MulIOp::create(builder, loc, originalStep, tileIterations);
+
+  auto outerLoop = scf::ForOp::create(builder, loc, loop.getLowerBound(),
+                                      loop.getUpperBound(), tileStep);
+  outerLoop->setAttrs(loop->getAttrs());
+
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(outerLoop.getBody());
+  Value tileBase = outerLoop.getInductionVar();
+  Value tileLimit = arith::AddIOp::create(builder, loc, tileBase, tileStep);
+  Value tileUpper =
+      arith::MinUIOp::create(builder, loc, tileLimit, loop.getUpperBound());
+  auto innerLoop =
+      scf::ForOp::create(builder, loc, tileBase, tileUpper, originalStep);
+  innerLoop->setAttrs(loop->getAttrs());
+
+  IRMapping mapping;
+  mapping.map(loop.getInductionVar(), innerLoop.getInductionVar());
+  builder.setInsertionPointToStart(innerLoop.getBody());
+  for (Operation &op : loop.getBody()->without_terminator())
+    builder.clone(op, mapping);
+
+  loop.erase();
+  return true;
+}
+
+static unsigned stripMineDirectMatmulColumnLoops(Block &body, Value outputRoot,
+                                                 Value ownerIv,
+                                                 Value columnTileIterations) {
+  SmallVector<scf::ForOp, 4> columnLoops;
+  collectDirectMatmulColumnLoops(body, outputRoot, ownerIv, columnLoops);
+
+  unsigned tiled = 0;
+  for (scf::ForOp loop : llvm::reverse(columnLoops)) {
+    if (!loop || loop->getParentRegion() == nullptr)
+      continue;
+    if (stripMineLoop(loop, columnTileIterations))
+      ++tiled;
+  }
+  return tiled;
+}
+
+static void stampDirectMatmulTilePlan(sde::SdeSuIterateOp op,
+                                      const DirectMatmulTilePlan &plan) {
+  SmallVector<int64_t, 2> blockShape{plan.rowTile, plan.columnTile};
+
+  op.setPhysicalOwnerDimsAttr(
+      buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 2>{0, 1}));
+  op.setPhysicalBlockShapeAttr(buildI64ArrayAttr(op.getContext(), blockShape));
+  op.setLogicalWorkerSliceAttr(buildI64ArrayAttr(op.getContext(), blockShape));
+  op.setIterationTopologyAttr(sde::SdeIterationTopologyAttr::get(
+      op.getContext(), sde::SdeIterationTopology::owner_tile_2d));
+}
+
 struct TilingPass : public arts::impl::TilingBase<TilingPass> {
   explicit TilingPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
@@ -704,13 +901,25 @@ struct TilingPass : public arts::impl::TilingBase<TilingPass> {
       rewriter.setInsertionPoint(op);
       Location loc = op.getLoc();
       unsigned numDims = op.getLowerBounds().size();
+      bool directMatmul = false;
+      std::optional<DirectMatmulTilePlan> directMatmulPlan;
+      if (!tensorGeneric && op.getStructuredClassification() ==
+                                sde::SdeStructuredClassification::matmul) {
+        directMatmulPlan =
+            buildDirectMatmulTilePlan(rewriter, loc, op, *costModel);
+        if (!directMatmulPlan)
+          continue;
+        directMatmul = true;
+      }
 
       // Determine which dims are parallel (should tile) vs reduction (skip).
       SmallVector<bool> parallelMask = getParallelDimMask(op, tensorGeneric);
 
       // Compute per-dim tile iterations.
       SmallVector<Value> perDimTileIter;
-      if (numDims == 1) {
+      if (directMatmul) {
+        perDimTileIter.push_back(directMatmulPlan->rowTileValue);
+      } else if (numDims == 1) {
         // 1-D fast path: preserves existing static trip count optimization.
         if (!parallelMask[0]) {
           // Single reduction dim -- nothing to tile.
@@ -811,9 +1020,17 @@ struct TilingPass : public arts::impl::TilingBase<TilingPass> {
           op.getUpperBounds(), ValueRange{tiledSteps}, op.getScheduleAttr(),
           op.getChunkSize(), op.getNowaitAttr(), op.getReductionAccumulators(),
           op.getReductionKindsAttr(), op.getReductionStrategyAttr(),
-          op.getStructuredClassificationAttr(), op.getAccessMinOffsetsAttr(),
-          op.getAccessMaxOffsetsAttr(), op.getOwnerDimsAttr(),
-          op.getSpatialDimsAttr(), op.getWriteFootprintAttr());
+          op.getStructuredClassificationAttr(), op.getDepFamilyAttr(),
+          op.getAccessMinOffsetsAttr(), op.getAccessMaxOffsetsAttr(),
+          op.getOwnerDimsAttr(), op.getSpatialDimsAttr(),
+          op.getWriteFootprintAttr(),
+          op.getPhysicalOwnerDimsAttr(), op.getPhysicalBlockShapeAttr(),
+          op.getLogicalWorkerSliceAttr(), op.getPhysicalHaloShapeAttr(),
+          op.getIterationTopologyAttr(), op.getRepetitionStructureAttr(),
+          op.getAsyncStrategyAttr(), op.getDistributionKindAttr(),
+          op.getInPlaceSafeAttr(), op.getInPlaceSharedStateAttr(),
+          op.getVectorizeWidthAttr(), op.getUnrollFactorAttr(),
+          op.getInterleaveCountAttr());
       newOp->setAttrs(sde::getRewrittenAttrs(op));
 
       Block &newBody = sde::ensureBlock(newOp.getBody());
@@ -851,6 +1068,7 @@ struct TilingPass : public arts::impl::TilingBase<TilingPass> {
         // Dual-representation path: build nested scf.for tile loops for
         // parallel dims only. Reduction dims pass through directly.
         IRMapping mapper;
+        SmallVector<scf::ForOp, 4> tileLoops;
         for (unsigned d = 0; d < numDims; ++d) {
           Value tileBase = newBody.getArgument(d);
           if (!parallelMask[d]) {
@@ -865,6 +1083,7 @@ struct TilingPass : public arts::impl::TilingBase<TilingPass> {
           Value originalStep = op.getSteps()[d];
           auto tileLoop = scf::ForOp::create(rewriter, loc, tileBase, tileUpper,
                                              originalStep);
+          tileLoops.push_back(tileLoop);
           mapper.map(srcBody.getArgument(d), tileLoop.getInductionVar());
           rewriter.setInsertionPointToStart(tileLoop.getBody());
         }
@@ -872,6 +1091,20 @@ struct TilingPass : public arts::impl::TilingBase<TilingPass> {
         // Clone body into the innermost tile loop. In dual-representation
         // mode, skips carrier ops.
         cloneBodyIntoTileLoop(*computeBody, mapper, rewriter);
+
+        if (directMatmul && !tileLoops.empty()) {
+          Value outputRoot =
+              mapper.lookupOrDefault(directMatmulPlan->output.root);
+          Value ownerIv = mapper.lookupOrDefault(srcBody.getArgument(0));
+          unsigned tiledColumns = stripMineDirectMatmulColumnLoops(
+              *tileLoops.back().getBody(), outputRoot, ownerIv,
+              directMatmulPlan->columnTileValue);
+          if (tiledColumns == 0) {
+            rewriter.eraseOp(newOp);
+            continue;
+          }
+          stampDirectMatmulTilePlan(newOp, *directMatmulPlan);
+        }
       }
 
       // Yield at the end of the su_iterate body (not inside nested loops).

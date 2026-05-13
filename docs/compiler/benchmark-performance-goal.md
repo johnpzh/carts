@@ -487,7 +487,96 @@ dekk carts benchmarks run polybench/seidel-2d --size large --timeout 120 --threa
   `ScopeSelection`, `ScheduleRefinement`, `ChunkOpt`, `ReductionStrategy`,
   `DistributionPlanning`, then `IterationSpaceDecomposition`.
 
-## Current Classifications
+### Final Current-Code Large/64 Sweep
+
+Command:
+
+```bash
+dekk carts build
+dekk carts doctor
+dekk carts pipeline --json
+dekk carts benchmarks run --size large --timeout 120 --threads 64 --nodes 1 --trace --results-dir .carts/outputs/benchmarks-large-64-final
+dekk carts benchmarks run ml-kernels/pooling monte-carlo/ensemble polybench/convolution-2d polybench/convolution-3d polybench/correlation polybench/seidel-2d seissol/volume-integral --size large --timeout 120 --threads 64 --nodes 1 --trace --runs 3 --results-dir .carts/outputs/benchmarks-large-64-final-focused
+```
+
+Evidence:
+
+- Full current-code sweep:
+  `.carts/outputs/benchmarks-large-64-final/20260512_204622`.
+- Current checkout in the benchmark manifest: CARTS `90f1a783`,
+  carts-benchmarks `78a076d`, ARTS `0070a1c`.
+- Full sweep result: 23 runnable benchmarks, 23 passed, 0 failed, 0 skipped,
+  0 ARTS timeouts, 0 checksum failures, geometric mean speedup `0.14x`.
+- Focused 3-run stability check:
+  `.carts/outputs/benchmarks-large-64-final-focused/20260512_210324`.
+  This reran the benchmarks whose one-run classification was borderline,
+  surprisingly fast, or noisy. It produced 21 pass runs, 0 failures, 0 skipped,
+  and no startup outliers. The table below uses the focused median for those
+  seven entries and the full-sweep result for the rest.
+
+Current large/64 classification:
+
+| Benchmark | Source | ARTS kernel (s) | OpenMP kernel (s) | Speedup | Class |
+| --- | --- | ---: | ---: | ---: | --- |
+| `stream` | full | `75.330666` | `2.114771` | `0.028x` | `blocked` |
+| `kastors-jacobi/jacobi-for` | full | `39.415686` | `2.851216` | `0.072x` | `blocked` |
+| `kastors-jacobi/poisson-for` | full | `37.154410` | `2.555192` | `0.069x` | `blocked` |
+| `ml-kernels/activations` | full | `15.446168` | `0.529610` | `0.034x` | `blocked` |
+| `ml-kernels/batchnorm` | full | `7.156200` | `1.959494` | `0.274x` | `blocked` |
+| `ml-kernels/layernorm` | full | `38.114460` | `3.471235` | `0.091x` | `blocked` |
+| `ml-kernels/pooling` | focused median | `4.161802` | `2.335709` | `0.533x` | `blocked` |
+| `monte-carlo/ensemble` | focused median | `7.207011` | `4.272500` | `0.593x` | `blocked` |
+| `polybench/2mm` | full | `30.826612` | `5.567576` | `0.181x` | `blocked` |
+| `polybench/3mm` | full | `24.940715` | `4.925081` | `0.197x` | `blocked` |
+| `polybench/atax` | full | `105.867063` | `3.057943` | `0.029x` | `blocked` |
+| `polybench/bicg` | full | `92.975052` | `3.054249` | `0.033x` | `blocked` |
+| `polybench/convolution-2d` | focused median | `3.191931` | `2.799905` | `0.879x` | `competitive` |
+| `polybench/convolution-3d` | focused median | `2.095997` | `2.372762` | `1.121x` | `fast` |
+| `polybench/correlation` | focused median | `0.724042` | `1.183419` | `1.621x` | `fast` |
+| `polybench/gemm` | full | `15.459261` | `6.251855` | `0.404x` | `blocked` |
+| `polybench/jacobi2d` | full | `6.510637` | `0.771914` | `0.119x` | `blocked` |
+| `polybench/seidel-2d` | focused median | `8.503274` | `4.410207` | `0.521x` | `blocked` |
+| `seissol/volume-integral` | focused median | `0.434666` | `0.274134` | `0.671x` | `blocked` |
+| `specfem3d/stress` | full | `47.460548` | `2.226636` | `0.047x` | `blocked` |
+| `specfem3d/velocity` | full | `43.103586` | `1.721611` | `0.040x` | `blocked` |
+| `sw4lite/rhs4sg-base` | full | `58.234629` | `2.907854` | `0.050x` | `blocked` |
+| `sw4lite/vel4sg-base` | full | `43.949067` | `2.277159` | `0.052x` | `blocked` |
+
+Current large/64 outcome:
+
+- `fast`: `polybench/convolution-3d`, `polybench/correlation`.
+- `competitive`: `polybench/convolution-2d`.
+- `blocked`: the other 20 runnable entries.
+- No runnable benchmark currently times out at large size, 64 threads, and
+  1 local node.
+
+Compiler optimization priorities from the final sweep:
+
+- Add SDE physical DB layout planning for vector, matrix, and tensor outputs
+  before `CreateDbs`. The slowest families still create coarse DBs and add
+  block slices late in ARTS.
+- Add SDE matmul/tensor-contraction planning for `gemm`, `2mm`, `3mm`, and
+  `seissol/volume-integral`: physically materialize row/tile-blocked outputs
+  and intermediates, preserve phase ordering, and choose A/B/read tensor reuse
+  policy before Core lowering.
+- Add SDE vector/reduction planning for `stream`, `atax`, `bicg`,
+  `activations`, `batchnorm`, `layernorm`, and `pooling`: fuse compatible
+  elementwise phases, make reduction strategy explicit, and create blocked
+  output DBs directly.
+- Add SDE 3D component-stencil layout planning for `specfem3d/*` and
+  `sw4lite/*`: carry z/block/component layout and halo windows into DB
+  creation instead of relying on late coarse DB acquires.
+- Add SDE timestep/wavefront planning for Jacobi/Seidel-style kernels and the
+  disabled `fdtd-2d`: preserve dependences, but coarsen timestep/task structure
+  and avoid unnecessary CPS relaunch overhead where legality is proven.
+- Consider RT/runtime work only after the planned SDE/Core DB shape is present
+  and still bottlenecked; likely candidates are EDT launch/CPS continuation
+  overhead and dependency-window handling, not benchmark-source changes.
+
+The concrete SDE-first optimization proposal is maintained in
+[`sde-physical-layout-optimization-plan.md`](./sde-physical-layout-optimization-plan.md).
+
+## Detailed Triage Notes
 
 | Benchmark | Date | Correctness | Class | Evidence | Bottleneck |
 | --- | --- | --- | --- | --- | --- |

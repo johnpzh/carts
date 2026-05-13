@@ -106,7 +106,7 @@ unsigned narrowEpoch(EpochOp epoch) {
   OpBuilder builder(epoch->getBlock(), std::next(Block::iterator(epoch)));
   for (unsigned g = 1; g < groups.size(); ++g) {
     auto [gStart, gEnd] = groups[g];
-    auto newEpoch = EpochOp::create(builder, loc);
+    auto newEpoch = EpochOp::create(builder, loc, ValueRange{});
     auto &newBlock = newEpoch.getBody().emplaceBlock();
     OpBuilder innerBuilder(&newBlock, newBlock.begin());
     YieldOp::create(innerBuilder, loc);
@@ -201,25 +201,24 @@ static bool isAmortizableTailOp(Operation *op, Value loopIv) {
 }
 
 static bool isStableRepeatTopology(Operation *op) {
-  return hasPlanAttrValue(op, AttrNames::Operation::Plan::IterationTopology,
-                          "owner_strip") ||
-         hasPlanAttrValue(op, AttrNames::Operation::Plan::IterationTopology,
-                          "owner_tile");
+  auto topology = getPlanIterationTopologyAttr(op);
+  return topology &&
+         (topology.getValue() == ArtsPlanIterationTopology::owner_strip ||
+          topology.getValue() == ArtsPlanIterationTopology::owner_tile);
 }
 
 static bool hasZeroSliceWideningPressure(Operation *op) {
-  auto attr = op ? op->getAttrOfType<IntegerAttr>(
-                       AttrNames::Operation::Plan::CostSliceWideningPressure)
-                 : nullptr;
+  auto attr = getPlanCostSliceWideningPressureAttr(op);
   return attr && attr.getInt() == 0;
 }
 
 static bool epochHasRepeatStableUniformPlan(EpochOp epochOp) {
   Operation *op = epochOp.getOperation();
-  return hasPlanAttrValue(op, AttrNames::Operation::Plan::KernelFamily,
-                          "uniform") &&
-         hasPlanAttrValue(op, AttrNames::Operation::Plan::RepetitionStructure,
-                          "full_timestep") &&
+  auto depPattern = getDepPattern(op);
+  auto repetition = getPlanRepetitionStructureAttr(op);
+  return depPattern && isUniformFamilyDepPattern(*depPattern) &&
+         repetition &&
+         repetition.getValue() == ArtsPlanRepetitionStructure::full_timestep &&
          isStableRepeatTopology(op) && hasZeroSliceWideningPressure(op);
 }
 

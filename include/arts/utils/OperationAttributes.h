@@ -139,27 +139,6 @@ constexpr StringLiteral NarrowableDep = "narrowable_dep";
 constexpr StringLiteral ContractKindKey = "contract_kind";
 } // namespace Contract
 
-/// Structured kernel plan attributes.
-namespace Plan {
-using namespace llvm;
-constexpr StringLiteral KernelFamily = "arts.plan.kernel_family";
-constexpr StringLiteral OwnerDims = "arts.plan.owner_dims";
-constexpr StringLiteral PhysicalBlockShape = "arts.plan.physical_block_shape";
-constexpr StringLiteral LogicalWorkerSlice = "arts.plan.logical_worker_slice";
-constexpr StringLiteral HaloShape = "arts.plan.halo_shape";
-constexpr StringLiteral IterationTopology = "arts.plan.iteration_topology";
-constexpr StringLiteral RepetitionStructure = "arts.plan.repetition_structure";
-constexpr StringLiteral AsyncStrategy = "arts.plan.async_strategy";
-constexpr StringLiteral CostSchedulerOverhead =
-    "arts.plan.cost.scheduler_overhead";
-constexpr StringLiteral CostSliceWideningPressure =
-    "arts.plan.cost.slice_widening_pressure";
-constexpr StringLiteral CostExpectedLocalWork =
-    "arts.plan.cost.expected_local_work";
-constexpr StringLiteral CostRelaunchAmortization =
-    "arts.plan.cost.relaunch_amortization";
-} // namespace Plan
-
 /// Orchestration attributes for grouped repeated-wave lowering.
 namespace Orchestration {
 using namespace llvm;
@@ -204,40 +183,84 @@ constexpr llvm::StringLiteral StripMiningGenerated =
 /// Marks allocas that bridge raised tensor DBs back to user-visible memrefs.
 constexpr llvm::StringLiteral Preserve = "arts.preserve";
 
-/// Marks barriers that have been proven redundant by SdeBarrierElimination.
-constexpr llvm::StringLiteral BarrierEliminated = "barrier_eliminated";
-
-/// Marks operations whose input/output can safely alias (in-place update).
-constexpr llvm::StringLiteral InPlaceSafe = "in_place_safe";
-
-/// Marks local OpenMP-compatible in-place loops that intentionally share one
-/// coarse backing store as task state instead of creating serializing deps.
-constexpr llvm::StringLiteral InPlaceSharedState = "in_place_shared_state";
-
-/// SDE-specific semantic attributes stamped by SDE transforms.
-namespace Sde {
+/// RT-facing loop execution hints copied onto outlined EDT functions. These
+/// live on func/LLVM function ops, so they cannot be ODS accessors on CARTS
+/// ops; all in-dialect producers/consumers use generated accessors instead.
+namespace Rt {
 using namespace llvm;
-constexpr StringLiteral VectorizeWidth = "sde.vectorize_width";
-constexpr StringLiteral UnrollFactor = "sde.unroll_factor";
-constexpr StringLiteral InterleaveCount = "sde.interleave_count";
-} // namespace Sde
+constexpr StringLiteral VectorizeWidth = "arts.rt.vectorize_width";
+constexpr StringLiteral UnrollFactor = "arts.rt.unroll_factor";
+constexpr StringLiteral InterleaveCount = "arts.rt.interleave_count";
+} // namespace Rt
 
 } // namespace Operation
 
 } // namespace AttrNames
 
-/// Forward SDE-authored loop execution hints from one operation to another.
-inline void copySdeHintAttrs(Operation *source, Operation *dest) {
+inline void copyCoreExecutionHintAttrs(Operation *source, Operation *dest) {
   if (!source || !dest)
     return;
-  for (StringRef attrName : {AttrNames::Operation::Sde::VectorizeWidth,
-                             AttrNames::Operation::Sde::UnrollFactor,
-                             AttrNames::Operation::Sde::InterleaveCount,
-                             AttrNames::Operation::InPlaceSafe,
-                             AttrNames::Operation::InPlaceSharedState}) {
-    if (auto attr = source->getAttr(attrName))
-      dest->setAttr(attrName, attr);
+
+  UnitAttr inPlaceSafe;
+  UnitAttr inPlaceSharedState;
+  IntegerAttr vectorizeWidth;
+  IntegerAttr unrollFactor;
+  IntegerAttr interleaveCount;
+
+  if (auto forOp = dyn_cast<ForOp>(source)) {
+    inPlaceSafe = forOp.getInPlaceSafeAttr();
+    inPlaceSharedState = forOp.getInPlaceSharedStateAttr();
+    vectorizeWidth = forOp.getVectorizeWidthAttr();
+    unrollFactor = forOp.getUnrollFactorAttr();
+    interleaveCount = forOp.getInterleaveCountAttr();
+  } else if (auto edtOp = dyn_cast<EdtOp>(source)) {
+    inPlaceSafe = edtOp.getInPlaceSafeAttr();
+    inPlaceSharedState = edtOp.getInPlaceSharedStateAttr();
+    vectorizeWidth = edtOp.getVectorizeWidthAttr();
+    unrollFactor = edtOp.getUnrollFactorAttr();
+    interleaveCount = edtOp.getInterleaveCountAttr();
+  } else {
+    return;
   }
+
+  if (auto forOp = dyn_cast<ForOp>(dest)) {
+    if (inPlaceSafe)
+      forOp.setInPlaceSafeAttr(inPlaceSafe);
+    if (inPlaceSharedState)
+      forOp.setInPlaceSharedStateAttr(inPlaceSharedState);
+    if (vectorizeWidth)
+      forOp.setVectorizeWidthAttr(vectorizeWidth);
+    if (unrollFactor)
+      forOp.setUnrollFactorAttr(unrollFactor);
+    if (interleaveCount)
+      forOp.setInterleaveCountAttr(interleaveCount);
+    return;
+  }
+
+  if (auto edtOp = dyn_cast<EdtOp>(dest)) {
+    if (inPlaceSafe)
+      edtOp.setInPlaceSafeAttr(inPlaceSafe);
+    if (inPlaceSharedState)
+      edtOp.setInPlaceSharedStateAttr(inPlaceSharedState);
+    if (vectorizeWidth)
+      edtOp.setVectorizeWidthAttr(vectorizeWidth);
+    if (unrollFactor)
+      edtOp.setUnrollFactorAttr(unrollFactor);
+    if (interleaveCount)
+      edtOp.setInterleaveCountAttr(interleaveCount);
+  }
+}
+
+inline void copyCoreExecutionHintAttrsToRtFunction(EdtOp source,
+                                                   Operation *dest) {
+  if (!source || !dest)
+    return;
+  if (auto attr = source.getVectorizeWidthAttr())
+    dest->setAttr(AttrNames::Operation::Rt::VectorizeWidth, attr);
+  if (auto attr = source.getUnrollFactorAttr())
+    dest->setAttr(AttrNames::Operation::Rt::UnrollFactor, attr);
+  if (auto attr = source.getInterleaveCountAttr())
+    dest->setAttr(AttrNames::Operation::Rt::InterleaveCount, attr);
 }
 
 enum class MetadataProvenanceKind : uint8_t {
@@ -275,11 +298,331 @@ parseMetadataProvenance(StringRef value) {
 }
 
 /// Check if an operation has a StringAttr with the given name whose value
-/// matches the expected string.  Null-safe: returns false if op is null.
-inline bool hasPlanAttrValue(Operation *op, StringRef attrName,
-                             StringRef expected) {
+/// matches the expected string. Null-safe: returns false if op is null.
+inline bool hasStringAttrValue(Operation *op, StringRef attrName,
+                               StringRef expected) {
   auto attr = op ? op->getAttrOfType<StringAttr>(attrName) : nullptr;
   return attr && attr.getValue() == expected;
+}
+
+inline ArrayAttr getPlanOwnerDimsAttr(Operation *op) {
+  if (!op)
+    return nullptr;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    return forOp.getPlanOwnerDimsAttr();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    return edtOp.getPlanOwnerDimsAttr();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    return epochOp.getPlanOwnerDimsAttr();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    return dbAllocOp.getPlanOwnerDimsAttr();
+  return nullptr;
+}
+
+inline ArrayAttr getPlanPhysicalBlockShapeAttr(Operation *op) {
+  if (!op)
+    return nullptr;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    return forOp.getPlanPhysicalBlockShapeAttr();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    return edtOp.getPlanPhysicalBlockShapeAttr();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    return epochOp.getPlanPhysicalBlockShapeAttr();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    return dbAllocOp.getPlanPhysicalBlockShapeAttr();
+  return nullptr;
+}
+
+inline ArrayAttr getPlanLogicalWorkerSliceAttr(Operation *op) {
+  if (!op)
+    return nullptr;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    return forOp.getPlanLogicalWorkerSliceAttr();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    return edtOp.getPlanLogicalWorkerSliceAttr();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    return epochOp.getPlanLogicalWorkerSliceAttr();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    return dbAllocOp.getPlanLogicalWorkerSliceAttr();
+  return nullptr;
+}
+
+inline ArrayAttr getPlanHaloShapeAttr(Operation *op) {
+  if (!op)
+    return nullptr;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    return forOp.getPlanHaloShapeAttr();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    return edtOp.getPlanHaloShapeAttr();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    return epochOp.getPlanHaloShapeAttr();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    return dbAllocOp.getPlanHaloShapeAttr();
+  return nullptr;
+}
+
+inline ArtsPlanIterationTopologyAttr
+getPlanIterationTopologyAttr(Operation *op) {
+  if (!op)
+    return nullptr;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    return forOp.getPlanIterationTopologyAttr();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    return edtOp.getPlanIterationTopologyAttr();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    return epochOp.getPlanIterationTopologyAttr();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    return dbAllocOp.getPlanIterationTopologyAttr();
+  return nullptr;
+}
+
+inline ArtsPlanRepetitionStructureAttr
+getPlanRepetitionStructureAttr(Operation *op) {
+  if (!op)
+    return nullptr;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    return forOp.getPlanRepetitionStructureAttr();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    return edtOp.getPlanRepetitionStructureAttr();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    return epochOp.getPlanRepetitionStructureAttr();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    return dbAllocOp.getPlanRepetitionStructureAttr();
+  return nullptr;
+}
+
+inline ArtsPlanAsyncStrategyAttr getPlanAsyncStrategyAttr(Operation *op) {
+  if (!op)
+    return nullptr;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    return forOp.getPlanAsyncStrategyAttr();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    return edtOp.getPlanAsyncStrategyAttr();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    return epochOp.getPlanAsyncStrategyAttr();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    return dbAllocOp.getPlanAsyncStrategyAttr();
+  return nullptr;
+}
+
+inline IntegerAttr getPlanCostSchedulerOverheadAttr(Operation *op) {
+  if (!op)
+    return nullptr;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    return forOp.getPlanCostSchedulerOverheadAttr();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    return edtOp.getPlanCostSchedulerOverheadAttr();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    return epochOp.getPlanCostSchedulerOverheadAttr();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    return dbAllocOp.getPlanCostSchedulerOverheadAttr();
+  return nullptr;
+}
+
+inline IntegerAttr getPlanCostSliceWideningPressureAttr(Operation *op) {
+  if (!op)
+    return nullptr;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    return forOp.getPlanCostSliceWideningPressureAttr();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    return edtOp.getPlanCostSliceWideningPressureAttr();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    return epochOp.getPlanCostSliceWideningPressureAttr();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    return dbAllocOp.getPlanCostSliceWideningPressureAttr();
+  return nullptr;
+}
+
+inline IntegerAttr getPlanCostExpectedLocalWorkAttr(Operation *op) {
+  if (!op)
+    return nullptr;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    return forOp.getPlanCostExpectedLocalWorkAttr();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    return edtOp.getPlanCostExpectedLocalWorkAttr();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    return epochOp.getPlanCostExpectedLocalWorkAttr();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    return dbAllocOp.getPlanCostExpectedLocalWorkAttr();
+  return nullptr;
+}
+
+inline IntegerAttr getPlanCostRelaunchAmortizationAttr(Operation *op) {
+  if (!op)
+    return nullptr;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    return forOp.getPlanCostRelaunchAmortizationAttr();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    return edtOp.getPlanCostRelaunchAmortizationAttr();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    return epochOp.getPlanCostRelaunchAmortizationAttr();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    return dbAllocOp.getPlanCostRelaunchAmortizationAttr();
+  return nullptr;
+}
+
+inline void setPlanOwnerDimsAttr(Operation *op, ArrayAttr attr) {
+  if (!op || !attr)
+    return;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setPlanOwnerDimsAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setPlanOwnerDimsAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setPlanOwnerDimsAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setPlanOwnerDimsAttr(attr);
+}
+
+inline void setPlanPhysicalBlockShapeAttr(Operation *op, ArrayAttr attr) {
+  if (!op || !attr)
+    return;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setPlanPhysicalBlockShapeAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setPlanPhysicalBlockShapeAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setPlanPhysicalBlockShapeAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setPlanPhysicalBlockShapeAttr(attr);
+}
+
+inline void setPlanLogicalWorkerSliceAttr(Operation *op, ArrayAttr attr) {
+  if (!op || !attr)
+    return;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setPlanLogicalWorkerSliceAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setPlanLogicalWorkerSliceAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setPlanLogicalWorkerSliceAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setPlanLogicalWorkerSliceAttr(attr);
+}
+
+inline void setPlanHaloShapeAttr(Operation *op, ArrayAttr attr) {
+  if (!op || !attr)
+    return;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setPlanHaloShapeAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setPlanHaloShapeAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setPlanHaloShapeAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setPlanHaloShapeAttr(attr);
+}
+
+inline void setPlanIterationTopologyAttr(
+    Operation *op, ArtsPlanIterationTopologyAttr attr) {
+  if (!op || !attr)
+    return;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setPlanIterationTopologyAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setPlanIterationTopologyAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setPlanIterationTopologyAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setPlanIterationTopologyAttr(attr);
+}
+
+inline void setPlanRepetitionStructureAttr(
+    Operation *op, ArtsPlanRepetitionStructureAttr attr) {
+  if (!op || !attr)
+    return;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setPlanRepetitionStructureAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setPlanRepetitionStructureAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setPlanRepetitionStructureAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setPlanRepetitionStructureAttr(attr);
+}
+
+inline void setPlanAsyncStrategyAttr(Operation *op,
+                                     ArtsPlanAsyncStrategyAttr attr) {
+  if (!op || !attr)
+    return;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setPlanAsyncStrategyAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setPlanAsyncStrategyAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setPlanAsyncStrategyAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setPlanAsyncStrategyAttr(attr);
+}
+
+inline void setPlanCostSchedulerOverheadAttr(Operation *op, IntegerAttr attr) {
+  if (!op || !attr)
+    return;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setPlanCostSchedulerOverheadAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setPlanCostSchedulerOverheadAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setPlanCostSchedulerOverheadAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setPlanCostSchedulerOverheadAttr(attr);
+}
+
+inline void setPlanCostSliceWideningPressureAttr(Operation *op,
+                                                 IntegerAttr attr) {
+  if (!op || !attr)
+    return;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setPlanCostSliceWideningPressureAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setPlanCostSliceWideningPressureAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setPlanCostSliceWideningPressureAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setPlanCostSliceWideningPressureAttr(attr);
+}
+
+inline void setPlanCostExpectedLocalWorkAttr(Operation *op,
+                                             IntegerAttr attr) {
+  if (!op || !attr)
+    return;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setPlanCostExpectedLocalWorkAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setPlanCostExpectedLocalWorkAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setPlanCostExpectedLocalWorkAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setPlanCostExpectedLocalWorkAttr(attr);
+}
+
+inline void setPlanCostRelaunchAmortizationAttr(Operation *op,
+                                                IntegerAttr attr) {
+  if (!op || !attr)
+    return;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setPlanCostRelaunchAmortizationAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setPlanCostRelaunchAmortizationAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setPlanCostRelaunchAmortizationAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setPlanCostRelaunchAmortizationAttr(attr);
+}
+
+/// Check whether a CARTS operation carries any structured plan attr. This is a
+/// generic contract-presence test; callers that need semantic families should
+/// consume explicit dep/distribution contract attrs instead.
+inline bool hasStructuredPlanAttrs(Operation *op) {
+  return getPlanOwnerDimsAttr(op) || getPlanPhysicalBlockShapeAttr(op) ||
+         getPlanLogicalWorkerSliceAttr(op) || getPlanHaloShapeAttr(op) ||
+         getPlanIterationTopologyAttr(op) ||
+         getPlanRepetitionStructureAttr(op) ||
+         getPlanAsyncStrategyAttr(op) ||
+         getPlanCostSchedulerOverheadAttr(op) ||
+         getPlanCostSliceWideningPressureAttr(op) ||
+         getPlanCostExpectedLocalWorkAttr(op) ||
+         getPlanCostRelaunchAmortizationAttr(op);
 }
 
 inline std::optional<StringRef> getRuntimeConfigPath(ModuleOp module) {
@@ -650,6 +993,21 @@ inline std::optional<EdtDistributionKind>
 getEdtDistributionKind(Operation *op) {
   if (!op)
     return std::nullopt;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    if (auto attr = forOp.getDistributionKindAttr())
+      return attr.getValue();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    if (auto attr = edtOp.getDistributionKindAttr())
+      return attr.getValue();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    if (auto attr = epochOp.getDistributionKindAttr())
+      return attr.getValue();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    if (auto attr = dbAllocOp.getDistributionKindAttr())
+      return attr.getValue();
+  if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
+    if (auto attr = dbAcquireOp.getDistributionKindAttr())
+      return attr.getValue();
   if (auto attr = op->getAttrOfType<EdtDistributionKindAttr>(
           AttrNames::Operation::DistributionKind))
     return attr.getValue();
@@ -659,14 +1017,40 @@ getEdtDistributionKind(Operation *op) {
 inline void setEdtDistributionKind(Operation *op, EdtDistributionKind kind) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::DistributionKind,
-              EdtDistributionKindAttr::get(op->getContext(), kind));
+  auto attr = EdtDistributionKindAttr::get(op->getContext(), kind);
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setDistributionKindAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setDistributionKindAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setDistributionKindAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setDistributionKindAttr(attr);
+  else if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
+    dbAcquireOp.setDistributionKindAttr(attr);
+  else
+    op->setAttr(AttrNames::Operation::DistributionKind, attr);
 }
 
 inline std::optional<EdtDistributionPattern>
 getEdtDistributionPattern(Operation *op) {
   if (!op)
     return std::nullopt;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    if (auto attr = forOp.getDistributionPatternAttr())
+      return attr.getValue();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    if (auto attr = edtOp.getDistributionPatternAttr())
+      return attr.getValue();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    if (auto attr = epochOp.getDistributionPatternAttr())
+      return attr.getValue();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    if (auto attr = dbAllocOp.getDistributionPatternAttr())
+      return attr.getValue();
+  if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
+    if (auto attr = dbAcquireOp.getDistributionPatternAttr())
+      return attr.getValue();
   if (auto attr = op->getAttrOfType<EdtDistributionPatternAttr>(
           AttrNames::Operation::DistributionPattern))
     return attr.getValue();
@@ -677,13 +1061,39 @@ inline void setEdtDistributionPattern(Operation *op,
                                       EdtDistributionPattern pattern) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::DistributionPattern,
-              EdtDistributionPatternAttr::get(op->getContext(), pattern));
+  auto attr = EdtDistributionPatternAttr::get(op->getContext(), pattern);
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setDistributionPatternAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setDistributionPatternAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setDistributionPatternAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setDistributionPatternAttr(attr);
+  else if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
+    dbAcquireOp.setDistributionPatternAttr(attr);
+  else
+    op->setAttr(AttrNames::Operation::DistributionPattern, attr);
 }
 
 inline std::optional<ArtsDepPattern> getDepPattern(Operation *op) {
   if (!op)
     return std::nullopt;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    if (auto attr = forOp.getDepPatternAttr())
+      return attr.getValue();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    if (auto attr = edtOp.getDepPatternAttr())
+      return attr.getValue();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    if (auto attr = epochOp.getDepPatternAttr())
+      return attr.getValue();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    if (auto attr = dbAllocOp.getDepPatternAttr())
+      return attr.getValue();
+  if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
+    if (auto attr = dbAcquireOp.getDepPatternAttr())
+      return attr.getValue();
   if (auto attr = op->getAttrOfType<ArtsDepPatternAttr>(
           AttrNames::Operation::DepPatternAttr))
     return attr.getValue();
@@ -693,8 +1103,67 @@ inline std::optional<ArtsDepPattern> getDepPattern(Operation *op) {
 inline void setDepPattern(Operation *op, ArtsDepPattern pattern) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::DepPatternAttr,
-              ArtsDepPatternAttr::get(op->getContext(), pattern));
+  auto attr = ArtsDepPatternAttr::get(op->getContext(), pattern);
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setDepPatternAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setDepPatternAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setDepPatternAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setDepPatternAttr(attr);
+  else if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
+    dbAcquireOp.setDepPatternAttr(attr);
+  else
+    op->setAttr(AttrNames::Operation::DepPatternAttr, attr);
+}
+
+inline IntegerAttr getDistributionVersionAttr(Operation *op) {
+  if (!op)
+    return nullptr;
+  if (auto forOp = dyn_cast<ForOp>(op))
+    return forOp.getDistributionVersionAttr();
+  if (auto edtOp = dyn_cast<EdtOp>(op))
+    return edtOp.getDistributionVersionAttr();
+  if (auto epochOp = dyn_cast<EpochOp>(op))
+    return epochOp.getDistributionVersionAttr();
+  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    return dbAllocOp.getDistributionVersionAttr();
+  if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
+    return dbAcquireOp.getDistributionVersionAttr();
+  return op->getAttrOfType<IntegerAttr>(AttrNames::Operation::DistributionVersion);
+}
+
+inline void setDistributionVersionAttr(Operation *op, IntegerAttr attr) {
+  if (!op)
+    return;
+  if (!attr) {
+    op->removeAttr(AttrNames::Operation::DistributionVersion);
+    return;
+  }
+  if (auto forOp = dyn_cast<ForOp>(op))
+    forOp.setDistributionVersionAttr(attr);
+  else if (auto edtOp = dyn_cast<EdtOp>(op))
+    edtOp.setDistributionVersionAttr(attr);
+  else if (auto epochOp = dyn_cast<EpochOp>(op))
+    epochOp.setDistributionVersionAttr(attr);
+  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
+    dbAllocOp.setDistributionVersionAttr(attr);
+  else if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
+    dbAcquireOp.setDistributionVersionAttr(attr);
+  else
+    op->setAttr(AttrNames::Operation::DistributionVersion, attr);
+}
+
+inline void setDistributionVersion(Operation *op, int64_t version) {
+  if (!op)
+    return;
+  if (version <= 0) {
+    op->removeAttr(AttrNames::Operation::DistributionVersion);
+    return;
+  }
+  setDistributionVersionAttr(
+      op, IntegerAttr::get(IntegerType::get(op->getContext(), 32), version));
 }
 
 inline bool isStencilFamilyDepPattern(ArtsDepPattern pattern) {
@@ -838,9 +1307,8 @@ inline void copyDistributionAttrs(Operation *source, Operation *dest) {
   else
     dest->removeAttr(AttrNames::Operation::DistributionPattern);
 
-  if (auto version = source->getAttrOfType<IntegerAttr>(
-          AttrNames::Operation::DistributionVersion))
-    dest->setAttr(AttrNames::Operation::DistributionVersion, version);
+  if (auto version = getDistributionVersionAttr(source))
+    setDistributionVersionAttr(dest, version);
   else
     dest->removeAttr(AttrNames::Operation::DistributionVersion);
 }
@@ -857,10 +1325,9 @@ inline void inheritDistributionAttrs(Operation *source, Operation *dest) {
     if (auto pattern = getEdtDistributionPattern(source))
       setEdtDistributionPattern(dest, *pattern);
 
-  if (!dest->hasAttr(AttrNames::Operation::DistributionVersion))
-    if (auto version = source->getAttrOfType<IntegerAttr>(
-            AttrNames::Operation::DistributionVersion))
-      dest->setAttr(AttrNames::Operation::DistributionVersion, version);
+  if (!getDistributionVersionAttr(dest))
+    if (auto version = getDistributionVersionAttr(source))
+      setDistributionVersionAttr(dest, version);
 }
 
 /// Copy semantic pattern attributes between operations.
@@ -937,10 +1404,21 @@ inline void copySemanticContractAttrs(Operation *source, Operation *dest) {
 inline void copyPlanAttrs(Operation *source, Operation *dest) {
   if (!source || !dest)
     return;
-  for (auto &attr : source->getAttrs()) {
-    if (attr.getName().getValue().starts_with("arts.plan."))
-      dest->setAttr(attr.getName(), attr.getValue());
-  }
+  setPlanOwnerDimsAttr(dest, getPlanOwnerDimsAttr(source));
+  setPlanPhysicalBlockShapeAttr(dest, getPlanPhysicalBlockShapeAttr(source));
+  setPlanLogicalWorkerSliceAttr(dest, getPlanLogicalWorkerSliceAttr(source));
+  setPlanHaloShapeAttr(dest, getPlanHaloShapeAttr(source));
+  setPlanIterationTopologyAttr(dest, getPlanIterationTopologyAttr(source));
+  setPlanRepetitionStructureAttr(dest, getPlanRepetitionStructureAttr(source));
+  setPlanAsyncStrategyAttr(dest, getPlanAsyncStrategyAttr(source));
+  setPlanCostSchedulerOverheadAttr(dest,
+                                   getPlanCostSchedulerOverheadAttr(source));
+  setPlanCostSliceWideningPressureAttr(
+      dest, getPlanCostSliceWideningPressureAttr(source));
+  setPlanCostExpectedLocalWorkAttr(dest,
+                                   getPlanCostExpectedLocalWorkAttr(source));
+  setPlanCostRelaunchAmortizationAttr(
+      dest, getPlanCostRelaunchAmortizationAttr(source));
 }
 
 inline void inheritSemanticContractAttrs(Operation *source, Operation *dest) {

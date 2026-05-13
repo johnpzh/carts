@@ -167,7 +167,6 @@ public:
   LoopAnalysis *getLoopAnalysis();
   LoopDbAccessSummary analyzeLoopDbAccessPatterns(ForOp forOp);
   std::optional<LoopDbAccessSummary> getLoopDbAccessSummary(ForOp forOp);
-  std::optional<EdtDistributionPattern> getLoopDistributionPattern(ForOp forOp);
   AcquirePartitionSummary
   analyzeAcquirePartition(DbAcquireOp acquire, OpBuilder &builder,
                           const AcquireContractSummary *summary = nullptr);

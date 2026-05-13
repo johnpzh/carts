@@ -1879,13 +1879,11 @@ void EpochLoweringPass::runOnOperation() {
         }
       };
 
-      /// Contract-aware path: structured continuations may carry either the
-      /// original kernel-family marker or an explicit launch schema stamped by
-      /// EpochOpt. Both represent a proven relaunch ABI for this continuation,
-      /// so preserve original dependency slots with dep_forward instead of
-      /// reconstructing them positionally.
+      /// Contract-aware path: structured continuations carry an explicit
+      /// launch schema stamped by EpochOpt. That schema proves the relaunch ABI
+      /// for this continuation, so preserve original dependency slots with
+      /// dep_forward instead of reconstructing them positionally.
       bool hasStructuredLaunchContract =
-          contEdtCreate->hasAttr(AttrNames::Operation::Plan::KernelFamily) ||
           contEdtCreate->hasAttr(
               AttrNames::Operation::LaunchState::DepSchema) ||
           contEdtCreate->hasAttr(

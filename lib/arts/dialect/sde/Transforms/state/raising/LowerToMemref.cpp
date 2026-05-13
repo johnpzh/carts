@@ -845,9 +845,16 @@ static void stripSuIterateTensorArgs(ModuleOp module,
         suIter.getNowaitAttr() ? UnitAttr::get(ctx) : nullptr, realAccValues,
         newReductionKinds, suIter.getReductionStrategyAttr(),
         suIter.getStructuredClassificationAttr(),
+        suIter.getDepFamilyAttr(),
         suIter.getAccessMinOffsetsAttr(), suIter.getAccessMaxOffsetsAttr(),
         suIter.getOwnerDimsAttr(), suIter.getSpatialDimsAttr(),
-        suIter.getWriteFootprintAttr());
+        suIter.getWriteFootprintAttr(), suIter.getPhysicalOwnerDimsAttr(),
+        suIter.getPhysicalBlockShapeAttr(), suIter.getLogicalWorkerSliceAttr(),
+        suIter.getPhysicalHaloShapeAttr(), suIter.getIterationTopologyAttr(),
+        suIter.getRepetitionStructureAttr(), suIter.getAsyncStrategyAttr(),
+        suIter.getDistributionKindAttr(), suIter.getInPlaceSafeAttr(),
+        suIter.getInPlaceSharedStateAttr(), suIter.getVectorizeWidthAttr(),
+        suIter.getUnrollFactorAttr(), suIter.getInterleaveCountAttr());
 
     for (auto attr : attrs)
       newSuIter->setAttr(attr.getName(), attr.getValue());

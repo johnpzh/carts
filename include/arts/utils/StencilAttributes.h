@@ -51,11 +51,8 @@ inline ArrayAttr buildI64ArrayAttr(Operation *op, ArrayRef<int64_t> values) {
   return buildI64ArrayAttr(op->getContext(), values);
 }
 
-inline std::optional<SmallVector<int64_t, 4>> readI64ArrayAttr(Operation *op,
-                                                               StringRef name) {
-  if (!op)
-    return std::nullopt;
-  auto attr = op->getAttrOfType<ArrayAttr>(name);
+inline std::optional<SmallVector<int64_t, 4>>
+readI64ArrayAttr(ArrayAttr attr) {
   if (!attr)
     return std::nullopt;
 
@@ -68,6 +65,13 @@ inline std::optional<SmallVector<int64_t, 4>> readI64ArrayAttr(Operation *op,
     values.push_back(intAttr.getInt());
   }
   return values;
+}
+
+inline std::optional<SmallVector<int64_t, 4>> readI64ArrayAttr(Operation *op,
+                                                               StringRef name) {
+  if (!op)
+    return std::nullopt;
+  return readI64ArrayAttr(op->getAttrOfType<ArrayAttr>(name));
 }
 
 inline std::optional<int64_t> getStencilCenterOffset(Operation *op) {

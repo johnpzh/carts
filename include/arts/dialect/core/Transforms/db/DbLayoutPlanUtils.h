@@ -25,8 +25,8 @@ namespace arts {
 /// layout plan needed to create a block DB immediately.
 bool hasPhysicalDbLayoutPlan(Operation *op);
 
-/// Resolve `arts.plan.*` attrs on `planSource` into a concrete DB rewrite plan
-/// for an allocation with the provided logical element extents.
+/// Resolve structured plan attrs on `planSource` into a concrete DB rewrite
+/// plan for an allocation with the provided logical element extents.
 FailureOr<DbRewritePlan> resolvePhysicalDbLayoutPlan(Operation *planSource,
                                                      ValueRange elementSizes,
                                                      OpBuilder &builder,

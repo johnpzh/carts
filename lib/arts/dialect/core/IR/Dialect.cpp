@@ -376,6 +376,19 @@ void EdtOp::build(OpBuilder &builder, OperationState &state, EdtType type,
   bodyRegion->push_back(bodyBlock);
 }
 
+void EpochOp::build(OpBuilder &builder, OperationState &state) {
+  build(builder, state, IntegerType::get(builder.getContext(), 64));
+}
+
+void EpochOp::build(OpBuilder &builder, OperationState &state, Type epochGuid) {
+  build(builder, state, epochGuid, ArtsDepPatternAttr{},
+        EdtDistributionKindAttr{}, EdtDistributionPatternAttr{}, IntegerAttr{},
+        ArrayAttr{}, ArrayAttr{}, ArrayAttr{}, ArrayAttr{},
+        ArtsPlanIterationTopologyAttr{},
+        ArtsPlanRepetitionStructureAttr{}, ArtsPlanAsyncStrategyAttr{},
+        IntegerAttr{}, IntegerAttr{}, IntegerAttr{}, IntegerAttr{});
+}
+
 /// Helper to compute GUID type from sizes
 static Type computeGuidType(OpBuilder &builder, ArrayRef<Value> sizes) {
   size_t numDims = sizes.empty() ? 1 : std::max(sizes.size(), size_t(1));
@@ -551,10 +564,6 @@ void DbAcquireOp::setDepPattern(ArtsDepPattern pattern) {
 
 void DbAcquireOp::clearDepPattern() {
   (*this)->removeAttr(AttrNames::Operation::DepPatternAttr);
-}
-
-std::optional<ArtsDepPattern> DbAcquireOp::getDepPattern() {
-  return arts::getDepPattern(getOperation());
 }
 
 void DbAcquireOp::copyPartitionSegmentsFrom(DbAcquireOp source) {
@@ -974,13 +983,15 @@ void LoweringContractOp::build(
   if (PatternAttr patternAttr = buildPatternAttr(
           builder, depPattern, distributionKind, distributionPattern,
           distributionVersion, revision)) {
-    state.addAttribute("pattern", patternAttr);
+    state.addAttribute(LoweringContractOp::getPatternAttrName(state.name),
+                       patternAttr);
   }
   if (ContractAttr contractAttr = buildContractAttr(
           builder, ownerDims, centerOffset, spatialDims, stencilIndependentDims,
           supportedBlockHalo, narrowableDep, postDbRefined,
           criticalPathDistance, contractKind)) {
-    state.addAttribute("contract", contractAttr);
+    state.addAttribute(LoweringContractOp::getContractAttrName(state.name),
+                       contractAttr);
   }
 }
 

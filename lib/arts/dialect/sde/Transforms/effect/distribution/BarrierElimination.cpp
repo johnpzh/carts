@@ -14,7 +14,7 @@ namespace mlir::arts {
 } // namespace mlir::arts
 
 #include "arts/dialect/sde/Analysis/SdeAnalysisUtils.h"
-#include "arts/utils/OperationAttributes.h"
+#include "arts/utils/ValueAnalysis.h"
 #include "arts/utils/costs/SDECostModel.h"
 
 #include "mlir/IR/BuiltinOps.h"
@@ -47,6 +47,100 @@ static bool isSuContainer(Operation *op) {
   return isa<sde::SdeSuIterateOp>(op) || isa<sde::SdeSuDistributeOp>(op);
 }
 
+static void setBarrierReason(sde::SdeSuBarrierOp barrier,
+                             sde::SdeBarrierReason reason) {
+  barrier.setBarrierReasonAttr(
+      sde::SdeBarrierReasonAttr::get(barrier.getContext(), reason));
+}
+
+static bool sameValueRange(ValueRange lhs, ValueRange rhs) {
+  if (lhs.size() != rhs.size())
+    return false;
+  for (auto [lhsValue, rhsValue] : llvm::zip(lhs, rhs))
+    if (!ValueAnalysis::sameValue(lhsValue, rhsValue))
+      return false;
+  return true;
+}
+
+static bool haveSameIterationShape(sde::SdeSuIterateOp lhs,
+                                   sde::SdeSuIterateOp rhs) {
+  return sameValueRange(lhs.getLowerBounds(), rhs.getLowerBounds()) &&
+         sameValueRange(lhs.getUpperBounds(), rhs.getUpperBounds()) &&
+         sameValueRange(lhs.getSteps(), rhs.getSteps());
+}
+
+static bool isUniformRepeatableStage(sde::SdeSuIterateOp op) {
+  if (!op || !op.getReductionAccumulators().empty())
+    return false;
+
+  if (auto family = op.getDepFamily()) {
+    return *family == sde::SdeDepFamily::uniform ||
+           *family == sde::SdeDepFamily::elementwise_pipeline;
+  }
+
+  auto classification = op.getStructuredClassification();
+  return classification &&
+         (*classification == sde::SdeStructuredClassification::elementwise ||
+          *classification ==
+              sde::SdeStructuredClassification::elementwise_pipeline);
+}
+
+static bool isOutOfPlaceStencilStage(
+    sde::SdeSuIterateOp op,
+    const sde::StructuredMemoryEffectSummary &effects) {
+  if (!op || effects.hasUnknownEffects)
+    return false;
+  auto classification = op.getStructuredClassification();
+  if (!classification ||
+      *classification != sde::SdeStructuredClassification::stencil)
+    return false;
+  if (sde::hasInPlaceSelfRead(effects))
+    return false;
+  auto family = op.getDepFamily();
+  return !family || *family == sde::SdeDepFamily::stencil_tiling_nd ||
+         *family == sde::SdeDepFamily::jacobi_alternating_buffers;
+}
+
+static bool isWavefrontFrontierStage(sde::SdeSuIterateOp op) {
+  auto family = op.getDepFamily();
+  return family && *family == sde::SdeDepFamily::wavefront_2d;
+}
+
+static void stampRepeatedTimestepPlan(sde::SdeSuIterateOp op) {
+  if (!op)
+    return;
+  if (!op.getRepetitionStructureAttr())
+    op.setRepetitionStructureAttr(sde::SdeRepetitionStructureAttr::get(
+        op.getContext(), sde::SdeRepetitionStructure::full_timestep));
+  if (!op.getAsyncStrategyAttr())
+    op.setAsyncStrategyAttr(sde::SdeAsyncStrategyAttr::get(
+        op.getContext(), sde::SdeAsyncStrategy::advance_edt));
+}
+
+static bool writesIntersectReads(const sde::StructuredMemoryEffectSummary &lhs,
+                                 const sde::StructuredMemoryEffectSummary &rhs) {
+  for (Value written : lhs.writes)
+    if (rhs.reads.contains(written))
+      return true;
+  return false;
+}
+
+static bool hasAlternatingBufferExchange(
+    const sde::StructuredMemoryEffectSummary &lhs,
+    const sde::StructuredMemoryEffectSummary &rhs) {
+  return writesIntersectReads(lhs, rhs) && writesIntersectReads(rhs, lhs);
+}
+
+static void stampJacobiTimestepPlan(sde::SdeSuIterateOp predecessor,
+                                    sde::SdeSuIterateOp successor,
+                                    bool predecessorIsStencil) {
+  stampRepeatedTimestepPlan(predecessor);
+  stampRepeatedTimestepPlan(successor);
+  sde::SdeSuIterateOp stencil = predecessorIsStencil ? predecessor : successor;
+  stencil.setDepFamilyAttr(sde::SdeDepFamilyAttr::get(
+      stencil.getContext(), sde::SdeDepFamily::jacobi_alternating_buffers));
+}
+
 struct BarrierEliminationPass
     : public arts::impl::BarrierEliminationBase<BarrierEliminationPass> {
   explicit BarrierEliminationPass(sde::SDECostModel *costModel = nullptr)
@@ -56,6 +150,8 @@ struct BarrierEliminationPass
     int eliminated = 0;
 
     getOperation().walk([&](sde::SdeSuBarrierOp barrier) {
+      setBarrierReason(barrier, sde::SdeBarrierReason::unknown_required);
+
       Block *block = barrier->getBlock();
       if (!block)
         return;
@@ -111,11 +207,43 @@ struct BarrierEliminationPass
 
       if (!predEffects.hasWriteConflictWith(succEffects)) {
         double syncCost = costModel ? costModel->getTaskSyncCost() : 0.0;
-        barrier->setAttr(AttrNames::Operation::BarrierEliminated,
-                         UnitAttr::get(barrier.getContext()));
+        barrier.setBarrierEliminatedAttr(UnitAttr::get(barrier.getContext()));
+        setBarrierReason(barrier, sde::SdeBarrierReason::redundant);
         eliminated++;
         ARTS_DEBUG("Eliminated barrier (sync cost: " << syncCost << ")");
+        return;
       }
+
+      if (isWavefrontFrontierStage(predecessor) ||
+          isWavefrontFrontierStage(successor)) {
+        setBarrierReason(barrier, sde::SdeBarrierReason::wavefront_frontier);
+        return;
+      }
+
+      if (isUniformRepeatableStage(predecessor) &&
+          isUniformRepeatableStage(successor) &&
+          haveSameIterationShape(predecessor, successor)) {
+        stampRepeatedTimestepPlan(predecessor);
+        stampRepeatedTimestepPlan(successor);
+        setBarrierReason(barrier,
+                         sde::SdeBarrierReason::timestep_stage_boundary);
+        return;
+      }
+
+      bool predStencil = isOutOfPlaceStencilStage(predecessor, predEffects);
+      bool succStencil = isOutOfPlaceStencilStage(successor, succEffects);
+      bool predUniform = isUniformRepeatableStage(predecessor);
+      bool succUniform = isUniformRepeatableStage(successor);
+      if (haveSameIterationShape(predecessor, successor) &&
+          hasAlternatingBufferExchange(predEffects, succEffects) &&
+          ((predStencil && succUniform) || (predUniform && succStencil))) {
+        stampJacobiTimestepPlan(predecessor, successor, predStencil);
+        setBarrierReason(barrier,
+                         sde::SdeBarrierReason::timestep_stage_boundary);
+        return;
+      }
+
+      setBarrierReason(barrier, sde::SdeBarrierReason::required_memory);
     });
 
     ARTS_INFO("BarrierElimination: eliminated " << eliminated << " barrier(s)");

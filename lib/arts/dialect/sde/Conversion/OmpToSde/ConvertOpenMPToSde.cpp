@@ -35,12 +35,15 @@ namespace mlir::arts {
 } // namespace mlir::arts
 
 #include "arts/utils/Utils.h"
+#include "arts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "polygeist/Ops.h"
 
 #include "arts/utils/Debug.h"
 ARTS_DEBUG_SETUP(convert_openmp_to_sde);
@@ -154,9 +157,15 @@ struct OmpDependSlice {
   SmallVector<Value> sizes;
 };
 
+struct TaskDependSpec {
+  sde::SdeAccessMode mode = sde::SdeAccessMode::read;
+  OmpDependSlice slice;
+};
+
 /// OpenMP task-depend lowering ingests either the legacy arts.omp_dep carrier
 /// or direct memref values (e.g. memref.subview from Polygeist).
-static std::optional<OmpDependSlice> extractDependSlice(Value depVar) {
+static std::optional<OmpDependSlice>
+extractDependSlice(Value depVar, OpBuilder &builder, Location loc) {
   // Path 1: legacy arts.omp_dep carrier
   if (auto ompDepOp = depVar.getDefiningOp<OmpDepOp>()) {
     OmpDependSlice slice;
@@ -174,13 +183,24 @@ static std::optional<OmpDependSlice> extractDependSlice(Value depVar) {
     // Extract dynamic offsets and sizes (skip static ones — dep matching
     // in SDE uses source identity, not offset precision).
     for (Value off : subviewOp.getOffsets())
-      slice.offsets.push_back(off);
+      slice.offsets.push_back(ensureIndex(builder, loc, off));
     for (Value sz : subviewOp.getSizes())
-      slice.sizes.push_back(sz);
+      slice.sizes.push_back(ensureIndex(builder, loc, sz));
     return slice;
   }
 
-  // Path 3: plain memref — whole-array dependency
+  // Path 3: polygeist.subindex — common for task depend(element) after C
+  // lowering. Preserve the base source plus element offset so SDE can identify
+  // task-dependency families before Core DB creation.
+  if (auto subIndexOp = depVar.getDefiningOp<polygeist::SubIndexOp>()) {
+    OmpDependSlice slice;
+    slice.source = subIndexOp.getSource();
+    slice.offsets.push_back(ensureIndex(builder, loc, subIndexOp.getIndex()));
+    slice.sizes.push_back(arts::createOneIndex(builder, loc));
+    return slice;
+  }
+
+  // Path 4: plain memref — whole-array dependency
   if (isa<MemRefType>(depVar.getType())) {
     OmpDependSlice slice;
     slice.source = depVar;
@@ -188,6 +208,79 @@ static std::optional<OmpDependSlice> extractDependSlice(Value depVar) {
   }
 
   return std::nullopt;
+}
+
+static SmallVector<Value> collectEnclosingScfLoopIvs(Operation *op) {
+  SmallVector<Value> ivs;
+  for (Operation *parent = op ? op->getParentOp() : nullptr; parent;
+       parent = parent->getParentOp()) {
+    if (auto forOp = dyn_cast<scf::ForOp>(parent))
+      ivs.push_back(forOp.getInductionVar());
+  }
+  return ivs;
+}
+
+static bool dependsOnAny(Value value, ArrayRef<Value> roots) {
+  for (Value root : roots)
+    if (ValueAnalysis::dependsOn(value, root))
+      return true;
+  return false;
+}
+
+static bool sameDependSource(Value lhs, Value rhs) {
+  return ValueAnalysis::sameValue(ValueAnalysis::stripMemrefViewOps(lhs),
+                                  ValueAnalysis::stripMemrefViewOps(rhs));
+}
+
+static bool isElementDependSlice(const OmpDependSlice &slice) {
+  if (slice.offsets.size() != 1)
+    return false;
+  if (slice.sizes.empty())
+    return true;
+  return slice.sizes.size() == 1 &&
+         ValueAnalysis::isOneConstant(slice.sizes.front());
+}
+
+static bool isWavefrontTaskDependPattern(Operation *taskOp,
+                                         ArrayRef<TaskDependSpec> deps) {
+  SmallVector<Value> enclosingIvs = collectEnclosingScfLoopIvs(taskOp);
+  if (enclosingIvs.size() < 2)
+    return false;
+
+  const TaskDependSpec *write = nullptr;
+  SmallVector<const TaskDependSpec *, 2> reads;
+  for (const TaskDependSpec &dep : deps) {
+    if (!isElementDependSlice(dep.slice))
+      return false;
+    if (!dependsOnAny(dep.slice.offsets.front(), enclosingIvs))
+      return false;
+
+    switch (dep.mode) {
+    case sde::SdeAccessMode::write:
+      if (write)
+        return false;
+      write = &dep;
+      break;
+    case sde::SdeAccessMode::read:
+      reads.push_back(&dep);
+      break;
+    case sde::SdeAccessMode::readwrite:
+      return false;
+    }
+  }
+
+  if (!write || reads.size() < 2)
+    return false;
+
+  for (const TaskDependSpec *read : reads) {
+    if (!sameDependSource(read->slice.source, write->slice.source))
+      return false;
+    if (ValueAnalysis::sameValue(read->slice.offsets.front(),
+                                 write->slice.offsets.front()))
+      return false;
+  }
+
+  return true;
 }
 
 static void mapWsloopCapturedArgs(omp::WsloopOp op, IRMapping &mapper) {
@@ -260,7 +353,9 @@ struct MasterToSdePattern : public OpRewritePattern<omp::MasterOp> {
     blk.getOperations().splice(blk.end(), old.getOperations());
     // omp.master has implicit barrier (no nowait clause).
     rewriter.setInsertionPointAfter(cuRegion);
-    sde::SdeSuBarrierOp::create(rewriter, loc, ValueRange{});
+    sde::SdeSuBarrierOp::create(rewriter, loc, ValueRange{},
+                                /*barrierEliminated=*/nullptr,
+                                /*barrierReason=*/nullptr);
     rewriter.eraseOp(op);
     return success();
   }
@@ -285,7 +380,9 @@ struct SingleToSdePattern : public OpRewritePattern<omp::SingleOp> {
     // Emit implicit barrier unless nowait.
     if (!op.getNowait()) {
       rewriter.setInsertionPointAfter(cuRegion);
-      sde::SdeSuBarrierOp::create(rewriter, loc, ValueRange{});
+      sde::SdeSuBarrierOp::create(rewriter, loc, ValueRange{},
+                                  /*barrierEliminated=*/nullptr,
+                                  /*barrierReason=*/nullptr);
     }
     rewriter.eraseOp(op);
     return success();
@@ -347,9 +444,16 @@ struct WsloopToSdePattern : public OpRewritePattern<omp::WsloopOp> {
         reductionKinds.empty() ? nullptr
                                : rewriter.getArrayAttr(reductionKinds),
         /*reductionStrategy=*/nullptr, /*structuredClassification=*/nullptr,
+        /*depFamily=*/nullptr,
         /*accessMinOffsets=*/nullptr, /*accessMaxOffsets=*/nullptr,
         /*ownerDims=*/nullptr, /*spatialDims=*/nullptr,
-        /*writeFootprint=*/nullptr);
+        /*writeFootprint=*/nullptr, /*physicalOwnerDims=*/nullptr,
+        /*physicalBlockShape=*/nullptr, /*logicalWorkerSlice=*/nullptr,
+        /*physicalHaloShape=*/nullptr, /*iterationTopology=*/nullptr,
+        /*repetitionStructure=*/nullptr, /*asyncStrategy=*/nullptr,
+        /*distributionKind=*/nullptr, /*inPlaceSafe=*/nullptr,
+        /*inPlaceSharedState=*/nullptr, /*vectorizeWidth=*/nullptr,
+        /*unrollFactor=*/nullptr, /*interleaveCount=*/nullptr);
 
     // Create body with one block argument per dimension.
     Region &dstRegion = suIter.getBody();
@@ -399,7 +503,9 @@ struct WsloopToSdePattern : public OpRewritePattern<omp::WsloopOp> {
     // Barrier if not nowait and work follows
     if (!nw && hasWorkAfterInParentBlock(op.getOperation())) {
       rewriter.setInsertionPointAfter(suIter);
-      sde::SdeSuBarrierOp::create(rewriter, loc, ValueRange{});
+      sde::SdeSuBarrierOp::create(rewriter, loc, ValueRange{},
+                                  /*barrierEliminated=*/nullptr,
+                                  /*barrierReason=*/nullptr);
     }
 
     ++numWsloopsConverted;
@@ -410,8 +516,7 @@ struct WsloopToSdePattern : public OpRewritePattern<omp::WsloopOp> {
 
 /// omp.task -> sde.cu_task
 struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
-  TaskToSdePattern(MLIRContext *ctx, const llvm::DenseSet<Value> *writerSources)
-      : OpRewritePattern(ctx), writerSources(writerSources) {}
+  using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(omp::TaskOp op,
                                 PatternRewriter &rewriter) const override {
@@ -421,6 +526,8 @@ struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
 
     // Collect task dependencies as sde.mu_dep ops
     SmallVector<Value> deps;
+    SmallVector<TaskDependSpec, 4> dependSpecs;
+    rewriter.setInsertionPoint(op);
     auto dependList = op.getDependKindsAttr();
     if (dependList && !dependList.empty() &&
         dependList.size() == op.getDependVars().size()) {
@@ -429,7 +536,7 @@ struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
         if (!depClause)
           continue;
 
-        auto depSlice = extractDependSlice(op.getDependVars()[i]);
+        auto depSlice = extractDependSlice(op.getDependVars()[i], rewriter, loc);
         if (!depSlice)
           continue;
 
@@ -444,10 +551,16 @@ struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
             sde::SdeAccessModeAttr::get(ctx, *sdeMode), depSlice->source,
             depSlice->offsets, depSlice->sizes);
         deps.push_back(muDep.getDep());
+        dependSpecs.push_back(TaskDependSpec{*sdeMode, std::move(*depSlice)});
       }
     }
 
-    auto cuTask = sde::SdeCuTaskOp::create(rewriter, loc, deps);
+    sde::SdeDepFamilyAttr depFamily;
+    if (isWavefrontTaskDependPattern(op.getOperation(), dependSpecs))
+      depFamily =
+          sde::SdeDepFamilyAttr::get(ctx, sde::SdeDepFamily::wavefront_2d);
+
+    auto cuTask = sde::SdeCuTaskOp::create(rewriter, loc, deps, depFamily);
     Block &blk = sde::ensureBlock(cuTask.getBody());
 
     Block &old = op.getRegion().front();
@@ -457,9 +570,6 @@ struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
     rewriter.eraseOp(op);
     return success();
   }
-
-private:
-  const llvm::DenseSet<Value> *writerSources;
 };
 
 /// omp.taskloop -> sde.su_iterate
@@ -483,9 +593,16 @@ struct TaskloopToSdePattern : public OpRewritePattern<omp::TaskloopOp> {
         /*reductionAccumulators=*/ValueRange{},
         /*reductionKinds=*/nullptr,
         /*reductionStrategy=*/nullptr, /*structuredClassification=*/nullptr,
+        /*depFamily=*/nullptr,
         /*accessMinOffsets=*/nullptr, /*accessMaxOffsets=*/nullptr,
         /*ownerDims=*/nullptr, /*spatialDims=*/nullptr,
-        /*writeFootprint=*/nullptr);
+        /*writeFootprint=*/nullptr, /*physicalOwnerDims=*/nullptr,
+        /*physicalBlockShape=*/nullptr, /*logicalWorkerSlice=*/nullptr,
+        /*physicalHaloShape=*/nullptr, /*iterationTopology=*/nullptr,
+        /*repetitionStructure=*/nullptr, /*asyncStrategy=*/nullptr,
+        /*distributionKind=*/nullptr, /*inPlaceSafe=*/nullptr,
+        /*inPlaceSharedState=*/nullptr, /*vectorizeWidth=*/nullptr,
+        /*unrollFactor=*/nullptr, /*interleaveCount=*/nullptr);
 
     Region &dstRegion = suIter.getBody();
     if (dstRegion.empty())
@@ -547,9 +664,16 @@ struct SCFParallelToSdePattern : public OpRewritePattern<scf::ParallelOp> {
         /*reductionAccumulators=*/ValueRange{},
         /*reductionKinds=*/nullptr,
         /*reductionStrategy=*/nullptr, /*structuredClassification=*/nullptr,
+        /*depFamily=*/nullptr,
         /*accessMinOffsets=*/nullptr, /*accessMaxOffsets=*/nullptr,
         /*ownerDims=*/nullptr, /*spatialDims=*/nullptr,
-        /*writeFootprint=*/nullptr);
+        /*writeFootprint=*/nullptr, /*physicalOwnerDims=*/nullptr,
+        /*physicalBlockShape=*/nullptr, /*logicalWorkerSlice=*/nullptr,
+        /*physicalHaloShape=*/nullptr, /*iterationTopology=*/nullptr,
+        /*repetitionStructure=*/nullptr, /*asyncStrategy=*/nullptr,
+        /*distributionKind=*/nullptr, /*inPlaceSafe=*/nullptr,
+        /*inPlaceSharedState=*/nullptr, /*vectorizeWidth=*/nullptr,
+        /*unrollFactor=*/nullptr, /*interleaveCount=*/nullptr);
 
     Region &dstRegion = suIter.getBody();
     if (dstRegion.empty())
@@ -575,7 +699,9 @@ struct SCFParallelToSdePattern : public OpRewritePattern<scf::ParallelOp> {
 
     if (hasWorkAfterInParentBlock(op.getOperation())) {
       rewriter.setInsertionPointAfter(cuRegion);
-      sde::SdeSuBarrierOp::create(rewriter, loc, ValueRange{});
+      sde::SdeSuBarrierOp::create(rewriter, loc, ValueRange{},
+                                  /*barrierEliminated=*/nullptr,
+                                  /*barrierReason=*/nullptr);
     }
 
     rewriter.eraseOp(op);
@@ -659,7 +785,9 @@ struct BarrierToSdePattern : public OpRewritePattern<omp::BarrierOp> {
   LogicalResult matchAndRewrite(omp::BarrierOp op,
                                 PatternRewriter &rewriter) const override {
     ARTS_INFO("Converting omp.barrier to sde.su_barrier");
-    rewriter.replaceOpWithNewOp<sde::SdeSuBarrierOp>(op, ValueRange{});
+    rewriter.replaceOpWithNewOp<sde::SdeSuBarrierOp>(
+        op, ValueRange{}, /*barrierEliminated=*/nullptr,
+        /*barrierReason=*/nullptr);
     return success();
   }
 };
@@ -671,7 +799,9 @@ struct TaskwaitToSdePattern : public OpRewritePattern<omp::TaskwaitOp> {
   LogicalResult matchAndRewrite(omp::TaskwaitOp op,
                                 PatternRewriter &rewriter) const override {
     ARTS_INFO("Converting omp.taskwait to sde.su_barrier");
-    rewriter.replaceOpWithNewOp<sde::SdeSuBarrierOp>(op, ValueRange{});
+    rewriter.replaceOpWithNewOp<sde::SdeSuBarrierOp>(
+        op, ValueRange{}, /*barrierEliminated=*/nullptr,
+        /*barrierReason=*/nullptr);
     return success();
   }
 };
@@ -694,28 +824,6 @@ struct ConvertOpenMPToSdePass
     // Conversion stays structural today, but the pass keeps the SDE-owned
     // model wired through so callers do not depend on ARTS analysis plumbing.
     (void)costModel;
-    // Pre-scan writer sources for dependency filtering
-    llvm::DenseSet<Value> writerDepSources;
-    module.walk([&](omp::TaskOp task) {
-      auto dependList = task.getDependKindsAttr();
-      if (!dependList)
-        return;
-      for (auto [attr, depVar] : llvm::zip(dependList, task.getDependVars())) {
-        auto depClause = dyn_cast<omp::ClauseTaskDependAttr>(attr);
-        if (!depClause)
-          continue;
-        auto depSlice = extractDependSlice(depVar);
-        if (!depSlice)
-          continue;
-        if (depClause.getValue() == omp::ClauseTaskDepend::taskdependout ||
-            depClause.getValue() == omp::ClauseTaskDepend::taskdependinout ||
-            depClause.getValue() ==
-                omp::ClauseTaskDepend::taskdependmutexinoutset ||
-            depClause.getValue() == omp::ClauseTaskDepend::taskdependinoutset)
-          writerDepSources.insert(depSlice->source);
-      }
-    });
-
     RewritePatternSet patterns(context);
     patterns.add<OMPParallelToSdePattern>(context);
     patterns.add<SCFParallelToSdePattern>(context);
@@ -727,7 +835,7 @@ struct ConvertOpenMPToSdePass
     patterns.add<TerminatorToSdePattern>(context);
     patterns.add<BarrierToSdePattern>(context);
     patterns.add<TaskwaitToSdePattern>(context);
-    patterns.add<TaskToSdePattern>(context, &writerDepSources);
+    patterns.add<TaskToSdePattern>(context);
     GreedyRewriteConfig config;
     config.enableFolding(false);
     (void)applyPatternsGreedily(module, std::move(patterns), config);

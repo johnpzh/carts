@@ -175,12 +175,27 @@ findLoopIndexedOutputPlan(SdeSuIterateOp op) {
     return std::nullopt;
 
   Block &body = op.getBody().front();
-  if (body.getNumArguments() != 1)
+  auto ivs = op.getLoopInductionVars();
+  if (!ivs || ivs->empty())
     return std::nullopt;
-  Value loopIv = body.getArgument(0);
+  Value loopIv = ivs->front();
+
+  SmallVector<Value, 4> ownerIndexValues{loopIv};
+  Block *computeBlock = getSuIterateComputeBlock(op);
+  if (computeBlock && computeBlock != &body) {
+    if (auto cuRegion = dyn_cast_or_null<SdeCuRegionOp>(
+            computeBlock->getParentOp())) {
+      for (auto [idx, iterArg] : llvm::enumerate(cuRegion.getIterArgs())) {
+        if (idx >= computeBlock->getNumArguments())
+          break;
+        if (iterArg == loopIv || ValueAnalysis::dependsOn(iterArg, loopIv))
+          ownerIndexValues.push_back(computeBlock->getArgument(idx));
+      }
+    }
+  }
 
   std::optional<LoopIndexedOutputPlan> selectedPlan;
-  op.getBody().walk([&](memref::StoreOp storeOp) {
+  auto visitStore = [&](memref::StoreOp storeOp) {
     Value memref = storeOp.getMemref();
     Value base = ValueAnalysis::stripMemrefViewOps(memref);
     if (isDefinedInside(op.getOperation(), base))
@@ -190,7 +205,14 @@ findLoopIndexedOutputPlan(SdeSuIterateOp op) {
     if (!memRefType || memRefType.getRank() == 0 || storeOp.getIndices().empty())
       return WalkResult::advance();
 
-    if (!ValueAnalysis::dependsOn(storeOp.getIndices().front(), loopIv))
+    bool indexedByOwner = false;
+    for (Value ownerIndex : ownerIndexValues) {
+      if (ValueAnalysis::dependsOn(storeOp.getIndices().front(), ownerIndex)) {
+        indexedByOwner = true;
+        break;
+      }
+    }
+    if (!indexedByOwner)
       return WalkResult::advance();
 
     SmallVector<int64_t, 4> shape;
@@ -203,7 +225,13 @@ findLoopIndexedOutputPlan(SdeSuIterateOp op) {
 
     selectedPlan = LoopIndexedOutputPlan{base, std::move(shape)};
     return WalkResult::interrupt();
-  });
+  };
+
+  Block *walkBlock = computeBlock ? computeBlock : &body;
+  for (Operation &nested : walkBlock->without_terminator()) {
+    if (nested.walk(visitStore).wasInterrupted())
+      break;
+  }
 
   return selectedPlan;
 }

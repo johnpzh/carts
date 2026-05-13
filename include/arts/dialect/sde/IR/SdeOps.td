@@ -98,6 +98,23 @@ def SdeStructuredClassificationAttr
     : ArtsSde_I32EnumAttr<"structured_classification",
                           SdeStructuredClassification>;
 
+def SdeDepFamily
+    : ArtsSde_I32Enum<"SdeDepFamily",
+                      "SDE dependency and schedule family", [
+      I32EnumAttrCase<"uniform", 0, "uniform">,
+      I32EnumAttrCase<"stencil_tiling_nd", 1, "stencil_tiling_nd">,
+      I32EnumAttrCase<"cross_dim_stencil_3d", 2, "cross_dim_stencil_3d">,
+      I32EnumAttrCase<"higher_order_stencil", 3, "higher_order_stencil">,
+      I32EnumAttrCase<"wavefront_2d", 4, "wavefront_2d">,
+      I32EnumAttrCase<"jacobi_alternating_buffers", 5,
+                      "jacobi_alternating_buffers">,
+      I32EnumAttrCase<"matmul", 6, "matmul">,
+      I32EnumAttrCase<"elementwise_pipeline", 7, "elementwise_pipeline">,
+      I32EnumAttrCase<"reduction", 8, "reduction">
+    ]>;
+def SdeDepFamilyAttr
+    : ArtsSde_I32EnumAttr<"dep_family", SdeDepFamily>;
+
 def SdeScheduleKind
     : ArtsSde_I32Enum<"SdeScheduleKind", "Scheduling policy", [
       I32EnumAttrCase<"static_", 0, "static">,
@@ -124,6 +141,51 @@ def SdeDistributionKind
     ]>;
 def SdeDistributionKindAttr
     : ArtsSde_I32EnumAttr<"distribution_kind", SdeDistributionKind>;
+
+def SdeIterationTopology
+    : ArtsSde_I32Enum<"SdeIterationTopology",
+                      "SDE physical iteration topology", [
+      I32EnumAttrCase<"owner_strip", 0, "owner_strip">,
+      I32EnumAttrCase<"owner_tile", 1, "owner_tile">,
+      I32EnumAttrCase<"owner_tile_2d", 2, "owner_tile_2d">
+    ]>;
+def SdeIterationTopologyAttr
+    : ArtsSde_I32EnumAttr<"iteration_topology", SdeIterationTopology>;
+
+def SdeRepetitionStructure
+    : ArtsSde_I32Enum<"SdeRepetitionStructure",
+                      "SDE repeated-wave or timestep structure", [
+      I32EnumAttrCase<"none", 0, "none">,
+      I32EnumAttrCase<"pair_step", 1, "pair_step">,
+      I32EnumAttrCase<"k_step", 2, "k_step">,
+      I32EnumAttrCase<"full_timestep", 3, "full_timestep">
+    ]>;
+def SdeRepetitionStructureAttr
+    : ArtsSde_I32EnumAttr<"repetition_structure",
+                          SdeRepetitionStructure>;
+
+def SdeAsyncStrategy
+    : ArtsSde_I32Enum<"SdeAsyncStrategy",
+                      "SDE async task-shape strategy", [
+      I32EnumAttrCase<"blocking", 0, "blocking">,
+      I32EnumAttrCase<"advance_edt", 1, "advance_edt">,
+      I32EnumAttrCase<"cps_chain", 2, "cps_chain">
+    ]>;
+def SdeAsyncStrategyAttr
+    : ArtsSde_I32EnumAttr<"async_strategy", SdeAsyncStrategy>;
+
+def SdeBarrierReason
+    : ArtsSde_I32Enum<"SdeBarrierReason",
+                      "SDE barrier preservation or elimination reason", [
+      I32EnumAttrCase<"redundant", 0, "redundant">,
+      I32EnumAttrCase<"required_memory", 1, "required_memory">,
+      I32EnumAttrCase<"timestep_stage_boundary", 2,
+                      "timestep_stage_boundary">,
+      I32EnumAttrCase<"wavefront_frontier", 3, "wavefront_frontier">,
+      I32EnumAttrCase<"unknown_required", 4, "unknown_required">
+    ]>;
+def SdeBarrierReasonAttr
+    : ArtsSde_I32EnumAttr<"barrier_reason", SdeBarrierReason>;
 
 //===----------------------------------------------------------------------===//
 // CU (Compute Unit) Ops
@@ -176,7 +238,8 @@ def SdeCuTaskOp
   }];
 
   let arguments = (ins
-    Variadic<SdeDepType>:$deps
+    Variadic<SdeDepType>:$deps,
+    OptionalAttr<SdeDepFamilyAttr>:$depFamily
   );
 
   let regions = (region SizedRegion<1>:$body);
@@ -279,11 +342,25 @@ def SdeSuIterateOp
     OptionalAttr<ArrayAttr>:$reductionKinds,
     OptionalAttr<SdeReductionStrategyAttr>:$reductionStrategy,
     OptionalAttr<SdeStructuredClassificationAttr>:$structuredClassification,
+    OptionalAttr<SdeDepFamilyAttr>:$depFamily,
     OptionalAttr<ArrayAttr>:$accessMinOffsets,
     OptionalAttr<ArrayAttr>:$accessMaxOffsets,
     OptionalAttr<ArrayAttr>:$ownerDims,
     OptionalAttr<ArrayAttr>:$spatialDims,
-    OptionalAttr<ArrayAttr>:$writeFootprint
+    OptionalAttr<ArrayAttr>:$writeFootprint,
+    OptionalAttr<ArrayAttr>:$physicalOwnerDims,
+    OptionalAttr<ArrayAttr>:$physicalBlockShape,
+    OptionalAttr<ArrayAttr>:$logicalWorkerSlice,
+    OptionalAttr<ArrayAttr>:$physicalHaloShape,
+    OptionalAttr<SdeIterationTopologyAttr>:$iterationTopology,
+    OptionalAttr<SdeRepetitionStructureAttr>:$repetitionStructure,
+    OptionalAttr<SdeAsyncStrategyAttr>:$asyncStrategy,
+    OptionalAttr<SdeDistributionKindAttr>:$distributionKind,
+    UnitAttr:$inPlaceSafe,
+    UnitAttr:$inPlaceSharedState,
+    OptionalAttr<I64Attr>:$vectorizeWidth,
+    OptionalAttr<I64Attr>:$unrollFactor,
+    OptionalAttr<I64Attr>:$interleaveCount
   );
 
   let results = (outs Variadic<AnyType>:$results);
@@ -322,7 +399,11 @@ def SdeSuBarrierOp
     When tokens are provided, waits only for those specific tasks.
   }];
 
-  let arguments = (ins Variadic<SdeCompletionType>:$tokens);
+  let arguments = (ins
+    Variadic<SdeCompletionType>:$tokens,
+    UnitAttr:$barrierEliminated,
+    OptionalAttr<SdeBarrierReasonAttr>:$barrierReason
+  );
 
   let assemblyFormat = [{
     (`(` $tokens^ `:` type($tokens) `)`)? attr-dict

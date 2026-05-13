@@ -75,6 +75,31 @@ mapStructuredClassificationToArtsDepPattern(
   return std::nullopt;
 }
 
+static ArtsDepPattern mapSdeDepFamilyToArtsDepPattern(
+    sde::SdeDepFamily family) {
+  switch (family) {
+  case sde::SdeDepFamily::uniform:
+    return ArtsDepPattern::uniform;
+  case sde::SdeDepFamily::stencil_tiling_nd:
+    return ArtsDepPattern::stencil_tiling_nd;
+  case sde::SdeDepFamily::cross_dim_stencil_3d:
+    return ArtsDepPattern::cross_dim_stencil_3d;
+  case sde::SdeDepFamily::higher_order_stencil:
+    return ArtsDepPattern::higher_order_stencil;
+  case sde::SdeDepFamily::wavefront_2d:
+    return ArtsDepPattern::wavefront_2d;
+  case sde::SdeDepFamily::jacobi_alternating_buffers:
+    return ArtsDepPattern::jacobi_alternating_buffers;
+  case sde::SdeDepFamily::matmul:
+    return ArtsDepPattern::matmul;
+  case sde::SdeDepFamily::elementwise_pipeline:
+    return ArtsDepPattern::elementwise_pipeline;
+  case sde::SdeDepFamily::reduction:
+    return ArtsDepPattern::uniform;
+  }
+  return ArtsDepPattern::unknown;
+}
+
 //===----------------------------------------------------------------------===//
 // Helpers
 //===----------------------------------------------------------------------===//
@@ -203,12 +228,50 @@ static void stampSimple(Operation *op, ArtsDepPattern family, int64_t rev) {
     setEdtDistributionPattern(op, *dist);
 }
 
+static unsigned countTopLevelSchedulingUnits(Operation *op,
+                                             Operation *sourceBeingRewritten) {
+  if (!op || op == sourceBeingRewritten)
+    return 0;
+  if (isa<ForOp, sde::SdeSuIterateOp>(op))
+    return 1;
+
+  auto distribute = dyn_cast<sde::SdeSuDistributeOp>(op);
+  if (!distribute || distribute.getBody().empty())
+    return 0;
+
+  unsigned count = 0;
+  for (Operation &nested : distribute.getBody().front().without_terminator())
+    count += countTopLevelSchedulingUnits(&nested, sourceBeingRewritten);
+  return count;
+}
+
+static bool
+shouldProjectLoopContractToParentEdt(Operation *loopLikeOp,
+                                     Operation *sourceBeingRewritten = nullptr) {
+  if (!loopLikeOp)
+    return false;
+  EdtOp parentEdt = loopLikeOp->getParentOfType<EdtOp>();
+  if (!parentEdt || parentEdt.getBody().empty())
+    return false;
+
+  unsigned schedulingUnits = 0;
+  for (Operation &nested : parentEdt.getBody().front().without_terminator()) {
+    schedulingUnits +=
+        countTopLevelSchedulingUnits(&nested, sourceBeingRewritten);
+    if (schedulingUnits > 1)
+      return false;
+  }
+  return schedulingUnits == 1;
+}
+
 /// Stamp a pattern contract on an arts.for and its parent EdtOp if present.
 static void stampPatternContract(Operation *artsForOp, ArtsDepPattern pattern,
-                                 int64_t revision = 1) {
+                                 int64_t revision = 1,
+                                 Operation *sourceBeingRewritten = nullptr) {
   stampSimple(artsForOp, pattern, revision);
-  if (auto parentEdt = artsForOp->getParentOfType<EdtOp>())
-    stampSimple(parentEdt.getOperation(), pattern, revision);
+  if (shouldProjectLoopContractToParentEdt(artsForOp, sourceBeingRewritten))
+    if (auto parentEdt = artsForOp->getParentOfType<EdtOp>())
+      stampSimple(parentEdt.getOperation(), pattern, revision);
 }
 
 /// Stamp a stencil-family contract on an op with spatial metadata.
@@ -263,7 +326,8 @@ static void stampStencilContract(Operation *artsForOp, ArtsDepPattern pattern,
                                  const StructuredNeighborhoodSummary &info,
                                  ArrayRef<int64_t> planOwnerDims = {},
                                  ArrayRef<int64_t> planBlockShape = {},
-                                 int64_t revision = 1) {
+                                 int64_t revision = 1,
+                                 Operation *sourceBeingRewritten = nullptr) {
   SmallVector<int64_t, 4> ownerDims = planOwnerDims.empty()
                                           ? toSmallVector(info.ownerDims)
                                           : toSmallVector(planOwnerDims);
@@ -297,17 +361,152 @@ static void stampStencilContract(Operation *artsForOp, ArtsDepPattern pattern,
 
   stampStencilOnOp(artsForOp, pattern, ownerDims, minOffsets, maxOffsets,
                    writeFootprint, info.spatialDims, blockShape, revision);
-  if (auto parentEdt = artsForOp->getParentOfType<EdtOp>())
-    stampStencilOnOp(parentEdt.getOperation(), pattern, ownerDims, minOffsets,
-                     maxOffsets, writeFootprint, info.spatialDims, blockShape,
-                     revision);
+  if (shouldProjectLoopContractToParentEdt(artsForOp, sourceBeingRewritten))
+    if (auto parentEdt = artsForOp->getParentOfType<EdtOp>())
+      stampStencilOnOp(parentEdt.getOperation(), pattern, ownerDims, minOffsets,
+                       maxOffsets, writeFootprint, info.spatialDims,
+                       blockShape, revision);
 }
 
-static void copyPlanAttrsToArtsForAndParent(Operation *source,
-                                            Operation *artsForOp) {
-  copyPlanAttrs(source, artsForOp);
-  if (auto parentEdt = artsForOp->getParentOfType<EdtOp>())
-    copyPlanAttrs(source, parentEdt.getOperation());
+static ArtsPlanIterationTopologyAttr
+convertSdeIterationTopology(MLIRContext *ctx,
+                            sde::SdeIterationTopology topology) {
+  switch (topology) {
+  case sde::SdeIterationTopology::owner_strip:
+    return ArtsPlanIterationTopologyAttr::get(
+        ctx, ArtsPlanIterationTopology::owner_strip);
+  case sde::SdeIterationTopology::owner_tile:
+    return ArtsPlanIterationTopologyAttr::get(
+        ctx, ArtsPlanIterationTopology::owner_tile);
+  case sde::SdeIterationTopology::owner_tile_2d:
+    return ArtsPlanIterationTopologyAttr::get(
+        ctx, ArtsPlanIterationTopology::owner_tile_2d);
+  }
+  return nullptr;
+}
+
+static ArtsPlanRepetitionStructureAttr
+convertSdeRepetitionStructure(MLIRContext *ctx,
+                              sde::SdeRepetitionStructure repetition) {
+  switch (repetition) {
+  case sde::SdeRepetitionStructure::none:
+    return ArtsPlanRepetitionStructureAttr::get(
+        ctx, ArtsPlanRepetitionStructure::none);
+  case sde::SdeRepetitionStructure::pair_step:
+    return ArtsPlanRepetitionStructureAttr::get(
+        ctx, ArtsPlanRepetitionStructure::pair_step);
+  case sde::SdeRepetitionStructure::k_step:
+    return ArtsPlanRepetitionStructureAttr::get(
+        ctx, ArtsPlanRepetitionStructure::k_step);
+  case sde::SdeRepetitionStructure::full_timestep:
+    return ArtsPlanRepetitionStructureAttr::get(
+        ctx, ArtsPlanRepetitionStructure::full_timestep);
+  }
+  return nullptr;
+}
+
+static ArtsPlanAsyncStrategyAttr
+convertSdeAsyncStrategy(MLIRContext *ctx, sde::SdeAsyncStrategy strategy) {
+  switch (strategy) {
+  case sde::SdeAsyncStrategy::blocking:
+    return ArtsPlanAsyncStrategyAttr::get(ctx, ArtsPlanAsyncStrategy::blocking);
+  case sde::SdeAsyncStrategy::advance_edt:
+    return ArtsPlanAsyncStrategyAttr::get(ctx,
+                                          ArtsPlanAsyncStrategy::advance_edt);
+  case sde::SdeAsyncStrategy::cps_chain:
+    return ArtsPlanAsyncStrategyAttr::get(ctx,
+                                          ArtsPlanAsyncStrategy::cps_chain);
+  }
+  return nullptr;
+}
+
+static ArtsBarrierReasonAttr
+convertSdeBarrierReason(MLIRContext *ctx, sde::SdeBarrierReason reason) {
+  switch (reason) {
+  case sde::SdeBarrierReason::redundant:
+    return ArtsBarrierReasonAttr::get(ctx, ArtsBarrierReason::redundant);
+  case sde::SdeBarrierReason::required_memory:
+    return ArtsBarrierReasonAttr::get(ctx, ArtsBarrierReason::required_memory);
+  case sde::SdeBarrierReason::timestep_stage_boundary:
+    return ArtsBarrierReasonAttr::get(
+        ctx, ArtsBarrierReason::timestep_stage_boundary);
+  case sde::SdeBarrierReason::wavefront_frontier:
+    return ArtsBarrierReasonAttr::get(ctx, ArtsBarrierReason::wavefront_frontier);
+  case sde::SdeBarrierReason::unknown_required:
+    return ArtsBarrierReasonAttr::get(ctx, ArtsBarrierReason::unknown_required);
+  }
+  return nullptr;
+}
+
+static void translateSdePhysicalPlanToArts(sde::SdeSuIterateOp source,
+                                           Operation *artsForOp) {
+  if (!artsForOp)
+    return;
+
+  MLIRContext *ctx = artsForOp->getContext();
+  EdtOp parentEdt = artsForOp->getParentOfType<EdtOp>();
+  Operation *parentOp =
+      parentEdt &&
+              shouldProjectLoopContractToParentEdt(artsForOp,
+                                                   source.getOperation())
+          ? parentEdt.getOperation()
+          : nullptr;
+
+  if (auto ownerDims = source.getPhysicalOwnerDimsAttr()) {
+    setPlanOwnerDimsAttr(artsForOp, ownerDims);
+    setPlanOwnerDimsAttr(parentOp, ownerDims);
+  }
+  if (auto blockShape = source.getPhysicalBlockShapeAttr()) {
+    setPlanPhysicalBlockShapeAttr(artsForOp, blockShape);
+    setPlanPhysicalBlockShapeAttr(parentOp, blockShape);
+  }
+  if (auto workerSlice = source.getLogicalWorkerSliceAttr()) {
+    setPlanLogicalWorkerSliceAttr(artsForOp, workerSlice);
+    setPlanLogicalWorkerSliceAttr(parentOp, workerSlice);
+  }
+  if (auto haloShape = source.getPhysicalHaloShapeAttr()) {
+    setPlanHaloShapeAttr(artsForOp, haloShape);
+    setPlanHaloShapeAttr(parentOp, haloShape);
+  }
+  if (auto topology = source.getIterationTopologyAttr()) {
+    auto coreTopology = convertSdeIterationTopology(ctx, topology.getValue());
+    setPlanIterationTopologyAttr(artsForOp, coreTopology);
+    setPlanIterationTopologyAttr(parentOp, coreTopology);
+  }
+  if (auto repetition = source.getRepetitionStructureAttr()) {
+    auto coreRepetition =
+        convertSdeRepetitionStructure(ctx, repetition.getValue());
+    setPlanRepetitionStructureAttr(artsForOp, coreRepetition);
+    setPlanRepetitionStructureAttr(parentOp, coreRepetition);
+  }
+  if (auto strategy = source.getAsyncStrategyAttr()) {
+    auto coreStrategy = convertSdeAsyncStrategy(ctx, strategy.getValue());
+    setPlanAsyncStrategyAttr(artsForOp, coreStrategy);
+    setPlanAsyncStrategyAttr(parentOp, coreStrategy);
+  }
+}
+
+static void translateSdeExecutionHintsToArts(sde::SdeSuIterateOp source,
+                                             ForOp artsFor) {
+  if (!source || !artsFor)
+    return;
+
+  if (auto attr = source.getInPlaceSafeAttr())
+    artsFor.setInPlaceSafeAttr(attr);
+  if (auto attr = source.getInPlaceSharedStateAttr())
+    artsFor.setInPlaceSharedStateAttr(attr);
+  if (auto attr = source.getVectorizeWidthAttr())
+    artsFor.setVectorizeWidthAttr(attr);
+  if (auto attr = source.getUnrollFactorAttr())
+    artsFor.setUnrollFactorAttr(attr);
+  if (auto attr = source.getInterleaveCountAttr())
+    artsFor.setInterleaveCountAttr(attr);
+
+  if (shouldProjectLoopContractToParentEdt(artsFor.getOperation(),
+                                           source.getOperation()))
+    if (auto parentEdt = artsFor->getParentOfType<EdtOp>())
+      copyCoreExecutionHintAttrs(artsFor.getOperation(),
+                                 parentEdt.getOperation());
 }
 
 static void stampDistributionKind(Operation *op, EdtDistributionKind kind,
@@ -316,9 +515,56 @@ static void stampDistributionKind(Operation *op, EdtDistributionKind kind,
     return;
 
   setEdtDistributionKind(op, kind);
-  op->setAttr(
-      AttrNames::Operation::DistributionVersion,
-      IntegerAttr::get(IntegerType::get(op->getContext(), 32), version));
+  setDistributionVersion(op, version);
+}
+
+static bool hasProjectedContractAttrs(ForOp forOp) {
+  return getDepPattern(forOp.getOperation()) ||
+         getEdtDistributionKind(forOp.getOperation()) ||
+         getEdtDistributionPattern(forOp.getOperation()) ||
+         hasStructuredPlanAttrs(forOp.getOperation());
+}
+
+static void
+collectTopLevelForContractCandidates(Operation *op,
+                                     SmallVectorImpl<ForOp> &candidates) {
+  if (auto forOp = dyn_cast<ForOp>(op)) {
+    if (hasProjectedContractAttrs(forOp))
+      candidates.push_back(forOp);
+    return;
+  }
+
+  auto distribute = dyn_cast<sde::SdeSuDistributeOp>(op);
+  if (!distribute || distribute.getBody().empty())
+    return;
+
+  for (Operation &nested : distribute.getBody().front().without_terminator())
+    collectTopLevelForContractCandidates(&nested, candidates);
+}
+
+static void projectSingleNestedForContractToEdt(EdtOp edtOp) {
+  if (!edtOp || edtOp.getBody().empty())
+    return;
+
+  unsigned schedulingUnits = 0;
+  for (Operation &nested : edtOp.getBody().front().without_terminator()) {
+    schedulingUnits += countTopLevelSchedulingUnits(&nested, nullptr);
+    if (schedulingUnits > 1)
+      return;
+  }
+  if (schedulingUnits != 1)
+    return;
+
+  SmallVector<ForOp, 2> candidates;
+  for (Operation &nested : edtOp.getBody().front().without_terminator())
+    collectTopLevelForContractCandidates(&nested, candidates);
+  if (candidates.size() != 1)
+    return;
+
+  Operation *source = candidates.front().getOperation();
+  copySemanticContractAttrs(source, edtOp.getOperation());
+  copyPlanAttrs(source, edtOp.getOperation());
+  copyCoreExecutionHintAttrs(source, edtOp.getOperation());
 }
 
 //===----------------------------------------------------------------------===//
@@ -368,6 +614,7 @@ struct CuRegionToArtsPattern : public OpRewritePattern<sde::SdeCuRegionOp> {
     Block &old = op.getBody().front();
     Block &blk = edtOp.getBody().front();
     blk.getOperations().splice(blk.end(), old.getOperations());
+    projectSingleNestedForContractToEdt(edtOp);
 
     ++numCuRegionConverted;
     rewriter.eraseOp(op);
@@ -422,6 +669,10 @@ struct CuTaskToArtsPattern : public OpRewritePattern<sde::SdeCuTaskOp> {
     auto edtOp = EdtOp::create(rewriter, loc, EdtType::task,
                                EdtConcurrency::intranode, artsDeps);
     edtOp.setNoVerifyAttr(NoVerifyAttr::get(ctx));
+    if (auto depFamily = op.getDepFamilyAttr())
+      stampSimple(edtOp.getOperation(),
+                  mapSdeDepFamilyToArtsDepPattern(depFamily.getValue()),
+                  /*rev=*/1);
 
     Block &old = op.getBody().front();
     Block &blk = edtOp.getBody().front();
@@ -484,15 +735,24 @@ struct SuIterateToArtsPattern : public OpRewritePattern<sde::SdeSuIterateOp> {
         enclosingDistributeOp ? enclosingDistributeOp.getKindAttr() : nullptr;
     // Also check for distribution stamped directly on the su_iterate
     // (used when su_iterate has results and can't be wrapped in su_distribute).
-    if (!enclosingDistribution) {
-      if (auto attr = op->getAttrOfType<sde::SdeDistributionKindAttr>(
-              "distributionKind"))
-        enclosingDistribution = attr;
-    }
+    if (!enclosingDistribution)
+      enclosingDistribution = op.getDistributionKindAttr();
 
     auto artsFor = ForOp::create(
         rewriter, loc, op.getLowerBounds(), op.getUpperBounds(), op.getSteps(),
-        schedAttr, op.getChunkSize(), op.getReductionAccumulators());
+        schedAttr, op.getChunkSize(), op.getReductionAccumulators(),
+        /*inPlaceSafe=*/nullptr, /*inPlaceSharedState=*/nullptr,
+        /*vectorizeWidth=*/nullptr, /*unrollFactor=*/nullptr,
+        /*interleaveCount=*/nullptr, /*depPattern=*/nullptr,
+        /*distribution_kind=*/nullptr, /*distribution_pattern=*/nullptr,
+        /*distribution_version=*/nullptr, /*planOwnerDims=*/nullptr,
+        /*planPhysicalBlockShape=*/nullptr, /*planLogicalWorkerSlice=*/nullptr,
+        /*planHaloShape=*/nullptr, /*planIterationTopology=*/nullptr,
+        /*planRepetitionStructure=*/nullptr, /*planAsyncStrategy=*/nullptr,
+        /*planCostSchedulerOverhead=*/nullptr,
+        /*planCostSliceWideningPressure=*/nullptr,
+        /*planCostExpectedLocalWork=*/nullptr,
+        /*planCostRelaunchAmortization=*/nullptr);
 
     copyArtsMetadataAttrs(op, artsFor);
     if (auto strategyAttr =
@@ -555,7 +815,12 @@ struct SuIterateToArtsPattern : public OpRewritePattern<sde::SdeSuIterateOp> {
     std::optional<StructuredNeighborhoodSummary> selectedStencilContract;
     int64_t selectedRevision = 1;
 
-    if (auto classAttr = op.getStructuredClassificationAttr()) {
+    if (auto depFamily = op.getDepFamilyAttr()) {
+      selectedPattern = mapSdeDepFamilyToArtsDepPattern(depFamily.getValue());
+      selectedRevision = getPatternRevision(op.getOperation()).value_or(1);
+      if (selectedPattern && isStencilFamilyDepPattern(*selectedPattern))
+        selectedStencilContract = getSdeNeighborhoodSummary(op);
+    } else if (auto classAttr = op.getStructuredClassificationAttr()) {
       selectedPattern =
           mapStructuredClassificationToArtsDepPattern(classAttr.getValue());
       selectedRevision = getPatternRevision(op.getOperation()).value_or(1);
@@ -570,40 +835,51 @@ struct SuIterateToArtsPattern : public OpRewritePattern<sde::SdeSuIterateOp> {
           isStencilFamilyDepPattern(*selectedPattern)) {
         SmallVector<int64_t, 4> planOwnerDims;
         SmallVector<int64_t, 4> planBlockShape;
-        if (auto ownerDims = readI64ArrayAttr(
-                op.getOperation(), AttrNames::Operation::Plan::OwnerDims))
+        if (auto ownerDims = readI64ArrayAttr(op.getPhysicalOwnerDimsAttr()))
           planOwnerDims.assign(ownerDims->begin(), ownerDims->end());
-        if (auto blockShape = readI64ArrayAttr(
-                op.getOperation(),
-                AttrNames::Operation::Plan::PhysicalBlockShape))
+        if (auto blockShape = readI64ArrayAttr(op.getPhysicalBlockShapeAttr()))
           planBlockShape.assign(blockShape->begin(), blockShape->end());
         stampStencilContract(artsFor.getOperation(), *selectedPattern,
                              *selectedStencilContract, planOwnerDims,
-                             planBlockShape, selectedRevision);
+                             planBlockShape, selectedRevision,
+                             op.getOperation());
       } else {
         stampPatternContract(artsFor.getOperation(), *selectedPattern,
-                             selectedRevision);
+                             selectedRevision, op.getOperation());
+      }
+    } else {
+      auto classAttr = op.getStructuredClassificationAttr();
+      if (classAttr &&
+          classAttr.getValue() ==
+              sde::SdeStructuredClassification::reduction) {
+        setEdtDistributionPattern(artsFor.getOperation(),
+                                  EdtDistributionPattern::uniform);
+        if (shouldProjectLoopContractToParentEdt(artsFor.getOperation(),
+                                                 op.getOperation()))
+          if (auto parentEdt =
+                  artsFor.getOperation()->getParentOfType<EdtOp>())
+            setEdtDistributionPattern(parentEdt.getOperation(),
+                                      EdtDistributionPattern::uniform);
       }
     }
 
     if (auto distributionKind =
             convertDistributionKind(enclosingDistribution)) {
-      bool isInternode = false;
-      if (auto parentEdt = artsFor.getOperation()->getParentOfType<EdtOp>())
-        isInternode = (parentEdt.getConcurrency() == EdtConcurrency::internode);
-      if (!isInternode) {
-        stampDistributionKind(artsFor.getOperation(), *distributionKind);
+      stampDistributionKind(artsFor.getOperation(), *distributionKind);
+      if (shouldProjectLoopContractToParentEdt(artsFor.getOperation(),
+                                               op.getOperation()))
         if (auto parentEdt = artsFor.getOperation()->getParentOfType<EdtOp>())
           stampDistributionKind(parentEdt.getOperation(), *distributionKind);
-      }
     }
 
-    copyPlanAttrsToArtsForAndParent(op.getOperation(), artsFor.getOperation());
-    copySdeHintAttrs(op.getOperation(), artsFor.getOperation());
+    translateSdePhysicalPlanToArts(op, artsFor.getOperation());
+    translateSdeExecutionHintsToArts(op, artsFor);
     if (auto workers = getWorkers(op.getOperation())) {
       setWorkers(artsFor.getOperation(), *workers);
-      if (auto parentEdt = artsFor.getOperation()->getParentOfType<EdtOp>())
-        setWorkers(parentEdt.getOperation(), *workers);
+      if (shouldProjectLoopContractToParentEdt(artsFor.getOperation(),
+                                               op.getOperation()))
+        if (auto parentEdt = artsFor.getOperation()->getParentOfType<EdtOp>())
+          setWorkers(parentEdt.getOperation(), *workers);
     }
 
     ++numSuIterateConverted;
@@ -618,8 +894,13 @@ struct SuBarrierToArtsPattern : public OpRewritePattern<sde::SdeSuBarrierOp> {
 
   LogicalResult matchAndRewrite(sde::SdeSuBarrierOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!op->hasAttr(AttrNames::Operation::BarrierEliminated))
-      BarrierOp::create(rewriter, op.getLoc());
+    if (!op.getBarrierEliminated()) {
+      ArtsBarrierReasonAttr reason;
+      if (auto sdeReason = op.getBarrierReasonAttr())
+        reason =
+            convertSdeBarrierReason(rewriter.getContext(), sdeReason.getValue());
+      BarrierOp::create(rewriter, op.getLoc(), reason);
+    }
     rewriter.eraseOp(op);
     return success();
   }

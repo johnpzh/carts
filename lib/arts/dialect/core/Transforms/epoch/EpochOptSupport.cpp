@@ -165,17 +165,17 @@ llvm::StringRef asyncLoopStrategyToString(EpochAsyncLoopStrategy strategy) {
   return "none";
 }
 
-llvm::StringRef
-asyncLoopStrategyToPlanAttrString(EpochAsyncLoopStrategy strategy) {
+ArtsPlanAsyncStrategy
+asyncLoopStrategyToPlanAsyncStrategy(EpochAsyncLoopStrategy strategy) {
   switch (strategy) {
   case EpochAsyncLoopStrategy::AdvanceEdt:
-    return "advance_edt";
+    return ArtsPlanAsyncStrategy::advance_edt;
   case EpochAsyncLoopStrategy::CpsChain:
-    return "cps_chain";
+    return ArtsPlanAsyncStrategy::cps_chain;
   case EpochAsyncLoopStrategy::None:
-    return "blocking";
+    return ArtsPlanAsyncStrategy::blocking;
   }
-  return "blocking";
+  return ArtsPlanAsyncStrategy::blocking;
 }
 
 bool loopContainsCpsChainExcludedDepPattern(scf::ForOp forOp) {
@@ -438,19 +438,19 @@ void normalizeAsyncLoopPlanAttrs(scf::ForOp forOp,
   if (!forOp)
     return;
 
-  StringRef normalizedStrategy = asyncLoopStrategyToPlanAttrString(strategy);
   MLIRContext *ctx = forOp.getContext();
-  StringAttr normalizedAttr = StringAttr::get(ctx, normalizedStrategy);
+  auto normalizedAttr = ArtsPlanAsyncStrategyAttr::get(
+      ctx, asyncLoopStrategyToPlanAsyncStrategy(strategy));
 
-  if (forOp->hasAttr(AsyncStrategy))
-    forOp->setAttr(AsyncStrategy, normalizedAttr);
+  if (getPlanAsyncStrategyAttr(forOp.getOperation()))
+    setPlanAsyncStrategyAttr(forOp.getOperation(), normalizedAttr);
 
   forOp.walk([&](Operation *op) {
     if (op == forOp.getOperation())
       return WalkResult::advance();
-    if (!op->hasAttr(AsyncStrategy))
+    if (!getPlanAsyncStrategyAttr(op))
       return WalkResult::advance();
-    op->setAttr(AsyncStrategy, normalizedAttr);
+    setPlanAsyncStrategyAttr(op, normalizedAttr);
     return WalkResult::advance();
   });
 }
@@ -460,11 +460,12 @@ void copyNormalizedPlanAttrs(Operation *source, Operation *dest,
   if (!source || !dest)
     return;
   copyPlanAttrs(source, dest);
-  if (!source->hasAttr(AsyncStrategy))
+  if (!getPlanAsyncStrategyAttr(source))
     return;
-  dest->setAttr(AsyncStrategy,
-                StringAttr::get(dest->getContext(),
-                                asyncLoopStrategyToPlanAttrString(strategy)));
+  setPlanAsyncStrategyAttr(
+      dest, ArtsPlanAsyncStrategyAttr::get(
+                dest->getContext(),
+                asyncLoopStrategyToPlanAsyncStrategy(strategy)));
 }
 
 } // namespace mlir::arts::epoch_opt

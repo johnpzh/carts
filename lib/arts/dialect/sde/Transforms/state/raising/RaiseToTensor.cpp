@@ -754,9 +754,16 @@ static void threadThroughSuIterate(sde::SdeSuIterateOp suIter,
       suIter.getNowaitAttr() ? UnitAttr::get(ctx) : nullptr, newAccumulators,
       suIter.getReductionKindsAttr(), suIter.getReductionStrategyAttr(),
       suIter.getStructuredClassificationAttr(),
+      suIter.getDepFamilyAttr(),
       suIter.getAccessMinOffsetsAttr(), suIter.getAccessMaxOffsetsAttr(),
       suIter.getOwnerDimsAttr(), suIter.getSpatialDimsAttr(),
-      suIter.getWriteFootprintAttr());
+      suIter.getWriteFootprintAttr(), suIter.getPhysicalOwnerDimsAttr(),
+      suIter.getPhysicalBlockShapeAttr(), suIter.getLogicalWorkerSliceAttr(),
+      suIter.getPhysicalHaloShapeAttr(), suIter.getIterationTopologyAttr(),
+      suIter.getRepetitionStructureAttr(), suIter.getAsyncStrategyAttr(),
+      suIter.getDistributionKindAttr(), suIter.getInPlaceSafeAttr(),
+      suIter.getInPlaceSharedStateAttr(), suIter.getVectorizeWidthAttr(),
+      suIter.getUnrollFactorAttr(), suIter.getInterleaveCountAttr());
 
   // Move old body into new.
   newSuIter.getBody().takeBody(suIter.getBody());

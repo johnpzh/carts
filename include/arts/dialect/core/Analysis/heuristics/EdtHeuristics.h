@@ -38,8 +38,6 @@ public:
   std::optional<WorkerConfig> resolveWorkerConfig(EdtOp parallelEdt) const;
   DistributionStrategy resolveLoweringStrategy(EdtOp originalParallel,
                                                ForOp forOp) const;
-  std::optional<EdtDistributionPattern>
-  resolveDistributionPattern(ForOp forOp, EdtOp originalParallel) const;
   LoopCoarseningDecision
   computeLoopCoarseningDecision(ForOp forOp,
                                 const WorkerConfig &workerCfg) const;

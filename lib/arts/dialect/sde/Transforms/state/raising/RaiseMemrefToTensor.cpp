@@ -609,7 +609,9 @@ struct RaiseMemrefToTensorPass
         Operation *terminator = block->getTerminator();
         OpBuilder barrierBuilder(terminator);
         sde::SdeSuBarrierOp::create(barrierBuilder, alloca.getLoc(),
-                                    ValueRange{});
+                                    ValueRange{},
+                                    /*barrierEliminated=*/nullptr,
+                                    /*barrierReason=*/nullptr);
       }
 
       Operation *terminator = block->getTerminator();

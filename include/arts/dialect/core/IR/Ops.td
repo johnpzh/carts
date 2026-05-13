@@ -111,7 +111,22 @@ def DbAllocOp : Arts_Op<"db_alloc",
     Variadic<Index>:$elementSizes,
     OptionalAttr<UnitAttr>:$distributed,
     OptionalAttr<PartitionModeAttr>:$partition_mode,
-    OptionalAttr<DbAccessPatternAttr>:$access_pattern
+    OptionalAttr<DbAccessPatternAttr>:$access_pattern,
+    OptionalAttr<ArtsDepPatternAttr>:$depPattern,
+    OptionalAttr<EdtDistributionKindAttr>:$distribution_kind,
+    OptionalAttr<EdtDistributionPatternAttr>:$distribution_pattern,
+    OptionalAttr<I32Attr>:$distribution_version,
+    OptionalAttr<ArrayAttr>:$planOwnerDims,
+    OptionalAttr<ArrayAttr>:$planPhysicalBlockShape,
+    OptionalAttr<ArrayAttr>:$planLogicalWorkerSlice,
+    OptionalAttr<ArrayAttr>:$planHaloShape,
+    OptionalAttr<ArtsPlanIterationTopologyAttr>:$planIterationTopology,
+    OptionalAttr<ArtsPlanRepetitionStructureAttr>:$planRepetitionStructure,
+    OptionalAttr<ArtsPlanAsyncStrategyAttr>:$planAsyncStrategy,
+    OptionalAttr<I64Attr>:$planCostSchedulerOverhead,
+    OptionalAttr<I64Attr>:$planCostSliceWideningPressure,
+    OptionalAttr<I64Attr>:$planCostExpectedLocalWork,
+    OptionalAttr<I64Attr>:$planCostRelaunchAmortization
   );
   let results = (outs MemRefOf<[I64]> : $guid, AnyMemRef : $ptr);
   let assemblyFormat = [{
@@ -233,6 +248,10 @@ def DbAcquireOp : Arts_Op<"db_acquire", [AttrSizedOperandSegments]> {
     Variadic<Index>:$element_sizes,
     OptionalAttr<PreserveAccessModeAttr>:$preserve_access_mode,
     OptionalAttr<PreserveDepEdgeAttr>:$preserve_dep_edge,
+    OptionalAttr<ArtsDepPatternAttr>:$depPattern,
+    OptionalAttr<EdtDistributionKindAttr>:$distribution_kind,
+    OptionalAttr<EdtDistributionPatternAttr>:$distribution_pattern,
+    OptionalAttr<I32Attr>:$distribution_version,
     /// Segment attributes for multiple partition entries
     OptionalAttr<DenseI32ArrayAttr>:$partition_indices_segments,
     OptionalAttr<DenseI32ArrayAttr>:$partition_offsets_segments,
@@ -341,7 +360,6 @@ def DbAcquireOp : Arts_Op<"db_acquire", [AttrSizedOperandSegments]> {
     /// Attach or clear the semantic dep family for this acquire.
     void setDepPattern(ArtsDepPattern pattern);
     void clearDepPattern();
-    std::optional<ArtsDepPattern> getDepPattern();
 
     /// Check if this acquire has explicit partition hints (including sizes)
     bool hasExplicitPartitionHints();
@@ -719,6 +737,26 @@ def EdtOp : Arts_Op<"edt", [
     OptionalAttr<WorkersAttr>:$workers,
     OptionalAttr<NoVerifyAttr>:$no_verify,
     OptionalAttr<UnitAttr>:$nowait,
+    UnitAttr:$inPlaceSafe,
+    UnitAttr:$inPlaceSharedState,
+    OptionalAttr<I64Attr>:$vectorizeWidth,
+    OptionalAttr<I64Attr>:$unrollFactor,
+    OptionalAttr<I64Attr>:$interleaveCount,
+    OptionalAttr<ArtsDepPatternAttr>:$depPattern,
+    OptionalAttr<EdtDistributionKindAttr>:$distribution_kind,
+    OptionalAttr<EdtDistributionPatternAttr>:$distribution_pattern,
+    OptionalAttr<I32Attr>:$distribution_version,
+    OptionalAttr<ArrayAttr>:$planOwnerDims,
+    OptionalAttr<ArrayAttr>:$planPhysicalBlockShape,
+    OptionalAttr<ArrayAttr>:$planLogicalWorkerSlice,
+    OptionalAttr<ArrayAttr>:$planHaloShape,
+    OptionalAttr<ArtsPlanIterationTopologyAttr>:$planIterationTopology,
+    OptionalAttr<ArtsPlanRepetitionStructureAttr>:$planRepetitionStructure,
+    OptionalAttr<ArtsPlanAsyncStrategyAttr>:$planAsyncStrategy,
+    OptionalAttr<I64Attr>:$planCostSchedulerOverhead,
+    OptionalAttr<I64Attr>:$planCostSliceWideningPressure,
+    OptionalAttr<I64Attr>:$planCostExpectedLocalWork,
+    OptionalAttr<I64Attr>:$planCostRelaunchAmortization,
     Variadic<AnyMemRef>:$dependencies
   );
   let regions = (region SizedRegion<1> : $body);
@@ -761,11 +799,32 @@ def EpochOp
     synchronize them at the end of the epoch. Returns the epoch GUID
     for use by contained EDTs.
   }];
+  let arguments = (ins
+    OptionalAttr<ArtsDepPatternAttr>:$depPattern,
+    OptionalAttr<EdtDistributionKindAttr>:$distribution_kind,
+    OptionalAttr<EdtDistributionPatternAttr>:$distribution_pattern,
+    OptionalAttr<I32Attr>:$distribution_version,
+    OptionalAttr<ArrayAttr>:$planOwnerDims,
+    OptionalAttr<ArrayAttr>:$planPhysicalBlockShape,
+    OptionalAttr<ArrayAttr>:$planLogicalWorkerSlice,
+    OptionalAttr<ArrayAttr>:$planHaloShape,
+    OptionalAttr<ArtsPlanIterationTopologyAttr>:$planIterationTopology,
+    OptionalAttr<ArtsPlanRepetitionStructureAttr>:$planRepetitionStructure,
+    OptionalAttr<ArtsPlanAsyncStrategyAttr>:$planAsyncStrategy,
+    OptionalAttr<I64Attr>:$planCostSchedulerOverhead,
+    OptionalAttr<I64Attr>:$planCostSliceWideningPressure,
+    OptionalAttr<I64Attr>:$planCostExpectedLocalWork,
+    OptionalAttr<I64Attr>:$planCostRelaunchAmortization
+  );
   let regions = (region SizedRegion<1> : $body);
   let results = (outs I64 : $epochGuid);
 
   let assemblyFormat =
       [{attr-dict-with-keyword $body `:` type($epochGuid)}];
+  let builders = [
+    OpBuilder<(ins)>,
+    OpBuilder<(ins "Type":$epochGuid)>
+  ];
 }
 
 ///===----------------------------------------------------------------------===///
@@ -830,6 +889,9 @@ def BarrierOp : Arts_Op<"barrier", [MemoryEffects<[MemWrite]>]> {
             ARTS.It synchronizes all previous spawned EDTs of the parent region
                 .This operation has memory write effects as it affects the
                     synchronization state of the runtime system.}];
+  let arguments = (ins
+    OptionalAttr<ArtsBarrierReasonAttr>:$barrierReason
+  );
   let assemblyFormat = "attr-dict";
 }
 
@@ -926,7 +988,27 @@ def ForOp : Arts_Op<"for", [
                       Variadic<Index>:$step,
                       OptionalAttr<ForScheduleKindAttr>:$schedule,
                       Optional<Index>:$chunkSize,
-                      Variadic<AnyType>:$reductionAccumulators);
+                      Variadic<AnyType>:$reductionAccumulators,
+                      UnitAttr:$inPlaceSafe,
+                      UnitAttr:$inPlaceSharedState,
+                      OptionalAttr<I64Attr>:$vectorizeWidth,
+                      OptionalAttr<I64Attr>:$unrollFactor,
+                      OptionalAttr<I64Attr>:$interleaveCount,
+                      OptionalAttr<ArtsDepPatternAttr>:$depPattern,
+                      OptionalAttr<EdtDistributionKindAttr>:$distribution_kind,
+                      OptionalAttr<EdtDistributionPatternAttr>:$distribution_pattern,
+                      OptionalAttr<I32Attr>:$distribution_version,
+                      OptionalAttr<ArrayAttr>:$planOwnerDims,
+                      OptionalAttr<ArrayAttr>:$planPhysicalBlockShape,
+                      OptionalAttr<ArrayAttr>:$planLogicalWorkerSlice,
+                      OptionalAttr<ArrayAttr>:$planHaloShape,
+                      OptionalAttr<ArtsPlanIterationTopologyAttr>:$planIterationTopology,
+                      OptionalAttr<ArtsPlanRepetitionStructureAttr>:$planRepetitionStructure,
+                      OptionalAttr<ArtsPlanAsyncStrategyAttr>:$planAsyncStrategy,
+                      OptionalAttr<I64Attr>:$planCostSchedulerOverhead,
+                      OptionalAttr<I64Attr>:$planCostSliceWideningPressure,
+                      OptionalAttr<I64Attr>:$planCostExpectedLocalWork,
+                      OptionalAttr<I64Attr>:$planCostRelaunchAmortization);
   let results = (outs);
   let regions = (region AnyRegion : $region);
 

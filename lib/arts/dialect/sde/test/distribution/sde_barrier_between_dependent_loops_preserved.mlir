@@ -11,12 +11,12 @@
 
 // SDE-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
 // SDE: arts_sde.su_barrier
-// SDE-NOT: barrier_eliminated
+// SDE-NOT: barrierEliminated
 // SDE: arts_sde.su_iterate
 // SDE-LABEL: func.func @write_after_write_preserved
 // SDE: arts_sde.su_iterate
 // SDE: arts_sde.su_barrier
-// SDE-NOT: barrier_eliminated
+// SDE-NOT: barrierEliminated
 // SDE: arts_sde.su_iterate
 
 // After ConvertSdeToArts, arts.barrier must be present

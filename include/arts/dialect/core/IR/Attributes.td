@@ -101,6 +101,52 @@ def ForScheduleKind
 
 def ForScheduleKindAttr : Arts_I32EnumAttr<"for_schedule", ForScheduleKind>;
 
+def ArtsPlanIterationTopology
+    : Arts_I32Enum<"ArtsPlanIterationTopology",
+                   "Core ARTS physical iteration topology", [
+      I32EnumAttrCase<"owner_strip", 0, "owner_strip">,
+      I32EnumAttrCase<"owner_tile", 1, "owner_tile">,
+      I32EnumAttrCase<"owner_tile_2d", 2, "owner_tile_2d">
+    ]>;
+def ArtsPlanIterationTopologyAttr
+    : Arts_I32EnumAttr<"plan_iteration_topology",
+                       ArtsPlanIterationTopology>;
+
+def ArtsPlanRepetitionStructure
+    : Arts_I32Enum<"ArtsPlanRepetitionStructure",
+                   "Core ARTS repeated-wave structure", [
+      I32EnumAttrCase<"none", 0, "none">,
+      I32EnumAttrCase<"pair_step", 1, "pair_step">,
+      I32EnumAttrCase<"k_step", 2, "k_step">,
+      I32EnumAttrCase<"full_timestep", 3, "full_timestep">
+    ]>;
+def ArtsPlanRepetitionStructureAttr
+    : Arts_I32EnumAttr<"plan_repetition_structure",
+                       ArtsPlanRepetitionStructure>;
+
+def ArtsPlanAsyncStrategy
+    : Arts_I32Enum<"ArtsPlanAsyncStrategy",
+                   "Core ARTS async-loop strategy", [
+      I32EnumAttrCase<"blocking", 0, "blocking">,
+      I32EnumAttrCase<"advance_edt", 1, "advance_edt">,
+      I32EnumAttrCase<"cps_chain", 2, "cps_chain">
+    ]>;
+def ArtsPlanAsyncStrategyAttr
+    : Arts_I32EnumAttr<"plan_async_strategy", ArtsPlanAsyncStrategy>;
+
+def ArtsBarrierReason
+    : Arts_I32Enum<"ArtsBarrierReason",
+                   "Core ARTS barrier preservation or elimination reason", [
+      I32EnumAttrCase<"redundant", 0, "redundant">,
+      I32EnumAttrCase<"required_memory", 1, "required_memory">,
+      I32EnumAttrCase<"timestep_stage_boundary", 2,
+                      "timestep_stage_boundary">,
+      I32EnumAttrCase<"wavefront_frontier", 3, "wavefront_frontier">,
+      I32EnumAttrCase<"unknown_required", 4, "unknown_required">
+    ]>;
+def ArtsBarrierReasonAttr
+    : Arts_I32EnumAttr<"barrier_reason", ArtsBarrierReason>;
+
 /// Enum info for runtime query kinds (consolidated from 5 individual ops)
 def RuntimeQueryKind
     : Arts_I32Enum<"RuntimeQueryKind", "ARTS runtime query kind", [

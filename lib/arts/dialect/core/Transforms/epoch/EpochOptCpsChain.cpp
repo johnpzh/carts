@@ -976,7 +976,7 @@ bool tryCPSChainTransform(scf::ForOp forOp,
         auto newAdv = CPSAdvanceOp::create(advBuilder, adv.getLoc(),
                                            newNextParams, targetId);
         for (auto attr : adv->getAttrs())
-          if (attr.getName() != "targetChainId")
+          if (attr.getName() != adv.getTargetChainIdAttrName())
             newAdv->setAttr(attr.getName(), attr.getValue());
         newAdv->setAttr(CPSNumCarry,
                         advBuilder.getI64IntegerAttr(carryValues.size()));
@@ -1024,7 +1024,7 @@ bool tryCPSChainTransform(scf::ForOp forOp,
 
     bool hasPlanAttrs = false;
     outerEpoch.walk([&](EdtOp edt) {
-      if (edt->hasAttr(AttrNames::Operation::Plan::KernelFamily))
+      if (hasStructuredPlanAttrs(edt.getOperation()))
         hasPlanAttrs = true;
     });
     if (hasPlanAttrs) {

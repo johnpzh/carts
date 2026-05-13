@@ -46,13 +46,6 @@ EdtHeuristics::resolveLoweringStrategy(EdtOp originalParallel,
                                                          forOp);
 }
 
-std::optional<EdtDistributionPattern>
-EdtHeuristics::resolveDistributionPattern(ForOp forOp,
-                                          EdtOp originalParallel) const {
-  return DistributionHeuristics::resolveDistributionPattern(
-      &getAnalysisManager(), forOp, originalParallel);
-}
-
 LoopCoarseningDecision EdtHeuristics::computeLoopCoarseningDecision(
     ForOp forOp, const WorkerConfig &workerCfg) const {
   return DistributionHeuristics::computeLoopCoarseningDecision(

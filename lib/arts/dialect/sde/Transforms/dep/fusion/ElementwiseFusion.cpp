@@ -159,14 +159,24 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
       sde::SdeStructuredClassificationAttr::get(
           first.getContext(),
           sde::SdeStructuredClassification::elementwise_pipeline),
+      sde::SdeDepFamilyAttr::get(first.getContext(),
+                                 sde::SdeDepFamily::elementwise_pipeline),
       first.getAccessMinOffsetsAttr(), first.getAccessMaxOffsetsAttr(),
       first.getOwnerDimsAttr(), first.getSpatialDimsAttr(),
-      first.getWriteFootprintAttr());
+      first.getWriteFootprintAttr(), first.getPhysicalOwnerDimsAttr(),
+      first.getPhysicalBlockShapeAttr(), first.getLogicalWorkerSliceAttr(),
+      first.getPhysicalHaloShapeAttr(), first.getIterationTopologyAttr(),
+      first.getRepetitionStructureAttr(), first.getAsyncStrategyAttr(),
+      first.getDistributionKindAttr(), first.getInPlaceSafeAttr(),
+      first.getInPlaceSharedStateAttr(), first.getVectorizeWidthAttr(),
+      first.getUnrollFactorAttr(), first.getInterleaveCountAttr());
   fused->setAttrs(sde::getRewrittenAttrs(first));
   fused.setStructuredClassificationAttr(
       sde::SdeStructuredClassificationAttr::get(
           first.getContext(),
           sde::SdeStructuredClassification::elementwise_pipeline));
+  fused.setDepFamilyAttr(sde::SdeDepFamilyAttr::get(
+      first.getContext(), sde::SdeDepFamily::elementwise_pipeline));
 
   Block &dst = sde::ensureBlock(fused.getBody());
   if (dst.getNumArguments() == 0) {

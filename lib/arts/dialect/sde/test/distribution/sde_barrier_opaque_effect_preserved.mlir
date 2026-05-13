@@ -7,7 +7,7 @@
 // CHECK: func.func @opaque_effect_preserves_barrier
 // CHECK: arts_sde.su_iterate
 // CHECK: arts_sde.su_barrier
-// CHECK-NOT: barrier_eliminated
+// CHECK-NOT: barrierEliminated
 // CHECK: arts_sde.su_iterate
 
 // CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //

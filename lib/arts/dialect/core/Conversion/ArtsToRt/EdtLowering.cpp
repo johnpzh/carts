@@ -426,12 +426,11 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
     }
   }
 
-  /// When a structured kernel plan is present, emit split state/dep ops
+  /// When an SDE-authored structured plan is present, emit split state/dep ops
   /// to make the state-vs-dependency separation explicit in the IR.
   /// The generic path remains the fallback for unplanned EDTs.
-  if (auto familyAttr = edtOp->getAttrOfType<StringAttr>(
-          AttrNames::Operation::Plan::KernelFamily)) {
-    ARTS_DEBUG("Plan-aware path: kernel_family=" << familyAttr.getValue());
+  if (hasStructuredPlanAttrs(edtOp.getOperation())) {
+    ARTS_DEBUG("Plan-aware path: structured plan attrs present");
 
     /// Emit state_pack for scalar parameters (non-dep captured values).
     SmallVector<Value> stateValues;
@@ -517,11 +516,6 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
     outlineOp->setAttr(AttrNames::Operation::ReadyLocalLaunch,
                        AC->getBuilder().getUnitAttr());
 
-  /// Propagate structured kernel plan attrs to the EdtCreateOp so
-  /// downstream passes (EpochLowering, ConvertArtsToLLVM) can use them.
-  if (auto familyAttr = edtOp->getAttrOfType<StringAttr>(
-          AttrNames::Operation::Plan::KernelFamily))
-    outlineOp->setAttr(AttrNames::Operation::Plan::KernelFamily, familyAttr);
   /// CPS-chain continuations stamp launch schemas at the high-level EDT once
   /// EpochOpt has proven the carry/dependency ABI. Preserve that contract on
   /// the lowered create op so EpochLowering can rebuild relaunch slots without
@@ -620,7 +614,7 @@ EdtLoweringPass::createOutlinedFunction(EdtOp edtOp,
   outlinedFunc.setArgAttr(3, "llvm.nofree", unitAttr);
   outlinedFunc.setArgAttr(3, "llvm.nocapture", unitAttr);
 
-  copySdeHintAttrs(edtOp.getOperation(), outlinedFunc.getOperation());
+  copyCoreExecutionHintAttrsToRtFunction(edtOp, outlinedFunc.getOperation());
 
   ARTS_INFO("Created outlined function: " << funcName);
   return outlinedFunc;

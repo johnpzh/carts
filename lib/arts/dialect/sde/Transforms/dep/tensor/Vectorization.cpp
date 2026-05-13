@@ -9,8 +9,8 @@
 /// - All-parallel iterator types (no reduction vectorization yet)
 /// - Static shapes on all operands and loop ranges
 /// - Tensor semantics (not buffer)
-/// Uses sde.vectorize_width attr if present, otherwise defaults based on
-/// element type (f32->8, f64->4, i32->8).
+/// Vector widths are stamped as SDE attrs by StructuredSummaries for later
+/// Core/RT translation; this pass still vectorizes only static tensor carriers.
 ///
 /// The vector sizes passed to linalg::vectorize() must be >= the static loop
 /// ranges. CARTS currently only vectorizes small live tensor expressions here:

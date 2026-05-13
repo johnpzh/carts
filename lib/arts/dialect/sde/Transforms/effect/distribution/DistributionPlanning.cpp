@@ -12,10 +12,10 @@ namespace mlir::arts {
 #include "arts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::arts
 
+#include "arts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "arts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "arts/utils/LoopUtils.h"
 #include "arts/utils/OperationAttributes.h"
-#include "arts/utils/PlanContract.h"
 #include "arts/utils/StencilAttributes.h"
 #include "arts/utils/ValueAnalysis.h"
 #include "arts/utils/costs/SDECostModel.h"
@@ -25,7 +25,10 @@ namespace mlir::arts {
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/MathExtras.h"
+
+#include <functional>
 
 using namespace mlir;
 using namespace mlir::arts;
@@ -37,44 +40,11 @@ struct PlannedDistribution {
   sde::SdeDistributionKind kind = sde::SdeDistributionKind::blocked;
 };
 
-static std::optional<SmallVector<int64_t, 4>>
-findStaticMemrefShape(sde::SdeSuIterateOp op, unsigned minRank) {
-  std::optional<SmallVector<int64_t, 4>> selectedShape;
-
-  op.getBody().walk([&](Operation *nested) {
-    Value memref;
-    if (auto load = dyn_cast<memref::LoadOp>(nested))
-      memref = load.getMemref();
-    else if (auto store = dyn_cast<memref::StoreOp>(nested))
-      memref = store.getMemref();
-    else
-      return WalkResult::advance();
-
-    Value base = ValueAnalysis::stripMemrefViewOps(memref);
-    auto memRefType = dyn_cast<MemRefType>(base.getType());
-    if (!memRefType || memRefType.getRank() < static_cast<int64_t>(minRank))
-      return WalkResult::advance();
-
-    SmallVector<int64_t, 4> shape;
-    shape.reserve(memRefType.getRank());
-    for (int64_t dim : memRefType.getShape()) {
-      if (dim == ShapedType::kDynamic)
-        return WalkResult::advance();
-      shape.push_back(dim);
-    }
-
-    selectedShape = std::move(shape);
-    return WalkResult::interrupt();
-  });
-
-  return selectedShape;
-}
-
 static int64_t readStencilHaloForOwnerDim(sde::SdeSuIterateOp op,
                                           unsigned ownerDim) {
-  auto minOffsets = readI64ArrayAttr(op.getOperation(), "accessMinOffsets");
-  auto maxOffsets = readI64ArrayAttr(op.getOperation(), "accessMaxOffsets");
-  auto ownerDims = readI64ArrayAttr(op.getOperation(), "ownerDims");
+  auto minOffsets = readI64ArrayAttr(op.getAccessMinOffsetsAttr());
+  auto maxOffsets = readI64ArrayAttr(op.getAccessMaxOffsetsAttr());
+  auto ownerDims = readI64ArrayAttr(op.getOwnerDimsAttr());
   if (!minOffsets || !maxOffsets || !ownerDims)
     return 0;
 
@@ -99,14 +69,122 @@ static bool isInPlaceSelfReadStencil(sde::SdeSuIterateOp op) {
   return !effects.hasUnknownEffects && sde::hasInPlaceSelfRead(effects);
 }
 
+static int64_t ceilDivPositive(int64_t value, int64_t divisor) {
+  return llvm::divideCeil(std::max<int64_t>(1, value),
+                          std::max<int64_t>(1, divisor));
+}
+
+static SmallVector<int64_t, 4>
+factorWorkersAcrossDims(int64_t workers, ArrayRef<int64_t> extents) {
+  SmallVector<int64_t, 4> grid(extents.size(), 1);
+  if (workers <= 1 || extents.empty())
+    return grid;
+
+  SmallVector<int64_t, 8> factors;
+  int64_t remaining = workers;
+  for (int64_t factor = 2; factor * factor <= remaining; ++factor) {
+    while (remaining % factor == 0) {
+      factors.push_back(factor);
+      remaining /= factor;
+    }
+  }
+  if (remaining > 1)
+    factors.push_back(remaining);
+  llvm::sort(factors, std::greater<int64_t>());
+
+  for (int64_t factor : factors) {
+    unsigned bestDim = 0;
+    int64_t bestSpan = -1;
+    for (auto [idx, extent] : llvm::enumerate(extents)) {
+      int64_t span = ceilDivPositive(extent, grid[idx]);
+      if (span > bestSpan) {
+        bestSpan = span;
+        bestDim = static_cast<unsigned>(idx);
+      }
+    }
+    grid[bestDim] *= factor;
+  }
+
+  return grid;
+}
+
+static SmallVector<unsigned, 4>
+chooseMappedSdeOwnerLoopDims(sde::SdeSuIterateOp op,
+                             const sde::StructuredOutputLayoutPlan &plan) {
+  unsigned sdeRank = op.getLowerBounds().size();
+  SmallVector<unsigned, 4> mappedLoopDims;
+  mappedLoopDims.reserve(sdeRank);
+  for (unsigned loopDim = 0; loopDim < sdeRank; ++loopDim) {
+    if (loopDim >= plan.loopDimToPhysicalDim.size())
+      break;
+    int64_t physicalDim = plan.loopDimToPhysicalDim[loopDim];
+    if (physicalDim < 0 ||
+        static_cast<size_t>(physicalDim) >= plan.shape.size())
+      continue;
+    mappedLoopDims.push_back(loopDim);
+  }
+  if (mappedLoopDims.empty())
+    return {};
+
+  SmallVector<unsigned, 4> haloLoopDims;
+  for (unsigned loopDim : mappedLoopDims)
+    if (readStencilHaloForOwnerDim(op, loopDim) > 0)
+      haloLoopDims.push_back(loopDim);
+  if (!haloLoopDims.empty())
+    return haloLoopDims;
+
+  return mappedLoopDims;
+}
+
+static bool buildOwnerDimPlan(
+    sde::SdeSuIterateOp op, const sde::StructuredOutputLayoutPlan &outputPlan,
+    ArrayRef<unsigned> ownerLoopDims, int64_t workers,
+    SmallVectorImpl<int64_t> &ownerPhysicalDims,
+    SmallVectorImpl<int64_t> &physicalBlockShape,
+    SmallVectorImpl<int64_t> &haloShape) {
+  if (ownerLoopDims.empty() || outputPlan.shape.empty())
+    return false;
+
+  physicalBlockShape.assign(outputPlan.shape.begin(), outputPlan.shape.end());
+
+  SmallVector<int64_t, 4> ownerExtents;
+  ownerPhysicalDims.clear();
+  haloShape.clear();
+  for (unsigned loopDim : ownerLoopDims) {
+    if (loopDim >= outputPlan.loopDimToPhysicalDim.size())
+      return false;
+    int64_t physicalDim = outputPlan.loopDimToPhysicalDim[loopDim];
+    if (physicalDim < 0 ||
+        static_cast<size_t>(physicalDim) >= outputPlan.shape.size())
+      return false;
+    if (outputPlan.shape[physicalDim] <= 0)
+      return false;
+
+    ownerPhysicalDims.push_back(physicalDim);
+    ownerExtents.push_back(outputPlan.shape[physicalDim]);
+    haloShape.push_back(
+        std::max<int64_t>(0, readStencilHaloForOwnerDim(op, loopDim)));
+  }
+
+  SmallVector<int64_t, 4> workerGrid =
+      factorWorkersAcrossDims(std::max<int64_t>(1, workers), ownerExtents);
+  for (auto [idx, physicalDim] : llvm::enumerate(ownerPhysicalDims)) {
+    physicalBlockShape[physicalDim] =
+        ceilDivPositive(outputPlan.shape[physicalDim], workerGrid[idx]);
+  }
+
+  return true;
+}
+
 static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
                                      sde::SDECostModel &costModel) {
-  if (costModel.getWorkerCount() <= 1)
+  if ((op.getPhysicalOwnerDimsAttr() && op.getPhysicalBlockShapeAttr()) ||
+      costModel.getWorkerCount() <= 1)
     return;
   if (auto plannedWorkers = getWorkers(op.getOperation());
       plannedWorkers && *plannedWorkers <= 1)
     return;
-  if (op->hasAttr(AttrNames::Operation::InPlaceSafe))
+  if (op.getInPlaceSafe())
     return;
   auto classification = op.getStructuredClassification();
   if (!classification ||
@@ -115,46 +193,37 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
   if (isInPlaceSelfReadStencil(op))
     return;
 
-  unsigned spatialRank = 1;
-  if (auto spatialDims = readI64ArrayAttr(op.getOperation(), "spatialDims"))
-    spatialRank = std::max<unsigned>(1, spatialDims->size());
-  else if (auto minOffsets =
-               readI64ArrayAttr(op.getOperation(), "accessMinOffsets"))
-    spatialRank = std::max<unsigned>(1, minOffsets->size());
-
-  std::optional<SmallVector<int64_t, 4>> shape =
-      findStaticMemrefShape(op, spatialRank);
-  if (!shape || shape->empty() || shape->front() <= 0)
+  std::optional<sde::StructuredOutputLayoutPlan> outputPlan =
+      sde::findCompatibleOutputLayoutPlan(op);
+  if (!outputPlan)
     return;
 
   int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
-  SmallVector<int64_t, 4> physicalBlockShape(*shape);
-  physicalBlockShape.front() =
-      std::max<int64_t>(1, llvm::divideCeil(shape->front(), workers));
+  SmallVector<unsigned, 4> ownerLoopDims =
+      chooseMappedSdeOwnerLoopDims(op, *outputPlan);
+  SmallVector<int64_t, 4> ownerDims;
+  SmallVector<int64_t, 4> physicalBlockShape;
+  SmallVector<int64_t, 4> haloShape;
+  if (!buildOwnerDimPlan(op, *outputPlan, ownerLoopDims, workers, ownerDims,
+                         physicalBlockShape, haloShape))
+    return;
 
-  SmallVector<int64_t, 1> ownerDims{0};
-  SmallVector<int64_t, 1> haloShape{
-      std::max<int64_t>(0, readStencilHaloForOwnerDim(op, 0))};
-
-  MLIRContext *ctx = op.getContext();
-  op->setAttr(
-      AttrNames::Operation::Plan::KernelFamily,
-      StringAttr::get(ctx, kernelFamilyToString(KernelFamily::Stencil)));
-  op->setAttr(AttrNames::Operation::Plan::OwnerDims,
-              buildI64ArrayAttr(ctx, ownerDims));
-  op->setAttr(AttrNames::Operation::Plan::PhysicalBlockShape,
-              buildI64ArrayAttr(ctx, physicalBlockShape));
-  if (haloShape.front() > 0)
-    op->setAttr(AttrNames::Operation::Plan::HaloShape,
-                buildI64ArrayAttr(ctx, haloShape));
-  op->setAttr(AttrNames::Operation::Plan::IterationTopology,
-              StringAttr::get(ctx, "owner_strip"));
+  op.setPhysicalOwnerDimsAttr(buildI64ArrayAttr(op.getContext(), ownerDims));
+  op.setPhysicalBlockShapeAttr(
+      buildI64ArrayAttr(op.getContext(), physicalBlockShape));
+  if (llvm::any_of(haloShape, [](int64_t halo) { return halo > 0; }))
+    op.setPhysicalHaloShapeAttr(buildI64ArrayAttr(op.getContext(), haloShape));
+  op.setLogicalWorkerSliceAttr(
+      buildI64ArrayAttr(op.getContext(), physicalBlockShape));
+  op.setIterationTopologyAttr(sde::SdeIterationTopologyAttr::get(
+      op.getContext(), ownerDims.size() > 1
+                           ? sde::SdeIterationTopology::owner_tile
+                           : sde::SdeIterationTopology::owner_strip));
 }
 
 static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
                                      sde::SDECostModel &costModel) {
-  if ((op->hasAttr(AttrNames::Operation::Plan::OwnerDims) &&
-       op->hasAttr(AttrNames::Operation::Plan::PhysicalBlockShape)) ||
+  if ((op.getPhysicalOwnerDimsAttr() && op.getPhysicalBlockShapeAttr()) ||
       costModel.getWorkerCount() <= 1)
     return;
   auto classification = op.getStructuredClassification();
@@ -165,8 +234,6 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
   }
   if (auto plannedWorkers = getWorkers(op.getOperation());
       plannedWorkers && *plannedWorkers <= 1)
-    return;
-  if (op->hasAttr(AttrNames::Operation::InPlaceSafe))
     return;
 
   std::optional<sde::LoopIndexedOutputPlan> outputPlan =
@@ -185,16 +252,84 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
       std::max<int64_t>(1,
                         llvm::divideCeil(outputPlan->shape.front(), workers));
 
-  MLIRContext *ctx = op.getContext();
-  op->setAttr(
-      AttrNames::Operation::Plan::KernelFamily,
-      StringAttr::get(ctx, kernelFamilyToString(KernelFamily::Uniform)));
-  op->setAttr(AttrNames::Operation::Plan::OwnerDims,
-              buildI64ArrayAttr(ctx, SmallVector<int64_t, 1>{0}));
-  op->setAttr(AttrNames::Operation::Plan::PhysicalBlockShape,
-              buildI64ArrayAttr(ctx, physicalBlockShape));
-  op->setAttr(AttrNames::Operation::Plan::IterationTopology,
-              StringAttr::get(ctx, "owner_strip"));
+  if (!classification)
+    op.setStructuredClassificationAttr(sde::SdeStructuredClassificationAttr::get(
+        op.getContext(), sde::SdeStructuredClassification::elementwise));
+  op.setPhysicalOwnerDimsAttr(
+      buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{0}));
+  op.setPhysicalBlockShapeAttr(
+      buildI64ArrayAttr(op.getContext(), physicalBlockShape));
+  op.setLogicalWorkerSliceAttr(
+      buildI64ArrayAttr(op.getContext(), physicalBlockShape));
+  op.setIterationTopologyAttr(sde::SdeIterationTopologyAttr::get(
+      op.getContext(), sde::SdeIterationTopology::owner_strip));
+}
+
+static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
+                                    sde::SDECostModel &costModel) {
+  if ((op.getPhysicalOwnerDimsAttr() && op.getPhysicalBlockShapeAttr()) ||
+      costModel.getWorkerCount() <= 1)
+    return;
+  auto classification = op.getStructuredClassification();
+  if (!classification ||
+      *classification != sde::SdeStructuredClassification::matmul)
+    return;
+  if (auto plannedWorkers = getWorkers(op.getOperation());
+      plannedWorkers && *plannedWorkers <= 1)
+    return;
+
+  std::optional<sde::LoopIndexedOutputPlan> outputPlan =
+      sde::findLoopIndexedOutputPlan(op);
+  if (!outputPlan || outputPlan->shape.size() < 2 || outputPlan->shape[0] <= 0 ||
+      outputPlan->shape[1] <= 0)
+    return;
+
+  auto effects = sde::collectStructuredMemoryEffects(op.getBody());
+  if (effects.hasUnknownEffects || !effects.writes.contains(outputPlan->root))
+    return;
+
+  int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+  SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
+  SmallVector<int64_t, 4> ownerExtents{outputPlan->shape[0],
+                                       outputPlan->shape[1]};
+  SmallVector<int64_t, 4> workerGrid =
+      factorWorkersAcrossDims(workers, ownerExtents);
+  physicalBlockShape[0] =
+      ceilDivPositive(outputPlan->shape[0], workerGrid[0]);
+  physicalBlockShape[1] =
+      ceilDivPositive(outputPlan->shape[1], workerGrid[1]);
+
+  op.setPhysicalOwnerDimsAttr(
+      buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 2>{0, 1}));
+  op.setPhysicalBlockShapeAttr(
+      buildI64ArrayAttr(op.getContext(), physicalBlockShape));
+  op.setLogicalWorkerSliceAttr(
+      buildI64ArrayAttr(op.getContext(), physicalBlockShape));
+  op.setIterationTopologyAttr(sde::SdeIterationTopologyAttr::get(
+      op.getContext(), sde::SdeIterationTopology::owner_tile_2d));
+}
+
+static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
+                                        sde::SDECostModel &costModel) {
+  if (op.getLogicalWorkerSliceAttr() || costModel.getWorkerCount() <= 1)
+    return;
+  auto classification = op.getStructuredClassification();
+  if (!classification ||
+      *classification != sde::SdeStructuredClassification::reduction)
+    return;
+  if (auto plannedWorkers = getWorkers(op.getOperation());
+      plannedWorkers && *plannedWorkers <= 1)
+    return;
+  std::optional<int64_t> tripCount = getStaticTripCount(op.getOperation());
+  if (!tripCount || *tripCount <= 0)
+    return;
+
+  int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+  int64_t slice = ceilDivPositive(*tripCount, workers);
+  op.setLogicalWorkerSliceAttr(
+      buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{slice}));
+  op.setIterationTopologyAttr(sde::SdeIterationTopologyAttr::get(
+      op.getContext(), sde::SdeIterationTopology::owner_strip));
 }
 
 static std::optional<sde::SdeConcurrencyScope>
@@ -329,7 +464,9 @@ struct DistributionPlanningPass
     SmallVector<PlannedDistribution> rewrites;
     getOperation().walk([&](sde::SdeSuIterateOp op) {
       stampStencilPhysicalPlan(op, *costModel);
+      stampMatmulPhysicalPlan(op, *costModel);
       stampUniformPhysicalPlan(op, *costModel);
+      stampReductionTaskShapePlan(op, *costModel);
       if (auto kind = chooseDistributionKind(op, *costModel))
         rewrites.push_back({op, *kind});
     });
@@ -339,8 +476,7 @@ struct DistributionPlanningPass
         // su_iterate with iter_arg results: can't wrap in su_distribute
         // (NoTerminator op can't forward results). Stamp distribution kind
         // directly on the su_iterate — SuIterateToArtsPattern reads it.
-        rewrite.op->setAttr(
-            "distributionKind",
+        rewrite.op.setDistributionKindAttr(
             sde::SdeDistributionKindAttr::get(&getContext(), rewrite.kind));
         continue;
       }

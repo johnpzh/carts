@@ -317,7 +317,19 @@ static void outlineLoop(scf::ForOp loop, const RuntimeConfig *machine,
   auto outlinedFor = arts::ForOp::create(
       epochBuilder, loc, ValueRange{loop.getLowerBound()},
       ValueRange{loop.getUpperBound()}, ValueRange{loop.getStep()}, schedAttr,
-      Value(), ValueRange{});
+      Value(), ValueRange{}, /*inPlaceSafe=*/nullptr,
+      /*inPlaceSharedState=*/nullptr, /*vectorizeWidth=*/nullptr,
+      /*unrollFactor=*/nullptr, /*interleaveCount=*/nullptr,
+      /*depPattern=*/nullptr, /*distribution_kind=*/nullptr,
+      /*distribution_pattern=*/nullptr, /*distribution_version=*/nullptr,
+      /*planOwnerDims=*/nullptr, /*planPhysicalBlockShape=*/nullptr,
+      /*planLogicalWorkerSlice=*/nullptr, /*planHaloShape=*/nullptr,
+      /*planIterationTopology=*/nullptr,
+      /*planRepetitionStructure=*/nullptr, /*planAsyncStrategy=*/nullptr,
+      /*planCostSchedulerOverhead=*/nullptr,
+      /*planCostSliceWideningPressure=*/nullptr,
+      /*planCostExpectedLocalWork=*/nullptr,
+      /*planCostRelaunchAmortization=*/nullptr);
 
   copyArtsMetadataAttrs(loop.getOperation(), outlinedFor.getOperation());
   cloneScfLoopBodyIntoArtsFor(loop, outlinedFor, epochBuilder);

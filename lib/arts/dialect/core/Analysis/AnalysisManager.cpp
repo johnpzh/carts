@@ -116,16 +116,6 @@ AnalysisManager::getLoopDbAccessSummary(Operation *loopOp) {
   return getDbAnalysis().getLoopDbAccessSummary(forOp);
 }
 
-std::optional<EdtDistributionPattern>
-AnalysisManager::getLoopDistributionPattern(Operation *loopOp) {
-  if (!loopOp)
-    return std::nullopt;
-  auto forOp = dyn_cast<ForOp>(loopOp);
-  if (!forOp)
-    return std::nullopt;
-  return getDbAnalysis().getLoopDistributionPattern(forOp);
-}
-
 void AnalysisManager::invalidateAndRebuildGraphs(ModuleOp module) {
   module.walk([&](func::FuncOp func) {
     invalidateFunction(func);

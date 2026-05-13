@@ -10,9 +10,9 @@
 
 // SDE-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
 // Barrier 1 is eliminated (disjoint), barrier 2 is preserved (overlap):
-// SDE: arts_sde.su_barrier {barrier_eliminated}
+// SDE: arts_sde.su_barrier {barrierEliminated, barrierReason = #arts_sde.barrier_reason<redundant>}
 // SDE: arts_sde.su_barrier
-// SDE-NOT: arts.barrier_eliminated
+// SDE-NOT: arts.barrierEliminated
 
 // After ConvertSdeToArts: only the second barrier survives.
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
