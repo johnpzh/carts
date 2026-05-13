@@ -110,7 +110,7 @@ def build(
 
     # Counter levels: 0=off, 1=artsid, 2=deep
     # Levels 1+ require USE_COUNTERS and USE_METRICS
-    if counters_level >= 1:
+    if counters_level >= 1 or profile is not None:
         make_vars.extend(["ARTS_USE_COUNTERS=ON", "ARTS_USE_METRICS=ON"])
 
     # Always pass counter config path for ARTS builds

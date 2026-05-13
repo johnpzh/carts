@@ -168,6 +168,7 @@ ARTS_LOG_LEVEL ?= 1
 # Counter configuration profile (defaults to timing-only for minimal overhead)
 # Available profiles: profile-none.cfg, profile-timing.cfg, profile-workload.cfg, profile-overhead.cfg, profile-thread-edt.cfg
 COUNTER_CONFIG_PATH ?= external/carts-benchmarks/configs/profiles/profile-timing.cfg
+COUNTER_CONFIG_ABSPATH := $(abspath $(COUNTER_CONFIG_PATH))
 # jemalloc allocator (opt-in). OFF because ARTS's jemalloc uses an empty
 # symbol prefix, which crashes libarts on macOS via cross-allocator free.
 ARTS_USE_JEMALLOC ?= OFF
@@ -176,10 +177,10 @@ ARTS_USE_JEMALLOC ?= OFF
 ARTS_CONFIG_HASH_FILE := $(ARTS_BUILD_DIR)/.arts-build-config
 
 # Hash the content of counter.cfg to detect changes
-COUNTER_CONFIG_HASH := $(shell md5sum $(COUNTER_CONFIG_PATH) 2>/dev/null | cut -d' ' -f1 || echo "no-config")
+COUNTER_CONFIG_HASH := $(shell md5sum "$(COUNTER_CONFIG_ABSPATH)" 2>/dev/null | cut -d' ' -f1 || echo "no-config")
 
 # Compute current configuration as a string for hashing
-ARTS_CONFIG_STRING := $(ARTS_BUILD_TYPE)|$(ARTS_USE_COUNTERS)|$(ARTS_USE_METRICS)|$(ARTS_LOG_LEVEL)|$(COUNTER_CONFIG_PATH)|$(COUNTER_CONFIG_HASH)|$(CARTS_LINKER_PATH)|$(ARTS_USE_JEMALLOC)
+ARTS_CONFIG_STRING := $(ARTS_BUILD_TYPE)|$(ARTS_USE_COUNTERS)|$(ARTS_USE_METRICS)|$(ARTS_LOG_LEVEL)|$(COUNTER_CONFIG_ABSPATH)|$(COUNTER_CONFIG_HASH)|$(CARTS_LINKER_PATH)|$(ARTS_USE_JEMALLOC)
 
 arts-download:
 	@if [ ! -d "$(ARTS_DIR)/.git" ]; then \
@@ -215,6 +216,7 @@ arts:
 			-DARTS_BUILD_BENCHMARKS=OFF \
 			-DARTS_BUILD_TESTS=OFF \
 			-DARTS_BUILD_EXAMPLES=OFF \
+			-DCOUNTER_CONFIG_PATH="$(COUNTER_CONFIG_ABSPATH)" \
 			-DCMAKE_INSTALL_PREFIX=$(ARTS_INSTALL_DIR) \
 			$(LLVM_RUNTIME_CMAKE_FLAGS) \
 			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON; \
