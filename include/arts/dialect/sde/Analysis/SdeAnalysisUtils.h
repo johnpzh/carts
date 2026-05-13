@@ -9,12 +9,14 @@
 
 #include "arts/dialect/sde/IR/SdeDialect.h"
 #include "arts/utils/ValueAnalysis.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/STLExtras.h"
 #include <optional>
 
 namespace mlir::arts::sde {
@@ -91,6 +93,7 @@ struct StructuredMemoryEffectSummary {
 struct LoopIndexedOutputPlan {
   Value root;
   SmallVector<int64_t, 4> shape;
+  SmallVector<int64_t, 4> ownerPhysicalDims;
 };
 
 inline bool isDefinedInside(Operation *ancestor, Value value) {
@@ -100,11 +103,43 @@ inline bool isDefinedInside(Operation *ancestor, Value value) {
   return def && ancestor->isAncestor(def);
 }
 
+inline bool isKnownPureScalarLibmCallee(StringRef callee) {
+  return callee == "tanhf" || callee == "tanh";
+}
+
+inline bool isScalarOrVectorValueType(Type type) {
+  if (type.isIntOrIndexOrFloat())
+    return true;
+  auto vectorType = dyn_cast<VectorType>(type);
+  return vectorType && vectorType.getElementType().isIntOrIndexOrFloat();
+}
+
+/// Some C libm calls survive Polygeist/MLIR canonicalization as func.call
+/// instead of math dialect ops. For SDE scheduling they are pure scalar
+/// computations: they neither read nor write program memory, and allowing them
+/// keeps output-only elementwise loops block-partitionable.
+inline bool isKnownPureScalarLibmCall(Operation *op) {
+  auto call = dyn_cast_or_null<func::CallOp>(op);
+  if (!call || !isKnownPureScalarLibmCallee(call.getCallee()))
+    return false;
+
+  for (Value operand : call.getOperands())
+    if (!isScalarOrVectorValueType(operand.getType()))
+      return false;
+  for (Value result : call.getResults())
+    if (!isScalarOrVectorValueType(result.getType()))
+      return false;
+  return true;
+}
+
 inline bool hasUnmodeledMemoryEffect(Operation *op) {
   if (!op || op->hasTrait<OpTrait::IsTerminator>() || isa<SdeYieldOp>(op))
     return false;
 
   if (isa<memref::LoadOp, memref::StoreOp, linalg::GenericOp>(op))
+    return false;
+
+  if (isKnownPureScalarLibmCall(op))
     return false;
 
   /// Region operations are structural here; nested operations are visited by
@@ -169,18 +204,18 @@ inline bool hasInPlaceSelfRead(const StructuredMemoryEffectSummary &summary) {
   return false;
 }
 
-inline std::optional<LoopIndexedOutputPlan>
-findLoopIndexedOutputPlan(SdeSuIterateOp op) {
+inline SmallVector<Value, 4> collectOwnerIndexValues(SdeSuIterateOp op) {
+  SmallVector<Value, 4> ownerIndexValues;
   if (op.getBody().empty())
-    return std::nullopt;
+    return ownerIndexValues;
 
   Block &body = op.getBody().front();
   auto ivs = op.getLoopInductionVars();
   if (!ivs || ivs->empty())
-    return std::nullopt;
+    return ownerIndexValues;
   Value loopIv = ivs->front();
 
-  SmallVector<Value, 4> ownerIndexValues{loopIv};
+  ownerIndexValues.push_back(loopIv);
   Block *computeBlock = getSuIterateComputeBlock(op);
   if (computeBlock && computeBlock != &body) {
     if (auto cuRegion = dyn_cast_or_null<SdeCuRegionOp>(
@@ -194,6 +229,114 @@ findLoopIndexedOutputPlan(SdeSuIterateOp op) {
     }
   }
 
+  return ownerIndexValues;
+}
+
+inline bool isExactOwnerIndex(Value index, ArrayRef<Value> ownerIndexValues) {
+  int64_t constantOffset = 0;
+  Value base = ValueAnalysis::stripConstantOffset(
+      ValueAnalysis::stripNumericCasts(index), &constantOffset);
+  if (constantOffset != 0)
+    return false;
+
+  base = ValueAnalysis::stripNumericCasts(base);
+  for (Value ownerIndex : ownerIndexValues)
+    if (ValueAnalysis::sameValue(base, ownerIndex))
+      return true;
+  return false;
+}
+
+inline bool isOwnerDependentIndex(Value index,
+                                  ArrayRef<Value> ownerIndexValues) {
+  if (isExactOwnerIndex(index, ownerIndexValues))
+    return true;
+
+  Value normalized = ValueAnalysis::stripNumericCasts(index);
+  for (Value ownerIndex : ownerIndexValues)
+    if (ValueAnalysis::dependsOn(normalized, ownerIndex))
+      return true;
+  return false;
+}
+
+inline SmallVector<int64_t, 4>
+collectExactOwnerIndexedPhysicalDims(OperandRange indices,
+                                     ArrayRef<Value> ownerIndexValues) {
+  SmallVector<int64_t, 4> ownerPhysicalDims;
+  for (auto [idx, index] : llvm::enumerate(indices))
+    if (isExactOwnerIndex(index, ownerIndexValues))
+      ownerPhysicalDims.push_back(static_cast<int64_t>(idx));
+  return ownerPhysicalDims;
+}
+
+/// Prove that all accesses to an in-place output root stay within the same
+/// owner slice of a one-dimensional scheduling unit. This permits block DB
+/// layout for row-local update kernels such as layernorm while rejecting
+/// stencil-like first-dimension offsets (`i +/- 1`) that need halo planning.
+inline bool allRootAccessesStayWithinOwnerSlice(SdeSuIterateOp op,
+                                                Value root,
+                                                ArrayRef<int64_t> ownerDims) {
+  if (!op || !root)
+    return false;
+  if (ownerDims.empty())
+    return false;
+
+  SmallVector<Value, 4> ownerIndexValues = collectOwnerIndexValues(op);
+  if (ownerIndexValues.empty())
+    return false;
+
+  bool sawRootAccess = false;
+  auto checkIndices = [&](Value memref, OperandRange indices) {
+    Value base = ValueAnalysis::stripMemrefViewOps(memref);
+    if (base != root)
+      return WalkResult::advance();
+
+    sawRootAccess = true;
+    auto memRefType = dyn_cast<MemRefType>(base.getType());
+    if (!memRefType || memRefType.getRank() == 0 || indices.empty())
+      return WalkResult::interrupt();
+    for (int64_t rawDim : ownerDims) {
+      if (rawDim < 0 || static_cast<size_t>(rawDim) >= indices.size())
+        return WalkResult::interrupt();
+      if (!isExactOwnerIndex(indices[rawDim], ownerIndexValues))
+        return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  };
+
+  WalkResult result = op.getBody().walk([&](Operation *nested) {
+    if (auto loadOp = dyn_cast<memref::LoadOp>(nested)) {
+      if (isa<MemRefType>(loadOp.getResult().getType()))
+        return WalkResult::advance();
+      return checkIndices(loadOp.getMemref(), loadOp.getIndices());
+    }
+    if (auto storeOp = dyn_cast<memref::StoreOp>(nested)) {
+      if (isa<MemRefType>(storeOp.getValueToStore().getType()))
+        return WalkResult::advance();
+      return checkIndices(storeOp.getMemref(), storeOp.getIndices());
+    }
+    return WalkResult::advance();
+  });
+
+  return !result.wasInterrupted() && sawRootAccess;
+}
+
+inline bool allRootAccessesStayWithinOwnerSlice(SdeSuIterateOp op,
+                                                Value root) {
+  SmallVector<int64_t, 1> firstDim{0};
+  return allRootAccessesStayWithinOwnerSlice(op, root, firstDim);
+}
+
+inline std::optional<LoopIndexedOutputPlan>
+findLoopIndexedOutputPlan(SdeSuIterateOp op) {
+  if (op.getBody().empty())
+    return std::nullopt;
+
+  Block &body = op.getBody().front();
+  SmallVector<Value, 4> ownerIndexValues = collectOwnerIndexValues(op);
+  if (ownerIndexValues.empty())
+    return std::nullopt;
+  Block *computeBlock = getSuIterateComputeBlock(op);
+
   std::optional<LoopIndexedOutputPlan> selectedPlan;
   auto visitStore = [&](memref::StoreOp storeOp) {
     Value memref = storeOp.getMemref();
@@ -206,12 +349,12 @@ findLoopIndexedOutputPlan(SdeSuIterateOp op) {
       return WalkResult::advance();
 
     bool indexedByOwner = false;
-    for (Value ownerIndex : ownerIndexValues) {
-      if (ValueAnalysis::dependsOn(storeOp.getIndices().front(), ownerIndex)) {
+    for (Value ownerIndex : ownerIndexValues)
+      if (isExactOwnerIndex(storeOp.getIndices().front(), ownerIndexValues) ||
+          ValueAnalysis::dependsOn(storeOp.getIndices().front(), ownerIndex)) {
         indexedByOwner = true;
         break;
       }
-    }
     if (!indexedByOwner)
       return WalkResult::advance();
 
@@ -223,7 +366,8 @@ findLoopIndexedOutputPlan(SdeSuIterateOp op) {
       shape.push_back(dim);
     }
 
-    selectedPlan = LoopIndexedOutputPlan{base, std::move(shape)};
+    selectedPlan = LoopIndexedOutputPlan{base, std::move(shape),
+                                         SmallVector<int64_t, 4>{0}};
     return WalkResult::interrupt();
   };
 
@@ -233,6 +377,82 @@ findLoopIndexedOutputPlan(SdeSuIterateOp op) {
       break;
   }
 
+  return selectedPlan;
+}
+
+/// Recover an owner-indexed output plan for direct memref loops whose owner IV
+/// maps to any physical output dimension. Unlike findLoopIndexedOutputPlan,
+/// this validates all external memref stores in the compute block and rejects
+/// mixed output shapes or mixed owner dimensions. That makes it suitable for
+/// authoring physical DB layouts from imperfect stencil/update nests.
+inline std::optional<LoopIndexedOutputPlan>
+findConsistentLoopIndexedOutputPlanWithOwnerDims(SdeSuIterateOp op) {
+  if (op.getBody().empty())
+    return std::nullopt;
+
+  SmallVector<Value, 4> ownerIndexValues = collectOwnerIndexValues(op);
+  if (ownerIndexValues.empty())
+    return std::nullopt;
+
+  Block *computeBlock = getSuIterateComputeBlock(op);
+  if (!computeBlock)
+    return std::nullopt;
+
+  bool rejected = false;
+  std::optional<LoopIndexedOutputPlan> selectedPlan;
+  auto visitStore = [&](memref::StoreOp storeOp) {
+    Value base = ValueAnalysis::stripMemrefViewOps(storeOp.getMemref());
+    if (isDefinedInside(op.getOperation(), base))
+      return WalkResult::advance();
+
+    auto memRefType = dyn_cast<MemRefType>(base.getType());
+    if (!memRefType || memRefType.getRank() == 0 ||
+        storeOp.getIndices().empty()) {
+      rejected = true;
+      return WalkResult::interrupt();
+    }
+
+    SmallVector<int64_t, 4> ownerPhysicalDims =
+        collectExactOwnerIndexedPhysicalDims(storeOp.getIndices(),
+                                             ownerIndexValues);
+    if (ownerPhysicalDims.empty()) {
+      rejected = true;
+      return WalkResult::interrupt();
+    }
+
+    SmallVector<int64_t, 4> shape;
+    shape.reserve(memRefType.getRank());
+    for (int64_t dim : memRefType.getShape()) {
+      if (dim == ShapedType::kDynamic) {
+        rejected = true;
+        return WalkResult::interrupt();
+      }
+      shape.push_back(dim);
+    }
+
+    LoopIndexedOutputPlan candidate{base, std::move(shape),
+                                    std::move(ownerPhysicalDims)};
+    if (!selectedPlan) {
+      selectedPlan = std::move(candidate);
+      return WalkResult::advance();
+    }
+
+    if (candidate.shape != selectedPlan->shape ||
+        candidate.ownerPhysicalDims != selectedPlan->ownerPhysicalDims) {
+      rejected = true;
+      return WalkResult::interrupt();
+    }
+
+    return WalkResult::advance();
+  };
+
+  for (Operation &nested : computeBlock->without_terminator()) {
+    if (nested.walk(visitStore).wasInterrupted())
+      break;
+  }
+
+  if (rejected)
+    return std::nullopt;
   return selectedPlan;
 }
 

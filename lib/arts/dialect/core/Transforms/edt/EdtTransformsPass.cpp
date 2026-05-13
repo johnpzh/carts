@@ -26,7 +26,7 @@
 ///
 ///   EXT-EDT-2: Dead dependency elimination -- remove unused dependency
 ///              slots whose block arguments have zero uses or are only
-///              consumed by DbReleaseOps.
+///              consumed by cleanup or true-only compiler control-token stores.
 ///
 ///==========================================================================///
 
@@ -766,17 +766,22 @@ unsigned EdtTransformsPass::eliminateDeadDependencies() {
       BlockArgument arg = body.getArgument(i);
       DbAcquireOp acquire = deps[i].getDefiningOp<DbAcquireOp>();
 
-      llvm::SetVector<Operation *> cleanupChain;
-      if (!DbUtils::collectCleanupOnlyUseChain(arg, cleanupChain,
-                                               &edt.getRegion()))
-        continue;
-
       if (acquire && acquire.getPreserveDepEdge()) {
         ARTS_DEBUG("EXT-EDT-2: keeping cleanup-only dep " << i
                                                           << " due to "
                                                              "preserveDepEdge");
         continue;
       }
+
+      llvm::SetVector<Operation *> cleanupChain;
+      bool removable =
+          DbUtils::collectCleanupOnlyUseChain(arg, cleanupChain,
+                                              &edt.getRegion());
+      if (!removable && acquire && acquire.getMode() == ArtsMode::out)
+        removable = DbUtils::collectTrueOnlyControlTokenUseChain(
+            arg, cleanupChain, &edt.getRegion());
+      if (!removable)
+        continue;
 
       deadIndices.push_back(i);
       for (Operation *op : cleanupChain)

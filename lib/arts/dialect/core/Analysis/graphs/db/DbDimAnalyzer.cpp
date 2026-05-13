@@ -181,13 +181,13 @@ inferMappedDimFromDepPattern(const DbAcquirePartitionFacts &facts) {
   case ArtsDepPattern::stencil_tiling_nd:
   case ArtsDepPattern::cross_dim_stencil_3d:
   case ArtsDepPattern::higher_order_stencil:
+  case ArtsDepPattern::jacobi_alternating_buffers:
     if (!facts.stencilOwnerDims.empty())
       return facts.stencilOwnerDims.front();
     return std::nullopt;
   case ArtsDepPattern::unknown:
   case ArtsDepPattern::uniform:
   case ArtsDepPattern::stencil:
-  case ArtsDepPattern::jacobi_alternating_buffers:
   case ArtsDepPattern::matmul:
   case ArtsDepPattern::triangular:
   case ArtsDepPattern::elementwise_pipeline:

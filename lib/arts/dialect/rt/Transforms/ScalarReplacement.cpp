@@ -30,6 +30,7 @@ namespace mlir::arts {
 
 #include "arts/utils/Debug.h"
 #include "arts/utils/LoopInvarianceUtils.h"
+#include "arts/utils/ValueAnalysis.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/PatternMatch.h"
@@ -92,17 +93,6 @@ static Value getStoredValue(Operation *op) {
   if (auto dynStore = dyn_cast<polygeist::DynStoreOp>(op))
     return dynStore.getValue();
   return Value();
-}
-
-/// Check if two index vectors are equal
-static bool indicesEqual(ArrayRef<Value> a, ArrayRef<Value> b) {
-  if (a.size() != b.size())
-    return false;
-  for (size_t i = 0; i < a.size(); i++) {
-    if (a[i] != b[i])
-      return false;
-  }
-  return true;
 }
 
 /// Check if an operation is an accumulation operation (addf, mulf, etc.)
@@ -179,7 +169,8 @@ detectReductionPattern(scf::ForOp forOp) {
       /// Additionally, the memref must be defined OUTSIDE the loop so that
       /// we can create new loads/stores outside the loop that use it.
       if (loadMemref == storeMemref &&
-          indicesEqual(loadIndices, storeIndices) && loadOp->hasOneUse() &&
+          ValueAnalysis::areValueRangesIdentical(loadIndices, storeIndices) &&
+          loadOp->hasOneUse() &&
           isLoopInvariant(forOp, storeMemref)) {
         pattern.loadOp = loadOp;
         pattern.storeOp = storeOp;

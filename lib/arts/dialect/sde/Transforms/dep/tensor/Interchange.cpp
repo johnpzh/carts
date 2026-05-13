@@ -35,6 +35,7 @@ namespace mlir::arts {
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
 #include "arts/utils/Debug.h"
+#include "arts/utils/ValueAnalysis.h"
 ARTS_DEBUG_SETUP(loop_interchange);
 
 using namespace mlir;
@@ -901,16 +902,6 @@ static bool interchangeLoops(scf::ForOp jLoop, scf::ForOp kLoop,
   return true;
 }
 
-static bool sameIndices(ValueRange lhs, ValueRange rhs) {
-  if (lhs.size() != rhs.size())
-    return false;
-  for (auto [left, right] : llvm::zip(lhs, rhs)) {
-    if (left != right)
-      return false;
-  }
-  return true;
-}
-
 static bool indicesContain(ValueRange indices, Value value) {
   return llvm::is_contained(indices, value);
 }
@@ -952,7 +943,8 @@ static bool isDirectMemoryMatmulAccumulator(scf::ForOp jLoop, scf::ForOp kLoop,
 
     if (auto load = dyn_cast<memref::LoadOp>(op)) {
       if (load.getMemref() == output) {
-        if (!sameIndices(load.getIndices(), outputIndices))
+        if (!ValueAnalysis::areValueRangesIdentical(load.getIndices(),
+                                                    outputIndices))
           return false;
         ++outputLoads;
       } else if (indicesContain(load.getIndices(), oldK) &&
@@ -965,18 +957,21 @@ static bool isDirectMemoryMatmulAccumulator(scf::ForOp jLoop, scf::ForOp kLoop,
     if (auto store = dyn_cast<memref::StoreOp>(op)) {
       if (store.getMemref() != output)
         return false;
-      if (!sameIndices(store.getIndices(), outputIndices))
+      if (!ValueAnalysis::areValueRangesIdentical(store.getIndices(),
+                                                  outputIndices))
         return false;
       ++outputStores;
 
       if (auto add = store.getValueToStore().getDefiningOp<arith::AddFOp>()) {
         if (auto load = add.getLhs().getDefiningOp<memref::LoadOp>();
             load && load.getMemref() == output &&
-            sameIndices(load.getIndices(), outputIndices))
+            ValueAnalysis::areValueRangesIdentical(load.getIndices(),
+                                                   outputIndices))
           hasAccumulatingStore = true;
         if (auto load = add.getRhs().getDefiningOp<memref::LoadOp>();
             load && load.getMemref() == output &&
-            sameIndices(load.getIndices(), outputIndices))
+            ValueAnalysis::areValueRangesIdentical(load.getIndices(),
+                                                   outputIndices))
           hasAccumulatingStore = true;
       }
       continue;

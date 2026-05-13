@@ -5,7 +5,7 @@
 ///
 /// Rewrite behavior:
 ///   1. Single-element or forced-coarse path:
-///      db_acquire -> partitioning(<coarse>), offsets[0], sizes[1]
+///      db_acquire -> partitioning(<coarse>), full source DB-space range
 ///   2. Block path:
 ///      db_acquire -> partitioning(<block>), worker offsets/sizes
 ///   3. Stencil extension (when enabled):
@@ -192,6 +192,30 @@ struct TaskElementSlice {
   SmallVector<Value, 4> offsets;
   SmallVector<Value, 4> sizes;
 };
+
+static void buildFullDbRange(ArtsCodegen *AC, Location loc, Value rootPtr,
+                             SmallVectorImpl<Value> &offsets,
+                             SmallVectorImpl<Value> &sizes) {
+  offsets.clear();
+  sizes.clear();
+  if (!AC)
+    return;
+
+  Value zero = AC->createIndexConstant(0, loc);
+  SmallVector<Value> rootSizes = DbUtils::getSizesFromDb(rootPtr);
+  if (rootSizes.empty()) {
+    offsets.push_back(zero);
+    sizes.push_back(AC->createIndexConstant(1, loc));
+    return;
+  }
+
+  offsets.reserve(rootSizes.size());
+  sizes.reserve(rootSizes.size());
+  for (Value size : rootSizes) {
+    offsets.push_back(zero);
+    sizes.push_back(AC->castToIndex(size, loc));
+  }
+}
 
 static bool shouldMaterializeTaskElementSlice(TaskAcquireSlicePlanInput input) {
   if (!input.AC || !input.parentAcquire || !input.taskAcquire)
@@ -613,12 +637,15 @@ DbAcquireOp mlir::arts::rewriteAcquire(AcquireRewriteInput &in,
     /// Intentionally drop any worker-local block hints here. For single-node
     /// Seidel-like inout updates with cross-element self-reads, keeping those
     /// hints can turn a deliberately coarse acquire into an unsafe block slice.
+    SmallVector<Value> fullOffsets;
+    SmallVector<Value> fullSizes;
+    buildFullDbRange(in.AC, in.loc, in.rootPtr, fullOffsets, fullSizes);
     auto coarseAcquire = in.AC->create<DbAcquireOp>(
         in.loc, in.effectiveMode, in.rootGuid, in.rootPtr,
         in.parentAcquire.getPtr().getType(), PartitionMode::coarse,
         /*indices=*/SmallVector<Value>{},
-        /*offsets=*/SmallVector<Value>{zero},
-        /*sizes=*/SmallVector<Value>{one},
+        /*offsets=*/fullOffsets,
+        /*sizes=*/fullSizes,
         /*partition_indices=*/SmallVector<Value>{},
         /*partition_offsets=*/SmallVector<Value>{},
         /*partition_sizes=*/SmallVector<Value>{});
@@ -747,6 +774,41 @@ DbAcquireOp mlir::arts::rewriteAcquire(AcquireRewriteInput &in,
                              in.parentAcquire.getOffsets().end());
     dependencySizes.assign(in.parentAcquire.getSizes().begin(),
                            in.parentAcquire.getSizes().end());
+  }
+
+  size_t sourceRank = DbUtils::getSizesFromDb(in.rootPtr).size();
+  if (sourceRank > 0 &&
+      (dependencyOffsets.size() != sourceRank ||
+       dependencySizes.size() != sourceRank) &&
+      in.parentAcquire.getOffsets().size() == sourceRank &&
+      in.parentAcquire.getSizes().size() == sourceRank) {
+    if (in.effectiveMode == ArtsMode::in) {
+      dependencyOffsets.assign(in.parentAcquire.getOffsets().begin(),
+                               in.parentAcquire.getOffsets().end());
+      dependencySizes.assign(in.parentAcquire.getSizes().begin(),
+                             in.parentAcquire.getSizes().end());
+    } else {
+      /// Row-strip work over a physically 2-D DB often owns only the leading
+      /// dimension. Complete the DB-space range with the parent trailing
+      /// dimensions instead of widening the worker-owned leading slice.
+      unsigned preservedRank = std::min<unsigned>(
+          sourceRank,
+          std::min<unsigned>(dependencyOffsets.size(), dependencySizes.size()));
+      SmallVector<Value> completedOffsets;
+      SmallVector<Value> completedSizes;
+      completedOffsets.reserve(sourceRank);
+      completedSizes.reserve(sourceRank);
+      for (unsigned dim = 0; dim < preservedRank; ++dim) {
+        completedOffsets.push_back(dependencyOffsets[dim]);
+        completedSizes.push_back(dependencySizes[dim]);
+      }
+      for (unsigned dim = preservedRank; dim < sourceRank; ++dim) {
+        completedOffsets.push_back(in.parentAcquire.getOffsets()[dim]);
+        completedSizes.push_back(in.parentAcquire.getSizes()[dim]);
+      }
+      dependencyOffsets = std::move(completedOffsets);
+      dependencySizes = std::move(completedSizes);
+    }
   }
 
   auto blockAcquire = in.AC->create<DbAcquireOp>(

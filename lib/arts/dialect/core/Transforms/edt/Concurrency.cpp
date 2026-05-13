@@ -23,16 +23,78 @@
 #include "arts/passes/Passes.h"
 #include "arts/passes/Passes.h.inc"
 #include "arts/utils/DbUtils.h"
+#include "arts/utils/LoopUtils.h"
 #include "arts/utils/OperationAttributes.h"
 #include "arts/utils/machine/RuntimeConfig.h"
 #include "mlir/Pass/Pass.h"
 #include <algorithm>
+#include "llvm/Support/MathExtras.h"
 
 #include "arts/utils/Debug.h"
 #include "llvm/ADT/Statistic.h"
 ARTS_DEBUG_SETUP(concurrency)
 
 using namespace mlir::arts;
+using namespace mlir;
+
+namespace {
+
+static std::optional<int64_t> getPlannedOwnerBlockSize(ForOp forOp) {
+  if (!forOp)
+    return std::nullopt;
+
+  auto pattern = getEffectiveDepPattern(forOp.getOperation());
+  if (!pattern || !isStencilHaloDepPattern(*pattern))
+    return std::nullopt;
+
+  auto ownerDims = readI64ArrayAttr(getPlanOwnerDimsAttr(forOp.getOperation()));
+  auto blockShape =
+      readI64ArrayAttr(getPlanPhysicalBlockShapeAttr(forOp.getOperation()));
+  if (!blockShape || blockShape->empty())
+    blockShape =
+        readI64ArrayAttr(getPlanLogicalWorkerSliceAttr(forOp.getOperation()));
+  if (!ownerDims || ownerDims->empty() || !blockShape || blockShape->empty())
+    return std::nullopt;
+
+  int64_t ownerDim = ownerDims->front();
+  size_t blockIdx = 0;
+  if (ownerDim >= 0 && static_cast<size_t>(ownerDim) < blockShape->size())
+    blockIdx = static_cast<size_t>(ownerDim);
+  int64_t blockSize = (*blockShape)[blockIdx];
+  if (blockSize <= 1)
+    return std::nullopt;
+  return blockSize;
+}
+
+static std::optional<int64_t>
+getPlannedStencilWorkerCount(EdtOp edtOp, int64_t hardwareWorkers) {
+  if (!edtOp || hardwareWorkers <= 0)
+    return std::nullopt;
+
+  std::optional<int64_t> best;
+  Block &body = edtOp.getBody().front();
+  for (Operation &op : body.without_terminator()) {
+    auto forOp = dyn_cast<ForOp>(&op);
+    if (!forOp)
+      continue;
+
+    auto blockSize = getPlannedOwnerBlockSize(forOp);
+    auto tripCount = getStaticTripCount(forOp.getOperation());
+    if (!blockSize || !tripCount || *tripCount <= 0)
+      continue;
+
+    int64_t logicalWorkers =
+        llvm::divideCeil(*tripCount, std::max<int64_t>(1, *blockSize));
+    if (logicalWorkers <= hardwareWorkers)
+      continue;
+    if (logicalWorkers > hardwareWorkers * 4)
+      logicalWorkers = hardwareWorkers * 4;
+    best = best ? std::max(*best, logicalWorkers) : logicalWorkers;
+  }
+  return best;
+}
+
+} // namespace
 
 static llvm::Statistic numEdtsAssignedInternode{
     "concurrency", "NumEdtsAssignedInternode",
@@ -205,6 +267,9 @@ void ConcurrencyPass::applyEdtParallelismStrategy(EdtOp edtOp) {
   ParallelismDecision machineDecision = heuristics.resolveParallelism();
   if (hasNestedTasks) {
     int64_t workers = std::max<int64_t>(1, machineDecision.workersPerNode);
+    if (auto plannedWorkers =
+            getPlannedStencilWorkerCount(edtOp, workers))
+      workers = std::max(workers, *plannedWorkers);
     ARTS_INFO("Parallel EDT contains nested tasks - keeping intranode with "
               << workers << " workers");
     ++numEdtsKeptIntranodeForTasks;
@@ -216,6 +281,9 @@ void ConcurrencyPass::applyEdtParallelismStrategy(EdtOp edtOp) {
 
   if (AM->getDbAnalysis().hasNonInternodeConsumerForWrittenDb(edtOp)) {
     int64_t workers = std::max<int64_t>(1, machineDecision.workersPerNode);
+    if (auto plannedWorkers =
+            getPlannedStencilWorkerCount(edtOp, workers))
+      workers = std::max(workers, *plannedWorkers);
     ARTS_INFO("Parallel EDT writes DB consumed outside internode EDT flow - "
               "keeping intranode with "
               << workers << " workers");
@@ -239,6 +307,11 @@ void ConcurrencyPass::applyEdtParallelismStrategy(EdtOp edtOp) {
       runtimeConfig->hasValidNodeCount() ? runtimeConfig->getNodeCount() : 0;
   int workerThreads = static_cast<int>(machineDecision.workersPerNode);
   numWorkers = static_cast<int>(machineDecision.totalWorkers);
+  if (auto plannedWorkers = getPlannedStencilWorkerCount(
+          edtOp, std::max<int64_t>(1, machineDecision.workersPerNode))) {
+    numWorkers =
+        static_cast<int>(std::max<int64_t>(numWorkers, *plannedWorkers));
+  }
   concurrencyType = machineDecision.concurrency;
 
   if (concurrencyType == EdtConcurrency::internode) {

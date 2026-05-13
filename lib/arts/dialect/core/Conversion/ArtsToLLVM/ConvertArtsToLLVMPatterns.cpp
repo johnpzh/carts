@@ -28,6 +28,8 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetVector.h"
 
+#include <limits>
+
 #include "arts/utils/Debug.h"
 #include "llvm/ADT/Statistic.h"
 ARTS_DEBUG_SETUP(convert_arts_to_llvm);
@@ -441,6 +443,8 @@ struct DbAllocPattern : public ArtsToLLVMPattern<DbAllocOp> {
     DbLoweringInfo dbLowering = DbUtils::extractDbLoweringInfo(op);
     auto &dbSizes = dbLowering.sizes;
     bool isSingleElement = dbLowering.isSingleElement;
+    DbMemoryPlacement dbMemoryPlacement = getDbMemoryPlacement(
+        op, dbSizes, isSingleElement, distributedOwnership);
 
     if (distributedOwnership) {
       if (failed(lowerDistributedRuntimeDbAlloc(
@@ -464,7 +468,8 @@ struct DbAllocPattern : public ArtsToLLVMPattern<DbAllocOp> {
       dbMemref = AC->create<memref::AllocOp>(loc, payloadPtrType,
                                              ValueRange{totalElems});
       createSingleDb(dbMemref, guidMemref, route, totalDbSize,
-                     nextId ? &nextId : nullptr, loc, distributedOwnership);
+                     nextId ? &nextId : nullptr, loc, distributedOwnership,
+                     /*createDb=*/true, DbMemoryPlacement::Default);
     } else {
       ARTS_DEBUG("Creating multi-dim DB");
       /// Compute total number of elements
@@ -479,7 +484,8 @@ struct DbAllocPattern : public ArtsToLLVMPattern<DbAllocOp> {
       dbMemref = AC->create<memref::AllocOp>(loc, payloadPtrType,
                                              ValueRange{totalElems});
       createMultiDbs(dbMemref, guidMemref, dbSizes, route, totalDbSize,
-                     nextId ? &nextId : nullptr, loc, distributedOwnership);
+                     nextId ? &nextId : nullptr, loc, distributedOwnership,
+                     /*createDb=*/true, dbMemoryPlacement);
     }
 
     rewriter.replaceOp(op, {guidMemref, dbMemref});
@@ -488,6 +494,8 @@ struct DbAllocPattern : public ArtsToLLVMPattern<DbAllocOp> {
   }
 
 private:
+  enum class DbMemoryPlacement { Default, Interleaved };
+
   memref::GlobalOp getOrCreateMemrefGlobal(StringRef symbolName,
                                            MemRefType type,
                                            Location loc) const {
@@ -853,7 +861,7 @@ private:
           AC->setInsertionPointToStart(&localGuidIf.getThenRegion().front());
           createDbFromGuidAtIndex(workerPtrBuffer, reservedGuid, linearIndex,
                                   workerTotalDbSize, callbackNextId,
-                                  op.getLoc());
+                                  op.getLoc(), DbMemoryPlacement::Default);
           AC->setInsertionPointAfter(localGuidIf);
           AC->setInsertionPointAfter(workerLoop);
           AC->setInsertionPointAfter(primaryWorkerIf);
@@ -884,7 +892,8 @@ private:
 
   void createDbFromGuidAtIndex(Value dbMemref, Value guid, Value linearIndex,
                                Value elementSize, std::optional<int64_t> nextId,
-                               Location loc) const {
+                               Location loc,
+                               DbMemoryPlacement memoryPlacement) const {
     Value elemSize64 = AC->ensureI64(elementSize, loc);
 
     /// Build arts_hint_t with arts_id if available.
@@ -905,8 +914,11 @@ private:
         AC->create<polygeist::Pointer2MemrefOp>(loc, AC->VoidPtr, nullPtr);
 
     ArtsCodegen::RuntimeCallBuilder RCB(*AC, loc);
-    auto dbCall = RCB.callOp(types::ARTSRTL_arts_db_create_with_guid,
-                             {guid, elemSize64, dbType, nullData, hintMemref});
+    auto runtimeFn = types::ARTSRTL_arts_db_create_with_guid;
+    if (memoryPlacement == DbMemoryPlacement::Interleaved)
+      runtimeFn = types::ARTSRTL_arts_db_create_with_guid_interleaved;
+    auto dbCall =
+        RCB.callOp(runtimeFn, {guid, elemSize64, dbType, nullData, hintMemref});
 
     AC->create<memref::StoreOp>(loc, dbCall.getResult(0), dbMemref,
                                 ValueRange{linearIndex});
@@ -916,7 +928,9 @@ private:
       Value dbMemref, Value guidMemref, Value route, Value elementSize,
       std::optional<int64_t> *nextId, Location loc,
       bool distributedOwnership = false, bool createDb = true,
-      ArrayRef<Value> sizes = {}, ArrayRef<Value> indices = {},
+      DbMemoryPlacement memoryPlacement = DbMemoryPlacement::Default,
+      ArrayRef<Value> sizes = {},
+      ArrayRef<Value> indices = {},
       std::optional<Value> linearIndexOverride = std::nullopt) const {
     Value linearIndex;
     if (linearIndexOverride.has_value()) {
@@ -956,7 +970,7 @@ private:
         }
       }
       createDbFromGuidAtIndex(dbMemref, guid, linearIndex, elementSize, baseId,
-                              loc);
+                              loc, memoryPlacement);
     }
   }
 
@@ -964,7 +978,9 @@ private:
                       Value route, Value elementSize,
                       std::optional<int64_t> *nextId, Location loc,
                       bool distributedOwnership = false,
-                      bool createDb = true) const {
+                      bool createDb = true,
+                      DbMemoryPlacement memoryPlacement =
+                          DbMemoryPlacement::Default) const {
     Value totalElems = AC->computeTotalElements(sizes, loc);
     /// Keep DB creation always linearized here. The dedicated GuidRangCallOpt
     /// pass handles reserve->reserve_range promotion centrally after
@@ -976,9 +992,115 @@ private:
     AC->setInsertionPointToStart(&loopBlock);
     Value linearIndex = linearLoop.getInductionVar();
     createSingleDb(dbMemref, guidMemref, route, elementSize, nextId, loc,
-                   distributedOwnership, createDb, /*sizes=*/{},
+                   distributedOwnership, createDb, memoryPlacement, /*sizes=*/{},
                    /*indices=*/{}, /*linearIndexOverride=*/linearIndex);
     AC->setInsertionPointAfter(linearLoop);
+  }
+
+  DbMemoryPlacement getDbMemoryPlacement(DbAllocOp op, ArrayRef<Value> dbSizes,
+                                         bool isSingleElement,
+                                         bool distributedOwnership) const {
+    if (distributedOwnership || isSingleElement)
+      return DbMemoryPlacement::Default;
+
+    auto depPattern = getDepPattern(op.getOperation());
+    bool hasBlockPlan = static_cast<bool>(
+        getPlanPhysicalBlockShapeAttr(op.getOperation()));
+    if (auto contract = getLoweringContract(op.getPtr())) {
+      if (!depPattern && contract->pattern.depPattern)
+        depPattern = contract->pattern.depPattern;
+      hasBlockPlan = hasBlockPlan || !contract->spatial.blockShape.empty() ||
+                     !contract->spatial.staticBlockShape.empty();
+    }
+
+    if (depPattern && isUniformFamilyDepPattern(*depPattern) &&
+        hasMultipleRuntimeDbs(dbSizes)) {
+      if (isLargeUniformRuntimeDbAllocation(op, dbSizes))
+        return DbMemoryPlacement::Interleaved;
+    }
+
+    if (!depPattern || !isStencilHaloDepPattern(*depPattern))
+      return DbMemoryPlacement::Default;
+
+    if (!hasBlockPlan)
+      return DbMemoryPlacement::Default;
+
+    return hasMultipleRuntimeDbs(dbSizes) ? DbMemoryPlacement::Interleaved
+                                          : DbMemoryPlacement::Default;
+  }
+
+  static constexpr int64_t kLargeUniformInterleaveBytes =
+      16LL * 1024LL * 1024LL;
+
+  static bool isLargeUniformRuntimeDbAllocation(DbAllocOp op,
+                                                ArrayRef<Value> dbSizes) {
+    std::optional<int64_t> payloadBytes = getStaticPayloadBytes(op);
+    if (!payloadBytes)
+      return false;
+    if (*payloadBytes >= kLargeUniformInterleaveBytes)
+      return true;
+
+    std::optional<int64_t> runtimeDbCount = getStaticRuntimeDbCount(dbSizes);
+    if (!runtimeDbCount || *runtimeDbCount <= 1)
+      return false;
+    if (*payloadBytes >
+        std::numeric_limits<int64_t>::max() / *runtimeDbCount)
+      return true;
+    return *payloadBytes * *runtimeDbCount >= kLargeUniformInterleaveBytes;
+  }
+
+  static std::optional<int64_t> getStaticElementTypeBytes(Type type) {
+    if (auto intTy = dyn_cast<IntegerType>(type))
+      return std::max<int64_t>(1, (intTy.getWidth() + 7) / 8);
+    if (auto floatTy = dyn_cast<FloatType>(type))
+      return std::max<int64_t>(1, (floatTy.getWidth() + 7) / 8);
+    if (isa<IndexType>(type))
+      return int64_t{8};
+    if (isa<LLVM::LLVMPointerType>(type))
+      return int64_t{8};
+    return std::nullopt;
+  }
+
+  static std::optional<int64_t> getStaticPayloadBytes(DbAllocOp op) {
+    std::optional<int64_t> elemBytes =
+        getStaticElementTypeBytes(op.getElementType());
+    if (!elemBytes)
+      return std::nullopt;
+
+    int64_t payloadBytes = *elemBytes;
+    for (Value dimValue : op.getElementSizes()) {
+      std::optional<int64_t> dim = getConstantIntValue(dimValue);
+      if (!dim || *dim <= 0)
+        return std::nullopt;
+      if (payloadBytes >
+          std::numeric_limits<int64_t>::max() / std::max<int64_t>(1, *dim))
+        return std::nullopt;
+      payloadBytes *= *dim;
+    }
+    return payloadBytes;
+  }
+
+  static bool hasMultipleRuntimeDbs(ArrayRef<Value> dbSizes) {
+    std::optional<int64_t> staticBlockCount = getStaticRuntimeDbCount(dbSizes);
+    if (!staticBlockCount)
+      return true;
+    return *staticBlockCount > 1;
+  }
+
+  static std::optional<int64_t> getStaticRuntimeDbCount(
+      ArrayRef<Value> dbSizes) {
+    int64_t staticBlockCount = 1;
+    for (Value size : dbSizes) {
+      std::optional<int64_t> constant = getConstantIntValue(size);
+      if (!constant)
+        return std::nullopt;
+      int64_t dim = *constant > 1 ? *constant : 1;
+      if (staticBlockCount >
+          std::numeric_limits<int64_t>::max() / std::max<int64_t>(1, dim))
+        return std::nullopt;
+      staticBlockCount *= dim;
+    }
+    return staticBlockCount;
   }
 };
 

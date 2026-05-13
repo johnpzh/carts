@@ -34,6 +34,8 @@
 #include "arts/dialect/core/Transforms/edt/EdtParallelSplitLowering.h"
 #include "arts/dialect/core/Transforms/edt/EdtReductionLowering.h"
 #include "arts/dialect/core/Transforms/edt/EdtRewriter.h"
+#include "arts/dialect/core/Transforms/edt/EdtTaskBodyCloning.h"
+#include "arts/dialect/core/Transforms/edt/EdtTaskLoopCanonicalization.h"
 #include "arts/dialect/core/Transforms/edt/EdtTaskLoopLowering.h"
 #include "arts/dialect/core/Transforms/edt/WorkDistributionUtils.h"
 #include "arts/passes/Passes.h"
@@ -45,8 +47,6 @@
 #include "arts/utils/PartitionPredicates.h"
 #include "arts/utils/StencilAttributes.h"
 #include "arts/utils/Utils.h"
-#include "mlir/Pass/Pass.h"
-
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -219,6 +219,14 @@ static bool hasOwnerMismatchedWriteDep(ForOp forOp, EdtOp parallelEdt) {
     if (effectiveMode != ArtsMode::out && effectiveMode != ArtsMode::inout)
       continue;
 
+    auto sourceAlloc = dyn_cast_or_null<DbAllocOp>(
+        DbUtils::getUnderlyingDbAlloc(parentAcqOp.getSourcePtr()));
+    if (!sourceAlloc)
+      continue;
+    auto sourcePartitionMode = sourceAlloc.getPartitionMode();
+    if (!sourcePartitionMode || !usesBlockLayout(*sourcePartitionMode))
+      continue;
+
     std::optional<LoweringContractInfo> contract =
         resolveAcquireContract(parentAcqOp);
     if (!contract || contract->spatial.ownerDims.empty())
@@ -227,6 +235,13 @@ static bool hasOwnerMismatchedWriteDep(ForOp forOp, EdtOp parallelEdt) {
     int64_t rawOwnerDim = contract->spatial.ownerDims.front();
     if (rawOwnerDim < 0)
       continue;
+    if (static_cast<unsigned>(rawOwnerDim) >=
+        sourceAlloc.getElementSizes().size())
+      continue;
+    if (auto ownerExtent = ValueAnalysis::tryFoldConstantIndex(
+            sourceAlloc.getElementSizes()[static_cast<unsigned>(rawOwnerDim)]))
+      if (*ownerExtent <= 1)
+        continue;
 
     if (!writeOwnerAccessesTrackLoopIv(
             parallelArg, forOp, static_cast<unsigned>(rawOwnerDim)))
@@ -234,6 +249,26 @@ static bool hasOwnerMismatchedWriteDep(ForOp forOp, EdtOp parallelEdt) {
   }
 
   return false;
+}
+
+static bool ownerDimsContain(ArrayRef<int64_t> ownerDims, unsigned dim) {
+  for (int64_t ownerDim : ownerDims)
+    if (ownerDim >= 0 && static_cast<unsigned>(ownerDim) == dim)
+      return true;
+  return false;
+}
+
+static SmallVector<int64_t, 4> getLoopOwnerDimsFromContractOrPlan(
+    Operation *op, const std::optional<LoweringContractInfo> &contract) {
+  SmallVector<int64_t, 4> ownerDims;
+  if (contract && !contract->spatial.ownerDims.empty()) {
+    ownerDims.assign(contract->spatial.ownerDims.begin(),
+                     contract->spatial.ownerDims.end());
+    return ownerDims;
+  }
+  if (auto planOwnerDims = readI64ArrayAttr(getPlanOwnerDimsAttr(op)))
+    ownerDims.assign(planOwnerDims->begin(), planOwnerDims->end());
+  return ownerDims;
 }
 
 static bool shouldShareCoarseInPlaceDb(ForOp forOp, EdtOp parallelEdt,
@@ -371,6 +406,7 @@ public:
     useAlignedLowerBound = chunkPlan.useAlignedLowerBound;
     useRuntimeBlockAlignment = chunkPlan.useRuntimeBlockAlignment;
     alignmentBlockSize = chunkPlan.alignmentBlockSize;
+    runtimeAlignmentBlockSize = chunkPlan.runtimeAlignmentBlockSize;
   }
 
   /// Attributes
@@ -384,6 +420,7 @@ public:
   bool useAlignedLowerBound = false;
   bool useRuntimeBlockAlignment = false;
   std::optional<int64_t> alignmentBlockSize;
+  Value runtimeAlignmentBlockSize;
   /// Distribution information
   Value blockSize, totalWorkers, totalIterations, totalChunks;
   LoweringContractInfo distributionContract;
@@ -487,192 +524,6 @@ static SmallVector<EdtOp, 4> collectOrchestratedWaveGroup(EdtOp seed) {
     return lhsIndex < rhsIndex;
   });
   return groupedEdts;
-}
-
-/// Collect external values needed by operations in a block (including nested
-/// regions).
-static void collectExternalValues(Block &sourceBlock, Region *boundaryRegion,
-                                  SetVector<Value> &externalValues,
-                                  const DenseSet<Operation *> &opsToSkip) {
-  Region *sourceRegion = sourceBlock.getParent();
-
-  for (Operation &op : sourceBlock.without_terminator()) {
-    if (opsToSkip.contains(&op))
-      continue;
-
-    op.walk([&](Operation *nestedOp) {
-      for (Value operand : nestedOp->getOperands()) {
-        if (auto blockArg = dyn_cast<BlockArgument>(operand)) {
-          Region *ownerRegion = blockArg.getOwner()->getParent();
-          if (sourceRegion->isAncestor(ownerRegion))
-            continue;
-          if (boundaryRegion->isAncestor(ownerRegion))
-            continue;
-        }
-        if (Operation *defOp = operand.getDefiningOp()) {
-          if (sourceRegion->isAncestor(defOp->getParentRegion()))
-            continue;
-          if (!boundaryRegion->isAncestor(defOp->getParentRegion()))
-            externalValues.insert(operand);
-        }
-      }
-    });
-  }
-}
-
-/// Clone external stack allocations into the EDT region and remap uses.
-static void cloneExternalAllocasIntoEdt(Region *taskEdtRegion, Block &taskBlock,
-                                        IRMapping &mapper, OpBuilder &builder) {
-  DenseMap<Operation *, SmallVector<Operation *, 4>> usesByAlloca;
-  DenseMap<Operation *, unsigned> operationOrder;
-
-  taskBlock.walk([&](Operation *op) {
-    for (Value operand : op->getOperands()) {
-      auto allocaOp = operand.getDefiningOp<memref::AllocaOp>();
-      if (!allocaOp)
-        continue;
-      if (taskEdtRegion->isAncestor(allocaOp->getParentRegion()))
-        continue;
-      usesByAlloca[allocaOp.getOperation()].push_back(op);
-    }
-  });
-
-  if (usesByAlloca.empty())
-    return;
-
-  if (func::FuncOp parentFunc =
-          taskEdtRegion->getParentOfType<func::FuncOp>()) {
-    unsigned ordinal = 0;
-    parentFunc.walk([&](Operation *op) { operationOrder[op] = ordinal++; });
-  }
-
-  auto sortStoresWithOrder = [&](MutableArrayRef<memref::StoreOp> stores) {
-    std::stable_sort(stores.begin(), stores.end(),
-                     [&](memref::StoreOp lhs, memref::StoreOp rhs) {
-                       Operation *lhsOp = lhs.getOperation();
-                       Operation *rhsOp = rhs.getOperation();
-                       if (lhsOp == rhsOp)
-                         return false;
-                       if (lhsOp->getBlock() == rhsOp->getBlock())
-                         return lhsOp->isBeforeInBlock(rhsOp);
-                       auto lhsIt = operationOrder.find(lhsOp);
-                       auto rhsIt = operationOrder.find(rhsOp);
-                       if (lhsIt != operationOrder.end() &&
-                           rhsIt != operationOrder.end())
-                         return lhsIt->second < rhsIt->second;
-                       return lhsOp < rhsOp;
-                     });
-  };
-
-  ARTS_DEBUG("  - Cloning " << usesByAlloca.size()
-                            << " external stack allocas into EDT");
-
-  OpBuilder::InsertionGuard guard(builder);
-  builder.setInsertionPointToStart(&taskBlock);
-
-  for (const auto &entry : usesByAlloca) {
-    auto allocaOp = cast<memref::AllocaOp>(entry.first);
-    Value originalMem = allocaOp.getResult();
-
-    bool hasStoreInEdt = false;
-    for (Operation *user : entry.second) {
-      if (auto store = dyn_cast<memref::StoreOp>(user)) {
-        if (store.getMemRef() == originalMem) {
-          hasStoreInEdt = true;
-          break;
-        }
-      }
-    }
-
-    bool hasStoreOutsideEdt = false;
-    for (Operation *user : allocaOp->getUsers()) {
-      if (auto store = dyn_cast<memref::StoreOp>(user)) {
-        if (store.getMemRef() != originalMem)
-          continue;
-        if (!taskEdtRegion->isAncestor(store->getParentRegion())) {
-          hasStoreOutsideEdt = true;
-          break;
-        }
-      }
-    }
-
-    /// If the alloca is initialized outside and only read inside the EDT,
-    /// keep the original alloca to preserve initialized values.
-    Region *allocaRegion = allocaOp->getParentRegion();
-    bool allocaVisible =
-        allocaRegion && allocaRegion->isAncestor(taskEdtRegion);
-
-    /// Clone safe initialization stores for this alloca when available.
-    SmallVector<memref::StoreOp, 4> initStores;
-    bool hasUnsafeStore = false;
-    for (Operation *user : allocaOp->getUsers()) {
-      if (auto store = dyn_cast<memref::StoreOp>(user)) {
-        if (store.getMemRef() != originalMem)
-          continue;
-        if (!EdtUtils::canCloneAllocaInitStore(store, originalMem)) {
-          hasUnsafeStore = true;
-          break;
-        }
-        initStores.push_back(store);
-      }
-    }
-    sortStoresWithOrder(initStores);
-
-    if (hasStoreOutsideEdt && !hasStoreInEdt && allocaVisible &&
-        (hasUnsafeStore || initStores.empty())) {
-      continue;
-    }
-
-    Operation *clonedOp = builder.clone(*allocaOp.getOperation(), mapper);
-    auto newAlloca = cast<memref::AllocaOp>(clonedOp);
-    Value clonedMem = newAlloca.getResult();
-
-    for (Operation *user : entry.second)
-      user->replaceUsesOfWith(originalMem, clonedMem);
-
-    mapper.map(originalMem, clonedMem);
-
-    if (!hasUnsafeStore && !initStores.empty()) {
-      IRMapping storeMapper(mapper);
-      storeMapper.map(allocaOp.getResult(), newAlloca.getResult());
-      Operation *insertBefore = newAlloca->getNextNode();
-      func::FuncOp parentFunc = taskEdtRegion->getParentOfType<func::FuncOp>();
-      std::optional<DominanceInfo> domInfo;
-      if (insertBefore && parentFunc)
-        domInfo.emplace(parentFunc);
-
-      builder.setInsertionPointAfter(newAlloca);
-      for (memref::StoreOp store : initStores) {
-        IRMapping thisStoreMapper(storeMapper);
-        bool canCloneStore = true;
-        if (insertBefore && domInfo) {
-          for (Value operand : store->getOperands()) {
-            if (operand == originalMem)
-              continue;
-            Value mapped = thisStoreMapper.lookupOrDefault(operand);
-            if (!mapped) {
-              canCloneStore = false;
-              break;
-            }
-            if (domInfo->properlyDominates(mapped, insertBefore) ||
-                domInfo->dominates(mapped, insertBefore))
-              continue;
-            Value rematerialized = ValueAnalysis::traceValueToDominating(
-                mapped, insertBefore, builder, *domInfo, store.getLoc());
-            if (!rematerialized) {
-              canCloneStore = false;
-              break;
-            }
-            thisStoreMapper.map(operand, rematerialized);
-          }
-        }
-        if (!canCloneStore)
-          continue;
-        builder.clone(*store.getOperation(), thisStoreMapper);
-      }
-      builder.setInsertionPointToStart(&taskBlock);
-    }
-  }
 }
 
 /// Count memrefs in the loop body that have both reads and writes,
@@ -1433,6 +1284,7 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
                                       loopInfo.totalIterations,
                                       loopInfo.totalChunks,
                                       loopInfo.alignmentBlockSize,
+                                      loopInfo.runtimeAlignmentBlockSize,
                                       loopInfo.useRuntimeBlockAlignment,
                                       loopInfo.useAlignedLowerBound};
 
@@ -1545,6 +1397,17 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
     bool preservePlannedBlockRead = effectiveTaskMode == ArtsMode::in &&
                                     parentUsesBlockLayout &&
                                     hasSdePhysicalLayoutPlan;
+    std::optional<unsigned> accessMappedDim =
+        inferAcquireMappedDim(&AM->getDbAnalysis(), parentAcqOp, forOp);
+    std::optional<LoweringContractInfo> loopSemanticContract =
+        getSemanticContract(forOp.getOperation());
+    SmallVector<int64_t, 4> loopOwnerDims =
+        getLoopOwnerDimsFromContractOrPlan(forOp.getOperation(),
+                                           loopSemanticContract);
+    bool readOnlyOwnerMismatchedDep =
+        effectiveTaskMode == ArtsMode::in && preservePlannedBlockRead &&
+        accessMappedDim && !loopOwnerDims.empty() &&
+        !ownerDimsContain(loopOwnerDims, *accessMappedDim);
     bool forceCoarseReadOnlyDep =
         effectiveTaskMode == ArtsMode::in && !preservePlannedBlockRead &&
         !acquireHasAccessDependingOnLoopIv(parentAcqOp, forOp);
@@ -1566,6 +1429,48 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
     DbAcquireOp chunkAcqOp;
     bool chunkUsesStencilHalo = false;
 
+    if (readOnlyOwnerMismatchedDep) {
+      /// This loop's owner IV indexes a non-owner dimension of the read-only
+      /// DB. The task writes are owner-local through another dependency, but
+      /// this input must remain the full parent read window because the backing
+      /// DB is physically partitioned along a different dimension.
+      chunkAcqOp = AC->create<DbAcquireOp>(
+          loc, ArtsMode::in, rootGuidValue, rootPtrValue,
+          parentAcqOp.getPtr().getType(),
+          parentAcqOp.getPartitionMode().value_or(PartitionMode::coarse),
+          SmallVector<Value>(parentAcqOp.getIndices().begin(),
+                             parentAcqOp.getIndices().end()),
+          SmallVector<Value>(parentAcqOp.getOffsets().begin(),
+                             parentAcqOp.getOffsets().end()),
+          SmallVector<Value>(parentAcqOp.getSizes().begin(),
+                             parentAcqOp.getSizes().end()),
+          SmallVector<Value>(parentAcqOp.getPartitionIndices().begin(),
+                             parentAcqOp.getPartitionIndices().end()),
+          SmallVector<Value>(parentAcqOp.getPartitionOffsets().begin(),
+                             parentAcqOp.getPartitionOffsets().end()),
+          SmallVector<Value>(parentAcqOp.getPartitionSizes().begin(),
+                             parentAcqOp.getPartitionSizes().end()),
+          parentAcqOp.getBoundsValid(),
+          SmallVector<Value>(parentAcqOp.getElementOffsets().begin(),
+                             parentAcqOp.getElementOffsets().end()),
+          SmallVector<Value>(parentAcqOp.getElementSizes().begin(),
+                             parentAcqOp.getElementSizes().end()));
+      transferContract(parentAcqOp.getOperation(), chunkAcqOp.getOperation(),
+                       parentAcqOp.getPtr(), chunkAcqOp.getPtr(),
+                       AC->getBuilder(), loc);
+      chunkAcqOp.copyPartitionSegmentsFrom(parentAcqOp);
+      if (parentAcqOp.getPreserveAccessMode())
+        chunkAcqOp.setPreserveAccessMode();
+      chunkAcqOp.setPreserveDepEdge();
+
+      Value acquirePtr = chunkAcqOp.getResult(1);
+      taskDeps.push_back(acquirePtr);
+      parallelArgToAcquire.push_back({parallelArg, acquirePtr});
+      ARTS_DEBUG("    - Preserved full read window for owner-mismatched dep "
+                 << idx);
+      continue;
+    }
+
     std::optional<EdtDistributionPattern> distributionPattern =
         loopInfo.distributionContract.getEffectiveDistributionPattern();
 
@@ -1575,10 +1480,10 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
     if (auto acquireContract = resolveAcquireContract(parentAcqOp))
       contract = *acquireContract;
     if (!forceCoarseReadOnlyDep)
-      if (auto loopContract = getSemanticContract(forOp.getOperation()))
-        combineContracts(contract, *loopContract);
+      if (loopSemanticContract)
+        combineContracts(contract, *loopSemanticContract);
 
-    std::optional<unsigned> inferredMappedDim;
+    std::optional<unsigned> inferredMappedDim = accessMappedDim;
     /// Plan-driven path: use plan ownerDims when present.
     if (!forceCoarseReadOnlyDep && contract.spatial.ownerDims.empty()) {
       if (auto planOwnerDims =
@@ -1590,10 +1495,9 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
     }
     /// Fallback: infer from DB analysis.
     if (!forceCoarseReadOnlyDep && contract.spatial.ownerDims.empty())
-      if (auto mappedDim =
-              inferAcquireMappedDim(&AM->getDbAnalysis(), parentAcqOp, forOp)) {
-        contract.spatial.ownerDims.push_back(static_cast<int64_t>(*mappedDim));
-        inferredMappedDim = *mappedDim;
+      if (inferredMappedDim) {
+        contract.spatial.ownerDims.push_back(
+            static_cast<int64_t>(*inferredMappedDim));
       }
 
     std::optional<unsigned> ownerDimForHalo;
@@ -1897,11 +1801,15 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
                                           loweredLoop.innerStripeLane,
                                           loweredLoop.innerStripeCount};
     taskLoopLowering->postCloneAdjust(postCloneInput);
+    Operation *loopAnchor = iterLoop.getOperation();
 
     cloneExternalAllocasIntoEdt(directRegion, directBlock, directMapper,
                                 AC->getBuilder());
+    if (Operation *sunkLoop = sinkTaskLoopToContiguousInnerDim(
+            iterLoop, globalIdx, loopInfo.strategy.kind))
+      loopAnchor = sunkLoop;
 
-    AC->setInsertionPointAfter(iterLoop);
+    AC->setInsertionPointAfter(loopAnchor);
     for (Value dep : taskDeps)
       AC->create<DbReleaseOp>(loc, dep);
 
@@ -1935,6 +1843,9 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
   }
   auto taskEdt = AC->create<EdtOp>(loc, EdtType::task, taskConcurrency,
                                    routeValue, ValueRange{});
+  if (taskConcurrency == EdtConcurrency::intranode)
+    taskEdt->setAttr(AttrNames::Operation::ReadyLocalLaunch,
+                     AC->getBuilder().getUnitAttr());
   ++numTaskEdtsCreated;
   transferOperationContract(forOp.getOperation(), taskEdt.getOperation());
   copyPlanAttrs(forOp.getOperation(), taskEdt.getOperation());
@@ -2160,6 +2071,9 @@ EdtOp ForLoweringPass::createTaskEdtWithRewiring(
   /// Ensure stack allocations used inside the EDT are cloned locally.
   cloneExternalAllocasIntoEdt(taskEdtRegion, taskBlock, redMapper,
                               AC->getBuilder());
+  if (reductionVarIndex.empty())
+    sinkTaskLoopToContiguousInnerDim(iterLoop, globalIdx,
+                                     loopInfo.strategy.kind);
 
   if (!reductionVarIndex.empty()) {
     auto scalarIndices = [&](Value memref) {

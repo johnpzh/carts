@@ -169,6 +169,10 @@ public:
   /// Check if an ArtsMode is a writer mode (out or inout).
   static bool isWriterMode(ArtsMode mode);
 
+  /// Return true for DB pointer wrappers whose element payload is i1. These
+  /// are compiler control-token DBs, not user data.
+  static bool isI1DbPtrType(Type type);
+
   /// Convert ArtsMode (in/out/inout) to DbMode (read/write).
   /// ArtsMode::in maps to DbMode::read; out and inout map to DbMode::write.
   static DbMode convertArtsModeToDbMode(ArtsMode mode);
@@ -259,6 +263,14 @@ public:
   static bool collectCleanupOnlyUseChain(Value source,
                                          llvm::SetVector<Operation *> &ops,
                                          Region *scope = nullptr);
+
+  /// Return true when an i1 control-token DB is only consumed by cleanup
+  /// plumbing and stores of literal true. Collected operations can be erased
+  /// after removing the owning EDT dependency slot.
+  static bool
+  collectTrueOnlyControlTokenUseChain(Value source,
+                                      llvm::SetVector<Operation *> &ops,
+                                      Region *scope = nullptr);
 
   ///===----------------------------------------------------------------------===///
   /// Element-to-Block Space Slice Conversion

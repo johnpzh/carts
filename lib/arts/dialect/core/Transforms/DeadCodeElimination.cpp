@@ -127,16 +127,6 @@ struct DeadCodeEliminationPass
     return false;
   }
 
-  static bool sameIndexRange(ValueRange lhs, ValueRange rhs) {
-    if (lhs.size() != rhs.size())
-      return false;
-    for (auto [lhsIdx, rhsIdx] : llvm::zip_equal(lhs, rhs)) {
-      if (!ValueAnalysis::sameValue(lhsIdx, rhsIdx))
-        return false;
-    }
-    return true;
-  }
-
   static bool onlyMemoryEffectFreeOpsBetween(Operation *producer,
                                              Operation *consumer) {
     if (!producer || !consumer || producer->getBlock() != consumer->getBlock())
@@ -156,7 +146,8 @@ struct DeadCodeEliminationPass
       return false;
     if (load.getMemref() != store.getMemref())
       return false;
-    if (!sameIndexRange(load.getIndices(), store.getIndices()))
+    if (!ValueAnalysis::areValueRangesEquivalent(load.getIndices(),
+                                                 store.getIndices()))
       return false;
     return onlyMemoryEffectFreeOpsBetween(load.getOperation(),
                                           store.getOperation());

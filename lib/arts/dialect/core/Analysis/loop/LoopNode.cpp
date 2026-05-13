@@ -44,22 +44,6 @@ static Value getWhileInductionVar(scf::WhileOp whileOp) {
   return before.getArgument(0);
 }
 
-static Value getValueFromFoldResult(OpFoldResult ofr) {
-  if (auto value = llvm::dyn_cast<Value>(ofr))
-    return value;
-  return Value();
-}
-
-static std::optional<int64_t> getConstantIndexFromFoldResult(OpFoldResult ofr) {
-  if (auto value = llvm::dyn_cast<Value>(ofr))
-    return ValueAnalysis::tryFoldConstantIndex(value);
-  if (auto attr = llvm::dyn_cast<Attribute>(ofr)) {
-    if (auto intAttr = dyn_cast<IntegerAttr>(attr))
-      return intAttr.getInt();
-  }
-  return std::nullopt;
-}
-
 static Value getPrimaryLoopInductionVar(LoopLikeOpInterface loopLike) {
   if (auto ivs = loopLike.getLoopInductionVars(); ivs && !ivs->empty())
     return ivs->front();
@@ -68,19 +52,19 @@ static Value getPrimaryLoopInductionVar(LoopLikeOpInterface loopLike) {
 
 static Value getPrimaryLoopLowerBound(LoopLikeOpInterface loopLike) {
   if (auto bounds = loopLike.getLoopLowerBounds(); bounds && !bounds->empty())
-    return getValueFromFoldResult(bounds->front());
+    return ValueAnalysis::getValueFromFoldResult(bounds->front());
   return Value();
 }
 
 static Value getPrimaryLoopUpperBound(LoopLikeOpInterface loopLike) {
   if (auto bounds = loopLike.getLoopUpperBounds(); bounds && !bounds->empty())
-    return getValueFromFoldResult(bounds->front());
+    return ValueAnalysis::getValueFromFoldResult(bounds->front());
   return Value();
 }
 
 static Value getPrimaryLoopStep(LoopLikeOpInterface loopLike) {
   if (auto steps = loopLike.getLoopSteps(); steps && !steps->empty())
-    return getValueFromFoldResult(steps->front());
+    return ValueAnalysis::getValueFromFoldResult(steps->front());
   return Value();
 }
 
@@ -90,7 +74,7 @@ getPrimaryLoopBoundConstant(LoopLikeOpInterface loopLike, bool upperBound) {
                            : loopLike.getLoopLowerBounds();
   if (!bounds || bounds->empty())
     return std::nullopt;
-  return getConstantIndexFromFoldResult(bounds->front());
+  return ValueAnalysis::getConstantIndex(bounds->front());
 }
 
 static std::optional<int64_t>
@@ -98,7 +82,7 @@ getPrimaryLoopStepConstant(LoopLikeOpInterface loopLike) {
   auto steps = loopLike.getLoopSteps();
   if (!steps || steps->empty())
     return std::nullopt;
-  return getConstantIndexFromFoldResult(steps->front());
+  return ValueAnalysis::getConstantIndex(steps->front());
 }
 
 static Region *getPrimaryLoopRegion(Operation *loopOp) {
@@ -264,7 +248,7 @@ static bool dependsOnLoopInitImpl(Value value, Value base, unsigned depth) {
                    dyn_cast_or_null<LoopLikeOpInterface>(parentOp)) {
       unsigned idx = blockArg.getArgNumber();
       if (auto lbs = loopLike.getLoopLowerBounds(); lbs && idx < lbs->size()) {
-        if (Value lb = getValueFromFoldResult((*lbs)[idx]))
+        if (Value lb = ValueAnalysis::getValueFromFoldResult((*lbs)[idx]))
           return dependsOnLoopInitImpl(lb, base, depth + 1);
       }
     } else if (auto parallelOp = dyn_cast_or_null<scf::ParallelOp>(parentOp)) {

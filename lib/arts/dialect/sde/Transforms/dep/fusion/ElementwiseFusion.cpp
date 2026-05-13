@@ -28,10 +28,36 @@ using namespace mlir::arts;
 
 namespace {
 
+struct MemrefAccess {
+  Value root;
+  SmallVector<Value, 4> indices;
+};
+
 struct ElementwiseStage {
   sde::SdeSuIterateOp op;
-  SmallVector<Value, 4> writes;
+  Operation *root = nullptr;
+  SmallVector<MemrefAccess, 4> reads;
+  SmallVector<MemrefAccess, 4> writes;
 };
+
+static sde::SdeSuIterateOp getStageSuIterate(Operation *op) {
+  if (auto suIter = dyn_cast_or_null<sde::SdeSuIterateOp>(op))
+    return suIter;
+
+  auto cuRegion = dyn_cast_or_null<sde::SdeCuRegionOp>(op);
+  if (!cuRegion || cuRegion.getKind() != sde::SdeCuKind::parallel ||
+      !cuRegion.getBody().hasOneBlock())
+    return {};
+
+  sde::SdeSuIterateOp nested;
+  for (Operation &inner : cuRegion.getBody().front().without_terminator()) {
+    auto suIter = dyn_cast<sde::SdeSuIterateOp>(inner);
+    if (!suIter || nested)
+      return {};
+    nested = suIter;
+  }
+  return nested;
+}
 
 static bool haveSameIterationSpace(sde::SdeSuIterateOp lhs,
                                    sde::SdeSuIterateOp rhs) {
@@ -76,16 +102,107 @@ static Value getWriteRoot(Value value) {
 static bool hasDisjointWrites(ArrayRef<ElementwiseStage> stages) {
   llvm::DenseSet<Value> writtenTargets;
   for (const ElementwiseStage &stage : stages) {
-    for (Value target : stage.writes) {
-      if (!target || !writtenTargets.insert(target).second)
+    for (const MemrefAccess &write : stage.writes) {
+      if (!write.root || !writtenTargets.insert(write.root).second)
         return false;
     }
   }
   return true;
 }
 
-static bool isElementwiseStage(sde::SdeSuIterateOp op,
-                               ElementwiseStage &stage) {
+static bool hasWriteToRoot(const ElementwiseStage &stage, Value root) {
+  for (const MemrefAccess &write : stage.writes)
+    if (write.root == root)
+      return true;
+  return false;
+}
+
+static bool isCorrespondingStageArg(Value lhs, sde::SdeSuIterateOp lhsStage,
+                                    Value rhs, sde::SdeSuIterateOp rhsStage) {
+  auto lhsArg = dyn_cast<BlockArgument>(lhs);
+  auto rhsArg = dyn_cast<BlockArgument>(rhs);
+  if (!lhsArg || !rhsArg)
+    return false;
+  if (lhsArg.getOwner() != &lhsStage.getBody().front() ||
+      rhsArg.getOwner() != &rhsStage.getBody().front())
+    return false;
+  return lhsArg.getArgNumber() == rhsArg.getArgNumber();
+}
+
+static bool areStageValuesEquivalent(Value lhs, sde::SdeSuIterateOp lhsStage,
+                                     Value rhs, sde::SdeSuIterateOp rhsStage,
+                                     unsigned depth = 0) {
+  if (!lhs || !rhs || depth > 8)
+    return false;
+  lhs = ValueAnalysis::stripNumericCasts(lhs);
+  rhs = ValueAnalysis::stripNumericCasts(rhs);
+  if (ValueAnalysis::sameValue(lhs, rhs))
+    return true;
+  if (isCorrespondingStageArg(lhs, lhsStage, rhs, rhsStage))
+    return true;
+
+  auto lhsConst = ValueAnalysis::tryFoldConstantIndex(lhs);
+  auto rhsConst = ValueAnalysis::tryFoldConstantIndex(rhs);
+  if (lhsConst || rhsConst)
+    return lhsConst && rhsConst && *lhsConst == *rhsConst;
+
+  Operation *lhsDef = lhs.getDefiningOp();
+  Operation *rhsDef = rhs.getDefiningOp();
+  if (!lhsDef || !rhsDef || lhsDef->getName() != rhsDef->getName() ||
+      lhsDef->getNumOperands() != rhsDef->getNumOperands())
+    return false;
+
+  for (auto [lhsOperand, rhsOperand] :
+       llvm::zip(lhsDef->getOperands(), rhsDef->getOperands()))
+    if (!areStageValuesEquivalent(lhsOperand, lhsStage, rhsOperand, rhsStage,
+                                  depth + 1))
+      return false;
+  return true;
+}
+
+static bool areStageAccessIndicesEquivalent(ValueRange lhs,
+                                            sde::SdeSuIterateOp lhsStage,
+                                            ValueRange rhs,
+                                            sde::SdeSuIterateOp rhsStage) {
+  if (lhs.size() != rhs.size())
+    return false;
+  for (auto [lhsIndex, rhsIndex] : llvm::zip(lhs, rhs))
+    if (!areStageValuesEquivalent(lhsIndex, lhsStage, rhsIndex, rhsStage))
+      return false;
+  return true;
+}
+
+static bool readMatchesProducerWrite(const MemrefAccess &read,
+                                     const ElementwiseStage &consumer,
+                                     const ElementwiseStage &producer) {
+  for (const MemrefAccess &write : producer.writes) {
+    if (write.root != read.root)
+      continue;
+    if (areStageAccessIndicesEquivalent(read.indices, consumer.op,
+                                        write.indices, producer.op))
+      return true;
+  }
+  return false;
+}
+
+static bool hasUnsafeReadAfterWrite(ArrayRef<ElementwiseStage> stages) {
+  for (unsigned consumerIdx = 1; consumerIdx < stages.size(); ++consumerIdx) {
+    const ElementwiseStage &consumer = stages[consumerIdx];
+    for (const MemrefAccess &read : consumer.reads) {
+      for (unsigned producerIdx = 0; producerIdx < consumerIdx; ++producerIdx) {
+        const ElementwiseStage &producer = stages[producerIdx];
+        if (!hasWriteToRoot(producer, read.root))
+          continue;
+        if (!readMatchesProducerWrite(read, consumer, producer))
+          return true;
+      }
+    }
+  }
+  return false;
+}
+
+static bool isElementwiseStage(Operation *root, ElementwiseStage &stage) {
+  sde::SdeSuIterateOp op = getStageSuIterate(root);
   if (!op || !op.getStructuredClassificationAttr() ||
       *op.getStructuredClassification() !=
           sde::SdeStructuredClassification::elementwise)
@@ -94,7 +211,8 @@ static bool isElementwiseStage(sde::SdeSuIterateOp op,
     return false;
 
   llvm::DenseSet<Value> seenWrites;
-  SmallVector<Value, 4> writes;
+  SmallVector<MemrefAccess, 4> reads;
+  SmallVector<MemrefAccess, 4> writes;
   bool hasDuplicateWrite = false;
 
   // Carrier-authoritative path: extract write-set from carrier DPS outputs.
@@ -107,6 +225,12 @@ static bool isElementwiseStage(sde::SdeSuIterateOp op,
     }
 
   if (carrier) {
+    for (Value input : carrier.getDpsInputs()) {
+      Value target = sde::traceCarrierTensorToMemrefRoot(input);
+      if (!target)
+        return false;
+      reads.push_back(MemrefAccess{target, {}});
+    }
     for (Value output : carrier.getDpsInits()) {
       Value target = sde::traceCarrierTensorToMemrefRoot(output);
       if (!target)
@@ -115,10 +239,17 @@ static bool isElementwiseStage(sde::SdeSuIterateOp op,
         hasDuplicateWrite = true;
         break;
       }
-      writes.push_back(target);
+      writes.push_back(MemrefAccess{target, {}});
     }
   } else {
     // Fallback: walk memref.store ops (dual-rep / stencil path).
+    op.getBody().walk([&](memref::LoadOp loadOp) {
+      Value target = getWriteRoot(loadOp.getMemref());
+      if (!target)
+        return;
+      reads.push_back(
+          MemrefAccess{target, SmallVector<Value, 4>(loadOp.getIndices())});
+    });
     op.getBody().walk([&](memref::StoreOp storeOp) {
       Value target = getWriteRoot(storeOp.getMemref());
       if (!target)
@@ -127,14 +258,15 @@ static bool isElementwiseStage(sde::SdeSuIterateOp op,
         hasDuplicateWrite = true;
         return;
       }
-      writes.push_back(target);
+      writes.push_back(
+          MemrefAccess{target, SmallVector<Value, 4>(storeOp.getIndices())});
     });
   }
 
   if (writes.empty() || hasDuplicateWrite)
     return false;
 
-  stage = {op, std::move(writes)};
+  stage = {op, root, std::move(reads), std::move(writes)};
   return true;
 }
 
@@ -148,7 +280,27 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
 
   sde::SdeSuIterateOp first = stages.front().op;
   Location loc = first.getLoc();
-  rewriter.setInsertionPoint(stages.back().op);
+
+  bool wrappedStages = llvm::all_of(stages, [](ElementwiseStage &stage) {
+    return stage.root != stage.op.getOperation() &&
+           isa<sde::SdeCuRegionOp>(stage.root);
+  });
+
+  Block *insertionBlock = nullptr;
+  if (wrappedStages) {
+    rewriter.setInsertionPoint(stages.back().root);
+    auto outerCuRegion = sde::SdeCuRegionOp::create(
+        rewriter, loc, /*resultTypes=*/TypeRange{},
+        sde::SdeCuKindAttr::get(rewriter.getContext(),
+                                sde::SdeCuKind::parallel),
+        /*concurrency_scope=*/nullptr,
+        /*nowait=*/nullptr,
+        /*iterArgs=*/ValueRange{});
+    insertionBlock = &sde::ensureBlock(outerCuRegion.getBody());
+    rewriter.setInsertionPointToStart(insertionBlock);
+  } else {
+    rewriter.setInsertionPoint(stages.back().root);
+  }
 
   auto fused = sde::SdeSuIterateOp::create(
       rewriter, loc, /*resultTypes=*/TypeRange{}, first.getLowerBounds(),
@@ -211,6 +363,12 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
   // Yield at su_iterate level.
   rewriter.setInsertionPointAfter(innerCuRegion);
   sde::SdeYieldOp::create(rewriter, loc, ValueRange{});
+
+  if (wrappedStages) {
+    rewriter.setInsertionPointToEnd(insertionBlock);
+    sde::SdeYieldOp::create(rewriter, loc, ValueRange{});
+  }
+
   return fused;
 }
 
@@ -233,10 +391,10 @@ struct ElementwiseFusionPass
           continue;
 
         for (auto it = block->begin(), e = block->end(); it != e; ++it) {
-          auto first = dyn_cast<sde::SdeSuIterateOp>(&*it);
           ElementwiseStage firstStage;
-          if (!first || !isElementwiseStage(first, firstStage))
+          if (!isElementwiseStage(&*it, firstStage))
             continue;
+          sde::SdeSuIterateOp first = firstStage.op;
 
           SmallVector<ElementwiseStage, 4> stages;
           stages.push_back(std::move(firstStage));
@@ -244,15 +402,14 @@ struct ElementwiseFusionPass
             if (isSkippableInterStageOp(&*nextIt))
               continue;
 
-            auto next = dyn_cast<sde::SdeSuIterateOp>(&*nextIt);
             ElementwiseStage nextStage;
-            if (!next || !isElementwiseStage(next, nextStage) ||
-                !haveSameIterationSpace(first, next) ||
-                !haveCompatibleSchedule(first, next))
+            if (!isElementwiseStage(&*nextIt, nextStage) ||
+                !haveSameIterationSpace(first, nextStage.op) ||
+                !haveCompatibleSchedule(first, nextStage.op))
               break;
 
             stages.push_back(std::move(nextStage));
-            if (!hasDisjointWrites(stages)) {
+            if (!hasDisjointWrites(stages) || hasUnsafeReadAfterWrite(stages)) {
               stages.pop_back();
               break;
             }
@@ -265,7 +422,7 @@ struct ElementwiseFusionPass
           sde::SdeSuIterateOp fused = fuseStages(stages, rewriter);
           (void)fused;
           for (const ElementwiseStage &stage : stages)
-            rewriter.eraseOp(stage.op);
+            rewriter.eraseOp(stage.root);
           changed = true;
           break;
         }

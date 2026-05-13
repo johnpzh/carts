@@ -387,6 +387,20 @@ bool isAlignedValue(Value value, Value blockSize,
            isAlignedValue(rhs, blockSize, blockSizeConst);
   }
 
+  if (auto sub = value.getDefiningOp<arith::SubIOp>()) {
+    Value lhs = ValueAnalysis::stripClampOne(sub.getLhs());
+    Value rhs = ValueAnalysis::stripClampOne(sub.getRhs());
+    return isAlignedValue(lhs, blockSize, blockSizeConst) &&
+           isAlignedValue(rhs, blockSize, blockSizeConst);
+  }
+
+  if (auto select = value.getDefiningOp<arith::SelectOp>()) {
+    Value trueValue = ValueAnalysis::stripClampOne(select.getTrueValue());
+    Value falseValue = ValueAnalysis::stripClampOne(select.getFalseValue());
+    return isAlignedValue(trueValue, blockSize, blockSizeConst) &&
+           isAlignedValue(falseValue, blockSize, blockSizeConst);
+  }
+
   return false;
 }
 

@@ -30,8 +30,8 @@
 // CHECK: arts.edt <parallel> <intranode>
 // CHECK-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // CHECK-SAME: planOwnerDims = [0]
-// CHECK-SAME: planPhysicalBlockShape = [8, 64]
-// CHECK-SAME: stencil_block_shape = [8]
+// CHECK-SAME: planPhysicalBlockShape = [4, 64]
+// CHECK-SAME: stencil_block_shape = [4]
 // CHECK-SAME: stencil_max_offsets = [1]
 // CHECK-SAME: stencil_min_offsets = [-1]
 

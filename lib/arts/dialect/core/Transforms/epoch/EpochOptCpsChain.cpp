@@ -200,15 +200,6 @@ void promoteAllocsForCPSChain(scf::ForOp forOp,
   }
 }
 
-bool sameValueSequence(ArrayRef<Value> lhs, ArrayRef<Value> rhs) {
-  if (lhs.size() != rhs.size())
-    return false;
-  for (auto [left, right] : llvm::zip(lhs, rhs))
-    if (left != right)
-      return false;
-  return true;
-}
-
 Operation *cloneWithResultMapping(OpBuilder &builder, Operation &op,
                                   IRMapping &mapping);
 
@@ -622,7 +613,8 @@ bool tryCPSChainTransform(scf::ForOp forOp,
 
       SmallVector<Value> updatedLoopBackParams =
           EdtUtils::collectPackedValues(firstContinuation);
-      if (sameValueSequence(loopBackParams, updatedLoopBackParams)) {
+      if (ValueAnalysis::areValueRangesIdentical(loopBackParams,
+                                                 updatedLoopBackParams)) {
         loopBackParamsStabilized = true;
         break;
       }
@@ -998,7 +990,9 @@ bool tryCPSChainTransform(scf::ForOp forOp,
 
     bool preserveOriginalCarryContract = numTimingDbGuids > 0 || scratchAlloc;
     if (preserveOriginalCarryContract) {
-      bool carryChanged = !sameValueSequence(reorderedCarry, loopBackParams) ||
+      bool carryChanged =
+          !ValueAnalysis::areValueRangesIdentical(reorderedCarry,
+                                                  loopBackParams) ||
                           reorderedCarry.size() != loopBackParams.size();
       if (carryChanged) {
         ARTS_INFO("CPS Chain: dep-routed carry changed after re-analysis; "
@@ -1008,7 +1002,8 @@ bool tryCPSChainTransform(scf::ForOp forOp,
         loopBackParams.assign(reorderedCarry.begin(), reorderedCarry.end());
       }
       setDepRoutingAttrForCarry(loopBackParams);
-    } else if (!sameValueSequence(reorderedCarry, loopBackParams)) {
+    } else if (!ValueAnalysis::areValueRangesIdentical(reorderedCarry,
+                                                       loopBackParams)) {
       ARTS_INFO("CPS Chain: carry re-analysis changed order; preserving "
                 << "original kickoff carry contract");
       setDepRoutingAttrForCarry(loopBackParams);

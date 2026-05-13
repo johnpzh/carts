@@ -22,16 +22,6 @@
 namespace mlir {
 namespace arts {
 
-static std::optional<int64_t> getConstantIndexFromFoldResult(OpFoldResult ofr) {
-  if (auto value = llvm::dyn_cast<Value>(ofr))
-    return ValueAnalysis::tryFoldConstantIndex(value);
-  if (auto attr = llvm::dyn_cast<Attribute>(ofr)) {
-    if (auto intAttr = dyn_cast<IntegerAttr>(attr))
-      return intAttr.getInt();
-  }
-  return std::nullopt;
-}
-
 Value getLoopInductionVar(Operation *op) {
   if (!op)
     return Value();
@@ -142,9 +132,9 @@ static std::optional<int64_t> getStaticTripCount(LoopLikeOpInterface loop) {
       upperBounds->size() != 1 || steps->size() != 1)
     return std::nullopt;
 
-  auto lowerBound = getConstantIndexFromFoldResult(lowerBounds->front());
-  auto upperBound = getConstantIndexFromFoldResult(upperBounds->front());
-  auto step = getConstantIndexFromFoldResult(steps->front());
+  auto lowerBound = ValueAnalysis::getConstantIndex(lowerBounds->front());
+  auto upperBound = ValueAnalysis::getConstantIndex(upperBounds->front());
+  auto step = ValueAnalysis::getConstantIndex(steps->front());
   if (!lowerBound || !upperBound || !step || *step <= 0)
     return std::nullopt;
 

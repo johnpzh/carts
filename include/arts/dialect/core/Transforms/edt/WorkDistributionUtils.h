@@ -56,6 +56,7 @@ struct LoopChunkPlan {
   bool useAlignedLowerBound = false;
   bool useRuntimeBlockAlignment = false;
   std::optional<int64_t> alignmentBlockSize;
+  Value runtimeAlignmentBlockSize;
 };
 
 class WorkDistributionUtils {
@@ -76,7 +77,8 @@ public:
       ArtsCodegen *AC, Location loc, const DistributionStrategy &strategy,
       Value workerId, Value insideTotalWorkers, Value workersPerNode,
       Value upperBound, Value lowerBound, Value loopStep, Value blockSize,
-      std::optional<int64_t> alignmentBlockSize, bool useRuntimeBlockAlignment,
+      std::optional<int64_t> alignmentBlockSize,
+      Value runtimeAlignmentBlockSize, bool useRuntimeBlockAlignment,
       const LoweringContractInfo &contract);
 
   static Value computeDbAlignmentBlockSize(ForOp forOp, EdtOp parallelEdt,

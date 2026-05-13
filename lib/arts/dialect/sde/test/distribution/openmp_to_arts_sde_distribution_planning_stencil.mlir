@@ -17,8 +17,8 @@
 // SDE: } {accessMaxOffsets
 // SDE-SAME: depFamily = #arts_sde.dep_family<stencil_tiling_nd>
 // SDE-SAME: iterationTopology = #arts_sde.iteration_topology<owner_strip>
-// SDE-SAME: logicalWorkerSlice = [4, 64]
-// SDE-SAME: physicalBlockShape = [4, 64]
+// SDE-SAME: logicalWorkerSlice = [2, 64]
+// SDE-SAME: physicalBlockShape = [2, 64]
 // SDE-SAME: physicalHaloShape = [1]
 // SDE-SAME: physicalOwnerDims = [0]
 // SDE-NOT: {{plan[A-Z]}}
@@ -29,16 +29,16 @@
 // ARTS: arts.edt <parallel> <internode> route(%{{.*}}) attributes {
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
 // ARTS-SAME: {{.*}}planHaloShape = [1]
-// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [4, 64]
+// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [2, 64]
 // ARTS-SAME: {{.*}}planOwnerDims = [0]
-// ARTS-SAME: {{.*}}planPhysicalBlockShape = [4, 64]
+// ARTS-SAME: {{.*}}planPhysicalBlockShape = [2, 64]
 // ARTS: arts.for(%c1) to(%c63) step(%c1) {
 // ARTS: } {arts.pattern_revision = 1 : i64
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
 // ARTS-SAME: {{.*}}planHaloShape = [1]
-// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [4, 64]
+// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [2, 64]
 // ARTS-SAME: {{.*}}planOwnerDims = [0]
-// ARTS-SAME: {{.*}}planPhysicalBlockShape = [4, 64]
+// ARTS-SAME: {{.*}}planPhysicalBlockShape = [2, 64]
 // ARTS-NOT: arts_sde.
 
 // LOCAL-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //

@@ -125,7 +125,8 @@ normalizeCommonElementSlice(ArtsCodegen *AC, DbAcquireOp acquire,
   auto depOffsets = acquire.getOffsets();
   auto depSizes = acquire.getSizes();
   auto blockSpans = alloc.getElementSizes();
-  unsigned ownerRank = std::min<unsigned>(depOffsets.size(), depSizes.size());
+  unsigned depRank = std::min<unsigned>(depOffsets.size(), depSizes.size());
+  unsigned ownerRank = depRank;
   unsigned physicalRank = blockSpans.size();
   if (ownerRank == 0 || physicalRank == 0 ||
       elemOffsets.size() != elemSizes.size())
@@ -139,6 +140,9 @@ normalizeCommonElementSlice(ArtsCodegen *AC, DbAcquireOp acquire,
   auto contract = resolveAcquireContract(acquire);
   if (!contract)
     return std::nullopt;
+  if (!contract->spatial.ownerDims.empty())
+    ownerRank =
+        std::min<unsigned>(ownerRank, contract->spatial.ownerDims.size());
   SmallVector<unsigned, 4> ownerDims =
       resolveContractOwnerDims(*contract, ownerRank);
   if (ownerDims.size() != ownerRank)

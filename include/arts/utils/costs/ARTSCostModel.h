@@ -63,7 +63,7 @@ public:
   }
 
   // --- Hardware parameters ---
-  int getVectorWidth() const override { return 4; } // 256-bit SIMD / 64-bit
+  int getVectorWidth() const override { return 2; } // generic x86-64 SSE2 / f64
   int64_t getL2CacheSize() const override { return 262144; } // 256KB
 
   // --- Topology ---

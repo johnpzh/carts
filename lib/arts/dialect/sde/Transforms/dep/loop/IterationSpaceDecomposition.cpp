@@ -67,11 +67,7 @@ static bool yieldsConstantBool(Block &block, bool expected) {
   auto yield = dyn_cast<scf::YieldOp>(block.getTerminator());
   if (!yield || yield.getNumOperands() != 1)
     return false;
-  if (auto constBool = dyn_cast_or_null<arith::ConstantOp>(
-          yield.getOperand(0).getDefiningOp()))
-    if (auto attr = dyn_cast<BoolAttr>(constBool.getValue()))
-      return attr.getValue() == expected;
-  return false;
+  return ValueAnalysis::isConstantBool(yield.getOperand(0), expected);
 }
 
 static bool matchEqConst(Value condition, Value value, int64_t expectedConst) {

@@ -131,6 +131,32 @@ epochHasRepetitionStructure(EpochOp epoch,
   return repetitionAttr.getValue() == repetition;
 }
 
+static bool epochHasFullTimestepStencilPlan(EpochOp epoch) {
+  if (!epochHasRepetitionStructure(
+          epoch, ArtsPlanRepetitionStructure::full_timestep))
+    return false;
+
+  auto pattern = getEffectiveDepPattern(epoch.getOperation());
+  if (!pattern)
+    return false;
+
+  switch (*pattern) {
+  case ArtsDepPattern::stencil:
+  case ArtsDepPattern::stencil_tiling_nd:
+  case ArtsDepPattern::cross_dim_stencil_3d:
+  case ArtsDepPattern::higher_order_stencil:
+    return true;
+  case ArtsDepPattern::unknown:
+  case ArtsDepPattern::uniform:
+  case ArtsDepPattern::matmul:
+  case ArtsDepPattern::triangular:
+  case ArtsDepPattern::wavefront_2d:
+  case ArtsDepPattern::jacobi_alternating_buffers:
+  case ArtsDepPattern::elementwise_pipeline:
+    return false;
+  }
+}
+
 static bool epochCreatesCoordinatorWave(EpochOp epoch) {
   if (!epoch)
     return false;
@@ -273,8 +299,16 @@ static bool shouldAvoidCpsChainForLoop(scf::ForOp forOp,
       allSlotsFullTimestep &&
       (decision.slots.size() > 1 || decision.hasSequentialSidecars) &&
       loopHasHeterogeneousOwnerDims(decision.slots);
+  bool multiSlotFullTimestepStencilLoop =
+      decision.slots.size() > 1 && !decision.hasSequentialSidecars &&
+      llvm::all_of(decision.slots, [](const EpochSlot &slot) {
+        return slotMatches(slot, epochHasFullTimestepStencilPlan);
+      });
 
   if (twoSlotCoordinatorLoopWithSidecars)
+    return true;
+
+  if (multiSlotFullTimestepStencilLoop)
     return true;
 
   // STREAM fix: If the loop has inter-epoch sequential sidecars (e.g., timing

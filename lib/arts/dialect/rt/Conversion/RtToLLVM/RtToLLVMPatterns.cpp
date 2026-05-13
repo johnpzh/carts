@@ -118,7 +118,8 @@ struct RecordDepPattern : public ArtsToLLVMPattern<RecordDepOp> {
     auto edtGuid = op.getEdtGuid();
     auto loc = op.getLoc();
     auto readyLocalSite = resolveReadyLocalLaunchSite(edtGuid);
-    const bool useReadyLocalLaunch = false;
+    const bool useReadyLocalLaunch =
+        readyLocalSite && canUseReadyLocalLaunchSite(*readyLocalSite);
 
     /// Get access mode from attribute
     auto accessMode = op.getAccessMode();
@@ -146,8 +147,7 @@ struct RecordDepPattern : public ArtsToLLVMPattern<RecordDepOp> {
       Value depCount = readyLocalSite->representativeCreate().getDepCount();
       if (depCount.getType() != AC->Int32)
         depCount = AC->castToInt(AC->Int32, depCount, loc);
-      readyLocalDepBuffer = AC->create<LLVM::AllocaOp>(
-          loc, AC->llvmPtr, AC->ArtsEdtDep, depCount);
+      readyLocalDepBuffer = allocateReadyLocalDepBuffer(depCount, loc);
     }
 
     /// Add dependencies for each datablock using shared slot counter
@@ -348,9 +348,28 @@ private:
     Value hintMemref = buildArtsHintMemref(AC, route, artsIdVal, loc);
 
     ArtsCodegen::RuntimeCallBuilder RCB(*AC, loc);
-    return RCB.callOp(types::ARTSRTL_arts_edt_create_ready_local_with_epoch,
-                      {funcPtr, paramc, paramv, depc, depBuffer,
-                       op.getEpochGuid(), hintMemref});
+    func::CallOp launch =
+        RCB.callOp(types::ARTSRTL_arts_edt_create_ready_local_with_epoch,
+                   {funcPtr, paramc, paramv, depc, depBuffer,
+                    op.getEpochGuid(), hintMemref});
+    freeReadyLocalDepBuffer(depBuffer, loc);
+    return launch;
+  }
+
+  Value allocateReadyLocalDepBuffer(Value depCount, Location loc) const {
+    Value depCountSize = AC->castToInt(AC->PtrSize, depCount, loc);
+    Value depElementSize = AC->create<polygeist::TypeSizeOp>(
+        loc, IndexType::get(AC->getContext()), AC->ArtsEdtDep);
+    depElementSize = AC->castToInt(AC->PtrSize, depElementSize, loc);
+
+    ArtsCodegen::RuntimeCallBuilder RCB(*AC, loc);
+    return RCB.call(types::ARTSRTL_arts_calloc,
+                    {depCountSize, depElementSize});
+  }
+
+  void freeReadyLocalDepBuffer(Value depBuffer, Location loc) const {
+    ArtsCodegen::RuntimeCallBuilder RCB(*AC, loc);
+    RCB.callVoid(types::ARTSRTL_arts_free, {depBuffer});
   }
 
   void storeReadyLocalDepEntry(Value depBuffer, Value slotValue,
@@ -1647,6 +1666,13 @@ struct EdtCreatePattern : public ArtsToLLVMPattern<EdtCreateOp> {
 
   LogicalResult matchAndRewrite(EdtCreateOp op,
                                 PatternRewriter &rewriter) const override {
+    if (op->hasAttr(AttrNames::Operation::ReadyLocalLaunch) &&
+        op.getEpochGuid()) {
+      for (Operation *user : op.getGuid().getUsers())
+        if (isa<RecordDepOp>(user))
+          return failure();
+    }
+
     ARTS_INFO("Lowering EdtCreate Op " << op);
     ArtsCodegen::RewriterGuard RG(*AC, rewriter);
     /// Get outlined function name

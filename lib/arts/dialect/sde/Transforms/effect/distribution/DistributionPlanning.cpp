@@ -176,38 +176,42 @@ static bool buildOwnerDimPlan(
   return true;
 }
 
-static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
-                                     sde::SDECostModel &costModel) {
-  if ((op.getPhysicalOwnerDimsAttr() && op.getPhysicalBlockShapeAttr()) ||
-      costModel.getWorkerCount() <= 1)
-    return;
-  if (auto plannedWorkers = getWorkers(op.getOperation());
-      plannedWorkers && *plannedWorkers <= 1)
-    return;
-  if (op.getInPlaceSafe())
-    return;
-  auto classification = op.getStructuredClassification();
-  if (!classification ||
-      *classification != sde::SdeStructuredClassification::stencil)
-    return;
-  if (isInPlaceSelfReadStencil(op))
-    return;
+static bool buildOwnerDimPlan(
+    const sde::LoopIndexedOutputPlan &outputPlan, int64_t workers,
+    SmallVectorImpl<int64_t> &ownerPhysicalDims,
+    SmallVectorImpl<int64_t> &physicalBlockShape) {
+  if (outputPlan.ownerPhysicalDims.empty() || outputPlan.shape.empty())
+    return false;
 
-  std::optional<sde::StructuredOutputLayoutPlan> outputPlan =
-      sde::findCompatibleOutputLayoutPlan(op);
-  if (!outputPlan)
-    return;
+  physicalBlockShape.assign(outputPlan.shape.begin(), outputPlan.shape.end());
+  ownerPhysicalDims.assign(outputPlan.ownerPhysicalDims.begin(),
+                           outputPlan.ownerPhysicalDims.end());
 
-  int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
-  SmallVector<unsigned, 4> ownerLoopDims =
-      chooseMappedSdeOwnerLoopDims(op, *outputPlan);
-  SmallVector<int64_t, 4> ownerDims;
-  SmallVector<int64_t, 4> physicalBlockShape;
-  SmallVector<int64_t, 4> haloShape;
-  if (!buildOwnerDimPlan(op, *outputPlan, ownerLoopDims, workers, ownerDims,
-                         physicalBlockShape, haloShape))
-    return;
+  SmallVector<int64_t, 4> ownerExtents;
+  ownerExtents.reserve(ownerPhysicalDims.size());
+  for (int64_t physicalDim : ownerPhysicalDims) {
+    if (physicalDim < 0 ||
+        static_cast<size_t>(physicalDim) >= outputPlan.shape.size())
+      return false;
+    if (outputPlan.shape[physicalDim] <= 0)
+      return false;
+    ownerExtents.push_back(outputPlan.shape[physicalDim]);
+  }
 
+  SmallVector<int64_t, 4> workerGrid =
+      factorWorkersAcrossDims(std::max<int64_t>(1, workers), ownerExtents);
+  for (auto [idx, physicalDim] : llvm::enumerate(ownerPhysicalDims)) {
+    physicalBlockShape[physicalDim] =
+        ceilDivPositive(outputPlan.shape[physicalDim], workerGrid[idx]);
+  }
+
+  return true;
+}
+
+static void applyPhysicalPlan(sde::SdeSuIterateOp op,
+                              ArrayRef<int64_t> ownerDims,
+                              ArrayRef<int64_t> physicalBlockShape,
+                              ArrayRef<int64_t> haloShape = {}) {
   op.setPhysicalOwnerDimsAttr(buildI64ArrayAttr(op.getContext(), ownerDims));
   op.setPhysicalBlockShapeAttr(
       buildI64ArrayAttr(op.getContext(), physicalBlockShape));
@@ -219,6 +223,84 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
       op.getContext(), ownerDims.size() > 1
                            ? sde::SdeIterationTopology::owner_tile
                            : sde::SdeIterationTopology::owner_strip));
+}
+
+static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
+                                     sde::SDECostModel &costModel) {
+  if ((op.getPhysicalOwnerDimsAttr() && op.getPhysicalBlockShapeAttr()) ||
+      costModel.getWorkerCount() <= 1)
+    return;
+  if (auto plannedWorkers = getWorkers(op.getOperation());
+      plannedWorkers && *plannedWorkers <= 1)
+    return;
+  if (op.getInPlaceSafe())
+    return;
+  auto classification = op.getStructuredClassification();
+  bool isStencil =
+      classification &&
+      *classification == sde::SdeStructuredClassification::stencil;
+  if (classification && !isStencil)
+    return;
+
+  /// First-dimension unclassified loops are owned by the uniform/matmul
+  /// planners below. This fallback is for imperfect local stencil/update
+  /// nests whose owner IV indexes a later physical output dimension.
+  if (!isStencil && sde::findLoopIndexedOutputPlan(op))
+    return;
+
+  if (isStencil) {
+    if (isInPlaceSelfReadStencil(op))
+      return;
+
+    std::optional<sde::StructuredOutputLayoutPlan> outputPlan =
+        sde::findCompatibleOutputLayoutPlan(op);
+    if (outputPlan) {
+      SmallVector<unsigned, 4> ownerLoopDims =
+          chooseMappedSdeOwnerLoopDims(op, *outputPlan);
+      int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+      // One-dimensional halo stencils form a dependency pipeline between
+      // neighboring owner blocks. Planning modestly more owner blocks than
+      // hardware workers gives Core enough ready tasks to keep workers busy
+      // without flooding the runtime with tiny stencil slices.
+      if (ownerLoopDims.size() == 1)
+        workers *= 2;
+      SmallVector<int64_t, 4> ownerDims;
+      SmallVector<int64_t, 4> physicalBlockShape;
+      SmallVector<int64_t, 4> haloShape;
+      if (!buildOwnerDimPlan(op, *outputPlan, ownerLoopDims, workers, ownerDims,
+                             physicalBlockShape, haloShape))
+        return;
+
+      applyPhysicalPlan(op, ownerDims, physicalBlockShape, haloShape);
+      return;
+    }
+  }
+
+  std::optional<sde::LoopIndexedOutputPlan> fallbackPlan =
+      sde::findConsistentLoopIndexedOutputPlanWithOwnerDims(op);
+  if (!fallbackPlan || fallbackPlan->ownerPhysicalDims.size() != 1)
+    return;
+
+  auto effects = sde::collectStructuredMemoryEffects(op.getBody());
+  if (effects.hasUnknownEffects || effects.writes.empty())
+    return;
+  for (Value written : effects.writes) {
+    if (sde::isDefinedInside(op.getOperation(), written))
+      continue;
+    if (!effects.reads.contains(written))
+      continue;
+    if (!sde::allRootAccessesStayWithinOwnerSlice(
+            op, written, fallbackPlan->ownerPhysicalDims))
+      return;
+  }
+
+  int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+  SmallVector<int64_t, 4> ownerDims;
+  SmallVector<int64_t, 4> physicalBlockShape;
+  if (!buildOwnerDimPlan(*fallbackPlan, workers, ownerDims,
+                         physicalBlockShape))
+    return;
+  applyPhysicalPlan(op, ownerDims, physicalBlockShape);
 }
 
 static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
@@ -242,11 +324,17 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
     return;
   if (!classification) {
     auto effects = sde::collectStructuredMemoryEffects(op.getBody());
-    if (effects.hasUnknownEffects || effects.reads.contains(outputPlan->root))
+    bool selfRead = effects.reads.contains(outputPlan->root);
+    bool ownerLocalSelfRead =
+        selfRead &&
+        sde::allRootAccessesStayWithinOwnerSlice(op, outputPlan->root);
+    if (effects.hasUnknownEffects || (selfRead && !ownerLocalSelfRead))
       return;
   }
 
   int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+  if (outputPlan->shape.front() >= workers * 4LL * 1024LL * 1024LL)
+    workers *= 2;
   SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
   physicalBlockShape.front() =
       std::max<int64_t>(1,
@@ -441,10 +529,10 @@ chooseDistributionKind(sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
     return std::nullopt;
   case sde::SdeStructuredClassification::reduction:
     if (*scope == sde::SdeConcurrencyScope::local &&
-        op.getReductionStrategyAttr())
+        (op.getReductionStrategyAttr() || op.getReductionAccumulators().empty()))
       return sde::SdeDistributionKind::blocked;
     if (*scope == sde::SdeConcurrencyScope::distributed &&
-        op.getReductionStrategyAttr() &&
+        (op.getReductionStrategyAttr() || op.getReductionAccumulators().empty()) &&
         hasEnoughDistributedWork(op, costModel))
       return sde::SdeDistributionKind::blocked;
     return std::nullopt;

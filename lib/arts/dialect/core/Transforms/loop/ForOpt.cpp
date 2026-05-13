@@ -40,6 +40,29 @@ using namespace mlir;
 
 namespace {
 
+static std::optional<int64_t> getPlannedOwnerBlockSize(ForOp forOp) {
+  if (!forOp)
+    return std::nullopt;
+
+  auto ownerDims = readI64ArrayAttr(getPlanOwnerDimsAttr(forOp.getOperation()));
+  auto blockShape =
+      readI64ArrayAttr(getPlanPhysicalBlockShapeAttr(forOp.getOperation()));
+  if (!blockShape || blockShape->empty())
+    blockShape =
+        readI64ArrayAttr(getPlanLogicalWorkerSliceAttr(forOp.getOperation()));
+  if (!ownerDims || ownerDims->empty() || !blockShape || blockShape->empty())
+    return std::nullopt;
+
+  int64_t ownerDim = ownerDims->front();
+  size_t blockIdx = 0;
+  if (ownerDim >= 0 && static_cast<size_t>(ownerDim) < blockShape->size())
+    blockIdx = static_cast<size_t>(ownerDim);
+  int64_t blockSize = (*blockShape)[blockIdx];
+  if (blockSize <= 1)
+    return std::nullopt;
+  return blockSize;
+}
+
 static void annotateAccessPatterns(ModuleOp module,
                                    mlir::arts::AnalysisManager *AM) {
   if (!AM)
@@ -97,6 +120,16 @@ struct ForOptPass : public impl::ForOptBase<ForOptPass> {
         /// Respect explicit user/compiler hints already present.
         if (getPartitioningHint(forOp.getOperation())) {
           ++numLoopsSkippedExistingHint;
+          return;
+        }
+
+        if (auto plannedBlockSize = getPlannedOwnerBlockSize(forOp)) {
+          setPartitioningHint(forOp.getOperation(),
+                              PartitioningHint::block(*plannedBlockSize));
+          ++numLoopsAnnotatedWithHints;
+          ARTS_INFO("Set arts.partition_hint blockSize="
+                    << *plannedBlockSize
+                    << " from SDE physical owner plan for arts.for");
           return;
         }
 

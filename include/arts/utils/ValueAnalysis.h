@@ -12,6 +12,7 @@
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Value.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/SetVector.h"
@@ -36,6 +37,12 @@ public:
   /// Like getConstantIndex but returns optional.
   static std::optional<int64_t> getConstantValue(Value v);
 
+  /// Return the SSA value stored in an OpFoldResult, or null for attributes.
+  static Value getValueFromFoldResult(OpFoldResult ofr);
+
+  /// Extract a constant integer/index from a value or integer attribute.
+  static std::optional<int64_t> getConstantIndex(OpFoldResult ofr);
+
   /// Recursively fold constant index expressions through basic arith ops.
   static std::optional<int64_t> tryFoldConstantIndex(Value v,
                                                      unsigned depth = 0);
@@ -46,6 +53,8 @@ public:
   static bool isConstantEqual(Value v, int64_t val);
   static bool isZeroConstant(Value v);
   static bool isOneConstant(Value v);
+  static bool isConstantBool(Value v, bool expected);
+  static bool isTrueConstant(Value v);
 
   /// Check if a value is structurally "one-like": either a literal 1, or
   /// an expression of the form `1 + (x - x)` or `1 + (min(x,y) - y)` that
@@ -54,6 +63,15 @@ public:
 
   /// Check equivalence after stripping casts (same Value or same constant).
   static bool sameValue(Value a, Value b);
+
+  /// Exact SSA identity comparison for two value ranges.
+  static bool areValueRangesIdentical(ValueRange lhs, ValueRange rhs);
+
+  /// Exact SSA identity comparison for a value range prefix.
+  static bool hasValueRangePrefix(ValueRange values, ValueRange prefix);
+
+  /// ValueAnalysis::sameValue comparison for two value ranges.
+  static bool areValueRangesEquivalent(ValueRange lhs, ValueRange rhs);
 
   ///===----------------------------------------------------------------------===////
   /// Value Range and Scale Comparison

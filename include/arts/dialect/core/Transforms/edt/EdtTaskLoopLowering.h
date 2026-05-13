@@ -37,6 +37,7 @@ struct TaskLoopLoweringInput {
   Value totalChunks;
 
   std::optional<int64_t> alignmentBlockSize;
+  Value runtimeAlignmentBlockSize;
   bool useRuntimeBlockAlignment = false;
   bool useAlignedLowerBound = false;
 };

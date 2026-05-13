@@ -100,7 +100,7 @@ __ARTS_TYPE(Float, mlir::Float32Type::get)
 __ARTS_TYPE(Double, mlir::Float64Type::get)
 
 /// Define integer types
-__ARTS_INTEGER_TYPE(PtrSize, llvmDL->getPointerSize())
+__ARTS_INTEGER_TYPE(PtrSize, llvmDL->getPointerSizeInBits())
 __ARTS_INTEGER_TYPE(Int1, 1)
 __ARTS_INTEGER_TYPE(Int8, 8)
 __ARTS_INTEGER_TYPE(Int16, 16)
@@ -463,6 +463,16 @@ __ARTS_RTL_ATTRS(arts_db_create, ControlAttrs, EmptyAttrs,
 __ARTS_RTL(arts_db_create_with_guid, RawPtr, ArtsGuid, Int64, Int32, VoidPtr,
            ArtsHintTypePtr)
 __ARTS_RTL_ATTRS(arts_db_create_with_guid, AllocAttrs, EmptyAttrs,
+                 ParamAttrs(EmptyAttrs, EmptyAttrs, SExt, ReadOnlyPtrAttrs,
+                            ReadOnlyPtrAttrs))
+
+/// void *arts_db_create_with_guid_interleaved(arts_guid_t guid, uint64_t len,
+///                                            arts_db_types_t db_type,
+///                                            const void *data,
+///                                            const arts_hint_t *hint);
+__ARTS_RTL(arts_db_create_with_guid_interleaved, RawPtr, ArtsGuid, Int64, Int32,
+           VoidPtr, ArtsHintTypePtr)
+__ARTS_RTL_ATTRS(arts_db_create_with_guid_interleaved, AllocAttrs, EmptyAttrs,
                  ParamAttrs(EmptyAttrs, EmptyAttrs, SExt, ReadOnlyPtrAttrs,
                             ReadOnlyPtrAttrs))
 

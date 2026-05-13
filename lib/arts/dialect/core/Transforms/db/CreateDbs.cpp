@@ -446,6 +446,39 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
   if (!alloc || alloc->getNumResults() == 0)
     return nullptr;
 
+  auto compatiblePlanTarget = [&](Operation *candidate) {
+    auto memRefType = dyn_cast<MemRefType>(alloc->getResult(0).getType());
+    if (!memRefType || memRefType.getRank() == 0)
+      return false;
+
+    std::optional<SmallVector<int64_t, 4>> ownerDims =
+        readI64ArrayAttr(getPlanOwnerDimsAttr(candidate));
+    std::optional<SmallVector<int64_t, 4>> blockShape =
+        readI64ArrayAttr(getPlanPhysicalBlockShapeAttr(candidate));
+    if (!ownerDims || ownerDims->empty() || !blockShape ||
+        blockShape->empty())
+      return false;
+
+    const unsigned rank = memRefType.getRank();
+    if (blockShape->size() != rank && blockShape->size() != ownerDims->size())
+      return false;
+
+    for (auto [ownerSlot, rawDim] : llvm::enumerate(*ownerDims)) {
+      if (rawDim < 0 || static_cast<uint64_t>(rawDim) >= rank)
+        return false;
+      unsigned physicalDim = static_cast<unsigned>(rawDim);
+      size_t blockShapeIdx =
+          blockShape->size() == rank ? physicalDim : ownerSlot;
+      int64_t blockSize = (*blockShape)[blockShapeIdx];
+      if (blockSize <= 0)
+        return false;
+      int64_t staticExtent = memRefType.getDimSize(physicalDim);
+      if (staticExtent != ShapedType::kDynamic && blockSize > staticExtent)
+        return false;
+    }
+    return true;
+  };
+
   auto equivalentPlan = [](Operation *lhs, Operation *rhs) {
     return getPlanOwnerDimsAttr(lhs) == getPlanOwnerDimsAttr(rhs) &&
            getPlanPhysicalBlockShapeAttr(lhs) ==
@@ -454,10 +487,7 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
                getPlanLogicalWorkerSliceAttr(rhs) &&
            getPlanHaloShapeAttr(lhs) == getPlanHaloShapeAttr(rhs) &&
            getPlanIterationTopologyAttr(lhs) ==
-               getPlanIterationTopologyAttr(rhs) &&
-           getPlanRepetitionStructureAttr(lhs) ==
-               getPlanRepetitionStructureAttr(rhs) &&
-           getPlanAsyncStrategyAttr(lhs) == getPlanAsyncStrategyAttr(rhs);
+               getPlanIterationTopologyAttr(rhs);
   };
 
   auto writesAlloc = [&](Operation *root) {
@@ -485,6 +515,8 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
   module.walk([&](ForOp forOp) {
     if (!hasPhysicalDbLayoutPlan(forOp.getOperation()))
       return WalkResult::advance();
+    if (!compatiblePlanTarget(forOp.getOperation()))
+      return WalkResult::advance();
     if (!writesAlloc(forOp.getOperation()))
       return WalkResult::advance();
     candidates.push_back(forOp.getOperation());
@@ -492,6 +524,8 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
   });
   module.walk([&](EdtOp edt) {
     if (!hasPhysicalDbLayoutPlan(edt.getOperation()))
+      return WalkResult::advance();
+    if (!compatiblePlanTarget(edt.getOperation()))
       return WalkResult::advance();
     if (!writesAlloc(edt.getOperation()))
       return WalkResult::advance();
@@ -649,34 +683,24 @@ void CreateDbsPass::collectControlDbOps() {
     /// indices
     SmallVector<Operation *, 4> opsToRewrite;
     if (userEdt) {
-      /// Helper to check if operation indices match DbControlOp using SSA value
-      /// equality This is strict but correct for distinguishing multiple chunks
-      /// (e.g., A[i-1], A[i], A[i+1])
-      auto indicesMatchPrefix = [&](ValueRange opIndices) -> bool {
-        /// If operation has fewer indices than pinned dimensions, can't match
-        if (opIndices.size() < indexValues.size())
-          return false;
-
-        /// Check if the first N indices match the pinned indices (N =
-        /// indexValues.size()) using SSA value equality
-        return std::equal(indexValues.begin(), indexValues.end(),
-                          opIndices.begin());
-      };
-
-      /// Walk the user EDT and collect operations that match the indices
+      /// Walk the user EDT and collect operations whose leading indices match
+      /// the pinned DbControl dimensions. The exact SSA prefix check
+      /// distinguishes chunks such as A[i-1], A[i], and A[i+1].
       userEdt.walk([&](Operation *op) {
         if (auto load = dyn_cast<memref::LoadOp>(op)) {
           if (ValueAnalysis::getUnderlyingOperation(load.getMemref()) ==
               underlyingOp) {
             if (DbAnalysis::opMatchesAccessMode(op, underlyingOp, mode) &&
-                indicesMatchPrefix(load.getIndices()))
+                ValueAnalysis::hasValueRangePrefix(load.getIndices(),
+                                                   indexValues))
               opsToRewrite.push_back(op);
           }
         } else if (auto store = dyn_cast<memref::StoreOp>(op)) {
           if (ValueAnalysis::getUnderlyingOperation(store.getMemref()) ==
               underlyingOp) {
             if (DbAnalysis::opMatchesAccessMode(op, underlyingOp, mode) &&
-                indicesMatchPrefix(store.getIndices()))
+                ValueAnalysis::hasValueRangePrefix(store.getIndices(),
+                                                   indexValues))
               opsToRewrite.push_back(op);
           }
         }

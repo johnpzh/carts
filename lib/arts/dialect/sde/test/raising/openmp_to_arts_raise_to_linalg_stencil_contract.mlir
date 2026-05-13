@@ -26,8 +26,8 @@
 // OPENMP: arts.edt <parallel> <intranode>
 // OPENMP-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // OPENMP-SAME: planOwnerDims = [0]
-// OPENMP-SAME: planPhysicalBlockShape = [8, 64]
-// OPENMP-SAME: stencil_block_shape = [8]
+// OPENMP-SAME: planPhysicalBlockShape = [4, 64]
+// OPENMP-SAME: stencil_block_shape = [4]
 // OPENMP-SAME: stencil_max_offsets = [1]
 // OPENMP-SAME: stencil_min_offsets = [-1]
 

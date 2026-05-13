@@ -145,11 +145,46 @@ analyzeLoadTypes(const SmallPtrSet<Block *, 16> &loopBlocks) {
     }
   }
 
-  unsigned width = 8;
+  // The emitted CARTS modules currently target generic x86-64, whose declared
+  // feature set is SSE/SSE2. Use 128-bit lane counts by default; wider SDE
+  // hints are clamped again below against the concrete module features.
+  unsigned width = 4;
   if (doubleCount >= floatCount && doubleCount >= i32Count)
-    width = 4;
+    width = 2;
 
   return {width, doubleCount, floatCount, totalLoads};
+}
+
+static unsigned getTargetVectorBits(ModuleOp module) {
+  unsigned bits = 128;
+
+  auto features = module->getAttrOfType<StringAttr>("polygeist.target-features");
+  if (!features)
+    return bits;
+
+  StringRef featureText = features.getValue();
+  if (featureText.contains("+avx512f"))
+    return 512;
+  if (featureText.contains("+avx2") || featureText.contains("+avx"))
+    return 256;
+  return bits;
+}
+
+static unsigned
+getTargetMaxVectorWidth(ModuleOp module, const TypeAnalysisResult &typeInfo) {
+  unsigned elementBits = 32;
+  if (typeInfo.f64Count >= typeInfo.f32Count &&
+      typeInfo.f64Count >= typeInfo.totalLoads - typeInfo.f64Count -
+                                  typeInfo.f32Count)
+    elementBits = 64;
+
+  return std::max(1u, getTargetVectorBits(module) / elementBits);
+}
+
+static unsigned clampVectorWidthToTarget(ModuleOp module, unsigned requested,
+                                         const TypeAnalysisResult &typeInfo) {
+  unsigned maxWidth = getTargetMaxVectorWidth(module, typeInfo);
+  return std::clamp(requested, 1u, maxWidth);
 }
 
 static bool isVectorFriendlyFPIntrinsic(StringRef intrinsic) {
@@ -725,20 +760,22 @@ struct LoopVectorizationHintsPass
           return;
         }
 
-        // SDE attrs are authoritative. Fall back to LLVM load-type analysis
-        // only for non-SDE loops (e.g. runtime helper loops).
+        // SDE attrs carry the semantic vectorization request. RT still clamps
+        // the lane count to the module target so generic x86-64 IR does not
+        // force 256-bit vectors on an SSE/SSE2 target.
         unsigned width, unrollCount, interleave;
+        auto typeInfo = analyzeLoadTypes(loopBlocks);
         if (rtVecWidth) {
           width = rtVecWidth;
           unrollCount = rtUnrollFactor ? rtUnrollFactor : 2;
           interleave =
               rtInterleaveCount ? rtInterleaveCount : interleaveCount;
         } else {
-          auto typeInfo = analyzeLoadTypes(loopBlocks);
           width = vectorWidth ? vectorWidth : typeInfo.vectorWidth;
           unrollCount = determineUnrollCount(typeInfo);
           interleave = interleaveCount;
         }
+        width = clampVectorWidthToTarget(module, width, typeInfo);
 
         std::optional<unsigned> constantTripCount =
             inferConstantTripCount(headerBlock, latchBlock);

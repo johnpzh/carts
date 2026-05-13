@@ -23,8 +23,8 @@
 // ARTS-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
 // ARTS-SAME: planOwnerDims = [0]
-// ARTS-SAME: planPhysicalBlockShape = [8, 64]
-// ARTS-SAME: stencil_block_shape = [8]
+// ARTS-SAME: planPhysicalBlockShape = [4, 64]
+// ARTS-SAME: stencil_block_shape = [4]
 // ARTS-SAME: stencil_max_offsets = [1]
 // ARTS-SAME: stencil_min_offsets = [-1]
 // ARTS-SAME: stencil_owner_dims = [0]
@@ -36,8 +36,8 @@
 // ARTS-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
 // ARTS-SAME: planOwnerDims = [0]
-// ARTS-SAME: planPhysicalBlockShape = [8, 64]
-// ARTS-SAME: stencil_block_shape = [8]
+// ARTS-SAME: planPhysicalBlockShape = [4, 64]
+// ARTS-SAME: stencil_block_shape = [4]
 // ARTS-SAME: stencil_max_offsets = [1]
 // ARTS-SAME: stencil_min_offsets = [-1]
 // ARTS-SAME: stencil_owner_dims = [0]

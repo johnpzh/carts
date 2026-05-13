@@ -368,6 +368,21 @@ std::optional<int64_t> ValueAnalysis::getConstantValue(Value v) {
   return std::nullopt;
 }
 
+Value ValueAnalysis::getValueFromFoldResult(OpFoldResult ofr) {
+  if (auto value = llvm::dyn_cast<Value>(ofr))
+    return value;
+  return Value();
+}
+
+std::optional<int64_t> ValueAnalysis::getConstantIndex(OpFoldResult ofr) {
+  if (auto value = llvm::dyn_cast<Value>(ofr))
+    return tryFoldConstantIndex(value);
+  if (auto attr = llvm::dyn_cast<Attribute>(ofr))
+    if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+      return intAttr.getInt();
+  return std::nullopt;
+}
+
 std::optional<int64_t> ValueAnalysis::tryFoldConstantIndex(Value v,
                                                            unsigned depth) {
   /// Work-distribution and DB-shape calculations routinely build longer
@@ -528,6 +543,22 @@ bool ValueAnalysis::isZeroConstant(Value v) { return isConstantEqual(v, 0); }
 
 bool ValueAnalysis::isOneConstant(Value v) { return isConstantEqual(v, 1); }
 
+bool ValueAnalysis::isConstantBool(Value v, bool expected) {
+  v = stripNumericCasts(v);
+  auto constant = v.getDefiningOp<arith::ConstantOp>();
+  if (!constant)
+    return false;
+
+  Attribute attr = constant.getValue();
+  if (auto boolAttr = dyn_cast<BoolAttr>(attr))
+    return boolAttr.getValue() == expected;
+  if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+    return expected ? intAttr.getValue().isOne() : intAttr.getValue().isZero();
+  return false;
+}
+
+bool ValueAnalysis::isTrueConstant(Value v) { return isConstantBool(v, true); }
+
 bool ValueAnalysis::sameValue(Value a, Value b) {
   a = stripNumericCasts(a);
   b = stripNumericCasts(b);
@@ -538,6 +569,30 @@ bool ValueAnalysis::sameValue(Value a, Value b) {
   auto aConst = tryFoldConstantIndex(a);
   auto bConst = tryFoldConstantIndex(b);
   return aConst && bConst && *aConst == *bConst;
+}
+
+bool ValueAnalysis::areValueRangesIdentical(ValueRange lhs, ValueRange rhs) {
+  if (lhs.size() != rhs.size())
+    return false;
+  for (auto [left, right] : llvm::zip(lhs, rhs))
+    if (left != right)
+      return false;
+  return true;
+}
+
+bool ValueAnalysis::hasValueRangePrefix(ValueRange values, ValueRange prefix) {
+  if (values.size() < prefix.size())
+    return false;
+  return std::equal(prefix.begin(), prefix.end(), values.begin());
+}
+
+bool ValueAnalysis::areValueRangesEquivalent(ValueRange lhs, ValueRange rhs) {
+  if (lhs.size() != rhs.size())
+    return false;
+  for (auto [left, right] : llvm::zip(lhs, rhs))
+    if (!sameValue(left, right))
+      return false;
+  return true;
 }
 
 Value ValueAnalysis::stripClampOne(Value v) {

@@ -608,6 +608,14 @@ bool DbUtils::isWriterMode(ArtsMode mode) {
   return mode == ArtsMode::out || mode == ArtsMode::inout;
 }
 
+bool DbUtils::isI1DbPtrType(Type type) {
+  auto outer = dyn_cast<MemRefType>(type);
+  if (!outer)
+    return false;
+  auto inner = dyn_cast<MemRefType>(outer.getElementType());
+  return inner && inner.getElementType().isInteger(1);
+}
+
 DbMode DbUtils::convertArtsModeToDbMode(ArtsMode mode) {
   return (mode == ArtsMode::in) ? DbMode::read : DbMode::write;
 }
@@ -1029,6 +1037,53 @@ bool DbUtils::collectCleanupOnlyUseChain(Value source,
   }
 
   return true;
+}
+
+bool DbUtils::collectTrueOnlyControlTokenUseChain(
+    Value source, llvm::SetVector<Operation *> &ops, Region *scope) {
+  if (!source || !isI1DbPtrType(source.getType()))
+    return false;
+
+  SmallVector<Value, 8> worklist{source};
+  DenseSet<Value> visited;
+  bool sawTrueStore = false;
+
+  while (!worklist.empty()) {
+    Value current = worklist.pop_back_val();
+    if (!current || !visited.insert(current).second)
+      continue;
+
+    for (Operation *user : current.getUsers()) {
+      if (scope && !scope->isAncestor(user->getParentRegion()))
+        continue;
+
+      if (isCleanupTerminalOp(user, current)) {
+        ops.insert(user);
+        continue;
+      }
+
+      if (auto dbRef = dyn_cast<DbRefOp>(user)) {
+        if (dbRef.getSource() != current)
+          return false;
+        ops.insert(user);
+        worklist.push_back(dbRef.getResult());
+        continue;
+      }
+
+      if (auto store = dyn_cast<memref::StoreOp>(user)) {
+        if (store.getMemRef() != current ||
+            !ValueAnalysis::isTrueConstant(store.getValue()))
+          return false;
+        sawTrueStore = true;
+        ops.insert(user);
+        continue;
+      }
+
+      return false;
+    }
+  }
+
+  return sawTrueStore;
 }
 
 void arts::DbUtils::convertElementSliceToBlockSlice(

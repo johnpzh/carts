@@ -267,25 +267,38 @@ WorkDistributionUtils::planLoopChunking(ArtsCodegen *AC, ForOp forOp,
   plan.blockSize = AC->createIndexConstant(advisoryBlockSize, loc);
   if (contract.allowsDbAlignedChunking()) {
     if (runtimeBlockSizeHint) {
-      Value requiredBlockSize = AC->castToIndex(runtimeBlockSizeHint, loc);
+      Value requiredAlignmentSpan = AC->castToIndex(runtimeBlockSizeHint, loc);
+      requiredAlignmentSpan =
+          AC->create<arith::MaxUIOp>(loc, requiredAlignmentSpan, one);
+
+      Value loopStepIndex = AC->castToIndex(loopStep, loc);
+      loopStepIndex = AC->create<arith::MaxUIOp>(loc, loopStepIndex, one);
+      Value adjustedSpan = AC->create<arith::AddIOp>(
+          loc, requiredAlignmentSpan,
+          AC->create<arith::SubIOp>(loc, loopStepIndex, one));
+      Value requiredBlockSize =
+          AC->create<arith::DivUIOp>(loc, adjustedSpan, loopStepIndex);
       requiredBlockSize =
           AC->create<arith::MaxUIOp>(loc, requiredBlockSize, one);
 
       auto requiredConst =
-          ValueAnalysis::tryFoldConstantIndex(requiredBlockSize);
+          ValueAnalysis::tryFoldConstantIndex(requiredAlignmentSpan);
       bool hasNonTrivialAlignmentRequirement =
           !requiredConst || *requiredConst > 1;
 
       if (hasNonTrivialAlignmentRequirement) {
         /// DB-aligned owner slices are a lowering requirement, not just a
-        /// coarsening preference. Once lowering derives a non-trivial owner
-        /// block span, use that span as the chunking unit so worker slices
-        /// line up with the DB layout chosen later by DbPartitioning.
+        /// coarsening preference. The DB span is expressed in induction-value
+        /// space, while blockSize is a count of loop iterations. Strip-mined
+        /// loops such as matmul tiles already advance by the DB span, so their
+        /// chunk size is one loop iteration, not span * span rows.
         plan.blockSize = requiredBlockSize;
         if (requiredConst)
           plan.alignmentBlockSize = *requiredConst;
-        else
+        else {
+          plan.runtimeAlignmentBlockSize = requiredAlignmentSpan;
           plan.useRuntimeBlockAlignment = true;
+        }
       }
     }
 
@@ -307,7 +320,10 @@ WorkDistributionUtils::planLoopChunking(ArtsCodegen *AC, ForOp forOp,
   }
 
   if (plan.useRuntimeBlockAlignment) {
-    Value rem = AC->create<arith::RemUIOp>(loc, lowerBound, plan.blockSize);
+    Value alignmentSpan =
+        plan.runtimeAlignmentBlockSize ? plan.runtimeAlignmentBlockSize
+                                       : plan.blockSize;
+    Value rem = AC->create<arith::RemUIOp>(loc, lowerBound, alignmentSpan);
     plan.chunkLowerBound = AC->create<arith::SubIOp>(loc, lowerBound, rem);
     plan.useAlignedLowerBound = true;
   }
@@ -478,7 +494,8 @@ DistributionBounds WorkDistributionUtils::recomputeBoundsInside(
     ArtsCodegen *AC, Location loc, const DistributionStrategy &strategy,
     Value workerId, Value insideTotalWorkers, Value workersPerNode,
     Value upperBound, Value lowerBound, Value loopStep, Value blockSize,
-    std::optional<int64_t> alignmentBlockSize, bool useRuntimeBlockAlignment,
+    std::optional<int64_t> alignmentBlockSize, Value runtimeAlignmentBlockSize,
+    bool useRuntimeBlockAlignment,
     const LoweringContractInfo &contract) {
   Value workerIdIndex = AC->castToIndex(workerId, loc);
   Value totalWorkersIndex = AC->castToIndex(insideTotalWorkers, loc);
@@ -490,6 +507,8 @@ DistributionBounds WorkDistributionUtils::recomputeBoundsInside(
   Region *currentRegion = AC->getBuilder().getInsertionBlock()->getParent();
 
   std::function<void(Value)> collectWithDeps = [&](Value val) {
+    if (!val)
+      return;
     if (boundsToClone.contains(val))
       return;
     if (Operation *defOp = val.getDefiningOp()) {
@@ -505,6 +524,7 @@ DistributionBounds WorkDistributionUtils::recomputeBoundsInside(
   collectWithDeps(lowerBound);
   collectWithDeps(loopStep);
   collectWithDeps(blockSize);
+  collectWithDeps(runtimeAlignmentBlockSize);
 
   IRMapping boundsMapper;
   ValueAnalysis::cloneValuesIntoRegion(
@@ -515,6 +535,8 @@ DistributionBounds WorkDistributionUtils::recomputeBoundsInside(
   Value localLowerBound = boundsMapper.lookupOrDefault(lowerBound);
   Value localLoopStep = boundsMapper.lookupOrDefault(loopStep);
   Value localBlockSize = boundsMapper.lookupOrDefault(blockSize);
+  Value localRuntimeAlignmentBlockSize =
+      boundsMapper.lookupOrDefault(runtimeAlignmentBlockSize);
 
   Value chunkLowerBound = localLowerBound;
   if (alignmentBlockSize) {
@@ -524,8 +546,10 @@ DistributionBounds WorkDistributionUtils::recomputeBoundsInside(
         chunkLowerBound = AC->createIndexConstant(aligned, loc);
     }
   } else if (useRuntimeBlockAlignment) {
-    Value rem =
-        AC->create<arith::RemUIOp>(loc, localLowerBound, localBlockSize);
+    Value alignmentSpan = localRuntimeAlignmentBlockSize
+                              ? localRuntimeAlignmentBlockSize
+                              : localBlockSize;
+    Value rem = AC->create<arith::RemUIOp>(loc, localLowerBound, alignmentSpan);
     chunkLowerBound = AC->create<arith::SubIOp>(loc, localLowerBound, rem);
   }
 
@@ -701,7 +725,10 @@ Value WorkDistributionUtils::computeDbAlignmentBlockSize(
     if (!isTwoLevel) {
       auto pattern = getDbAccessPattern(allocOp.getOperation());
       bool isStencil = pattern && *pattern == DbAccessPattern::stencil;
-      bool requiresWriteBlockOwnership = allocOp.getMode() != ArtsMode::in;
+      ArtsMode depMode = allocOp.getMode();
+      if (auto acquire = dep.getDefiningOp<DbAcquireOp>())
+        depMode = acquire.getMode();
+      bool requiresWriteBlockOwnership = depMode != ArtsMode::in;
       if (!isStencil && !requiresWriteBlockOwnership)
         continue;
     }
