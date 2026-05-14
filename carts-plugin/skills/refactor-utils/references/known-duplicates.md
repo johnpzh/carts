@@ -24,13 +24,6 @@ Last updated: 2026-04-10 (audit rev 2)
 - **Related**: `isSideEffectFreeArithmeticLikeOp()` in `Utils.h` (similar but narrower)
 - **Target**: `Utils.h` as `isPureOp()` (broader than existing)
 
-### `collectSpatialNestIvs`
-- **Location 1**: `lib/arts/dialect/core/Transforms/kernel/StencilTilingNDPattern.cpp:122`
-- **Location 2**: `lib/arts/dialect/core/Transforms/PatternDiscovery.cpp:167`
-- **Implementation**: Collects IVs from perfectly nested spatial arts::ForOps
-- **Difference**: Only null-check style differs (combined vs separate)
-- **Target**: `LoopUtils.h`
-
 ### `sortStoresInProgramOrder`
 - **Location 1**: `lib/arts/dialect/core/Transforms/EdtStructuralOpt.cpp`
 - **Location 2**: `lib/arts/dialect/core/Transforms/EdtAllocaSinking.cpp`
@@ -48,13 +41,6 @@ Last updated: 2026-04-10 (audit rev 2)
 - **Location 1**: `lib/arts/dialect/rt/Transforms/DataPtrHoistingSupport.cpp:604`
 - **Location 2**: `lib/arts/utils/DbUtils.cpp:855` (CANONICAL)
 - **Action**: Replace DataPtrHoistingSupport's version with `DbUtils::getMemoryAccessInfo()`
-
-### `clearReductionLoopFacts` **(NEW — found 2026-04-10 rev 2)**
-- **Location 1**: `lib/arts/dialect/core/Transforms/kernel/MatmulReductionPattern.cpp:65`
-- **Location 2**: `lib/arts/dialect/core/Transforms/ForLowering.cpp:502`
-- **Implementation**: Clears `metadata.hasReductions` and `metadata.reductionKinds`
-- **Both are 100% identical** (3-line body)
-- **Target**: `LoopUtils.h` (operates on `LoopMetadata`)
 
 ### `isUndefLikeOp` / undef string check **(NEW — found 2026-04-10 rev 2)**
 - **Location 1**: `lib/arts/dialect/core/Conversion/ArtsToRt/EdtLowering.cpp:120` (static `isUndefLikeOp`)
@@ -97,7 +83,6 @@ return name == "llvm.mlir.undef" || name == "polygeist.undef" || name == "arts.u
 | `hoistInvariantOpsInLoop` | Hoisting.cpp | LoopInvarianceUtils.h | 36 | Medium |
 | `buildLoopInvariantI1Not/And` | DataPtrHoistingSupport.cpp | Utils.h | 15 | VeryLow |
 | `isUnitStrideLoop` | PerfectNestLinearizationPattern.cpp | LoopUtils.h | 5 | VeryLow |
-| `castToIndexType` | WorkDistributionUtils.cpp | Utils.h | 5 | VeryLow |
 | `ensureBlock` | ConvertOpenMPToSde.cpp | Utils.h | 5 | VeryLow |
 | `isUndefLikeOp` | EdtLowering.cpp | Utils.h | 6 | VeryLow |
 | `tryGetAffineExpr` | RaiseToLinalg.cpp | new AffineUtils.h | 52 | Low |
@@ -105,7 +90,6 @@ return name == "llvm.mlir.undef" || name == "polygeist.undef" || name == "arts.u
 | `indicesEqual` | ScalarReplacement.cpp | Utils.h | 8 | VeryLow |
 | `isZeroIndexConstant/isMinusOneConstant` | DataPtrHoistingSupport.cpp | ValueAnalysis.h | 8 | VeryLow |
 | `getConstInt` | SdeIterationSpaceDecomposition.cpp | **DONE** → delegates to `ValueAnalysis::getConstantIndexStripped` | 10 | VeryLow |
-| `clearReductionLoopFacts` | ForLowering.cpp, MatmulReductionPattern.cpp | LoopUtils.h | 3 | VeryLow |
 | `getOrCreateZero` | MatmulReductionPattern.cpp:81 | Utils.h | 2 | VeryLow |
 | `isZeroIndexList` | DbScratchElimination.cpp:66 | Utils.h or ValueAnalysis.h | 5 | VeryLow |
 | `regionHasNoWork` | JacobiAlternatingBuffersPattern.cpp:340 | Utils.h | ~8 | VeryLow |

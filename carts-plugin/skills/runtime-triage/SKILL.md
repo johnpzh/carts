@@ -76,9 +76,9 @@ dekk carts build --arts --counters 3
 - `docs/heuristics/partitioning.md`
 - `AGENTS.md` section: Distributed Runtime Debug
 - `lib/arts/dialect/core/Conversion/ArtsToLLVM/ConvertArtsToLLVM.cpp`
-- `lib/arts/dialect/core/Transforms/ForLowering.cpp`
-- `lib/arts/dialect/core/Conversion/ArtsToRt/EdtLowering.cpp`
-- `lib/arts/dialect/core/Conversion/ArtsToRt/EpochLowering.cpp`
+- `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
+- `lib/arts/dialect/rt/Conversion/ArtsToRt/EdtLowering.cpp`
+- `lib/arts/dialect/rt/Conversion/ArtsToRt/EpochLowering.cpp`
 - `lib/arts/dialect/core/Analysis/edt/`
 
 ## Validation

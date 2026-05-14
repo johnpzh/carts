@@ -858,7 +858,7 @@ Per-row compute structure (conceptual, local row r in [0..B-1]):
 This preserves multi-node benefits (minimal halo transfers) and restores
 single-node performance by avoiding per-element halo selection.
 
-### 7.4 Chunk Alignment at ForLowering (Stencil Safety)
+### 7.4 Chunk Alignment During Direct Materialization (Stencil Safety)
 
 For stencil loops, worker chunking must stay consistent with DB block
 boundaries, but it must not expand the logical iteration domain.
@@ -866,7 +866,8 @@ boundaries, but it must not expand the logical iteration domain.
 Current policy:
 
 1) Explicit compile-time block hints (`PartitioningHint blockSize > 1`)
-   - If loop lower bound is a known constant and misaligned, ForLowering may
+   - If loop lower bound is a known constant and misaligned, direct Core
+     materialization may
      align the chunking base downward.
    - The generated inner loop is then clamped back to the original
      `[lowerBound, upperBound)` domain, so no extra iterations execute.

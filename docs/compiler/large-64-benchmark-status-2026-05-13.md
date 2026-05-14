@@ -138,7 +138,7 @@ performance as noisy until repeated median runs are collected.
 
    - Keep type predicates, constant checks, DB alias tracing, range checks, and
      stencil/layout helpers in utility modules, not inside pass files.
-   - Continue splitting `ForLowering.cpp` by orchestration, body cloning,
+   - Keep direct materialization helpers split by orchestration, body cloning,
      reduction planning, and loop-bound utilities.
    - Continue splitting `CreateDbs.cpp` by layout-plan resolution, acquire
      grouping, host/global view materialization, and DB alias helpers.

@@ -14,17 +14,17 @@ Use this checklist when a workload fails only with multiple nodes or `--distribu
 
 Inspect these stage boundaries in order:
 
-1. `edt-distribution`
-2. `db-partitioning`
-3. `post-db-refinement`
-4. `pre-lowering`
+1. `openmp-to-arts`
+2. `post-db-refinement`
+3. `pre-lowering`
 
 Look for:
 
 - `distribution_kind`, `distribution_pattern`, `distribution_version`
 - writable task acquires that should preserve owner hints
 - `DbAllocOp` instances marked `distributed`
-- cases where distributed host outlining should have produced `arts.for` but did not
+- cases where SDE distribution planning should have produced distributed Core
+  DB/EDT contracts but did not
 
 ## 3. Ownership Eligibility Questions
 

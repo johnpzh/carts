@@ -1,6 +1,6 @@
 ---
 name: carts-distributed-triage
-description: Use when a failure only appears with `--distributed-db`, multiple nodes, distributed host outlining, or uneven remote work distribution.
+description: Use when a failure only appears with `--distributed-db`, multiple nodes, SDE/Core distributed work materialization, or uneven remote work distribution.
 user-invocable: true
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<input-file | benchmark-path>]
@@ -29,13 +29,12 @@ Read these before patching anything:
 2. Reproduce with explicit node/thread/config inputs.
 3. Check whether `--distributed-db` is actually active in the failing path.
 4. Inspect IR around:
-   - `edt-distribution`
-   - `db-partitioning`
+   - `openmp-to-arts`
    - `post-db-refinement`
    - `pre-lowering`
 5. Check ownership constraints:
    - `distributed` marker present on eligible `DbAllocOp`
-   - host loop outlining happened when required
+   - SDE-authored distributed work and Core materialization contracts are present when required
    - routed work and owner hints agree
 6. Inspect runtime artifacts:
    - `arts.log`, `omp.log`
@@ -46,7 +45,7 @@ Read these before patching anything:
 
 ```bash
 # Generate stage dumps with distributed ownership enabled
-dekk carts compile input.mlir --distributed-db --pipeline=db-partitioning
+dekk carts compile input.mlir --distributed-db --pipeline=post-db-refinement
 
 # Multi-node benchmark run
 dekk carts benchmarks run polybench/2mm \
@@ -60,10 +59,9 @@ dekk carts benchmarks run polybench/2mm \
 ## Key Files
 
 - `docs/heuristics/distribution.md`
-- `lib/arts/dialect/core/Transforms/DbDistributedOwnership.cpp`
-- `lib/arts/dialect/core/Transforms/DistributedHostLoopOutlining.cpp`
+- `lib/arts/dialect/core/Transforms/db/DbDistributedOwnership.cpp`
+- `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
 - `lib/arts/dialect/core/Conversion/ArtsToLLVM/ConvertArtsToLLVM.cpp`
-- `lib/arts/dialect/core/Transforms/ForLowering.cpp`
 - `lib/arts/codegen/Codegen.cpp`
 
 ## Validation

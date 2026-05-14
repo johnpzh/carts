@@ -40,8 +40,8 @@ This file is a fast-lookup distillation. If it disagrees with the docs above, th
 **Owns:** structural realization of SDE contracts in ARTS-runtime-shaped IR.
 
 - DBs: alloc, partition, distributed-ownership marking, mode tightening, scratch elimination
-- EDTs: structural opt, ICM, distribution, orchestration
-- Loops: ARTS-typed for-ops, fusion, reordering, lowering to scf with dependency wiring
+- EDTs: structural opt, ICM, distribution contract realization, orchestration
+- Implementation loops: local `scf.for` control flow inside concrete Core objects
 - Epochs: creation, CPS scheduling, optimization
 - Contract attributes: encode SDE decisions for downstream consumption
 
@@ -86,11 +86,11 @@ These do not block correctness but should be cleaned up in Phase 9. Cite when de
 
 | # | Violation | Files | Fix |
 |---|---|---|---|
-| 1 | Wavefront family detection in core, should be SDE (Invariant 5) | `lib/arts/dialect/core/Analysis/heuristics/StructuredKernelPlanAnalysis.cpp`, `core/Transforms/dep/Seidel2DWavefrontPattern.cpp`, `core/Transforms/EdtDistribution.cpp` | Move family + tile geometry into `SdeStructuredSummaries` or new `SdeWavefrontAnalysis`; refactor core realizers to consume the contract. |
+| 1 | Wavefront family detection in core, should be SDE (Invariant 5) | `lib/arts/dialect/core/Analysis/heuristics/StructuredKernelPlanAnalysis.cpp`, `core/Transforms/dep/Seidel2DWavefrontPattern.cpp` | Move family + tile geometry into `SdeStructuredSummaries` or new `SdeWavefrontAnalysis`; refactor core realizers to consume the contract. |
 | 2 | KernelTransforms re-detects elementwise/stencil/matmul (Invariant 5) | `lib/arts/dialect/core/Transforms/kernel/KernelTransforms.cpp` | Delete `ElementwisePipelinePattern` (redundant); refactor `StencilTilingNDPattern` and `MatmulReductionPattern` to consume SDE contracts. |
 | 3 | `RaiseMemRefDimensionality` is a Polygeist→ARTS conversion, lives in `core/Transforms/` (Invariant 1) | `lib/arts/dialect/core/Transforms/RaiseMemRefDimensionality.cpp` | Move to `core/Conversion/PolygeistToArts/`. |
 | 4 | DepTransforms creates `EpochOp`/`EdtOp` from re-detected wavefront/Jacobi patterns (Invariants 1 & 5) | `lib/arts/dialect/core/Transforms/dep/DepTransforms.cpp`, `core/Transforms/dep/Seidel2DWavefrontPattern.cpp` | Enhance `SdeStructuredSummaries`; refactor `DepTransforms` to consume hints. |
-| 5 | Doc disagreement: `op-classification.md` says `arts.lowering_contract` and `arts.omp_dep` should migrate to SDE; `pass-placement.md` says no scheduled pattern-pipeline stage. | `docs/architecture/op-classification.md` vs `docs/architecture/pass-placement.md` | `pass-placement.md` is current; the migration is aspirational and tracked under violation #1. |
+| 5 | Doc disagreement: `op-classification.md` says `arts.lowering_contract` and `arts.omp_dep` should migrate to SDE; `pass-placement.md` says the live pipeline keeps planning inside `openmp-to-arts`. | `docs/architecture/op-classification.md` vs `docs/architecture/pass-placement.md` | `pass-placement.md` is current; the migration is aspirational and tracked under violation #1. |
 
 ## Open questions (Phase 0 / task #1)
 

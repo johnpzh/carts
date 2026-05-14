@@ -149,15 +149,14 @@ Current ARTS-side pattern inputs are centralized in analysis APIs, not in
 lowering passes. After the SDE boundary, these analyses should consume or
 validate SDE contracts rather than redefine semantic pattern family.
 
-### 4.1 DB-backed source of truth
+### 4.1 SDE-backed source of truth
 
-- `DbAnalysis::analyzeLoopDbAccessPatterns(ForOp)` computes loop summary from DB graph + access bounds.
-- `DbAnalysis::getLoopDistributionPattern(ForOp)` exposes pattern.
-- `AnalysisManager::getLoopDistributionPattern(Operation *)` is the unified pass-facing API.
-- Pattern-specific IR matching is centralized in
-  `include/arts/dialect/core/Analysis/db/DbPatternMatchers.h` /
-  `lib/arts/dialect/core/Analysis/db/DbPatternMatchers.cpp` and reused by analysis and
-  loop-normalization transforms.
+- SDE structured summaries classify work families, access windows, reductions,
+  and distribution intent while source semantics are still visible.
+- `DistributionPlanning` consumes those SDE facts and stamps the contract that
+  Core materialization uses.
+- Core DB analysis validates concrete DB/EDT/epoch shape and should not recover
+  semantic loop families from implementation loops.
 
 ### 4.2 EDT-facing view
 
@@ -171,26 +170,28 @@ validate SDE contracts rather than redefine semantic pattern family.
 
 ## 5. Pipeline Architecture
 
-Distribution is now a dedicated pipeline step:
+Distribution is planned inside `openmp-to-arts` and realized by later Core DB
+refinement stages:
 
-- `concurrency`: prepares parallel structure
-- `edt-distribution`: runs `EdtDistributionPass`, backfills or materializes
-  distribution attrs when needed, then `ForLowering`
-- `post-distribution-cleanup`: structural cleanup after loop lowering
-- `db-partitioning`: DB partition planning and ownership materialization
-- `post-db-refinement`: DB mode tightening, EDT transforms, and contract validation
+- `openmp-to-arts`: SDE scope/distribution/reduction planning, direct
+  SDE-to-Core EDT/DB/epoch materialization, and strict SDE/Core verification.
+- `create-dbs`: creates the physical DB objects from materialized Core shape.
+- `db-opt`: tightens DB access modes from real uses.
+- `post-db-refinement`: validates and refines DB/EDT contracts.
 - `late-concurrency-cleanup`: strip-mining, hoisting, and late cleanup
 
 Key files:
 - `tools/compile/Compile.cpp`
-- `lib/arts/passes/transforms/EdtDistribution.cpp`
+- `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
+- `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
+- `lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp`
 
 Useful stop points:
 
 ```bash
-carts-compile input.mlir --pipeline=concurrency
-carts-compile input.mlir --pipeline=edt-distribution
-carts-compile input.mlir --pipeline=db-partitioning
+dekk carts compile input.mlir --pipeline=openmp-to-arts
+dekk carts compile input.mlir --pipeline=post-db-refinement
+dekk carts compile input.mlir --pipeline=pre-lowering
 ```
 
 ## 6. Distributed DB Ownership
@@ -201,16 +202,12 @@ Goal:
 
 Current implementation:
 - `DbAllocOp` supports a `distributed` marker attribute.
-- New pass: `DbDistributedOwnershipPass`
-  (`lib/arts/passes/opt/db/DbDistributedOwnership.cpp`).
-- Pipeline placement: `DbPartitioning -> DbDistributedOwnership -> DbModeTightening`
+- Pass: `DbDistributedOwnershipPass`
+  (`lib/arts/dialect/core/Transforms/db/DbDistributedOwnership.cpp`).
+- Pipeline placement: Core DB refinement after SDE distribution planning
   (gated by `--distributed-db` in `carts-compile`).
-- `--distributed-db` also enables distributed host loop outlining
-  (`DistributedHostLoopOutlining`) so eligible host producer loops flow through
-  `arts.for` lowering and can satisfy distributed ownership constraints.
-  - current auto-outline filter is conservative: top-level host `scf.for`,
-    no `iter_args`, safe loop metadata, a single written root, no self-reads of
-    that root, and a later aligned internode consumer of the written root.
+- `--distributed-db` relies on SDE-authored work units and Core DB ownership
+  marking; late Core loop-carrier producers are not part of the contract.
 - Lowering support: `ConvertArtsToLLVM` uses round-robin route selection for
   marked multi-DB allocations:
   - route = `linearIndex % artsGetTotalNodes()`
@@ -247,15 +244,15 @@ Future work:
 
 ## 7. IR Contract
 
-Today, `EdtDistributionPass` may stamp or backfill top-level `arts.for` attrs
-in parallel EDT regions:
+SDE distribution planning and direct Core materialization may stamp concrete
+Core object attrs:
 
 - `distribution_kind` (`#arts.distribution_kind<...>`)
 - `distribution_pattern` (`#arts.distribution_pattern<...>`)
 - `distribution_version = 1`
 
-Architecturally, these attributes should represent SDE-forwarded contracts
-consumed by `ForLowering`, not ARTS-owned semantic planning.
+These attributes represent SDE-forwarded contracts and Core machine-binding
+facts. They are not a fallback semantic classifier.
 
 ## 8. Loop Transform Compatibility (R8)
 
@@ -266,7 +263,8 @@ Current answer: **no for existing 1D outer-loop distribution path**.
 Reason:
 - Pipeline step 4 (`edt-transforms`) and the semantic work inside step 3
   (`openmp-to-arts`) mostly target inner serial `scf.for` structure.
-- The `edt-distribution` pipeline step runs later and preserves top-level `arts.for` distribution contract.
+- Core stages consume the SDE/Core materialization contract and preserve
+  concrete DB/EDT/epoch distribution facts.
 
 Pass-level summary (current behavior):
 - Loop normalization (triangular-to-rectangular forms): compatible
@@ -279,30 +277,27 @@ Future caveat:
 
 ## 9. Lowering Architecture
 
-`ForLowering` now orchestrates strategy-specific helpers instead of owning all logic inline.
+Direct SDE-to-Core materialization emits EDT/DB/epoch structure from SDE plan
+data. Strategy-specific helpers must consume explicit plan data rather than a
+Core semantic loop carrier.
 
 ### 9.1 Acquire rewriting helpers
 
-- `EdtRewriter` abstraction:
-  - `BlockEdtRewriter`
-  - `StencilEdtRewriter`
-- Strategy-aware planning now lives inside `ForLowering` as a local helper.
-  It is not a separate transform-layer API anymore because only `ForLowering`
-  consumes that planning contract.
+- DB acquire-window planning uses SDE-authored access windows and Core DB
+  refinement validation.
+- Stencil and block windows should be explicit contract facts before Core
+  lowering consumes them.
 
 ### 9.2 Task loop lowering helpers
 
-- `EdtTaskLoopLowering` abstraction:
-  - `BlockTaskLoopLowering`
-  - `BlockCyclicTaskLoopLowering`
-  - `Tile2DTaskLoopLowering`
-- Strategy helpers now also own acquire-window planning through
-  `EdtTaskLoopLowering::planAcquireRewrite(...)` so `ForLowering` does not
-  embed strategy-specific `acquire_offset/size/hint` branching.
+- Dispatch and task-local `scf.for` loops are implementation control flow
+  generated by the materializer.
+- Reduction materialization consumes SDE reduction accumulators, kinds, and
+  strategy; Core does not rediscover missing reduction semantics.
 
 ### 9.3 Partitioning integration for 2D owner hints
 
-`DbPartitioning` consumes tiling-2D owner hints on writable (`inout`) task acquires to force N-D block ownership where valid.
+Core DB refinement consumes tiling-2D owner hints on writable (`inout`) task acquires to force N-D block ownership where valid.
 
 This coupling is what keeps data ownership and routed work aligned for
 `matmul` loops when H2 selects `tiling_2d`.
@@ -313,7 +308,7 @@ This coupling is what keeps data ownership and routed work aligned for
 - worker topology resolution (`resolveWorkerConfig`)
 - dispatch worker count / total worker helpers
 - DB alignment block-size heuristic
-- coarsened block-size hint computation for `arts.for`
+- coarsened block-size hint computation for SDE-planned work units
   - the coarsening threshold is not trip-count-only
   - small loops carried by EDTs with many DB dependencies get larger worker
     chunks, because ARTS pays fixed setup cost per EDT and per dependency slot
@@ -333,21 +328,22 @@ Wavefront note:
 ## 11. Validation Checklist
 
 ```bash
-ninja -C build carts-compile
+dekk carts build
 
 # Missing config must fail fast
-carts-compile input.mlir --pipeline=concurrency
+dekk carts compile input.mlir --pipeline=openmp-to-arts
 
 # Inspect distribution attributes
-carts-compile gemm.mlir --O3 --arts-config arts.cfg --pipeline=edt-distribution
+dekk carts compile gemm.mlir -O3 --arts-config arts.cfg --pipeline=openmp-to-arts
 
 # Multi-node counters
 # (example harness depends on your local benchmark setup)
 ```
 
 Expected checks:
-- no `distribution_*` attrs at `--pipeline=concurrency`
-- `distribution_kind/pattern/version` attrs at `--pipeline=edt-distribution`
+- SDE planning attrs are present before direct materialization when applicable.
+- Core `distribution_kind/pattern/version` attrs are present on concrete
+  DB/EDT/epoch objects after `openmp-to-arts` when the plan needs them.
 - checksums unchanged for benchmark kernels
 - node/thread counters show non-zero work on remote nodes for distributed runs
 
@@ -361,8 +357,7 @@ Practical principles adopted from systems like Halide/Legion/Chapel/HPF/GSPMD/Ch
 - Prefer analysis-backed decisions over pass-local ad-hoc classification.
 
 In CARTS, this maps to:
-- SDE-owned pattern/distribution planning first, with `EdtDistributionPass`
-  now acting as fallback-only backfill when SDE did not already author
-  distribution attrs at the boundary
-- specialized task/acquire lowering components for execution
+- SDE-owned pattern/distribution planning first, with Core materialization
+  consuming that plan directly
+- specialized task/acquire materialization components for execution
 - DB/EDT analysis APIs as single pattern source of truth

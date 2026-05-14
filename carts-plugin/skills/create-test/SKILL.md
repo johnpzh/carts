@@ -10,7 +10,7 @@ parameters:
     gather: "Type of test: 'contract' (single stage), 'boundary' (multi-stage), or 'integration' (end-to-end C)"
   - name: pipeline_stage
     type: str
-    gather: "Primary pipeline stage to test (e.g., db-partitioning, pre-lowering)"
+    gather: "Primary pipeline stage to test (e.g., post-db-refinement, pre-lowering)"
 ---
 
 # CARTS Test Scaffolding

@@ -23,13 +23,13 @@ When an error surfaces at stage N, check the listed prior stages first.
 | Stage 5 (CreateDbs) | `un-normalizable nested memref pattern (element type is memref)` | `RaiseMemRefDimensionality`, `ConvertOpenMPToSde` | Polygeist producing `memref<?xmemref<?xT>>` from `int *A = malloc(N)`. Fix upstream. |
 | Stage 8 (DbPartitioning) | Stack overflow / infinite recursion in `copyArtsMetadataAttrs` | DbPartitioning metadata copy, rewriter loops | Add depth guard at `PartitioningHeuristics.cpp` near line 706 (Phase 2 work). |
 | Stage 8 (DbPartitioning) | Wrong answer; `fine_grained` silently downgraded to `coarse`, indices dropped | DbPartitioning memref-of-memref handling | Single-element wrapper DB instead of N-element data. The fix is upstream in CreateDbs (Phase 3), NOT in the partition heuristic. |
-| Stage 11 (ForLowering) | `should apply stencil halo` but bounds wrong | DbPartitioning post-rewrite, stale `LoweringContractInfo` | DbPartitioning rewrote halo offsets after ForLowering marked the contract fresh. |
-| Stage 13 (ConvertArtsToLLVM) | `arts.db_alloc` / `arts.edt` / `arts.epoch` survived to LLVM | EdtLowering, EpochLowering, EdtDistribution, ForLowering | A lowering was skipped. Look for a gating attribute (e.g., `NoOpDbRewriter`, `IsExplicitLeafContract`) that excluded this op. |
-| Stage 13 | `arts.db_acquire` references GUID that does not exist | DbPartitioning (GUID lost), EdtDistribution (dep routing), EpochLowering (CPS carry corruption) | Trace the GUID source. Did an intermediate pass erase it? |
+| `post-db-refinement` | Stencil halo bounds wrong | SDE access-window plan, DB refinement contract rewrite | Confirm SDE stamped the right halo/window, then check whether DB refinement rewrote it. |
+| `pre-lowering` / `arts-to-llvm` | `arts.db_alloc` / `arts.edt` / `arts.epoch` survived to LLVM | DbLowering, EdtLowering, EpochLowering | A lowering was skipped. Look for a gating attribute (e.g., `NoOpDbRewriter`, `IsExplicitLeafContract`) that excluded this op. |
+| `pre-lowering` | `arts.db_acquire` references GUID that does not exist | DB refinement (GUID lost), SDE-to-Core materialization (dep routing), EpochLowering (CPS carry corruption) | Trace the GUID source. Did an intermediate pass erase it? |
 | Stage 14 (EpochLowering) | CPS chain: wrong iteration counter or outer epoch GUID | `EpochOpt` CPS-8 carry re-analysis, `EpochLowering` propagation | Check `CPSParamPerm` and `CPSIterCounterParamIdx` post-EpochOpt. |
 | Stage 14 | `CPS advance: rebuilt continuation pack with N schema holes` | `EpochOpt` carry analysis, intermediate EDT fusion, `EdtLowering` pack ordering | Carry arity changed between EpochOpt and EpochLowering. Zero-filled slots carry garbage. |
-| Stage 11 (distributed) | Stencil halo not applied, internode acquire uses full range | ForLowering scope mismatch, DbDistributedOwnership attr missing | Is `distributed` attr on the DB? ForLowering gates halo on local scope. |
-| Stage 11 (distributed) | Task hangs on remote data acquire | ForLowering dep window narrowing, DbPartitioning scope-aware bounds | `shouldUsePartitionSliceAsDepWindow` may have narrowed to local-only; distributed task cannot reach halo. |
+| `post-db-refinement` (distributed) | Stencil halo not applied, internode acquire uses full range | SDE scope/window mismatch, DbDistributedOwnership attr missing | Is `distributed` attr on the DB? Did SDE mark a distributed scope before Core materialization? |
+| `post-db-refinement` (distributed) | Task hangs on remote data acquire | Dependency-window narrowing, DB refinement scope-aware bounds | A dep window may have narrowed to local-only; distributed task cannot reach halo. |
 | Stage 16 (ArtsToRt) | `arts_rt.edt_create` argument count mismatch | `EdtLowering` pack construction, prior DB/EDT rewrites invalidating pack operand | `EdtParamPackOp` was rewritten; `EdtCreateOp` references old pack. |
 | Post-LLVM | Wrong value in loop or task parameter (silent miscompute) | `EpochLowering` CPS carry slot corruption, `EdtLowering` pack slot reordering | Run `dekk carts compile --all-pipelines` and inspect `pipelines/4_rt/` for the pack structure. |
 
@@ -56,12 +56,13 @@ Use to locate where to grep when triaging.
 - Stages 4–7 (EDT cleanup, CreateDbs): `lib/arts/dialect/core/Transforms/edt/`, `core/Transforms/db/CreateDbs.cpp`, `core/Transforms/RaiseMemRefDimensionality.cpp`
 - Stage 8 (DbPartitioning): `lib/arts/dialect/core/Transforms/db/DbPartitioning.cpp`, `core/Analysis/heuristics/PartitioningHeuristics.cpp`
 - Stages 9–10 (DB opt, post-distribution cleanup): `lib/arts/dialect/core/Transforms/db/`, `core/Transforms/edt/`
-- Stages 11–12 (ForLowering, EdtDistribution): `lib/arts/dialect/core/Transforms/edt/ForLowering.cpp`, `EdtDistribution.cpp`
+- SDE/Core materialization: `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
+- SDE distribution/reduction planning: `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`, `lib/arts/dialect/sde/Transforms/effect/scheduling/ReductionStrategy.cpp`
 - Stage 13 (ConvertArtsToLLVM): `lib/arts/dialect/core/Conversion/ArtsToLLVM/`
 - Stage 14 (EpochLowering): `lib/arts/dialect/rt/Conversion/ArtsToRt/EpochLowering.cpp`
 - Stage 15 (EdtLowering): `lib/arts/dialect/rt/Conversion/ArtsToRt/EdtLowering.cpp`
 - Stage 16 (RtToLLVM): `lib/arts/dialect/rt/Conversion/RtToLLVM/RtToLLVMPatterns.cpp`
-- Multinode-conditional passes: `DistributedHostLoopOutlining`, `DbDistributedOwnership`, `DbDistributedEligibility`, scope-aware `ForLowering`
+- Multinode-conditional passes: `DbDistributedOwnership`, `DbDistributedEligibility`, SDE distribution planning, Core DB refinement
 
 ## Anti-patterns from prior fixes
 

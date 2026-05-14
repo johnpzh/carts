@@ -8,7 +8,7 @@ Run in order. Stop at the first failure and investigate.
 
 1. **Recompile.** `dekk carts build` (full rebuild if the change touches common utilities or TableGen). Verify clean compile.
 
-2. **Per-dialect lit tests.** `dekk carts lit lib/arts/dialect/{sde,core,rt}/test/` filtered to the touched pass(es). All pass. The CLAUDE.md memory entry notes that `_arts_metadata.mlir` test files don't have OMP, so they skip `arts.for` patterns — that's expected; do not regard those as regressions.
+2. **Per-dialect lit tests.** `dekk carts lit lib/arts/dialect/{sde,core,rt}/test/` filtered to the touched pass(es). All pass. Metadata-only fixtures may not exercise OpenMP conversion; do not treat that as a regression by itself.
 
 3. **Pass-test suite.** `dekk carts test`. Full pass-test suite (fast). No new failures.
 
@@ -20,7 +20,7 @@ Run in order. Stop at the first failure and investigate.
 
 7. **Verify-barrier check.** Confirm the verification barrier above the fix still holds. `dekk carts lit lib/arts/dialect/*/test/ -filter=Verify<StageName>`.
 
-8. **Multinode spot-check** (if the fix touches DB partitioning, distribution, ownership, ForLowering, EpochLowering, or CPS logic). `dekk carts compile samples/<fixed-sample> --distributed-db -O3 -o /tmp/mn && ARTS_CONFIG=samples/arts_multinode.cfg /tmp/mn`. No regression vs prior multinode baseline.
+8. **Multinode spot-check** (if the fix touches SDE distribution planning, DB refinement, ownership, EDT materialization, EpochLowering, or CPS logic). `dekk carts compile samples/<fixed-sample> --distributed-db -O3 -o /tmp/mn && ARTS_CONFIG=samples/arts_multinode.cfg /tmp/mn`. No regression vs prior multinode baseline.
 
 9. **Stderr scan.** Capture stderr: `dekk carts compile … 2>&1 | grep -i "warn\|error"`. New warnings? Investigate before considering the fix done.
 

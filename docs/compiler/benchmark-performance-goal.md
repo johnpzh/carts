@@ -156,8 +156,8 @@ until they are re-enabled or removed with a documented reason.
 
 - DB materialization: keep `CreateDbs` as the point where planned physical DBs
   are created.
-- EDT shape: preserve planned block reads/writes through `ForLowering` and EDT
-  distribution.
+- EDT shape: preserve planned block reads/writes through direct SDE-to-Core
+  materialization and Core EDT/DB refinement.
 - Epoch structure: remove unnecessary epoch barriers and continuation overhead
   after SDE legality has been preserved.
 - Dependency lowering: make runtime dependency slots local to the dependency

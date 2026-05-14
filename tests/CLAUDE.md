@@ -31,15 +31,10 @@ samples/           End-to-end C/C++ demo programs (moved from tests/examples/)
 | 4 edt-transforms                        | `lib/arts/dialect/core/test/`      |
 | 5 create-dbs                            | `lib/arts/dialect/core/test/`      |
 | 6 db-opt                                | `lib/arts/dialect/core/test/`      |
-| 7 edt-opt                               | `lib/arts/dialect/core/test/`      |
-| 8 concurrency                           | `lib/arts/dialect/core/test/`      |
-| 9 edt-distribution                      | `lib/arts/dialect/core/test/`      |
-| 10 post-distribution-cleanup            | `lib/arts/dialect/core/test/`      |
-| 11 db-partitioning                      | `lib/arts/dialect/core/test/partitioning/` |
-| 12 post-db-refinement                   | `lib/arts/dialect/core/test/`      |
-| 13 late-concurrency-cleanup             | `lib/arts/dialect/core/test/`      |
-| 14 epochs                               | `lib/arts/dialect/core/test/`      |
-| 15 pre-lowering                         | `lib/arts/dialect/core/test/`      |
-| 16 arts-to-llvm                         | `lib/arts/dialect/rt/test/`        |
+| 7 post-db-refinement                    | `lib/arts/dialect/core/test/`      |
+| 8 late-concurrency-cleanup              | `lib/arts/dialect/core/test/`      |
+| 9 epochs                                | `lib/arts/dialect/core/test/`      |
+| 10 pre-lowering                         | `lib/arts/dialect/core/test/`      |
+| 11 arts-to-llvm                         | `lib/arts/dialect/rt/test/`        |
 | Verification passes (VerifyLowered etc) | `tests/verify/`                    |
 | CLI flag/option validation              | `tests/cli/`                       |

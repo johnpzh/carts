@@ -7,13 +7,12 @@ Reuse these before improvising.
 ```bash
 dekk carts pipeline
 dekk carts pipeline --json
-dekk carts pipeline --pipeline=db-partitioning
 ```
 
 ## Stage Dump
 
 ```bash
-dekk carts compile input.mlir --pipeline=db-partitioning
+dekk carts compile input.mlir --pipeline=post-db-refinement
 dekk carts compile input.mlir --all-pipelines -o outdir/
 ```
 

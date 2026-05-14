@@ -22,9 +22,8 @@ to prevent duplicating existing functionality.
 
 The CARTS codebase has 250+ shared utility functions across 13 utility files.
 Historical audit found:
-- **9 exact duplicate functions** across pass files (e.g., `isOneLikeValue` in
-  2 locations, `hasWorkAfterInParentBlock` in 2, `clearReductionLoopFacts` in 2,
-  `isUndefLikeOp` in 3)
+- **Exact duplicate functions** across pass files (e.g., `isOneLikeValue` in
+  2 locations, `hasWorkAfterInParentBlock` in 2, `isUndefLikeOp` in 3)
 - **60+ static helpers** in pass files that belong in shared utilities
 - **180+ static functions** in pass files, many reimplementing existing utils
 
@@ -86,14 +85,12 @@ These functions already exist in shared locations — NEVER add local copies:
 | `isOneLikeValue` / `isOneLike` | `ValueAnalysis::isOneConstant` + pattern in `DbAnalysis::hasSingleSize` |
 | `hasWorkAfterInParentBlock` | Duplicated 2x — needs extraction to `Utils.h` |
 | `isPureOp` | Duplicated 2x — use `isSideEffectFreeArithmeticLikeOp` from `Utils.h` |
-| `collectSpatialNestIvs` | Duplicated 2x — needs extraction to `LoopUtils.h` |
 | `sortStoresInProgramOrder` | Duplicated 2x — needs extraction to `Utils.h` |
 | `findHoistTarget` | Duplicated 2x — needs consolidation in `LoopInvarianceUtils.h` |
 | `getMemoryAccessInfo` | `DbUtils::getMemoryAccessInfo` is canonical |
 | `createZeroIndex` / `createOneIndex` | `Utils.h` — NEVER redefine |
 | `isLoopInvariant` | `LoopInvarianceUtils.h` — NEVER redefine |
 | `getStaticTripCount` | `LoopUtils.h` — NEVER redefine |
-| `clearReductionLoopFacts` | Duplicated in `ForLowering.cpp` + `MatmulReductionPattern.cpp` — extract to `LoopUtils.h` |
 | `isUndefLikeOp` | Duplicated 3x (`EdtLowering.cpp`, `EdtUtils.cpp`, `EpochOptCpsChain.cpp`) — extract to `Utils.h` |
 
 ## Hardcoded String Rules

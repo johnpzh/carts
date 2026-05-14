@@ -5,8 +5,8 @@ Core is the ARTS-machine-aware layer after SDE and before RT-shaped lowering.
 It materializes SDE-authored plans into concrete DB, EDT, dependency, and epoch
 structure, then refines that structure with Core analyses.
 
-For the dialect split that removed the Core loop carrier, semantic
-`arts.edt<parallel>`, `ForLowering`, and related scheduler scaffolding, see
+For the dialect split that removed the Core semantic loop/parallel scheduler
+carrier and related scaffolding, see
 [`../dialect-layering-vision.md`](../dialect-layering-vision.md).
 
 ## Boundary

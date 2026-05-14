@@ -16,8 +16,8 @@ Read `references/multinode.md` before debugging distributed behavior.
    ```
 3. Inspect distributed stages:
    ```bash
-   dekk carts compile <file> -O3 --arts-config <cfg> --pipeline=edt-distribution
-   dekk carts compile <file> -O3 --arts-config <cfg> --pipeline=db-partitioning
+   dekk carts compile <file> -O3 --arts-config <cfg> --pipeline=openmp-to-arts
+   dekk carts compile <file> -O3 --arts-config <cfg> --pipeline=post-db-refinement
    dekk carts compile <file> -O3 --arts-config <cfg> --pipeline=pre-lowering
    ```
 4. If runtime fails, collect node logs/counters and compare against local.

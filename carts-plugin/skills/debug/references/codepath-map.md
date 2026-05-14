@@ -12,8 +12,9 @@ High-value files by failure class.
 ## Miscompile / Semantic Drift
 
 - `lib/arts/dialect/sde/Transforms/CollectMetadata.cpp`
-- `lib/arts/dialect/core/Transforms/ForLowering.cpp`
-- `lib/arts/dialect/core/Transforms/DbPartitioning.cpp`
+- `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
+- `lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp`
+- `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
 - `lib/arts/utils/LoweringContractUtils.cpp`
 - `lib/arts/utils/PatternSemantics.cpp`
 
@@ -27,7 +28,6 @@ High-value files by failure class.
 ## Distributed Ownership / Multi-Node
 
 - `lib/arts/dialect/core/Transforms/DbDistributedOwnership.cpp`
-- `lib/arts/dialect/core/Transforms/DistributedHostLoopOutlining.cpp`
 - `lib/arts/codegen/Codegen.cpp`
 - `lib/arts/dialect/core/Conversion/ArtsToLLVM/ConvertArtsToLLVM.cpp`
 

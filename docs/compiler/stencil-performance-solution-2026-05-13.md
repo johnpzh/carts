@@ -69,10 +69,10 @@ This is the key shape problem:
 
 2. **Core can widen or drop stencil windows before lowering.**
 
-   `ForLowering` computes coarse read-only fallback before combining the full
-   loop contract, and the fallback skips contract projection. `EdtRewriter`
-   also has a rank-mismatch path that can preserve parent full ranges for
-   read-only acquires instead of worker-local stencil windows.
+   direct materialization can compute coarse read-only fallback before
+   combining the full loop contract, and the fallback can skip contract
+   projection. Rank-mismatch paths can preserve parent full ranges for read-only
+   acquires instead of worker-local stencil windows.
 
 3. **Write mode is too conservative in slow cases.**
 
@@ -128,7 +128,7 @@ dekk carts benchmarks run polybench/jacobi2d polybench/convolution-2d \
 These are the lowest-risk production fixes because they preserve existing SDE
 contracts instead of changing stencil semantics.
 
-1. **Resolve contracts before coarse-read fallback in `ForLowering`.**
+1. **Resolve contracts before coarse-read fallback in direct materialization.**
 
    Move loop/acquire contract resolution ahead of `forceCoarseReadOnlyDep`.
    Explicit stencil, block-halo, owner-dim, or `narrowable_dep` contracts must
@@ -202,8 +202,8 @@ SDE should promote the inner spatial loop dimensions into the owner-task plan:
 - reject in-place Seidel-style self-read unless a wavefront plan proves
   legality.
 
-Core should then materialize exactly that plan through `CreateDbs` and
-`ForLowering`; it should not rediscover stencil geometry.
+Core should then materialize exactly that plan through `CreateDbs` and direct
+SDE-to-Core materialization; it should not rediscover stencil geometry.
 
 Expected impact:
 
@@ -264,7 +264,7 @@ owner-tile work:
 
 1. Add the Core lit tests for dependency window preservation, N-D task windows,
    partition segment counts, and write-mode tightening.
-2. Move contract resolution earlier in `ForLowering` and gate
+2. Move contract resolution earlier in direct materialization and gate
    `forceCoarseReadOnlyDep` on the resolved contract.
 3. Tighten task-local modes by scanning both acquire pointer and EDT block
    argument uses.

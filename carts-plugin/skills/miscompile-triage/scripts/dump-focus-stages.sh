@@ -8,7 +8,7 @@ fi
 
 input=$1
 outdir=$2
-stage_csv=${3:-openmp-to-arts,pattern-pipeline,create-dbs,edt-distribution,db-partitioning,post-db-refinement,pre-lowering}
+stage_csv=${3:-openmp-to-arts,edt-transforms,create-dbs,db-opt,post-db-refinement,pre-lowering}
 
 if [[ $# -ge 3 ]]; then
   shift 3
@@ -24,4 +24,4 @@ for stage in "${stages[@]}"; do
   dekk carts compile "$input" --pipeline="$stage" "$@" > "${outdir}/${stage}.mlir"
 done
 
-dekk dekk carts pipeline --json > "${outdir}/pipeline-manifest.json"
+dekk carts pipeline --json > "${outdir}/pipeline-manifest.json"

@@ -20,7 +20,7 @@ If the rubric here does not match, escalate to `carts-distributed-triage` with t
 
 **Symptom:** `(null reference)` at runtime. Worker hangs on `arts_db_acquire`. Or segfault.
 
-**Root cause:** `DbDistributedOwnership` (stage 11) did not mark the DB, or the eligibility check is too conservative.
+**Root cause:** `DbDistributedOwnership` in Core DB refinement did not mark the DB, or the eligibility check is too conservative.
 
 **Fix usually belongs in:**
 - `lib/arts/dialect/core/Transforms/db/DbDistributedEligibility.cpp` (eligibility rules — too restrictive)
@@ -28,13 +28,16 @@ If the rubric here does not match, escalate to `carts-distributed-triage` with t
 
 ### 2. Scope mismatch (local vs distributed)
 
-**Surface:** `ForLowering` inserts a local stencil halo for a DB that will run distributed; remote workers cannot reach halo elements.
+**Surface:** SDE/Core materialization or DB refinement emits a local stencil
+window for a DB that will run distributed; remote workers cannot reach halo
+elements.
 
 **Symptom:** stencil values at boundary are garbage, or out-of-bounds access.
 
-**Root cause:** `ForLowering.cpp` queries `shouldApplyStencilHalo` without checking whether the DB is marked distributed.
+**Root cause:** SDE distribution planning or Core DB refinement applied a
+local-only halo/window rule without honoring the DB's distributed ownership.
 
-**Fix usually belongs in:** `lib/arts/dialect/core/Transforms/edt/ForLowering.cpp` — make the halo decision scope-aware: query the `distributed` attr before halo expansion.
+**Fix usually belongs in:** `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp` or Core DB refinement code. Make the halo/window decision scope-aware and validate the `distributed` attr before narrowing.
 
 ### 3. Halo / remote-data ownership gap
 
@@ -42,9 +45,9 @@ If the rubric here does not match, escalate to `carts-distributed-triage` with t
 
 **Symptom:** task hangs waiting for remote acquire to complete, or reads stale/wrong values from the halo region.
 
-**Root cause:** `DbPartitioning` (stage 8) computed halo for local-only operation and did not widen for distributed neighbors.
+**Root cause:** Core DB refinement computed a halo for local-only operation and did not widen for distributed neighbors.
 
-**Fix usually belongs in:** `lib/arts/dialect/core/Transforms/db/DbPartitioning.cpp` — when marking a DB distributed, validate that halo bounds cover all transitive neighbors. See `docs/compiler/ownership-proof-gaps.md` §2.3 for the full proof obligation.
+**Fix usually belongs in:** `lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp` or the DB refinement helper that stamps the window. When marking a DB distributed, validate that halo bounds cover all transitive neighbors. See `docs/compiler/ownership-proof-gaps.md` §2.3 for the full proof obligation.
 
 ### 4. GUID coherence (same data, different handles on nodes)
 
@@ -62,7 +65,7 @@ If the rubric here does not match, escalate to `carts-distributed-triage` with t
 
 **Symptom:** worker on node N hangs in init loop, or accesses uninitialized remote memory.
 
-**Root cause:** `EpochLowering` does not gate DB initialization on local ownership; or `DistributedHostLoopOutlining` does not wrap init in per-node tasks.
+**Root cause:** `EpochLowering` does not gate DB initialization on local ownership, or SDE/Core materialization did not express per-node initialization as task work.
 
 **Fix usually belongs in:** `lib/arts/dialect/rt/Conversion/ArtsToRt/EpochLowering.cpp` — check the `distributed` attr; if set, gate init to the owning node only.
 
@@ -101,10 +104,9 @@ If a sample passes single-node but fails multinode:
 2. Diff single-node vs distributed at each stage boundary:
 
    ```bash
-   # stage 8 (DbPartitioning)
-   dekk carts compile samples/<sample> --pipeline=db-partitioning > /tmp/single-p8.mlir
-   dekk carts compile samples/<sample> --distributed-db --pipeline=db-partitioning > /tmp/multi-p8.mlir
-   diff /tmp/single-p8.mlir /tmp/multi-p8.mlir | head -200
+   dekk carts compile samples/<sample> --pipeline=post-db-refinement > /tmp/single-post-db.mlir
+   dekk carts compile samples/<sample> --distributed-db --pipeline=post-db-refinement > /tmp/multi-post-db.mlir
+   diff /tmp/single-post-db.mlir /tmp/multi-post-db.mlir | head -200
    ```
 
 3. Capture node-level logs: `arts.log`, `omp.log`, `cluster.json`, `n0.json`, `n1.json`. The distributed-triage skill has scripts for this.

@@ -25,16 +25,16 @@ hardcoded thresholds — this skill makes those decisions transparent.
 
 ```bash
 # Dump IR at partitioning stage to see partition modes
-dekk carts compile <file> --pipeline=db-partitioning 2>/dev/null | grep 'partition_mode'
+dekk carts compile <file> --pipeline=post-db-refinement 2>/dev/null | grep 'partition_mode'
 
-# Dump IR at distribution stage to see strategy
-dekk carts compile <file> --pipeline=edt-distribution 2>/dev/null | grep 'distribution_kind'
+# Dump IR after SDE planning/materialization to see distribution strategy
+dekk carts compile <file> --pipeline=openmp-to-arts 2>/dev/null | grep 'distribution_kind'
 
 # Enable debug output for partitioning decisions
-dekk carts compile <file> --pipeline=db-partitioning --arts-debug=db_partitioning 2>&1
+dekk carts compile <file> --pipeline=post-db-refinement --arts-debug=db_transforms 2>&1
 
-# Enable debug output for distribution decisions
-dekk carts compile <file> --pipeline=edt-distribution --arts-debug=edt_distribution 2>&1
+# Enable debug output for DB mode/refinement decisions
+dekk carts compile <file> --pipeline=db-opt --arts-debug=db_mode_tightening 2>&1
 
 # Full diagnostic JSON
 dekk carts compile <file> --diagnose --diagnose-output /tmp/diag.json 2>/dev/null
@@ -85,8 +85,8 @@ include/arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.h  — H1 d
 lib/arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.cpp     — H1 evaluation chain
 include/arts/dialect/core/Analysis/heuristics/DistributionHeuristics.h   — H2 data structures
 lib/arts/dialect/core/Analysis/heuristics/DistributionHeuristics.cpp     — H2 strategy selection
-lib/arts/dialect/core/Transforms/DbPartitioning.cpp         — H1 controller pass
-lib/arts/dialect/core/Transforms/ForLowering.cpp            — Distribution lowering
+lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp    — Core DB refinement controller
+lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp — SDE plan materializer
 ```
 
 ## Instructions
@@ -95,7 +95,7 @@ When the user asks to explain a heuristic decision:
 
 1. Identify the focus: partitioning (H1) or distribution (H2)
 2. Compile with the relevant `--arts-debug` channel to capture decisions
-3. Dump IR at the decision stage (`db-partitioning` or `edt-distribution`)
+3. Dump IR at the decision stage (`openmp-to-arts`, `db-opt`, or `post-db-refinement`)
 4. Parse debug output for which heuristic rule fired
 5. Explain: what the rule checks, why it matched, what alternatives exist
 6. If the decision seems wrong, suggest: which input properties to change,

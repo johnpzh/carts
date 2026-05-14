@@ -139,7 +139,7 @@ belong in dependency slots.
 
 3. **Fix Core dependency-window preservation first.**
 
-   In `ForLowering`, resolve loop/acquire contracts before coarse-read fallback.
+   In direct materialization, resolve loop/acquire contracts before coarse-read fallback.
    Explicit stencil, block-halo, owner-dim, or `narrowable_dep` contracts should
    keep worker-local dependency windows unless an owner-mismatch proof forces a
    full read. `inferLoopLocalMode` and loop-IV access checks should scan both
@@ -181,7 +181,7 @@ The most defensible first code slice is:
 1. Add the Core lit tests listed above.
 2. Fix `DbAcquireOp` multi-entry segment accounting across indices, offsets,
    and sizes.
-3. Move contract resolution earlier in `ForLowering`.
+3. Move contract resolution earlier in direct materialization.
 4. Add the shared use scanner for parent acquire pointer plus EDT block
    argument.
 5. Re-run the slow stencil subset with `--runs 3` and the overhead profile.

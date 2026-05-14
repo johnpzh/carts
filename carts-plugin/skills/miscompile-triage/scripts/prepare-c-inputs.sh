@@ -14,9 +14,9 @@ mkdir -p "$outdir"
 base=$(basename "$src")
 stem=${base%.*}
 
-dekk dekk carts cgeist "$src" -O0 --print-debug-info -S --raise-scf-to-affine "$@" \
+dekk carts cgeist "$src" -O0 --print-debug-info -S --raise-scf-to-affine "$@" \
   -o "${outdir}/${stem}_seq.mlir"
-dekk dekk carts cgeist "$src" -O0 --print-debug-info -S -fopenmp --raise-scf-to-affine "$@" \
+dekk carts cgeist "$src" -O0 --print-debug-info -S -fopenmp --raise-scf-to-affine "$@" \
   -o "${outdir}/${stem}_omp.mlir"
 
 echo "${outdir}/${stem}_seq.mlir"

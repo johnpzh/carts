@@ -13,8 +13,7 @@ shift 2
 mkdir -p "$outdir"
 
 stages=(
-  edt-distribution
-  db-partitioning
+  openmp-to-arts
   post-db-refinement
   pre-lowering
 )

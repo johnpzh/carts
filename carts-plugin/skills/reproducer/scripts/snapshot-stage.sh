@@ -12,4 +12,4 @@ output=$3
 shift 3
 
 mkdir -p "$(dirname "$output")"
-dekk dekk carts compile "$input" --pipeline="$stage" "$@" > "$output"
+dekk carts compile "$input" --pipeline="$stage" "$@" > "$output"

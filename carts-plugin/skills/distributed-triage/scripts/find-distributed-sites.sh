@@ -5,7 +5,9 @@ cd "$(git rev-parse --show-toplevel)"
 
 git grep -n \
   -e 'DbDistributedOwnership' \
-  -e 'DistributedHostLoopOutlining' \
+  -e 'DbDistributedEligibility' \
+  -e 'DistributionPlanning' \
+  -e 'ConvertSdeToArts' \
   -e 'distributed_db_init' \
   -e 'distributed_db_init_worker' \
   -e 'artsGetTotalNodes' \

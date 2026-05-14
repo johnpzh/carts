@@ -13,7 +13,7 @@ nodes=${4:-2}
 threads=${5:-4}
 shift $(( $# >= 5 ? 5 : $# ))
 
-dekk dekk carts benchmarks run "$benchmark" \
+dekk carts benchmarks run "$benchmark" \
   --size "$size" \
   --arts-config "$arts_config" \
   --nodes "$nodes" \

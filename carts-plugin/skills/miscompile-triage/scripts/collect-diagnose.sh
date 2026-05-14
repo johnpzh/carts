@@ -12,7 +12,7 @@ shift 2
 
 mkdir -p "$outdir"
 
-dekk dekk carts compile "$input" --diagnose --diagnose-output "${outdir}/diagnose.json" "$@" >/dev/null
-dekk dekk carts pipeline --json > "${outdir}/pipeline-manifest.json"
+dekk carts compile "$input" --diagnose --diagnose-output "${outdir}/diagnose.json" "$@" >/dev/null
+dekk carts pipeline --json > "${outdir}/pipeline-manifest.json"
 
 echo "${outdir}/diagnose.json"

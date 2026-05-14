@@ -18,16 +18,11 @@ pass names matter.
 4. `edt-transforms`
 5. `create-dbs`
 6. `db-opt`
-7. `edt-opt`
-8. `concurrency`
-9. `edt-distribution`
-10. `post-distribution-cleanup`
-11. `db-partitioning`
-12. `post-db-refinement`
-13. `late-concurrency-cleanup`
-14. `epochs`
-15. `pre-lowering`
-16. `arts-to-llvm`
+7. `post-db-refinement`
+8. `late-concurrency-cleanup`
+9. `epochs`
+10. `pre-lowering`
+11. `arts-to-llvm`
 
 `--pipeline` also accepts the sentinel `complete`. `--start-from` accepts core
 stages only.
@@ -46,5 +41,9 @@ you are specifically fixing outdated docs.
 - `openmp-to-arts` owns the complete SDE lifecycle and currently contains
   tensor raising, iteration-space decomposition, codelet conversion, token mode
   refinement, and `ConvertSdeToArts`.
-- `post-distribution-cleanup` starts with `VerifyEdtBodyPreserved`.
-- `pre-lowering` uses `EdtParallelMonolithicLowering`.
+- `openmp-to-arts` owns SDE planning, direct SDE-to-Core materialization,
+  `VerifySdeLowered`, and `VerifyCoreObjectsOnly`.
+- `post-db-refinement` runs DB/EDT refinements and contract validation after
+  DB mode tightening.
+- `pre-lowering` lowers Core DB/EDT/epoch objects to RT-shaped operations and
+  verifies the result with `VerifyPreLowered`.

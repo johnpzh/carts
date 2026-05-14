@@ -49,8 +49,8 @@ done
 ## 16 Core Pipeline Stages (Canonical Order)
 
 Canonical source: `tools/compile/Compile.cpp` (`getStageRegistry()` + pass arrays).
-Two additional epilogue stages (`complete-mlir`, `emit-llvm`) run conditionally
-on `--O3` / `--emit-llvm`.
+Additional epilogue stages (`post-o3-opt`, `llvm-ir-emission`) run
+conditionally when requested.
 
 | # | Stage | Primary Question |
 |---|-------|-----------------|
@@ -60,28 +60,23 @@ on `--O3` / `--emit-llvm`.
 | 4 | edt-transforms | Is EDT structure optimized? |
 | 5 | create-dbs | Are DataBlock allocations created? |
 | 6 | db-opt | Are DB access modes correct? |
-| 7 | edt-opt | Are EDTs fused/optimized? |
-| 8 | concurrency | Is the concurrency graph correct? |
-| 9 | edt-distribution | Is distribution strategy assigned? |
-| 10 | post-distribution-cleanup | Are loops lowered correctly? |
-| 11 | db-partitioning | Are DBs partitioned correctly? |
-| 12 | post-db-refinement | Are contracts validated? |
-| 13 | late-concurrency-cleanup | Is hoisting/sinking correct? |
-| 14 | epochs | Are epochs created correctly? |
-| 15 | pre-lowering | Are EDTs/DBs/epochs lowered to RT calls? |
-| 16 | arts-to-llvm | Is final LLVM IR correct? |
+| 7 | post-db-refinement | Are contracts validated and DB/EDT refinements correct? |
+| 8 | late-concurrency-cleanup | Is hoisting/sinking correct? |
+| 9 | epochs | Are epochs created correctly? |
+| 10 | pre-lowering | Are EDTs/DBs/epochs lowered to RT calls? |
+| 11 | arts-to-llvm | Is final LLVM IR correct? |
 
 ## Bisection Strategy by Symptom
 
 | Symptom | Start Checking At |
 |---------|------------------|
-| Wrong array values | db-partitioning (11), then post-db-refinement (12) |
-| Missing parallelism | concurrency (8), then edt-distribution (9) |
-| Deadlock/hang | epochs (14), then pre-lowering (15) |
-| Wrong loop bounds | edt-distribution (9), then post-distribution-cleanup (10) |
+| Wrong array values | create-dbs (5), db-opt (6), then post-db-refinement (7) |
+| Missing parallelism | openmp-to-arts (3), then edt-transforms (4) |
+| Deadlock/hang | epochs (9), then pre-lowering (10) |
+| Wrong loop bounds | openmp-to-arts (3), then late-concurrency-cleanup (8) |
 | Missing DB | create-dbs (5), then db-opt (6) |
 | Pattern/semantic issue | openmp-to-arts (3) — inspect SDE sub-passes via `--arts-debug=<pass>` |
-| LLVM crash | arts-to-llvm (16), then pre-lowering (15) |
+| LLVM crash | arts-to-llvm (11), then pre-lowering (10) |
 
 ## What to Look for in Diffs
 
@@ -101,7 +96,7 @@ grep 'arts.dep_pattern\|arts.partition_mode\|arts.distribution_kind' /tmp/stages
 ```bash
 # Count loops at each stage
 for f in /tmp/stages/*.mlir; do
-  echo "$(basename $f): $(grep -c 'arts.for\|scf.for' $f) loops"
+  echo "$(basename $f): $(grep -c 'scf.for' $f) implementation loops"
 done
 ```
 
