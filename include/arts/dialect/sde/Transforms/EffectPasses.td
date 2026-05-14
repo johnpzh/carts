@@ -93,4 +93,18 @@ def BarrierElimination
   let constructor = "mlir::arts::sde::createBarrierEliminationPass()";
 }
 
+def CpsPlanning : Pass<"cps-planning", "mlir::ModuleOp"> {
+  let summary = "Mark SDE-owned CPS timestep candidates before Core conversion";
+  let description = [{
+    Groups timestep/wave candidates already recognized by SDE barrier analysis
+    under SDE-owned CPS candidate attributes. The pass does not set
+    `async_strategy = cps_chain`; that final strategy remains reserved for a
+    later token/dependency/control dataflow rewrite. Core must only materialize
+    final CPS plans after SDE has made data and control carries explicit.
+  }];
+  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
+                           "::mlir::scf::SCFDialect"];
+  let constructor = "mlir::arts::sde::createCpsPlanningPass()";
+}
+
 #endif // ARTS_DIALECT_SDE_TRANSFORMS_EFFECT_PASSES

@@ -84,6 +84,7 @@ std::unique_ptr<Pass>
 createDistributionPlanningPass(SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass>
 createBarrierEliminationPass(SDECostModel *costModel = nullptr);
+std::unique_ptr<Pass> createCpsPlanningPass();
 
 // --- Conversion passes ---
 std::unique_ptr<Pass>
