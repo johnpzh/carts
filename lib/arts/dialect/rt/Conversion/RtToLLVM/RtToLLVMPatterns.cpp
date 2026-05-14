@@ -1073,6 +1073,19 @@ private:
       return;
     }
 
+    if (!bounds.useDepv && depInfo.dbInfo.isSingleElement &&
+        !depInfo.dbInfo.indices.empty()) {
+      Value zero = AC->createIndexConstant(0, loc);
+      recordSingleDb(dbGuid, depInfo.guidStorage, edtGuid, sharedSlotAlloc,
+                     zero, depInfo.dbInfo.indices, bounds.allocSizes,
+                     accessMode, acquireMode, depFlags, boundsValid,
+                     depInfo.depStruct, depInfo.baseOffset, bounds.totalDBs,
+                     byteOffset, byteSize, depInfo.stencilCenterLinear,
+                     depInfo.stencilCenterCoords, &depInfo,
+                     readyLocalDepBuffer, loc);
+      return;
+    }
+
     AC->iterateDbElements(
         dbGuid, edtGuid, depInfo.dbInfo.sizes, depInfo.dbInfo.offsets,
         depInfo.dbInfo.isSingleElement, loc,

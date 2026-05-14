@@ -574,16 +574,6 @@ static Value createReductionCombiner(OpBuilder &builder, Location loc,
   return {};
 }
 
-static SmallVector<Value>
-createUnitDynamicSizes(OpBuilder &builder, Location loc, MemRefType memrefType) {
-  SmallVector<Value> dynamicSizes;
-  for (int64_t dim : memrefType.getShape()) {
-    if (dim == ShapedType::kDynamic)
-      dynamicSizes.push_back(createOneIndex(builder, loc));
-  }
-  return dynamicSizes;
-}
-
 static LogicalResult validateReductionAccumulator(sde::SdeSuIterateOp source,
                                                   Value accumulator) {
   auto memrefType = dyn_cast<MemRefType>(accumulator.getType());
@@ -651,19 +641,6 @@ getSuReductionPlan(sde::SdeSuIterateOp source,
   return plan;
 }
 
-static Value createReductionScratchMemref(OpBuilder &builder, Location loc,
-                                          Value accumulator,
-                                          sde::SdeReductionKind kind) {
-  auto memrefType = cast<MemRefType>(accumulator.getType());
-  Value scratch = memref::AllocaOp::create(
-      builder, loc, memrefType, createUnitDynamicSizes(builder, loc, memrefType));
-  Value identity =
-      createReductionIdentity(builder, loc, memrefType.getElementType(), kind);
-  if (identity)
-    storeScalarReductionValue(builder, loc, identity, scratch);
-  return scratch;
-}
-
 static void mapReductionAccumulatorAliases(IRMapping &mapper,
                                            Value sourceAccumulator,
                                            Value materializedAccumulator,
@@ -679,29 +656,6 @@ static void mapReductionAccumulatorAliases(IRMapping &mapper,
       ValueAnalysis::stripMemrefViewOps(materializedAccumulator);
   if (materializedRoot && materializedRoot != materializedAccumulator)
     mapper.map(materializedRoot, replacement);
-}
-
-static void prepareAtomicReductionLocals(OpBuilder &builder, Location loc,
-                                         const SuReductionPlan &plan,
-                                         IRMapping &mapper,
-                                         SmallVectorImpl<Value> &scratchMemrefs) {
-  scratchMemrefs.reserve(plan.accumulators.size());
-  for (auto [sourceAccumulator, accumulator, kind] :
-       llvm::zip(plan.sourceAccumulators, plan.accumulators, plan.kinds)) {
-    Value scratch = createReductionScratchMemref(builder, loc, accumulator, kind);
-    mapReductionAccumulatorAliases(mapper, sourceAccumulator, accumulator,
-                                   scratch);
-    scratchMemrefs.push_back(scratch);
-  }
-}
-
-static void finalizeAtomicReductionLocals(OpBuilder &builder, Location loc,
-                                          const SuReductionPlan &plan,
-                                          ArrayRef<Value> scratchMemrefs) {
-  for (auto [accumulator, scratch] : llvm::zip(plan.accumulators, scratchMemrefs)) {
-    Value partial = loadScalarReductionValue(builder, loc, scratch);
-    AtomicAddOp::create(builder, loc, accumulator, partial);
-  }
 }
 
 static void preparePartialReductionSlots(
@@ -730,7 +684,7 @@ allocatePartialReductionDbs(OpBuilder &builder, Location loc,
                             Value one) {
   SmallVector<MaterializedReduction> materialized;
   materialized.reserve(plan.accumulators.size());
-  if (plan.empty() || plan.strategy == sde::SdeReductionStrategy::atomic)
+  if (plan.empty())
     return materialized;
 
   Value route = createCurrentNodeRoute(builder, loc);
@@ -1017,12 +971,7 @@ static LogicalResult materializeSuIterateAsGenericTaskDispatch(
 
   rewriter.setInsertionPointToStart(&taskBlock);
   IRMapping taskMapping = outerMapping;
-  SmallVector<Value> atomicScratchMemrefs;
-  if (!reductionPlan.empty() &&
-      reductionPlan.strategy == sde::SdeReductionStrategy::atomic) {
-    prepareAtomicReductionLocals(rewriter, loc, reductionPlan, taskMapping,
-                                 atomicScratchMemrefs);
-  } else if (!partialReductions.empty()) {
+  if (!partialReductions.empty()) {
     preparePartialReductionSlots(rewriter, loc, reductionPlan, task,
                                  dependencyArgs, taskMapping);
   }
@@ -1034,9 +983,6 @@ static LogicalResult materializeSuIterateAsGenericTaskDispatch(
     return failure();
 
   rewriter.setInsertionPointToEnd(&taskBlock);
-  if (!atomicScratchMemrefs.empty())
-    finalizeAtomicReductionLocals(rewriter, loc, reductionPlan,
-                                  atomicScratchMemrefs);
   if (taskBlock.empty() || !taskBlock.back().hasTrait<OpTrait::IsTerminator>())
     YieldOp::create(rewriter, loc);
 
@@ -1189,6 +1135,9 @@ static LogicalResult materializeSdeOp(Operation *op, PatternRewriter &rewriter,
     }
     return success();
   }
+
+  if (isa<sde::SdeControlTokenOp>(op))
+    return success();
 
   if (isa<sde::SdeYieldOp>(op))
     return success();
@@ -1391,6 +1340,19 @@ struct SuBarrierToArtsPattern : public OpRewritePattern<sde::SdeSuBarrierOp> {
             convertSdeBarrierReason(rewriter.getContext(), sdeReason.getValue());
       BarrierOp::create(rewriter, op.getLoc(), reason);
     }
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ControlTokenToArtsPattern
+    : public OpRewritePattern<sde::SdeControlTokenOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(sde::SdeControlTokenOp op,
+                                PatternRewriter &rewriter) const override {
+    if (!op->use_empty())
+      return failure();
     rewriter.eraseOp(op);
     return success();
   }
@@ -2368,6 +2330,7 @@ struct ConvertSdeToArtsPass
     patterns.add<SuDistributeToArtsPattern>(context);
     patterns.add<SuIterateToArtsPattern>(context);
     patterns.add<SuBarrierToArtsPattern>(context);
+    patterns.add<ControlTokenToArtsPattern>(context);
     patterns.add<CuAtomicToArtsPattern>(context);
     patterns.add<CuReduceToArtsPattern>(context);
     patterns.add<SdeYieldToArtsPattern>(context);

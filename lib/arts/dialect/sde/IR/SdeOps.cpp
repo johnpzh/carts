@@ -5,6 +5,7 @@
 
 #include "arts/dialect/sde/IR/SdeDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpImplementation.h"
 
@@ -13,6 +14,29 @@ using namespace mlir::arts::sde;
 
 #define GET_OP_CLASSES
 #include "arts/dialect/sde/IR/SdeOps.cpp.inc"
+
+static bool isSdeCpsPortableCarryType(Type type) {
+  return type.isIntOrIndexOrFloat() ||
+         isa<DepType, CompletionType, TokenType>(type);
+}
+
+static bool isSdeCpsBareDataOrPointerType(Type type) {
+  return isa<MemRefType, TensorType, LLVM::LLVMPointerType>(type);
+}
+
+static LogicalResult checkSdeCpsPortableCarry(Operation *op, StringRef role,
+                                              unsigned index, Type type) {
+  if (isSdeCpsPortableCarryType(type))
+    return success();
+
+  InFlightDiagnostic diag = op->emitError()
+                            << "sde.cps " << role << " #" << index
+                            << " cannot carry ";
+  if (isSdeCpsBareDataOrPointerType(type))
+    diag << "bare data/pointer type ";
+  diag << type << "; use sde.mu_token, sde.mu_dep, or sde.control_token";
+  return failure();
+}
 
 //===----------------------------------------------------------------------===//
 // SdeCuRegionOp — custom assembly format + verifier
@@ -530,6 +554,24 @@ LogicalResult SdeSuIterateOp::verify() {
     if (stageIndex < 0 || stageIndex >= stageCount)
       return emitOpError()
              << "sde.cps_stage_index must be in [0, sde.cps_stage_count)";
+
+    for (auto [index, value] : llvm::enumerate(getReductionAccumulators())) {
+      if (failed(checkSdeCpsPortableCarry(getOperation(), "carry operand",
+                                          index, value.getType())))
+        return failure();
+    }
+    for (auto [index, result] : llvm::enumerate(getResults())) {
+      if (failed(checkSdeCpsPortableCarry(getOperation(), "result", index,
+                                          result.getType())))
+        return failure();
+    }
+    unsigned numIVs = getLowerBounds().size();
+    for (unsigned index = numIVs; index < entry.getNumArguments(); ++index) {
+      if (failed(checkSdeCpsPortableCarry(
+              getOperation(), "body argument", index - numIVs,
+              entry.getArgument(index).getType())))
+        return failure();
+    }
   }
 
   if (auto strategy = getAsyncStrategy();

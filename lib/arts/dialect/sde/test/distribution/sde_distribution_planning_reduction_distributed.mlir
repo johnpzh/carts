@@ -1,8 +1,9 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
-// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS --implicit-check-not=arts.atomic_add
 
 // Verify that distributed-scope reductions with an explicit strategy and
-// enough work now receive blocked distribution planning.
+// enough work receive blocked distribution planning and lower through
+// dependency-carried partial reduction DBs.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
@@ -14,12 +15,18 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
+// ARTS: arts.db_alloc
+// ARTS-SAME: elementType(i32)
 // ARTS: arts.epoch
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
 // ARTS: scf.for
+// ARTS: arts.db_acquire
 // ARTS: arts.edt <task>
-// ARTS: memref.alloca
-// ARTS: arts.atomic_add
+// ARTS: arts.db_ref
+// ARTS: scf.for
+// ARTS: arts.db_ref
+// ARTS: memref.store
+// ARTS: arts.db_free
 // ARTS-NOT: arts.for
 // ARTS-NOT: arts_sde.
 

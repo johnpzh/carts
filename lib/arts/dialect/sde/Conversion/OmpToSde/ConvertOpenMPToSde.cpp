@@ -124,6 +124,43 @@ convertDependMode(omp::ClauseTaskDepend mode) {
   return std::nullopt;
 }
 
+static void attachPendingControlTokensInBlock(Block &block) {
+  SmallVector<Value> pendingTokens;
+
+  for (auto it = block.begin(), end = block.end(); it != end;) {
+    Operation &op = *it++;
+
+    for (Region &region : op.getRegions())
+      for (Block &nested : region)
+        attachPendingControlTokensInBlock(nested);
+
+    if (auto token = dyn_cast<sde::SdeControlTokenOp>(op)) {
+      pendingTokens.push_back(token.getToken());
+      continue;
+    }
+
+    auto barrier = dyn_cast<sde::SdeSuBarrierOp>(op);
+    if (!barrier)
+      continue;
+
+    if (barrier.getTokens().empty() && !pendingTokens.empty()) {
+      OpBuilder builder(barrier);
+      sde::SdeSuBarrierOp::create(builder, barrier.getLoc(), pendingTokens,
+                                  barrier.getBarrierEliminatedAttr(),
+                                  barrier.getBarrierReasonAttr());
+      barrier.erase();
+    }
+
+    pendingTokens.clear();
+  }
+}
+
+static void attachTaskwaitControlTokens(ModuleOp module) {
+  for (Region &region : module->getRegions())
+    for (Block &block : region)
+      attachPendingControlTokensInBlock(block);
+}
+
 /// Infer SDE reduction kind from OMP DeclareReductionOp combiner body.
 static sde::SdeReductionKind inferReductionKind(omp::DeclareReductionOp decl) {
   Block &combinerBlock = decl.getReductionRegion().front();
@@ -576,6 +613,9 @@ struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
     Block &old = op.getRegion().front();
     blk.getOperations().splice(blk.end(), old.getOperations());
 
+    rewriter.setInsertionPointAfter(cuTask);
+    sde::SdeControlTokenOp::create(rewriter, loc, sde::CompletionType::get(ctx));
+
     ++numTasksConverted;
     rewriter.eraseOp(op);
     return success();
@@ -861,6 +901,8 @@ struct ConvertOpenMPToSdePass
         [&](omp::DeclareReductionOp op) { declReductions.push_back(op); });
     for (auto op : declReductions)
       op.erase();
+
+    attachTaskwaitControlTokens(module);
 
     ARTS_INFO_FOOTER(ConvertOpenMPToSdePass);
   }

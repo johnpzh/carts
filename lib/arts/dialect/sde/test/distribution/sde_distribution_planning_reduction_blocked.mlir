@@ -1,9 +1,9 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS --implicit-check-not=arts.atomic_add
 
 // Verify that SDE authors a blocked distribution advisory for a local
-// reduction loop with a strategy, and that ConvertSdeToArts materializes
-// the advisory as an ARTS distribution kind on concrete epoch/task IR.
+// reduction loop with a strategy. ConvertSdeToArts materializes that plan as
+// concrete epoch/task IR with dependency-carried partial reduction DBs.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
@@ -15,13 +15,19 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
+// ARTS: arts.db_alloc
+// ARTS-SAME: elementType(i32)
 // ARTS: arts.epoch
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
 // ARTS: scf.for
+// ARTS: arts.db_acquire
 // ARTS: arts.edt <task> <intranode>
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
-// ARTS: memref.alloca
-// ARTS: arts.atomic_add
+// ARTS: arts.db_ref
+// ARTS: scf.for
+// ARTS: arts.db_ref
+// ARTS: memref.store
+// ARTS: arts.db_free
 // ARTS-NOT: arts.for
 // ARTS-NOT: arts_sde.
 

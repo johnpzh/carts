@@ -249,6 +249,21 @@ def SdeCuTaskOp
   }];
 }
 
+def SdeControlTokenOp
+    : ArtsSde_Op<"control_token", [MemoryEffects<[MemWrite]>]> {
+  let summary = "SDE completion/control token";
+  let description = [{
+    Produces an SDE-level completion token for task and wait control edges.
+    The token is consumed by SDE synchronization surfaces such as
+    `sde.su_barrier` and is erased during SDE-to-Core materialization after
+    those control edges have been consumed.
+  }];
+
+  let results = (outs SdeCompletionType:$token);
+
+  let assemblyFormat = "attr-dict `:` type($token)";
+}
+
 def SdeCuReduceOp
     : ArtsSde_Op<"cu_reduce", [MemoryEffects<[MemRead, MemWrite]>]> {
   let summary = "Reduction accumulation";
