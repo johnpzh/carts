@@ -52,6 +52,10 @@ static LogicalResult verifyCandidateAttrSet(arts::sde::SdeSuIterateOp op) {
                 "sde.cps_candidate_stage_index, "
                 "sde.cps_candidate_stage_count, and "
                 "sde.cps_candidate_requires_tokenized_dataflow together";
+    if (!op->getAttrOfType<UnitAttr>(kCpsCandidateRequiresTokenizedDataflow))
+      return op.emitOpError()
+             << "sde.cps_candidate_requires_tokenized_dataflow must be a "
+                "unit attr";
 
     if (op.getCpsGroupIdAttr() || op.getCpsStageIndexAttr() ||
         op.getCpsStageCountAttr())
