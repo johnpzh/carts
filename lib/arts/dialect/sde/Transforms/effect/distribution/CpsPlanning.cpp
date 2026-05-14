@@ -2,8 +2,9 @@
 /// File: CpsPlanning.cpp
 ///
 /// Mark SDE-owned CPS timestep candidates after barrier analysis. This pass
-/// records grouping intent only; final `cps_chain` remains reserved for a later
-/// token/dependency/control dataflow rewrite.
+/// records candidate grouping and makes barrier-delimited stage completion
+/// explicit with SDE control tokens; final `cps_chain` remains reserved until
+/// SDE has rewritten all scalar/data/control carries.
 ///==========================================================================///
 
 #include "arts/dialect/sde/Transforms/Passes.h"
@@ -18,6 +19,8 @@ namespace mlir::arts {
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
+
+#include <cassert>
 
 ARTS_DEBUG_SETUP(cps_planning);
 
@@ -130,12 +133,19 @@ static int64_t findNextCandidateGroupId(ModuleOp module) {
   return nextId;
 }
 
-static bool stampCandidatePair(sde::SdeSuIterateOp first,
-                               sde::SdeSuIterateOp second, int64_t groupId) {
+static bool canStampCandidatePair(sde::SdeSuIterateOp first,
+                                  sde::SdeSuIterateOp second) {
   if (!isSdeCpsCandidateStage(first) || !isSdeCpsCandidateStage(second))
     return false;
   if (hasCandidateAttrs(first) || hasCandidateAttrs(second))
     return false;
+  return true;
+}
+
+static void stampCandidatePair(sde::SdeSuIterateOp first,
+                               sde::SdeSuIterateOp second, int64_t groupId) {
+  assert(canStampCandidatePair(first, second) &&
+         "candidate pair preconditions must be checked before stamping");
 
   MLIRContext *ctx = first.getContext();
   auto setStageAttrs = [&](sde::SdeSuIterateOp op, int64_t stageIndex) {
@@ -150,6 +160,30 @@ static bool stampCandidatePair(sde::SdeSuIterateOp first,
 
   setStageAttrs(first, 0);
   setStageAttrs(second, 1);
+}
+
+static bool attachStageCompletionToBarrier(Operation *stageContainer,
+                                           sde::SdeSuBarrierOp barrier) {
+  if (!stageContainer || !barrier)
+    return false;
+  if (stageContainer->getBlock() != barrier->getBlock())
+    return false;
+
+  OpBuilder builder(stageContainer->getContext());
+  builder.setInsertionPointAfter(stageContainer);
+  auto token = sde::SdeControlTokenOp::create(
+      builder, stageContainer->getLoc(),
+      sde::CompletionType::get(stageContainer->getContext()));
+
+  SmallVector<Value> tokens(barrier.getTokens().begin(),
+                            barrier.getTokens().end());
+  tokens.push_back(token.getToken());
+
+  builder.setInsertionPoint(barrier);
+  sde::SdeSuBarrierOp::create(builder, barrier.getLoc(), tokens,
+                              barrier.getBarrierEliminatedAttr(),
+                              barrier.getBarrierReasonAttr());
+  barrier.erase();
   return true;
 }
 
@@ -163,9 +197,13 @@ static unsigned stampBarrierDelimitedCandidates(ModuleOp module,
   });
 
   for (sde::SdeSuBarrierOp barrier : barriers) {
-    auto first = findSuIterate(findPreviousSuContainer(barrier));
-    auto second = findSuIterate(findNextSuContainer(barrier));
-    if (stampCandidatePair(first, second, nextGroupId)) {
+    Operation *firstContainer = findPreviousSuContainer(barrier);
+    Operation *secondContainer = findNextSuContainer(barrier);
+    auto first = findSuIterate(firstContainer);
+    auto second = findSuIterate(secondContainer);
+    if (canStampCandidatePair(first, second) &&
+        attachStageCompletionToBarrier(firstContainer, barrier)) {
+      stampCandidatePair(first, second, nextGroupId);
       ++stamped;
       ++nextGroupId;
     }
@@ -197,7 +235,8 @@ static unsigned stampAdjacentLoopCandidates(scf::ForOp loop,
       if (previous) {
         auto first = findSuIterate(previous);
         auto second = findSuIterate(&op);
-        if (stampCandidatePair(first, second, nextGroupId)) {
+        if (canStampCandidatePair(first, second)) {
+          stampCandidatePair(first, second, nextGroupId);
           ++stamped;
           ++nextGroupId;
         }

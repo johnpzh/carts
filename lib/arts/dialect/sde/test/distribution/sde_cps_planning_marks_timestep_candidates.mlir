@@ -1,8 +1,8 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
-// SDE barrier analysis identifies the repeated timestep pair; SDE CPS planning
-// groups it as a candidate but leaves asyncStrategy on advance_edt until the
-// token/dependency/control dataflow rewrite is explicit.
+// SDE barrier analysis identifies the repeated timestep pair. SDE CPS planning
+// groups it as a candidate, emits a stage-completion token for the barrier
+// edge, and leaves asyncStrategy on advance_edt until every carry is explicit.
 
 // CHECK-LABEL: // -----// IR Dump After CpsPlanning (cps-planning) //----- //
 // CHECK: func.func @timestep_pair
@@ -14,7 +14,8 @@
 // CHECK-SAME: cps_candidate_stage_count = 2 : i64
 // CHECK-SAME: cps_candidate_stage_index = 0 : i64
 // CHECK-SAME: repetitionStructure = #arts_sde.repetition_structure<full_timestep>
-// CHECK: arts_sde.su_barrier
+// CHECK: %[[DONE:[0-9]+]] = arts_sde.control_token : !arts_sde.completion
+// CHECK: arts_sde.su_barrier(%[[DONE]] : !arts_sde.completion)
 // CHECK-SAME: barrierReason = #arts_sde.barrier_reason<timestep_stage_boundary>
 // CHECK: arts_sde.su_iterate
 // CHECK: } {

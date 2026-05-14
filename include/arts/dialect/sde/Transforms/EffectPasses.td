@@ -97,10 +97,11 @@ def CpsPlanning : Pass<"cps-planning", "mlir::ModuleOp"> {
   let summary = "Mark SDE-owned CPS timestep candidates before Core conversion";
   let description = [{
     Groups timestep/wave candidates already recognized by SDE barrier analysis
-    under SDE-owned CPS candidate attributes. The pass does not set
-    `async_strategy = cps_chain`; that final strategy remains reserved for a
-    later token/dependency/control dataflow rewrite. Core must only materialize
-    final CPS plans after SDE has made data and control carries explicit.
+    under SDE-owned CPS candidate attributes, and emits SDE completion tokens
+    for barrier-delimited stage boundaries. The pass does not set
+    `async_strategy = cps_chain`; that final strategy remains reserved until
+    SDE has made every scalar, data, and control carry explicit. Core must only
+    materialize final CPS plans from that explicit SDE graph.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
                            "::mlir::scf::SCFDialect"];
