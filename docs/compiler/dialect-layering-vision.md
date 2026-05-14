@@ -73,8 +73,8 @@ Core may contain:
 `CreateDbs` is currently the compatibility bridge for raw memrefs that have not
 yet been canonicalized into MU tokens. It may consume explicit SDE-authored DB
 layout and dependency-slice metadata, allocate the corresponding Core DB, and
-rewrite remaining raw memref accesses. It must not choose tensor owner dims,
-tile geometry, or dependency-window policy by inspecting task bodies. This is a
+rewrite remaining raw memref accesses. It must not choose owner dims, tile
+geometry, or dependency-window policy by inspecting task bodies. This is a
 temporary migration surface, not the target architecture.
 
 Core must not contain source-level parallel carriers, OpenMP semantics,
@@ -115,7 +115,7 @@ The SDE/Core boundary has two paths:
 4. Legacy raw-memref `su_iterate`/`cu_task` lowering may emit explicit Core
    dependency controls from the SDE physical owner plan. `CreateDbs` is then a
    compatibility bridge that creates the DB object and rewrites raw accesses; it
-   must not infer tensor partition policy.
+   must not infer data partition policy.
 5. `VerifySdeLowered` and `VerifyCoreObjectsOnly` enforce the boundary.
 6. Core DB/EDT/epoch passes refine concrete object shape.
 7. RT lowering maps Core objects to runtime-facing calls.
@@ -130,7 +130,7 @@ The production target is the direct MU/token/codelet path:
 ```text
 SDE
   sde.mu_data        data root and layout intent
-  sde.mu_token       mode + tensor slice
+  sde.mu_token       mode + memref slice
   sde.cu_codelet     isolated compute body
         |
         | ConvertSdeToArts
@@ -196,13 +196,37 @@ before `ConvertSdeToArts`:
    `mu_token` to `db_acquire`, and `cu_codelet` to `edt`, including ND token
    offsets/sizes and release placement.
 6. Core may then run DB/EDT/epoch analyses and optimizations over concrete
-   objects, but it must not rediscover DB roots, task slices, tensor owner dims,
-   or tiling policy from raw memrefs.
+   objects, but it must not rediscover DB roots, task slices, owner dims, or
+   tiling policy from raw memrefs.
 
 The Core op is gone. The remaining migration work is to cover `su_iterate`,
 `cu_task`, task depend slices, function-argument memrefs, globals, reductions,
 and ND/stencil windows with SDE tokens/codelets, then shrink the raw-memref
 portions of `CreateDbs` and the compatibility indexers.
+
+## MU Materialization And Blocked Accesses
+
+`sde.mu_alloc` is the SDE storage declaration that can lower directly to a
+Core DB allocation. `sde.mu_token` is the SDE access-window declaration that can
+lower directly to a Core DB acquire. The direct rule is intentionally simple:
+storage comes from MU ops, dependencies come from token ops, and compute bodies
+come from CUs/codelets.
+
+The rule has one important correctness constraint. A blocked MU is not a
+drop-in replacement for the original whole memref. A blocked DB payload is a
+block-local view; the source program's memref indices are usually global
+element coordinates. Therefore SDE must do both halves of tiling together:
+
+- choose the CU/SU tile and task schedule;
+- choose the MU storage layout and token dependency window;
+- rewrite codelet/body accesses so they address the token-local view, including
+  ND owner dimensions, halo windows, and strided memref views.
+
+Until that local-view rewrite exists for a case, SDE must not lower the whole
+blocked memref as if the first block were the original allocation. Those cases
+stay on the raw-memref compatibility bridge, where the remaining Core indexers
+only execute an already-authored SDE plan. They are compatibility localizers,
+not policy owners.
 
 ## Work-Plan Contract
 
@@ -229,7 +253,7 @@ The SDE plan on a work unit should include:
 The capture rule is explicit:
 
 - scalar firstprivate-style values can become EDT parameters;
-- dynamic arrays, memrefs, tensors, and mutable shared state become
+- dynamic arrays, memrefs, and mutable shared state become
   dependencies;
 - values that can be constructed locally inside a codelet should be constructed
   locally rather than captured.

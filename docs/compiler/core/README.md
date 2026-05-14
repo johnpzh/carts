@@ -27,12 +27,12 @@ Core owns:
 Core must not own:
 
 - OpenMP semantic decomposition.
-- Tensor/linalg legality proofs.
-- Physical tensor partition policy that SDE could prove before
+- Memref/linalg legality proofs.
+- Physical data partition policy that SDE could prove before
   `ConvertSdeToArts`.
 - Runtime-call ABI details that belong in RT.
 
-`CreateDbs` is not a tensor optimizer. Its allowed work is mechanical: consume
+`CreateDbs` is not a data-layout optimizer. Its allowed work is mechanical: consume
 an SDE-authored layout/slice, allocate the Core DB, turn element-space slices
 into DB-space acquires, rewrite raw memref accesses to the acquired DB view,
 and preserve the dependency contract. If a performance fix requires choosing
@@ -61,7 +61,7 @@ RT-shaped EDT and epoch lowering.
 
 - Prefer direct MU/token lowering. Where raw memrefs remain, ensure
   `CreateDbs` consumes `arts.plan.*` and explicit dependency slices without
-  inventing late tensor partition policy.
+  inventing late data partition policy.
 - Preserve planned DB/EDT shape through distribution, orchestration, and
   lowering.
 - Keep dependency windows local to the planned block/window geometry.

@@ -1587,7 +1587,7 @@ struct MuReductionDeclToArtsPattern
 //   - sde.cu_codelet  : memref-token body -> arts.edt
 //
 // The SDE layer owns CU/SU/MU planning and any tiling/view rewrites. Core does
-// not rediscover tensor carriers or destination-passing results here; it only
+// not rediscover alternate state carriers or destination-passing results here; it only
 // materializes the DB/acquire/EDT objects requested by SDE.
 //
 // DB shape convention: one logical DB per MU allocation with outer `sizes=[1]`

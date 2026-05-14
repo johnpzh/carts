@@ -83,6 +83,7 @@ DistributionPlanning
 IterationSpaceDecomposition
 BarrierElimination
 VerifySdeCpsPlan
+MemoryUnitMaterialization
 ConvertSdeToArts
 VerifySdeLowered
 VerifyCoreObjectsOnly
@@ -213,8 +214,9 @@ VerifyLowered
 
 - SDE inside `openmp-to-arts` owns semantic decomposition, `PatternAnalysis`,
   state planning, dependency/effect proofs, and physical DB layout policy.
-- `CreateDbs` materializes SDE-authored DB layouts. It should not invent tensor
-  partition policy that was visible to SDE.
+- `CreateDbs` materializes remaining raw-memref DB layouts from SDE-authored
+  plan attrs. It should not invent data partition policy that was visible to
+  SDE.
 - Core owns DB/EDT/epoch orchestration and analysis-backed refinement.
 - RT-facing lowering belongs in `pre-lowering` and `arts-to-llvm`, after the
   compiler has already chosen the DB and task shape.

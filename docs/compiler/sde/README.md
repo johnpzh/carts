@@ -36,8 +36,10 @@ DistributionPlanning
 IterationSpaceDecomposition
 BarrierElimination
 VerifySdeCpsPlan
+MemoryUnitMaterialization
 ConvertSdeToArts
 VerifySdeLowered
+VerifyCoreObjectsOnly
 DeadCodeElimination
 CSE
 VerifyEdtCreated
@@ -116,6 +118,21 @@ Downstream SDE passes should consume these facts in order: first classify and
 prove legality, then choose task/data shape, then rewrite CU/SU/MU together.
 Tiling only CU/SU loops without rewriting MU token slices and physical storage
 layout is not a valid optimized plan.
+
+## MU Materialization
+
+`MemoryUnitMaterialization` is the current late SDE pass that rewrites eligible
+coarse shared memref allocations used by scheduling units into `sde.mu_alloc`.
+It runs after CPS/barrier planning and before `ConvertSdeToArts`, so the
+SDE/Core boundary can lower MU storage directly to DB storage instead of making
+Core rediscover those roots from raw memrefs.
+
+The pass deliberately skips blocked physical layouts today. That is a
+correctness guard, not a fallback policy preference: blocked tiling changes the
+address space seen by the compute body. SDE must first rewrite CU/SU/MU
+together so loads and stores are expressed against token-local views. Once that
+rewrite exists for an ND pattern, the matching raw-memref bridge path in Core
+can be retired.
 
 ## Verification Rule
 
