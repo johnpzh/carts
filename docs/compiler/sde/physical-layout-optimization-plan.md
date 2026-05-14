@@ -6,8 +6,8 @@ The large/64 benchmark sweep is correctness-clean, but most benchmarks remain
 slower than OpenMP because task shape and physical storage layout are still
 missing or too coarse when control reaches Core. The fix is to move layout,
 tiling, dependency-window, and phase-shape decisions into SDE while OpenMP
-semantics, SDE pattern analysis, tensor carriers, reductions, and barriers are
-still available.
+semantics, SDE pattern analysis, memref access facts, reductions, and barriers
+are still available.
 
 Layer limits:
 

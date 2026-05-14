@@ -100,6 +100,7 @@ PatternAnalysis
 LoopInterchange
 Tiling
 ElementwiseFusion
+Vectorization
 ReductionStrategy
 DistributionPlanning
 IterationSpaceDecomposition

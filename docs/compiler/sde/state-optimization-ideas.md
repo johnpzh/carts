@@ -95,6 +95,7 @@ PatternAnalysis
 LoopInterchange
 Tiling
 ElementwiseFusion
+Vectorization
 ScopeSelection
 ScheduleRefinement
 ChunkOpt

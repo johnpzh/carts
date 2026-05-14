@@ -46,7 +46,7 @@ earlier layer was responsible for proving.
 ### SDE: semantic planning dialect
 
 SDE is the only layer that still sees OpenMP semantics, structured loop
-summaries, tensor carriers, reduction metadata, barrier intent, and enough
+summaries, memref access facts, reduction metadata, barrier intent, and enough
 source-level shape to prove legality. That makes SDE the primary optimization
 layer for CARTS. Most performance policy belongs here because most performance
 policy is a question of source semantics: which work is independent, which
@@ -165,9 +165,9 @@ where it can be proven.
 
 Pass responsibility rule:
 
-- `PatternAnalysis` stamps approved `sde.pattern` and structured tensor/linalg
-  facts. It does not stamp Core attrs and it does not pass raw analysis objects
-  across the dialect boundary.
+- `PatternAnalysis` stamps approved `sde.pattern` and structured memref facts.
+  It does not stamp Core attrs and it does not pass raw analysis objects across
+  the dialect boundary.
 - SDE structural/effect passes consume those approved SDE facts to decide
   interchange, tiling, fusion, chunking, reduction strategy, distribution
   intent, barriers, and CPS candidates.
@@ -762,7 +762,8 @@ Research-backed direction:
 
 Professional pass split for the contraction work:
 
-- `PatternAnalysis`: recognize tensor contraction and stamp only approved
+- `PatternAnalysis`: recognize memref-level contraction structure and stamp only
+  approved
   `sde.pattern<matmul>` facts plus contraction dimensions.
 - `LoopInterchange`: perform legality-preserving order changes backed by the
   approved contraction facts.

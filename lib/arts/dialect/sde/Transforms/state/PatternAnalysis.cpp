@@ -8,7 +8,6 @@
 #include "arts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "arts/dialect/sde/Transforms/Passes.h"
 #include "arts/utils/StencilAttributes.h"
-#include "arts/utils/costs/SDECostModel.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/IRMapping.h"
 
@@ -356,8 +355,9 @@ derivePattern(const sde::StructuredLoopSummary &summary,
 
 struct PatternAnalysisPass
     : public arts::impl::PatternAnalysisBase<PatternAnalysisPass> {
-  explicit PatternAnalysisPass(sde::SDECostModel *costModel = nullptr)
-      : costModel(costModel) {}
+  explicit PatternAnalysisPass(sde::SDECostModel *costModel = nullptr) {
+    (void)costModel;
+  }
 
   void runOnOperation() override {
     getOperation().walk([&](sde::SdeSuIterateOp op) {
@@ -471,30 +471,6 @@ struct PatternAnalysisPass
           &getContext(),
           derivePattern(*summary, classification, neighborhoodSummary)));
 
-      if (classification == sde::SdeStructuredClassification::elementwise ||
-          classification ==
-              sde::SdeStructuredClassification::elementwise_pipeline ||
-          classification == sde::SdeStructuredClassification::matmul) {
-        int64_t baseWidth = costModel ? costModel->getVectorWidth() : 4;
-        int64_t vectorWidth = baseWidth; // default for f64/i64
-        // Use scalar memref stores to tune vector width for memref-native SDE.
-        op.getBody().walk([&](memref::StoreOp storeOp) {
-          Type elemType = storeOp.getValueToStore().getType();
-          if (elemType.isF32() || elemType.isInteger(32))
-            vectorWidth = baseWidth * 2;
-          else if (elemType.isF64() || elemType.isInteger(64))
-            vectorWidth = baseWidth;
-          return WalkResult::interrupt();
-        });
-
-        Type i64 = IntegerType::get(&getContext(), 64);
-        op.setVectorizeWidthAttr(IntegerAttr::get(i64, vectorWidth));
-        op.setUnrollFactorAttr(
-            IntegerAttr::get(i64, 2));
-        op.setInterleaveCountAttr(
-            IntegerAttr::get(i64, 4));
-      }
-
       auto memoryEffects = sde::collectStructuredMemoryEffects(op.getBody());
       if (!memoryEffects.hasUnknownEffects && memoryEffects.allWritesAreRead())
         op.setInPlaceSafeAttr(UnitAttr::get(op.getContext()));
@@ -502,9 +478,6 @@ struct PatternAnalysisPass
       ARTS_DEBUG("refreshed SDE pattern classification on su_iterate");
     });
   }
-
-private:
-  sde::SDECostModel *costModel = nullptr;
 };
 
 } // namespace

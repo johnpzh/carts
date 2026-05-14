@@ -28,6 +28,7 @@ PatternAnalysis
 LoopInterchange
 Tiling
 ElementwiseFusion
+Vectorization
 ScopeSelection
 ScheduleRefinement
 ChunkOpt
@@ -75,8 +76,8 @@ SDE optimization work should stamp or refine SDE-owned plan facts before
 - `physicalBlockShape`
 - `logicalWorkerSlice`
 - `physicalHaloShape`
-- MU facts: `mu_data` roots, memref or tensor `mu_token` access mode, token
-  offsets, token sizes, and codelet token/capture boundaries
+- MU facts: `mu_data` roots, memref `mu_token` access mode, token offsets,
+  token sizes, and codelet token/capture boundaries
 - `sde.resource_query <logical_workers>` for symbolic grain arithmetic
 - `iterationTopology`
 - `repetitionStructure`
@@ -105,11 +106,12 @@ Use `PatternAnalysis` as the name for the shared SDE fact pass. It is not a
 Core input object and it should not be renamed to vague "structured summaries".
 The pass should stamp stable SDE facts that downstream SDE passes can consume:
 
-- memref/tensor family and rank;
+- memref family and rank;
 - read/write roots, access modes, and self-read status;
 - owner, spatial, component, batch, and reduction dimensions;
 - affine or structured index maps when available;
-- legal interchange, tile, fusion, vectorization, and CPS candidates;
+- legal interchange, tile, fusion, memref-level vectorization, and CPS
+  candidates;
 - physical owner slices and MU token slices approved by SDE.
 
 Downstream SDE passes should consume these facts in order: first classify and

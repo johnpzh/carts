@@ -1,13 +1,16 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
-// Non-stencil elementwise and matmul loops stay on the scalar SDE path.
-// RaiseToLinalg stamps the structured classification, but does not create
-// tensor/linalg carriers unless a later pass needs that representation.
+// Non-stencil elementwise and matmul loops stay on the memref-native SDE path.
+// Vectorization is planned from memref load/store facts; it does not create
+// tensor/linalg carriers.
 //
-// CHECK-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
+// CHECK-LABEL: // -----// IR Dump After Vectorization (vectorization) //----- //
 // CHECK: func.func @main
 // CHECK: sde.su_iterate
 // CHECK: memref.store
+// CHECK: } {interleaveCount = 4 : i64
+// CHECK-SAME: unrollFactor = 2 : i64
+// CHECK-SAME: vectorizeWidth = 2 : i64
 // CHECK-NOT: linalg.generic
 // CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // CHECK: func.func @main

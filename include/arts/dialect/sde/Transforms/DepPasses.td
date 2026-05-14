@@ -85,6 +85,26 @@ def ElementwiseFusion
   let constructor = "mlir::arts::sde::createElementwiseFusionPass()";
 }
 
+def Vectorization
+    : Pass<"vectorization", "mlir::ModuleOp"> {
+  let summary = "Plan memref-level SDE vectorization hints";
+  let description = [{
+    Analyzes memref-native `sde.su_iterate` bodies after structural SDE loop
+    rewrites have run. The pass consumes SDE pattern/classification facts and
+    concrete memref load/store element types, then stamps target-neutral
+    `vectorizeWidth`, `unrollFactor`, and `interleaveCount` hints on the owning
+    scheduling unit.
+
+    This pass does not raise to tensor/linalg, does not create target vector
+    IR, and does not cross the dialect boundary. Later Core/RT lowering may
+    translate the SDE hints into target loop metadata after storage and task
+    materialization are fixed.
+  }];
+  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
+                           "::mlir::memref::MemRefDialect"];
+  let constructor = "mlir::arts::sde::createVectorizationPass()";
+}
+
 def IterationSpaceDecomposition
     : Pass<"iteration-space-decomposition", "mlir::ModuleOp"> {
   let summary = "Decompose scheduling-unit iteration spaces into interior and boundary regions";

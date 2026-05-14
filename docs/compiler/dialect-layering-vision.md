@@ -12,7 +12,7 @@ ARTS machine. RT maps Core objects to runtime API calls.
 
 ## SDE
 
-SDE owns OpenMP semantics, structured program analysis, tensor/linalg facts,
+SDE owns OpenMP semantics, structured program analysis, memref access facts,
 scheduling-unit intent, approved `sde.pattern` facts, reductions, task-body
 isolation, and the memory-unit plan that makes those tasks address the right
 data slices.
@@ -22,8 +22,8 @@ SDE may contain:
 - `mu_data`, `mu_dep`, `mu_token`: memory-unit handles. `mu_data` names data
   that crosses asynchronous work, `mu_dep` names a source-level memref
   dependency slice from task depend clauses or SDE owner-slice planning, and
-  `mu_token` is the canonical access token that lowers almost 1:1 to a Core
-  `arts.db_acquire`.
+  `mu_token` is the canonical access-window token consumed at the dialect
+  boundary.
 - `cu_region` and `cu_codelet`: compute-unit regions and isolated task bodies.
   A `cu_codelet` consumes only MU tokens plus explicit scalar captures.
 - `su_iterate`: scheduling-unit iteration spaces and task-shape plans.

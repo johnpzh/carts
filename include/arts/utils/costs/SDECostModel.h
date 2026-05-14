@@ -2,11 +2,11 @@
 /// File: SDECostModel.h
 ///
 /// Runtime-agnostic planning model for SDE optimization decisions.
-/// Every target runtime (ARTS, Legion, StarPU, GPU) provides a concrete
-/// implementation. SDE passes see ONLY this interface — never ARTS types.
+/// The dialect boundary provides a concrete implementation. SDE passes see
+/// ONLY this interface, never target-runtime types.
 ///
 /// All methods use SDE-level concepts: tasks, barriers, data movement.
-/// No EDT, DB, epoch, CDAG, or GUID terminology.
+/// Target object terminology belongs at the dialect boundary.
 ///==========================================================================///
 
 #ifndef ARTS_UTILS_COSTS_SDECOSTMODEL_H
@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace mlir::arts::sde {
 
@@ -53,6 +54,28 @@ public:
   // --- Hardware parameters ---
   virtual int getVectorWidth() const = 0;
   virtual int64_t getL2CacheSize() const = 0;
+
+  // --- Vector planning policy ---
+  virtual int getVectorWidthForElementBits(unsigned elementBits) const {
+    int baseWidth = std::max(1, getVectorWidth());
+    if (elementBits == 0)
+      return baseWidth;
+
+    constexpr unsigned referenceElementBits =
+        std::numeric_limits<uint64_t>::digits;
+    unsigned scale = std::max<unsigned>(1, referenceElementBits / elementBits);
+    return baseWidth * static_cast<int>(scale);
+  }
+
+  virtual int getVectorUnrollFactor(bool reuseHeavy) const {
+    int baseWidth = std::max(1, getVectorWidth());
+    return reuseHeavy ? baseWidth * baseWidth : baseWidth;
+  }
+
+  virtual int getVectorInterleaveCount() const {
+    int baseWidth = std::max(1, getVectorWidth());
+    return baseWidth * baseWidth;
+  }
 
   // --- Derived thresholds (computed, not hardcoded) ---
   virtual int64_t getMinIterationsPerWorker() const {

@@ -58,6 +58,8 @@ std::unique_ptr<Pass> createPatternAnalysisPass(
 std::unique_ptr<Pass> createLoopInterchangePass();
 std::unique_ptr<Pass> createTilingPass(SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass> createElementwiseFusionPass();
+std::unique_ptr<Pass> createVectorizationPass(
+    SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass> createIterationSpaceDecompositionPass();
 
 // --- Effect passes (scheduling decisions) ---

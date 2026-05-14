@@ -87,7 +87,7 @@ does not require full component tensors for every worker.
 ### Alias And Subview Precision
 
 Root-level memory effects are safe but coarse. Add optional alias-aware effect
-summaries for memref views, tensor carriers, and affine subregions:
+summaries for memref views and affine subregions:
 
 - same root, disjoint subviews should not force a barrier;
 - overlapping subviews should preserve ordering;
@@ -113,7 +113,7 @@ tiling must be separately proved and cost-justified.
 
 ## Pass Grouping Proposal
 
-Keep effect decisions after SDE pattern analysis and structural tensor
+Keep effect decisions after SDE pattern analysis and memref structural
 transforms, and before lowering:
 
 ```text
@@ -121,6 +121,7 @@ PatternAnalysis
 LoopInterchange
 Tiling
 ElementwiseFusion
+Vectorization
 ScopeSelection
 ScheduleRefinement
 ChunkOpt
@@ -128,8 +129,6 @@ ReductionStrategy
 DistributionPlanning
 IterationSpaceDecomposition
 BarrierElimination
-Vectorization
-LowerToMemref
 ConvertSdeToArts
 ```
 
@@ -148,8 +147,8 @@ Two refinements are worth investigating:
   dependency traffic without improving locality.
 - Physical plan stamping must not turn unknown or in-place self-read kernels
   into blocked storage families.
-- Vectorization and lowering must preserve plan attributes until
-  `ConvertSdeToArts`.
+- Memref-level vectorization planning and lowering must preserve plan
+  attributes until `ConvertSdeToArts`.
 
 ## Tests
 
