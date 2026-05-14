@@ -95,15 +95,6 @@ public:
     return op->getParentOfType<EpochOp>() != nullptr;
   }
 
-  /// Return the single top-level arts::ForOp inside an EDT body, or nullptr
-  /// if there are zero or multiple top-level ForOps, or any non-ForOp
-  /// non-terminator operation exists.
-  static ForOp getSingleTopLevelFor(EdtOp edt);
-
-  /// Collect all top-level arts::ForOp operations in an EDT body (ignoring
-  /// non-ForOp operations). Returns an empty vector when \p edt is null.
-  static SmallVector<ForOp, 2> getTopLevelForOps(EdtOp edt);
-
   /// Wrap all operations (except terminator) in a block inside an EpochOp.
   /// Returns the created EpochOp, or nullptr if no operations to wrap.
   static EpochOp wrapBodyInEpoch(Block &body, Location loc);

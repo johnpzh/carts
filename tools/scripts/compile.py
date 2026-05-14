@@ -572,7 +572,7 @@ def compile_cmd(
     debug: bool = Option(False, "-g", help="Generate debug symbols"),
     pipeline: Optional[str] = Option(
         None, FLAG_PIPELINE,
-        help="Stop after pipeline step (e.g., concurrency, edt-distribution)"),
+        help="Stop after pipeline stage token (see `dekk carts pipeline --json`)"),
     all_pipelines: bool = Option(
         False, "--all-pipelines",
         help="(.mlir input) write one output per pipeline step"),
@@ -1098,7 +1098,6 @@ _DIALECT_BOUNDARIES: List[Tuple[str, str, List[Tuple[str, str]]]] = [
      [("openmp-to-arts", "ConvertSdeToArts")]),
     # ARTS core → arts_rt runtime dialect (inside the pre-lowering stage).
     ("03_arts_to_rt", "rt", [
-        ("pre-lowering", "ParallelEdtLowering"),
         ("pre-lowering", "DbLowering"),
         ("pre-lowering", "EdtLowering"),
         ("pre-lowering", "EpochLowering"),

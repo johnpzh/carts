@@ -716,10 +716,8 @@ def EdtOp : Arts_Op<"edt", [
 
     ### Attributes
 
-    - `type`: EDT execution type (`parallel`, `single`, `sync`, `task`).
-      - `parallel`: may spawn multiple concurrent task instances.
-      - `single`: guaranteed to run as a single task, even from a parallel
-        region.
+    - `type`: EDT execution type (`single`, `sync`, `task`).
+      - `single`: guaranteed to run as a single task.
       - `sync`: synchronous execution.
       - `task`: general task.
     - `concurrency`: execution scope (`intranode` or `internode`).
@@ -791,7 +789,10 @@ def EdtOp : Arts_Op<"edt", [
 /// arts.epoch
 ///===----------------------------------------------------------------------===///
 def EpochOp
-    : Arts_Op<"epoch", [SingleBlockImplicitTerminator<"arts::YieldOp">]> {
+    : Arts_Op<"epoch", [
+      SingleBlockImplicitTerminator<"arts::YieldOp">,
+      RecursiveMemoryEffects
+    ]> {
 
   let summary = "Epoch region in ARTS";
   let description = [{
@@ -866,7 +867,7 @@ def CPSAdvanceOp : Arts_Op<"cps_advance", [
 /// arts.yield
 ///===----------------------------------------------------------------------===///
 def YieldOp : Arts_Op<"yield", [
-  Pure, ReturnLike, Terminator, ParentOneOf<["EdtOp", "EpochOp", "ForOp", "CPSAdvanceOp"]>
+  Pure, ReturnLike, Terminator, ParentOneOf<["EdtOp", "EpochOp", "CPSAdvanceOp"]>
 ]> {
 
   let summary = "ARTS dialect yield terminator";
@@ -924,13 +925,8 @@ def RuntimeQueryOp : Arts_Op<"runtime_query", [Pure]> {
     - `total_nodes`: Total number of nodes available.
     - `current_worker`: ID of the current worker executing this operation.
     - `current_node`: ID of the current node executing this operation.
-    - `parallel_worker_id`: Placeholder for the parallel worker ID, replaced by
-      ParallelEdtLowering with the actual worker ID (scf.for induction variable).
-      This allows ForLowering to use the worker ID symbolically before the
-      parallel loop structure is created. Should not appear in final lowered IR.
-
-    For `parallel_worker_id`, the result type is `index`.
-    For all other kinds, the result type is `i32`.
+    All runtime query results are `i32`; materializers cast to `index` when
+    using a topology value as loop control.
   }];
   let arguments = (ins RuntimeQueryKindAttr:$kind);
   let results = (outs AnyType : $result);
@@ -938,13 +934,8 @@ def RuntimeQueryOp : Arts_Op<"runtime_query", [Pure]> {
   let assemblyFormat = "$kind attr-dict `->` type($result)";
   let skipDefaultBuilders = 1;
   let builders = [
-    /// Builder for total_workers, total_nodes, current_worker, current_node
-    /// (returns i32)
     OpBuilder<(ins "RuntimeQueryKind":$kind), [{
-      if (kind == RuntimeQueryKind::parallelWorkerId)
-        $_state.addTypes(IndexType::get($_builder.getContext()));
-      else
-        $_state.addTypes(IntegerType::get($_builder.getContext(), 32));
+      $_state.addTypes(IntegerType::get($_builder.getContext(), 32));
       $_state.addAttribute("kind",
           RuntimeQueryKindAttr::get($_builder.getContext(), kind));
     }]>
@@ -961,65 +952,6 @@ def GetEdtEpochGuidOp : Arts_Op<"get_edt_epoch_guid", [Pure]> {
   }];
   let results = (outs I64 : $epochGuid);
   let assemblyFormat = "attr-dict";
-}
-
-///===----------------------------------------------------------------------===///
-/// arts.for
-///===----------------------------------------------------------------------===///
-
-def ForOp : Arts_Op<"for", [
-  AttrSizedOperandSegments, SingleBlockImplicitTerminator<"arts::YieldOp">,
-  DeclareOpInterfaceMethods<LoopLikeOpInterface,
-    ["getLoopRegions", "getLoopInductionVars", "getLoopLowerBounds",
-     "getLoopUpperBounds", "getLoopSteps"]>
-]> {
-  let summary = "ARTS parallel for loop operation";
-  let description = [{
-    The `arts.for` operation represents a parallel for loop in the ARTS dialect.
-    It preserves the parallel semantics from OpenMP worksharing loops while
-    providing a native ARTS construct for parallel iteration.
-    
-    This operation takes lower bound, upper bound, and step values, and executes
-    the loop body in parallel across available workers.
-  }];
-
-  let arguments = (ins Variadic<Index>:$lowerBound, 
-                      Variadic<Index>:$upperBound, 
-                      Variadic<Index>:$step,
-                      OptionalAttr<ForScheduleKindAttr>:$schedule,
-                      Optional<Index>:$chunkSize,
-                      Variadic<AnyType>:$reductionAccumulators,
-                      UnitAttr:$inPlaceSafe,
-                      UnitAttr:$inPlaceSharedState,
-                      OptionalAttr<I64Attr>:$vectorizeWidth,
-                      OptionalAttr<I64Attr>:$unrollFactor,
-                      OptionalAttr<I64Attr>:$interleaveCount,
-                      OptionalAttr<ArtsDepPatternAttr>:$depPattern,
-                      OptionalAttr<EdtDistributionKindAttr>:$distribution_kind,
-                      OptionalAttr<EdtDistributionPatternAttr>:$distribution_pattern,
-                      OptionalAttr<I32Attr>:$distribution_version,
-                      OptionalAttr<ArrayAttr>:$planOwnerDims,
-                      OptionalAttr<ArrayAttr>:$planPhysicalBlockShape,
-                      OptionalAttr<ArrayAttr>:$planLogicalWorkerSlice,
-                      OptionalAttr<ArrayAttr>:$planHaloShape,
-                      OptionalAttr<ArtsPlanIterationTopologyAttr>:$planIterationTopology,
-                      OptionalAttr<ArtsPlanRepetitionStructureAttr>:$planRepetitionStructure,
-                      OptionalAttr<ArtsPlanAsyncStrategyAttr>:$planAsyncStrategy,
-                      OptionalAttr<I64Attr>:$planCostSchedulerOverhead,
-                      OptionalAttr<I64Attr>:$planCostSliceWideningPressure,
-                      OptionalAttr<I64Attr>:$planCostExpectedLocalWork,
-                      OptionalAttr<I64Attr>:$planCostRelaunchAmortization);
-  let results = (outs);
-  let regions = (region AnyRegion : $region);
-
-  let assemblyFormat = [{
-    `(` $lowerBound `)` `to` `(` $upperBound `)` `step` `(` $step `)`
-    ( `schedule` `(` $schedule^ (`,` $chunkSize^)? `)` )?
-    ( `reduction` `(` $reductionAccumulators^ `:` type($reductionAccumulators) `)` )?
-    $region attr-dict
-  }];
-
-  let hasCanonicalizer = true;
 }
 
 #endif // ARTS_OPS

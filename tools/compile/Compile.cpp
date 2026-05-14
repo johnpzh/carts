@@ -150,19 +150,11 @@ static cl::opt<bool> RuntimeStaticWorkers(
              "when the module embeds a valid ARTS config"),
     cl::init(false));
 
-static cl::opt<bool> ReportCoreObjectBoundary(
-    "report-core-object-boundary",
-    cl::desc("Emit report-only diagnostics for non-Core objects after "
-             "SDE-to-ARTS conversion"),
-    cl::init(false));
-
 /// Distributed DB allocation enablement.
 static cl::opt<bool> DistributedDb(
     "distributed-db",
     cl::desc("Attempt distributed DB allocation "
-             "(ownership marking + parallel initPerWorker creation; "
-             "auto-enables distributed host loop outlining for eligible "
-             "producer loops)"),
+             "(ownership marking + parallel initPerWorker creation)"),
     cl::init(false));
 
 /// Enable epoch finish-continuation lowering (replaces blocking
@@ -186,10 +178,6 @@ enum class StageId {
   EdtTransforms,
   CreateDbs,
   DbOpt,
-  EdtOpt,
-  Concurrency,
-  EdtDistribution,
-  PostDistributionCleanup,
   PostDbRefinement,
   LateConcurrencyCleanup,
   Epochs,
@@ -287,7 +275,7 @@ static const std::array<llvm::StringLiteral, 25> kOpenMPToArtsPasses = {
     "TokenModeRefine",
     "ConvertSdeToArts",
     "VerifySdeLowered",
-    "VerifyCoreObjectsOnly(report-only, conditional)",
+    "VerifyCoreObjectsOnly",
     "DeadCodeElimination",
     "CSE",
     "VerifyEdtCreated"};
@@ -298,34 +286,11 @@ static const std::array<llvm::StringLiteral, 6> kEdtTransformsPasses = {
     "SymbolDCE",
     "CSE",
     "EdtPtrRematerialization"};
-static const std::array<llvm::StringLiteral, 8> kCreateDbsPasses = {
-    "DistributedHostLoopOutlining (conditional)",
-    "CreateDbs",
-    "CSE (bridge cleanup, conditional)",
-    "PolygeistCanonicalize",
-    "CSE",
-    "SymbolDCE",
-    "Mem2Reg",
-    "PolygeistCanonicalize"};
+static const std::array<llvm::StringLiteral, 6> kCreateDbsPasses = {
+    "CreateDbs", "PolygeistCanonicalize", "CSE",
+    "SymbolDCE", "Mem2Reg", "PolygeistCanonicalize"};
 static const std::array<llvm::StringLiteral, 4> kDbOptPasses = {
     "DbModeTightening", "PolygeistCanonicalize", "CSE", "Mem2Reg"};
-static const std::array<llvm::StringLiteral, 4> kEdtOptPasses = {
-    "PolygeistCanonicalize", "EdtStructuralOpt(runAnalysis=true)", "LoopFusion",
-    "CSE"};
-static const std::array<llvm::StringLiteral, 4> kConcurrencyPasses = {
-    "PolygeistCanonicalize", "Concurrency", "ForOpt", "PolygeistCanonicalize"};
-static const std::array<llvm::StringLiteral, 4> kEdtDistributionPasses = {
-    "EdtDistribution", "EdtOrchestrationOpt", "ForLowering",
-    "VerifyForLowered"};
-static const std::array<llvm::StringLiteral, 8> kPostDistributionCleanupPasses =
-    {"EdtStructuralOpt(runAnalysis=false)",
-     "DeadCodeElimination",
-     "PolygeistCanonicalize",
-     "CSE",
-     "EdtStructuralOpt(runAnalysis=false)",
-     "EpochOpt",
-     "PolygeistCanonicalize",
-     "CSE"};
 static const std::array<llvm::StringLiteral, 7> kPostDbRefinementPasses = {
     "DbModeTightening",
     "EdtTransforms",
@@ -345,10 +310,8 @@ static const std::array<llvm::StringLiteral, 7> kLateConcurrencyCleanupPasses =
 static const std::array<llvm::StringLiteral, 4> kEpochsPasses = {
     "PolygeistCanonicalize", "CreateEpochs",
     "EpochOpt[scheduling] (conditional)", "PolygeistCanonicalize"};
-static const std::array<llvm::StringLiteral, 22> kPreLoweringPasses = {
+static const std::array<llvm::StringLiteral, 20> kPreLoweringPasses = {
     "EdtAllocaSinking",
-    "ParallelEdtLowering",
-    "EpochOpt[scheduling] (conditional)",
     "PolygeistCanonicalize",
     "CSE",
     "DbLowering",
@@ -708,8 +671,7 @@ void buildOpenMPToArtsPipeline(PassManager &pm,
   // changes IR shapes that downstream CHECK patterns depend on.
   pm.addPass(arts::sde::createConvertSdeToArtsPass());
   pm.addPass(arts::sde::createVerifySdeLoweredPass());
-  if (ReportCoreObjectBoundary)
-    pm.addPass(arts::createVerifyCoreObjectsOnlyPass(/*reportOnly=*/true));
+  pm.addPass(arts::createVerifyCoreObjectsOnlyPass());
   pm.addPass(arts::createDCEPass());
   pm.addPass(createCSEPass());
   pm.addPass(arts::createVerifyEdtCreatedPass());
@@ -725,35 +687,8 @@ void buildEdtTransformsPipeline(PassManager &pm, arts::AnalysisManager *AM) {
   pm.addPass(arts::createEdtPtrRematerializationPass());
 }
 
-/// Bridge eligible host producer loops into the regular ARTS loop/EDT path
-/// before DB creation without making this outlining part of the semantic
-/// pattern pipeline itself.
-void buildPreCreateDbsBridgingPipeline(PassManager &pm,
-                                       arts::AnalysisManager *AM) {
-  /// Multinode execution needs eligible host producer loops to flow through
-  /// the regular arts.for/EDT pipeline before CreateDbs; otherwise serial host
-  /// writes between distributed phases bypass the normal DB acquire/release
-  /// coherence path. --distributed-db relies on the same outlining for
-  /// ownership inference, but correctness requires it for general multinode
-  /// block partitioning as well.
-  bool enableDistributedHostLoopOutlining = false;
-  if (AM) {
-    const auto &machine = AM->getRuntimeConfig();
-    enableDistributedHostLoopOutlining =
-        DistributedDb ||
-        (machine.hasValidNodeCount() && machine.getNodeCount() > 1);
-  } else {
-    enableDistributedHostLoopOutlining = DistributedDb;
-  }
-  if (enableDistributedHostLoopOutlining) {
-    pm.addPass(arts::createDistributedHostLoopOutliningPass(AM));
-    pm.addPass(createCSEPass());
-  }
-}
-
 /// DB creation pass.
 void buildCreateDbsPipeline(PassManager &pm, arts::AnalysisManager *AM) {
-  buildPreCreateDbsBridgingPipeline(pm, AM);
   pm.addPass(arts::createCreateDbsPass(AM));
   addCanonicalizeAndCSE(pm);
   pm.addPass(createSymbolDCEPass());
@@ -766,45 +701,6 @@ void buildDbOptPipeline(PassManager &pm, arts::AnalysisManager *AM) {
   pm.addPass(arts::createDbModeTighteningPass(AM));
   addCanonicalizeAndCSE(pm);
   pm.addPass(createMem2Reg());
-}
-
-/// EDT optimization passes.
-void buildEdtOptPipeline(PassManager &pm, arts::AnalysisManager *AM) {
-  pm.addPass(polygeist::createPolygeistCanonicalizePass());
-  pm.addPass(arts::createEdtStructuralOptPass(AM, /*runAnalysis*/ true));
-  pm.addPass(arts::createLoopFusionPass(AM));
-  pm.addPass(createCSEPass());
-}
-
-/// Concurrency passes.
-void buildConcurrencyPipeline(PassManager &pm, arts::AnalysisManager *AM) {
-  pm.addPass(polygeist::createPolygeistCanonicalizePass());
-  pm.addPass(arts::createConcurrencyPass(AM));
-  pm.addPass(arts::createForOptPass(AM));
-  pm.addPass(polygeist::createPolygeistCanonicalizePass());
-}
-
-/// EDT distribution and loop lowering passes.
-void buildEdtDistributionPipeline(PassManager &pm, arts::AnalysisManager *AM) {
-  pm.addPass(arts::createEdtDistributionPass(AM));
-  pm.addPass(arts::createEdtOrchestrationOptPass());
-  pm.addPass(arts::createForLoweringPass(AM));
-  pm.addPass(arts::createVerifyForLoweredPass());
-}
-
-/// Cleanup and re-shape distributed EDT structure after lowering task loops.
-void buildPostDistributionCleanupPipeline(PassManager &pm,
-                                          arts::AnalysisManager *AM) {
-  pm.addPass(arts::createEdtStructuralOptPass(AM, /*runAnalysis*/ false));
-  pm.addPass(arts::createDCEPass());
-  addCanonicalizeAndCSE(pm);
-  /// Re-run structural opts after cleanup to catch newly exposed degenerate
-  /// EDTs before epoch shaping.
-  /// TODO(PERF): EdtStructuralOptPass runs 4 times; evaluate if second call
-  /// needed.
-  pm.addPass(arts::createEdtStructuralOptPass(AM, /*runAnalysis*/ false));
-  pm.addPass(arts::createEpochOptPass(AM));
-  addCanonicalizeAndCSE(pm);
 }
 
 /// Tighten DB modes and persist post-partition refinement contracts.
@@ -856,14 +752,6 @@ void buildPreLoweringPipeline(PassManager &pm, arts::AnalysisManager *AM,
   /// TODO(PERF): EdtAllocaSinkingPass runs twice (late concurrency cleanup
   /// and here).
   pm.addPass(arts::createEdtAllocaSinkingPass());
-  pm.addPass(arts::createParallelEdtLoweringPass());
-  if (enableContinuation) {
-    /// Run scheduling-only EpochOpt for late epochs from ParallelEdtLowering.
-    pm.addPass(arts::createEpochOptSchedulingPass(AM,
-                                                  /*amortization=*/true,
-                                                  /*continuation=*/true,
-                                                  /*cpsDriver=*/true));
-  }
   addCanonicalizeAndCSE(pm);
   pm.addPass(arts::createDbLoweringPass(ArtsIdStride));
   addCanonicalizeAndCSE(pm);
@@ -949,9 +837,6 @@ static constexpr llvm::StringLiteral kDepRaiseMemref[] = {
 static constexpr llvm::StringLiteral kDepInitialCleanup[] = {"initial-cleanup"};
 static constexpr llvm::StringLiteral kDepOpenMPToArts[] = {"openmp-to-arts"};
 static constexpr llvm::StringLiteral kDepCreateDbs[] = {"create-dbs"};
-static constexpr llvm::StringLiteral kDepConcurrency[] = {"concurrency"};
-static constexpr llvm::StringLiteral kDepEdtDistribution[] = {
-    "edt-distribution"};
 static constexpr llvm::StringLiteral kDepPostDbRefinement[] = {
     "post-db-refinement"};
 static constexpr llvm::StringLiteral kDepPreLowering[] = {
@@ -959,7 +844,7 @@ static constexpr llvm::StringLiteral kDepPreLowering[] = {
 static constexpr llvm::StringLiteral kDepArtsToLLVM[] = {"pre-lowering"};
 
 static ArrayRef<StageDescriptor> getStageRegistry() {
-  static const std::array<StageDescriptor, 17> kStageRegistry = {{
+  static const std::array<StageDescriptor, 13> kStageRegistry = {{
       {StageId::RaiseMemRefDimensionality, "raise-memref-dimensionality",
        llvm::ArrayRef<llvm::StringLiteral>(), StageKind::Core, true, true,
        false, "Error when raising memref dimensionality",
@@ -1010,39 +895,6 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepCreateDbs},
-      {StageId::EdtOpt, "edt-opt", llvm::ArrayRef<llvm::StringLiteral>(),
-       StageKind::Core, true, true, false, "Error when optimizing EDTs",
-       kEdtOptPasses,
-       [](PassManager &pm, const StageExecutionContext &ctx) {
-         buildEdtOptPipeline(pm, ctx.analysisManager);
-       },
-       isStageEnabledAlways,
-       /*dependsOn=*/kDepCreateDbs},
-      {StageId::Concurrency, "concurrency",
-       llvm::ArrayRef<llvm::StringLiteral>(), StageKind::Core, true, true,
-       false, "Error when running concurrency", kConcurrencyPasses,
-       [](PassManager &pm, const StageExecutionContext &ctx) {
-         buildConcurrencyPipeline(pm, ctx.analysisManager);
-       },
-       isStageEnabledAlways,
-       /*dependsOn=*/kDepCreateDbs},
-      {StageId::EdtDistribution, "edt-distribution",
-       llvm::ArrayRef<llvm::StringLiteral>(), StageKind::Core, true, true,
-       false, "Error when running EDT distribution", kEdtDistributionPasses,
-       [](PassManager &pm, const StageExecutionContext &ctx) {
-         buildEdtDistributionPipeline(pm, ctx.analysisManager);
-       },
-       isStageEnabledAlways,
-       /*dependsOn=*/kDepConcurrency},
-      {StageId::PostDistributionCleanup, "post-distribution-cleanup",
-       llvm::ArrayRef<llvm::StringLiteral>(), StageKind::Core, true, true,
-       false, "Error when cleaning up post-distribution concurrency",
-       kPostDistributionCleanupPasses,
-       [](PassManager &pm, const StageExecutionContext &ctx) {
-         buildPostDistributionCleanupPipeline(pm, ctx.analysisManager);
-       },
-       isStageEnabledAlways,
-       /*dependsOn=*/kDepEdtDistribution},
       {StageId::PostDbRefinement, "post-db-refinement",
        llvm::ArrayRef<llvm::StringLiteral>(), StageKind::Core, true, true,
        false, "Error when refining post-partition DB contracts",
@@ -1051,7 +903,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
          buildPostDbRefinementPipeline(pm, ctx.analysisManager);
        },
        isStageEnabledAlways,
-       /*dependsOn=*/kDepEdtDistribution},
+       /*dependsOn=*/kDepCreateDbs},
       {StageId::LateConcurrencyCleanup, "late-concurrency-cleanup",
        llvm::ArrayRef<llvm::StringLiteral>(), StageKind::Core, true, true,
        false, "Error when running late concurrency cleanup",
@@ -1068,7 +920,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
          buildEpochsPipeline(pm, ctx.analysisManager, EpochFinishContinuation);
        },
        isStageEnabledAlways,
-       /*dependsOn=*/kDepEdtDistribution},
+       /*dependsOn=*/kDepPostDbRefinement},
       {StageId::PreLowering, "pre-lowering",
        llvm::ArrayRef<llvm::StringLiteral>(), StageKind::Core, true, true, true,
        "Error when pre-lowering DBs, EDTs, and Epochs", kPreLoweringPasses,

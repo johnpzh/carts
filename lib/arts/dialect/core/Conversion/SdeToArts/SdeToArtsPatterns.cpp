@@ -5,10 +5,10 @@
 /// that ConvertOpenMPToArts currently generates.
 ///
 /// Mapping:
-///   sde.cu_region parallel  ->  arts.edt <parallel, internode>
+///   sde.cu_region parallel  ->  inline generic Core work units
 ///   sde.cu_region single    ->  arts.edt <single, intranode>
 ///   sde.cu_task             ->  arts.edt <task, intranode> + arts.db_control
-///   sde.su_iterate          ->  arts.for
+///   sde.su_iterate          ->  scf.for dispatch lanes + arts.edt <task>
 ///   sde.su_barrier          ->  arts.barrier
 ///   sde.cu_atomic           ->  arts.atomic_add
 ///   sde.mu_dep              ->  arts.db_control
@@ -30,6 +30,7 @@ namespace mlir::arts {
 
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/AffineExpr.h"
@@ -49,7 +50,7 @@ static llvm::Statistic numCuRegionConverted{
     "Number of sde.cu_region converted to arts.edt"};
 static llvm::Statistic numSuIterateConverted{
     "convert_sde_to_arts", "NumSuIterateConverted",
-    "Number of sde.su_iterate converted to arts.for"};
+    "Number of sde.su_iterate converted to generic task dispatch"};
 static llvm::Statistic numCuTaskConverted{
     "convert_sde_to_arts", "NumCuTaskConverted",
     "Number of sde.cu_task converted to arts.edt"};
@@ -104,26 +105,6 @@ static ArtsDepPattern mapSdeDepFamilyToArtsDepPattern(
 // Helpers
 //===----------------------------------------------------------------------===//
 
-/// Map SDE schedule kind to ARTS ForScheduleKind.
-static ForScheduleKindAttr
-convertSchedule(MLIRContext *ctx, sde::SdeScheduleKindAttr sdeSchedule) {
-  if (!sdeSchedule)
-    return nullptr;
-  switch (sdeSchedule.getValue()) {
-  case sde::SdeScheduleKind::static_:
-    return ForScheduleKindAttr::get(ctx, ForScheduleKind::Static);
-  case sde::SdeScheduleKind::dynamic:
-    return ForScheduleKindAttr::get(ctx, ForScheduleKind::Dynamic);
-  case sde::SdeScheduleKind::guided:
-    return ForScheduleKindAttr::get(ctx, ForScheduleKind::Guided);
-  case sde::SdeScheduleKind::auto_:
-    return ForScheduleKindAttr::get(ctx, ForScheduleKind::Auto);
-  case sde::SdeScheduleKind::runtime:
-    return ForScheduleKindAttr::get(ctx, ForScheduleKind::Runtime);
-  }
-  return nullptr;
-}
-
 /// Map SDE access mode to ARTS ArtsMode.
 static ArtsMode convertAccessMode(sde::SdeAccessMode mode) {
   switch (mode) {
@@ -135,26 +116,6 @@ static ArtsMode convertAccessMode(sde::SdeAccessMode mode) {
     return ArtsMode::inout;
   }
   return ArtsMode::inout;
-}
-
-/// Map an SDE reduction strategy to the persisted ARTS contract string.
-static StringAttr
-convertReductionStrategy(MLIRContext *ctx,
-                         sde::SdeReductionStrategyAttr strategy) {
-  if (!strategy)
-    return nullptr;
-
-  namespace ReductionStrategyValue =
-      AttrNames::Operation::Contract::ReductionStrategyValue;
-  switch (strategy.getValue()) {
-  case sde::SdeReductionStrategy::atomic:
-    return StringAttr::get(ctx, ReductionStrategyValue::Atomic);
-  case sde::SdeReductionStrategy::tree:
-    return StringAttr::get(ctx, ReductionStrategyValue::Tree);
-  case sde::SdeReductionStrategy::local_accumulate:
-    return StringAttr::get(ctx, ReductionStrategyValue::LocalAccumulate);
-  }
-  return nullptr;
 }
 
 static std::optional<EdtDistributionKind>
@@ -232,7 +193,7 @@ static unsigned countTopLevelSchedulingUnits(Operation *op,
                                              Operation *sourceBeingRewritten) {
   if (!op || op == sourceBeingRewritten)
     return 0;
-  if (isa<ForOp, sde::SdeSuIterateOp>(op))
+  if (isa<scf::ForOp, sde::SdeSuIterateOp>(op))
     return 1;
 
   auto distribute = dyn_cast<sde::SdeSuDistributeOp>(op);
@@ -243,35 +204,6 @@ static unsigned countTopLevelSchedulingUnits(Operation *op,
   for (Operation &nested : distribute.getBody().front().without_terminator())
     count += countTopLevelSchedulingUnits(&nested, sourceBeingRewritten);
   return count;
-}
-
-static bool
-shouldProjectLoopContractToParentEdt(Operation *loopLikeOp,
-                                     Operation *sourceBeingRewritten = nullptr) {
-  if (!loopLikeOp)
-    return false;
-  EdtOp parentEdt = loopLikeOp->getParentOfType<EdtOp>();
-  if (!parentEdt || parentEdt.getBody().empty())
-    return false;
-
-  unsigned schedulingUnits = 0;
-  for (Operation &nested : parentEdt.getBody().front().without_terminator()) {
-    schedulingUnits +=
-        countTopLevelSchedulingUnits(&nested, sourceBeingRewritten);
-    if (schedulingUnits > 1)
-      return false;
-  }
-  return schedulingUnits == 1;
-}
-
-/// Stamp a pattern contract on an arts.for and its parent EdtOp if present.
-static void stampPatternContract(Operation *artsForOp, ArtsDepPattern pattern,
-                                 int64_t revision = 1,
-                                 Operation *sourceBeingRewritten = nullptr) {
-  stampSimple(artsForOp, pattern, revision);
-  if (shouldProjectLoopContractToParentEdt(artsForOp, sourceBeingRewritten))
-    if (auto parentEdt = artsForOp->getParentOfType<EdtOp>())
-      stampSimple(parentEdt.getOperation(), pattern, revision);
 }
 
 /// Stamp a stencil-family contract on an op with spatial metadata.
@@ -296,76 +228,6 @@ static void stampStencilOnOp(Operation *op, ArtsDepPattern family,
   setStencilWriteFootprint(op, writeFootprint);
   if (!blockShape.empty())
     setStencilBlockShape(op, blockShape);
-}
-
-static SmallVector<int64_t, 4> toSmallVector(ArrayRef<int64_t> values) {
-  return SmallVector<int64_t, 4>(values.begin(), values.end());
-}
-
-static std::optional<SmallVector<int64_t, 4>>
-projectPhysicalShapeToOwnerDims(ArrayRef<int64_t> physicalShape,
-                                ArrayRef<int64_t> ownerDims) {
-  if (physicalShape.empty())
-    return SmallVector<int64_t, 4>{};
-  if (ownerDims.empty() || physicalShape.size() == ownerDims.size())
-    return toSmallVector(physicalShape);
-
-  SmallVector<int64_t, 4> result;
-  result.reserve(ownerDims.size());
-  for (int64_t dim : ownerDims) {
-    if (dim < 0 || static_cast<size_t>(dim) >= physicalShape.size())
-      return std::nullopt;
-    result.push_back(physicalShape[dim]);
-  }
-  return result;
-}
-
-/// Stamp a recovered stencil-family contract on an arts.for and its parent
-/// EdtOp.
-static void stampStencilContract(Operation *artsForOp, ArtsDepPattern pattern,
-                                 const StructuredNeighborhoodSummary &info,
-                                 ArrayRef<int64_t> planOwnerDims = {},
-                                 ArrayRef<int64_t> planBlockShape = {},
-                                 int64_t revision = 1,
-                                 Operation *sourceBeingRewritten = nullptr) {
-  SmallVector<int64_t, 4> ownerDims = planOwnerDims.empty()
-                                          ? toSmallVector(info.ownerDims)
-                                          : toSmallVector(planOwnerDims);
-  SmallVector<int64_t, 4> minOffsets = toSmallVector(info.minOffsets);
-  SmallVector<int64_t, 4> maxOffsets = toSmallVector(info.maxOffsets);
-  SmallVector<int64_t, 4> writeFootprint = toSmallVector(info.writeFootprint);
-  SmallVector<int64_t, 4> blockShape = toSmallVector(planBlockShape);
-
-  if (!planOwnerDims.empty()) {
-    auto projectedMins = projectOwnerIndexedStaticValues(
-        info.minOffsets, info.ownerDims, planOwnerDims);
-    auto projectedMaxs = projectOwnerIndexedStaticValues(
-        info.maxOffsets, info.ownerDims, planOwnerDims);
-    auto projectedFootprint = projectOwnerIndexedStaticValues(
-        info.writeFootprint, info.ownerDims, planOwnerDims);
-
-    if (projectedMins && projectedMaxs && projectedFootprint) {
-      minOffsets = std::move(*projectedMins);
-      maxOffsets = std::move(*projectedMaxs);
-      writeFootprint = std::move(*projectedFootprint);
-    } else {
-      ownerDims = toSmallVector(info.ownerDims);
-    }
-  }
-
-  if (auto projectedBlockShape =
-          projectPhysicalShapeToOwnerDims(planBlockShape, ownerDims))
-    blockShape = std::move(*projectedBlockShape);
-  else if (blockShape.size() != ownerDims.size())
-    blockShape.clear();
-
-  stampStencilOnOp(artsForOp, pattern, ownerDims, minOffsets, maxOffsets,
-                   writeFootprint, info.spatialDims, blockShape, revision);
-  if (shouldProjectLoopContractToParentEdt(artsForOp, sourceBeingRewritten))
-    if (auto parentEdt = artsForOp->getParentOfType<EdtOp>())
-      stampStencilOnOp(parentEdt.getOperation(), pattern, ownerDims, minOffsets,
-                       maxOffsets, writeFootprint, info.spatialDims,
-                       blockShape, revision);
 }
 
 static ArtsPlanIterationTopologyAttr
@@ -438,77 +300,6 @@ convertSdeBarrierReason(MLIRContext *ctx, sde::SdeBarrierReason reason) {
   return nullptr;
 }
 
-static void translateSdePhysicalPlanToArts(sde::SdeSuIterateOp source,
-                                           Operation *artsForOp) {
-  if (!artsForOp)
-    return;
-
-  MLIRContext *ctx = artsForOp->getContext();
-  EdtOp parentEdt = artsForOp->getParentOfType<EdtOp>();
-  Operation *parentOp =
-      parentEdt &&
-              shouldProjectLoopContractToParentEdt(artsForOp,
-                                                   source.getOperation())
-          ? parentEdt.getOperation()
-          : nullptr;
-
-  if (auto ownerDims = source.getPhysicalOwnerDimsAttr()) {
-    setPlanOwnerDimsAttr(artsForOp, ownerDims);
-    setPlanOwnerDimsAttr(parentOp, ownerDims);
-  }
-  if (auto blockShape = source.getPhysicalBlockShapeAttr()) {
-    setPlanPhysicalBlockShapeAttr(artsForOp, blockShape);
-    setPlanPhysicalBlockShapeAttr(parentOp, blockShape);
-  }
-  if (auto workerSlice = source.getLogicalWorkerSliceAttr()) {
-    setPlanLogicalWorkerSliceAttr(artsForOp, workerSlice);
-    setPlanLogicalWorkerSliceAttr(parentOp, workerSlice);
-  }
-  if (auto haloShape = source.getPhysicalHaloShapeAttr()) {
-    setPlanHaloShapeAttr(artsForOp, haloShape);
-    setPlanHaloShapeAttr(parentOp, haloShape);
-  }
-  if (auto topology = source.getIterationTopologyAttr()) {
-    auto coreTopology = convertSdeIterationTopology(ctx, topology.getValue());
-    setPlanIterationTopologyAttr(artsForOp, coreTopology);
-    setPlanIterationTopologyAttr(parentOp, coreTopology);
-  }
-  if (auto repetition = source.getRepetitionStructureAttr()) {
-    auto coreRepetition =
-        convertSdeRepetitionStructure(ctx, repetition.getValue());
-    setPlanRepetitionStructureAttr(artsForOp, coreRepetition);
-    setPlanRepetitionStructureAttr(parentOp, coreRepetition);
-  }
-  if (auto strategy = source.getAsyncStrategyAttr()) {
-    auto coreStrategy = convertSdeAsyncStrategy(ctx, strategy.getValue());
-    setPlanAsyncStrategyAttr(artsForOp, coreStrategy);
-    setPlanAsyncStrategyAttr(parentOp, coreStrategy);
-  }
-}
-
-static void translateSdeExecutionHintsToArts(sde::SdeSuIterateOp source,
-                                             ForOp artsFor) {
-  if (!source || !artsFor)
-    return;
-
-  if (auto attr = source.getInPlaceSafeAttr())
-    artsFor.setInPlaceSafeAttr(attr);
-  if (auto attr = source.getInPlaceSharedStateAttr())
-    artsFor.setInPlaceSharedStateAttr(attr);
-  if (auto attr = source.getVectorizeWidthAttr())
-    artsFor.setVectorizeWidthAttr(attr);
-  if (auto attr = source.getUnrollFactorAttr())
-    artsFor.setUnrollFactorAttr(attr);
-  if (auto attr = source.getInterleaveCountAttr())
-    artsFor.setInterleaveCountAttr(attr);
-
-  if (shouldProjectLoopContractToParentEdt(artsFor.getOperation(),
-                                           source.getOperation()))
-    if (auto parentEdt = artsFor->getParentOfType<EdtOp>())
-      copyCoreExecutionHintAttrs(artsFor.getOperation(),
-                                 parentEdt.getOperation());
-}
-
 static void stampDistributionKind(Operation *op, EdtDistributionKind kind,
                                   int64_t version = 1) {
   if (!op)
@@ -518,19 +309,113 @@ static void stampDistributionKind(Operation *op, EdtDistributionKind kind,
   setDistributionVersion(op, version);
 }
 
-static bool hasProjectedContractAttrs(ForOp forOp) {
-  return getDepPattern(forOp.getOperation()) ||
-         getEdtDistributionKind(forOp.getOperation()) ||
-         getEdtDistributionPattern(forOp.getOperation()) ||
-         hasStructuredPlanAttrs(forOp.getOperation());
+static bool hasProjectedContractAttrs(Operation *op) {
+  return getDepPattern(op) || getEdtDistributionKind(op) ||
+         getEdtDistributionPattern(op) || hasStructuredPlanAttrs(op);
+}
+
+static void translateSdePhysicalPlanToCoreOp(sde::SdeSuIterateOp source,
+                                             Operation *target) {
+  if (!source || !target)
+    return;
+
+  MLIRContext *ctx = target->getContext();
+  if (auto ownerDims = source.getPhysicalOwnerDimsAttr())
+    setPlanOwnerDimsAttr(target, ownerDims);
+  if (auto blockShape = source.getPhysicalBlockShapeAttr())
+    setPlanPhysicalBlockShapeAttr(target, blockShape);
+  if (auto workerSlice = source.getLogicalWorkerSliceAttr())
+    setPlanLogicalWorkerSliceAttr(target, workerSlice);
+  if (auto haloShape = source.getPhysicalHaloShapeAttr())
+    setPlanHaloShapeAttr(target, haloShape);
+  if (auto topology = source.getIterationTopologyAttr())
+    setPlanIterationTopologyAttr(
+        target, convertSdeIterationTopology(ctx, topology.getValue()));
+  if (auto repetition = source.getRepetitionStructureAttr())
+    setPlanRepetitionStructureAttr(
+        target, convertSdeRepetitionStructure(ctx, repetition.getValue()));
+  if (auto strategy = source.getAsyncStrategyAttr())
+    setPlanAsyncStrategyAttr(target,
+                             convertSdeAsyncStrategy(ctx, strategy.getValue()));
+}
+
+static void translateSdeExecutionHintsToCoreEdt(sde::SdeSuIterateOp source,
+                                                EdtOp target) {
+  if (!source || !target)
+    return;
+
+  if (auto attr = source.getInPlaceSafeAttr())
+    target.setInPlaceSafeAttr(attr);
+  if (auto attr = source.getInPlaceSharedStateAttr())
+    target.setInPlaceSharedStateAttr(attr);
+  if (auto attr = source.getVectorizeWidthAttr())
+    target.setVectorizeWidthAttr(attr);
+  if (auto attr = source.getUnrollFactorAttr())
+    target.setUnrollFactorAttr(attr);
+  if (auto attr = source.getInterleaveCountAttr())
+    target.setInterleaveCountAttr(attr);
+}
+
+static void stampSdeContractOnCoreOp(sde::SdeSuIterateOp source,
+                                     Operation *target) {
+  if (!source || !target)
+    return;
+
+  std::optional<ArtsDepPattern> selectedPattern;
+  std::optional<StructuredNeighborhoodSummary> selectedStencilContract;
+  int64_t selectedRevision = getPatternRevision(source.getOperation()).value_or(1);
+
+  if (auto depFamily = source.getDepFamilyAttr()) {
+    selectedPattern = mapSdeDepFamilyToArtsDepPattern(depFamily.getValue());
+    if (selectedPattern && isStencilFamilyDepPattern(*selectedPattern))
+      selectedStencilContract = getSdeNeighborhoodSummary(source);
+  } else if (auto classAttr = source.getStructuredClassificationAttr()) {
+    selectedPattern =
+        mapStructuredClassificationToArtsDepPattern(classAttr.getValue());
+    if (selectedPattern && isStencilFamilyDepPattern(*selectedPattern))
+      selectedStencilContract = getSdeNeighborhoodSummary(source);
+  }
+
+  if (selectedPattern) {
+    if (selectedStencilContract && isStencilFamilyDepPattern(*selectedPattern)) {
+      SmallVector<int64_t, 4> planOwnerDims;
+      SmallVector<int64_t, 4> planBlockShape;
+      if (auto ownerDims = readI64ArrayAttr(source.getPhysicalOwnerDimsAttr()))
+        planOwnerDims.assign(ownerDims->begin(), ownerDims->end());
+      if (auto blockShape =
+              readI64ArrayAttr(source.getPhysicalBlockShapeAttr()))
+        planBlockShape.assign(blockShape->begin(), blockShape->end());
+      stampStencilOnOp(target, *selectedPattern, planOwnerDims.empty()
+                                                    ? selectedStencilContract->ownerDims
+                                                    : planOwnerDims,
+                       selectedStencilContract->minOffsets,
+                       selectedStencilContract->maxOffsets,
+                       selectedStencilContract->writeFootprint,
+                       selectedStencilContract->spatialDims, planBlockShape,
+                       selectedRevision);
+    } else {
+      stampSimple(target, *selectedPattern, selectedRevision);
+    }
+  } else if (auto classAttr = source.getStructuredClassificationAttr();
+             classAttr &&
+             classAttr.getValue() ==
+                 sde::SdeStructuredClassification::reduction) {
+    setEdtDistributionPattern(target, EdtDistributionPattern::uniform);
+  }
+
+  if (auto distributionKind =
+          convertDistributionKind(source.getDistributionKindAttr()))
+    stampDistributionKind(target, *distributionKind);
+
+  translateSdePhysicalPlanToCoreOp(source, target);
 }
 
 static void
 collectTopLevelForContractCandidates(Operation *op,
-                                     SmallVectorImpl<ForOp> &candidates) {
-  if (auto forOp = dyn_cast<ForOp>(op)) {
-    if (hasProjectedContractAttrs(forOp))
-      candidates.push_back(forOp);
+                                     SmallVectorImpl<Operation *> &candidates) {
+  if (auto forOp = dyn_cast<scf::ForOp>(op)) {
+    if (hasProjectedContractAttrs(forOp.getOperation()))
+      candidates.push_back(forOp.getOperation());
     return;
   }
 
@@ -540,6 +425,636 @@ collectTopLevelForContractCandidates(Operation *op,
 
   for (Operation &nested : distribute.getBody().front().without_terminator())
     collectTopLevelForContractCandidates(&nested, candidates);
+}
+
+static Value materializeGenericWorkerCount(OpBuilder &builder, Location loc) {
+  Value runtimeWorkers =
+      RuntimeQueryOp::create(builder, loc, RuntimeQueryKind::totalWorkers)
+          .getResult();
+  Value workers = ValueAnalysis::castToIndex(runtimeWorkers, builder, loc);
+  return arith::MaxUIOp::create(builder, loc, workers,
+                                createOneIndex(builder, loc));
+}
+
+struct SuReductionPlan {
+  SmallVector<Value> sourceAccumulators;
+  SmallVector<Value> accumulators;
+  SmallVector<sde::SdeReductionKind> kinds;
+  sde::SdeReductionStrategy strategy = sde::SdeReductionStrategy::local_accumulate;
+
+  bool empty() const { return accumulators.empty(); }
+};
+
+struct MaterializedReduction {
+  Value accumulator;
+  sde::SdeReductionKind kind = sde::SdeReductionKind::custom;
+  Type elementType;
+  Value partialGuid;
+  Value partialPtr;
+};
+
+static bool isScalarReductionCarrierType(MemRefType memrefType) {
+  return memrefType && memrefType.getRank() <= 1;
+}
+
+static SmallVector<Value, 1>
+getScalarReductionIndices(OpBuilder &builder, Location loc, Value memref) {
+  SmallVector<Value, 1> indices;
+  auto memrefType = dyn_cast<MemRefType>(memref.getType());
+  if (memrefType && memrefType.getRank() == 1)
+    indices.push_back(createZeroIndex(builder, loc));
+  return indices;
+}
+
+static Value loadScalarReductionValue(OpBuilder &builder, Location loc,
+                                      Value memref) {
+  return memref::LoadOp::create(
+      builder, loc, memref, getScalarReductionIndices(builder, loc, memref));
+}
+
+static void storeScalarReductionValue(OpBuilder &builder, Location loc,
+                                      Value value, Value memref) {
+  memref::StoreOp::create(builder, loc, value, memref,
+                          getScalarReductionIndices(builder, loc, memref));
+}
+
+static Type getReductionElementType(Value accumulator) {
+  if (auto memrefType = dyn_cast<MemRefType>(accumulator.getType()))
+    return memrefType.getElementType();
+  return accumulator.getType();
+}
+
+static Value createZeroLike(OpBuilder &builder, Location loc, Type elementType) {
+  if (auto intType = dyn_cast<IntegerType>(elementType))
+    return arith::ConstantIntOp::create(builder, loc, 0, intType.getWidth());
+  if (auto floatType = dyn_cast<FloatType>(elementType))
+    return arith::ConstantFloatOp::create(
+        builder, loc, floatType,
+        APFloat::getZero(floatType.getFloatSemantics()));
+  return {};
+}
+
+static Value createReductionIdentity(OpBuilder &builder, Location loc,
+                                     Type elementType,
+                                     sde::SdeReductionKind kind) {
+  if (kind == sde::SdeReductionKind::add ||
+      kind == sde::SdeReductionKind::lor ||
+      kind == sde::SdeReductionKind::lxor)
+    return createZeroLike(builder, loc, elementType);
+
+  if (auto intType = dyn_cast<IntegerType>(elementType)) {
+    unsigned width = intType.getWidth();
+    switch (kind) {
+    case sde::SdeReductionKind::mul:
+      return arith::ConstantIntOp::create(builder, loc, 1, width);
+    case sde::SdeReductionKind::min:
+      return arith::ConstantOp::create(
+          builder, loc, elementType,
+          IntegerAttr::get(elementType, APInt::getSignedMaxValue(width)));
+    case sde::SdeReductionKind::max:
+      return arith::ConstantOp::create(
+          builder, loc, elementType,
+          IntegerAttr::get(elementType, APInt::getSignedMinValue(width)));
+    case sde::SdeReductionKind::land:
+      return arith::ConstantOp::create(
+          builder, loc, elementType,
+          IntegerAttr::get(elementType, APInt::getAllOnes(width)));
+    default:
+      return createZeroLike(builder, loc, elementType);
+    }
+  }
+
+  if (auto floatType = dyn_cast<FloatType>(elementType)) {
+    const llvm::fltSemantics &semantics = floatType.getFloatSemantics();
+    switch (kind) {
+    case sde::SdeReductionKind::mul:
+      return arith::ConstantFloatOp::create(builder, loc, floatType,
+                                            APFloat(semantics, 1));
+    case sde::SdeReductionKind::min:
+      return arith::ConstantFloatOp::create(
+          builder, loc, floatType,
+          APFloat::getInf(semantics, /*Negative=*/false));
+    case sde::SdeReductionKind::max:
+      return arith::ConstantFloatOp::create(
+          builder, loc, floatType,
+          APFloat::getInf(semantics, /*Negative=*/true));
+    default:
+      return createZeroLike(builder, loc, elementType);
+    }
+  }
+
+  return {};
+}
+
+static Value createReductionCombiner(OpBuilder &builder, Location loc,
+                                     Type elementType, Value lhs, Value rhs,
+                                     sde::SdeReductionKind kind) {
+  bool isFloat = isa<FloatType>(elementType);
+  switch (kind) {
+  case sde::SdeReductionKind::add:
+    return isFloat ? arith::AddFOp::create(builder, loc, lhs, rhs).getResult()
+                   : arith::AddIOp::create(builder, loc, lhs, rhs).getResult();
+  case sde::SdeReductionKind::mul:
+    return isFloat ? arith::MulFOp::create(builder, loc, lhs, rhs).getResult()
+                   : arith::MulIOp::create(builder, loc, lhs, rhs).getResult();
+  case sde::SdeReductionKind::min:
+    return isFloat ? arith::MinimumFOp::create(builder, loc, lhs, rhs)
+                         .getResult()
+                   : arith::MinSIOp::create(builder, loc, lhs, rhs)
+                         .getResult();
+  case sde::SdeReductionKind::max:
+    return isFloat ? arith::MaximumFOp::create(builder, loc, lhs, rhs)
+                         .getResult()
+                   : arith::MaxSIOp::create(builder, loc, lhs, rhs)
+                         .getResult();
+  case sde::SdeReductionKind::land:
+    return arith::AndIOp::create(builder, loc, lhs, rhs).getResult();
+  case sde::SdeReductionKind::lor:
+    return arith::OrIOp::create(builder, loc, lhs, rhs).getResult();
+  case sde::SdeReductionKind::lxor:
+    return arith::XOrIOp::create(builder, loc, lhs, rhs).getResult();
+  case sde::SdeReductionKind::custom:
+    return {};
+  }
+  return {};
+}
+
+static SmallVector<Value>
+createUnitDynamicSizes(OpBuilder &builder, Location loc, MemRefType memrefType) {
+  SmallVector<Value> dynamicSizes;
+  for (int64_t dim : memrefType.getShape()) {
+    if (dim == ShapedType::kDynamic)
+      dynamicSizes.push_back(createOneIndex(builder, loc));
+  }
+  return dynamicSizes;
+}
+
+static LogicalResult validateReductionAccumulator(sde::SdeSuIterateOp source,
+                                                  Value accumulator) {
+  auto memrefType = dyn_cast<MemRefType>(accumulator.getType());
+  if (!isScalarReductionCarrierType(memrefType))
+    return source.emitOpError("requires scalar memref reduction accumulators "
+                              "at the SDE/Core boundary");
+  return success();
+}
+
+static FailureOr<SuReductionPlan>
+getSuReductionPlan(sde::SdeSuIterateOp source,
+                   const IRMapping &outerMapping) {
+  SuReductionPlan plan;
+  for (Value accumulator : source.getReductionAccumulators()) {
+    plan.sourceAccumulators.push_back(accumulator);
+    plan.accumulators.push_back(outerMapping.lookupOrDefault(accumulator));
+  }
+
+  if (plan.accumulators.empty())
+    return plan;
+
+  if (!source.getResults().empty()) {
+    source.emitOpError("cannot directly materialize result-producing "
+                       "su_iterate reductions; SDE must expose reductions as "
+                       "explicit accumulator updates before Core");
+    return failure();
+  }
+
+  auto kindsAttr = source.getReductionKindsAttr();
+  if (!kindsAttr || kindsAttr.size() != plan.accumulators.size()) {
+    source.emitOpError("requires one SDE reduction kind per accumulator");
+    return failure();
+  }
+
+  auto strategyAttr = source.getReductionStrategyAttr();
+  if (!strategyAttr) {
+    source.emitOpError("requires an SDE reduction strategy before Core "
+                       "materialization");
+    return failure();
+  }
+  plan.strategy = strategyAttr.getValue();
+
+  for (Attribute attr : kindsAttr) {
+    auto kindAttr = dyn_cast<sde::SdeReductionKindAttr>(attr);
+    if (!kindAttr || kindAttr.getValue() == sde::SdeReductionKind::custom) {
+      source.emitOpError("requires concrete non-custom reduction kinds before "
+                         "Core materialization");
+      return failure();
+    }
+    plan.kinds.push_back(kindAttr.getValue());
+  }
+
+  for (auto [accumulator, kind] : llvm::zip(plan.accumulators, plan.kinds)) {
+    if (failed(validateReductionAccumulator(source, accumulator)))
+      return failure();
+    Type elementType = getReductionElementType(accumulator);
+    if (plan.strategy == sde::SdeReductionStrategy::atomic &&
+        (kind != sde::SdeReductionKind::add || !isa<IntegerType>(elementType))) {
+      source.emitOpError("atomic reduction strategy requires integer add "
+                         "accumulators");
+      return failure();
+    }
+  }
+
+  return plan;
+}
+
+static Value createReductionScratchMemref(OpBuilder &builder, Location loc,
+                                          Value accumulator,
+                                          sde::SdeReductionKind kind) {
+  auto memrefType = cast<MemRefType>(accumulator.getType());
+  Value scratch = memref::AllocaOp::create(
+      builder, loc, memrefType, createUnitDynamicSizes(builder, loc, memrefType));
+  Value identity =
+      createReductionIdentity(builder, loc, memrefType.getElementType(), kind);
+  if (identity)
+    storeScalarReductionValue(builder, loc, identity, scratch);
+  return scratch;
+}
+
+static void mapReductionAccumulatorAliases(IRMapping &mapper,
+                                           Value sourceAccumulator,
+                                           Value materializedAccumulator,
+                                           Value replacement) {
+  mapper.map(sourceAccumulator, replacement);
+  mapper.map(materializedAccumulator, replacement);
+
+  Value sourceRoot = ValueAnalysis::stripMemrefViewOps(sourceAccumulator);
+  if (sourceRoot && sourceRoot != sourceAccumulator)
+    mapper.map(sourceRoot, replacement);
+
+  Value materializedRoot =
+      ValueAnalysis::stripMemrefViewOps(materializedAccumulator);
+  if (materializedRoot && materializedRoot != materializedAccumulator)
+    mapper.map(materializedRoot, replacement);
+}
+
+static void prepareAtomicReductionLocals(OpBuilder &builder, Location loc,
+                                         const SuReductionPlan &plan,
+                                         IRMapping &mapper,
+                                         SmallVectorImpl<Value> &scratchMemrefs) {
+  scratchMemrefs.reserve(plan.accumulators.size());
+  for (auto [sourceAccumulator, accumulator, kind] :
+       llvm::zip(plan.sourceAccumulators, plan.accumulators, plan.kinds)) {
+    Value scratch = createReductionScratchMemref(builder, loc, accumulator, kind);
+    mapReductionAccumulatorAliases(mapper, sourceAccumulator, accumulator,
+                                   scratch);
+    scratchMemrefs.push_back(scratch);
+  }
+}
+
+static void finalizeAtomicReductionLocals(OpBuilder &builder, Location loc,
+                                          const SuReductionPlan &plan,
+                                          ArrayRef<Value> scratchMemrefs) {
+  for (auto [accumulator, scratch] : llvm::zip(plan.accumulators, scratchMemrefs)) {
+    Value partial = loadScalarReductionValue(builder, loc, scratch);
+    AtomicAddOp::create(builder, loc, accumulator, partial);
+  }
+}
+
+static void preparePartialReductionSlots(
+    OpBuilder &builder, Location loc, const SuReductionPlan &plan,
+    EdtOp task, ArrayRef<BlockArgument> dependencyArgs, IRMapping &mapper) {
+  Value zero = createZeroIndex(builder, loc);
+  for (auto [idx, tuple] :
+       llvm::enumerate(llvm::zip(plan.sourceAccumulators, plan.accumulators,
+                                  plan.kinds, dependencyArgs))) {
+    auto [sourceAccumulator, accumulator, kind, depArg] = tuple;
+    (void)idx;
+    Value slot =
+        DbRefOp::create(builder, loc, depArg, SmallVector<Value>{zero});
+    Value identity =
+        createReductionIdentity(builder, loc, getReductionElementType(accumulator),
+                                kind);
+    if (identity)
+      storeScalarReductionValue(builder, loc, identity, slot);
+    mapReductionAccumulatorAliases(mapper, sourceAccumulator, accumulator, slot);
+  }
+}
+
+static SmallVector<MaterializedReduction>
+allocatePartialReductionDbs(OpBuilder &builder, Location loc,
+                            const SuReductionPlan &plan, Value dispatchLanes,
+                            Value one) {
+  SmallVector<MaterializedReduction> materialized;
+  materialized.reserve(plan.accumulators.size());
+  if (plan.empty() || plan.strategy == sde::SdeReductionStrategy::atomic)
+    return materialized;
+
+  Value route = createCurrentNodeRoute(builder, loc);
+  for (auto [accumulator, kind] : llvm::zip(plan.accumulators, plan.kinds)) {
+    Type elementType = getReductionElementType(accumulator);
+    auto alloc = DbAllocOp::create(
+        builder, loc, ArtsMode::inout, route, DbAllocType::heap, DbMode::write,
+        elementType, Value{}, SmallVector<Value>{dispatchLanes},
+        SmallVector<Value>{one});
+    setPartitionMode(alloc.getOperation(), PartitionMode::fine_grained);
+    materialized.push_back(
+        MaterializedReduction{accumulator, kind, elementType, alloc.getGuid(),
+                              alloc.getPtr()});
+  }
+
+  return materialized;
+}
+
+static SmallVector<Value> createPartialReductionTaskDependencies(
+    OpBuilder &builder, Location loc, ArrayRef<MaterializedReduction> reductions,
+    Value lane) {
+  SmallVector<Value> dependencies;
+  dependencies.reserve(reductions.size());
+  for (const MaterializedReduction &reduction : reductions) {
+    auto acquire = DbAcquireOp::create(
+        builder, loc, ArtsMode::inout, reduction.partialGuid,
+        reduction.partialPtr, PartitionMode::fine_grained,
+        /*indices=*/SmallVector<Value>{lane},
+        /*offsets=*/SmallVector<Value>{},
+        /*sizes=*/SmallVector<Value>{},
+        /*partitionIndices=*/SmallVector<Value>{lane},
+        /*partitionOffsets=*/SmallVector<Value>{},
+        /*partitionSizes=*/SmallVector<Value>{},
+        /*boundsValid=*/Value{},
+        /*elementOffsets=*/SmallVector<Value>{},
+        /*elementSizes=*/SmallVector<Value>{});
+    acquire.setExplicitDepContract();
+    dependencies.push_back(acquire.getPtr());
+  }
+  return dependencies;
+}
+
+static void combineReductionLinear(OpBuilder &builder, Location loc,
+                                   const MaterializedReduction &reduction,
+                                   Value zero, Value one,
+                                   Value dispatchLanes) {
+  Value identity =
+      createReductionIdentity(builder, loc, reduction.elementType,
+                              reduction.kind);
+  auto loop = scf::ForOp::create(builder, loc, zero, dispatchLanes, one,
+                                 ValueRange{identity});
+
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(loop.getBody());
+  Value workerIdx = loop.getInductionVar();
+  Value accumulator = loop.getRegionIterArg(0);
+  Value slot =
+      DbRefOp::create(builder, loc, reduction.partialPtr,
+                      SmallVector<Value>{workerIdx});
+  Value partial = loadScalarReductionValue(builder, loc, slot);
+  Value combined = createReductionCombiner(builder, loc, reduction.elementType,
+                                           accumulator, partial,
+                                           reduction.kind);
+  scf::YieldOp::create(builder, loc, combined);
+
+  builder.setInsertionPointAfter(loop);
+  storeScalarReductionValue(builder, loc, loop.getResult(0),
+                            reduction.accumulator);
+}
+
+static void combineReductionTree(OpBuilder &builder, Location loc,
+                                 const MaterializedReduction &reduction,
+                                 Value zero, Value one, Value dispatchLanes) {
+  Value identity =
+      createReductionIdentity(builder, loc, reduction.elementType,
+                              reduction.kind);
+  Value two = createConstantIndex(builder, loc, 2);
+  auto loop = scf::ForOp::create(builder, loc, zero, dispatchLanes, two,
+                                 ValueRange{identity});
+
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(loop.getBody());
+  Value pairIdx = loop.getInductionVar();
+  Value accumulator = loop.getRegionIterArg(0);
+  Value rhsIdx = arith::AddIOp::create(builder, loc, pairIdx, one);
+  Value hasRhs = arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::ult,
+                                       rhsIdx, dispatchLanes);
+
+  Value lhsSlot =
+      DbRefOp::create(builder, loc, reduction.partialPtr,
+                      SmallVector<Value>{pairIdx});
+  Value lhs = loadScalarReductionValue(builder, loc, lhsSlot);
+  auto rhsIf = scf::IfOp::create(builder, loc, TypeRange{reduction.elementType},
+                                 hasRhs, /*withElseRegion=*/true);
+
+  builder.setInsertionPointToStart(&rhsIf.getThenRegion().front());
+  Value rhsSlot =
+      DbRefOp::create(builder, loc, reduction.partialPtr,
+                      SmallVector<Value>{rhsIdx});
+  Value rhs = loadScalarReductionValue(builder, loc, rhsSlot);
+  scf::YieldOp::create(builder, loc, rhs);
+
+  builder.setInsertionPointToStart(&rhsIf.getElseRegion().front());
+  scf::YieldOp::create(builder, loc, identity);
+
+  builder.setInsertionPointToEnd(loop.getBody());
+  Value pairValue = createReductionCombiner(builder, loc, reduction.elementType,
+                                            lhs, rhsIf.getResult(0),
+                                            reduction.kind);
+  Value combined = createReductionCombiner(builder, loc, reduction.elementType,
+                                           accumulator, pairValue,
+                                           reduction.kind);
+  scf::YieldOp::create(builder, loc, combined);
+
+  builder.setInsertionPointAfter(loop);
+  storeScalarReductionValue(builder, loc, loop.getResult(0),
+                            reduction.accumulator);
+}
+
+static void combinePartialReductionsAfterEpoch(
+    OpBuilder &builder, Location loc, const SuReductionPlan &plan,
+    ArrayRef<MaterializedReduction> reductions, Value zero, Value one,
+    Value dispatchLanes) {
+  if (reductions.empty())
+    return;
+
+  for (const MaterializedReduction &reduction : reductions) {
+    if (plan.strategy == sde::SdeReductionStrategy::tree)
+      combineReductionTree(builder, loc, reduction, zero, one, dispatchLanes);
+    else
+      combineReductionLinear(builder, loc, reduction, zero, one, dispatchLanes);
+  }
+
+  for (const MaterializedReduction &reduction : reductions) {
+    DbFreeOp::create(builder, loc, reduction.partialGuid);
+    DbFreeOp::create(builder, loc, reduction.partialPtr);
+  }
+}
+
+static LogicalResult cloneSuIterateBodyIntoLocalLoop(
+    sde::SdeSuIterateOp source, scf::ForOp localLoop, Value globalBase,
+    ArrayRef<Value> lowerBounds, ArrayRef<Value> upperBounds,
+    ArrayRef<Value> steps, IRMapping outerMapping, PatternRewriter &rewriter);
+
+static LogicalResult buildTrailingLoopNestAndClone(
+    sde::SdeSuIterateOp source, unsigned dim, ArrayRef<Value> lowerBounds,
+    ArrayRef<Value> upperBounds, ArrayRef<Value> steps, IRMapping &mapper,
+    PatternRewriter &rewriter, Block *computeBlock) {
+  Location loc = source.getLoc();
+  if (dim == lowerBounds.size()) {
+    for (Operation &srcOp : computeBlock->without_terminator())
+      rewriter.clone(srcOp, mapper);
+    return success();
+  }
+
+  auto loop = scf::ForOp::create(rewriter, loc, lowerBounds[dim],
+                                 upperBounds[dim], steps[dim]);
+  if (source.getBody().front().getNumArguments() > dim)
+    mapper.map(source.getBody().front().getArgument(dim),
+               loop.getInductionVar());
+
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPointToStart(loop.getBody());
+  return buildTrailingLoopNestAndClone(source, dim + 1, lowerBounds,
+                                       upperBounds, steps, mapper, rewriter,
+                                       computeBlock);
+}
+
+static LogicalResult cloneSuIterateBodyIntoLocalLoop(
+    sde::SdeSuIterateOp source, scf::ForOp localLoop, Value globalBase,
+    ArrayRef<Value> lowerBounds, ArrayRef<Value> upperBounds,
+    ArrayRef<Value> steps, IRMapping outerMapping, PatternRewriter &rewriter) {
+  Block *computeBlock = sde::getSuIterateComputeBlock(source);
+  if (!computeBlock)
+    return failure();
+
+  Location loc = source.getLoc();
+  IRMapping mapper = outerMapping;
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPointToStart(localLoop.getBody());
+
+  Value localIter = localLoop.getInductionVar();
+  Value scaled = arith::MulIOp::create(rewriter, loc, localIter, steps.front());
+  Value globalIv = arith::AddIOp::create(rewriter, loc, globalBase, scaled);
+  if (source.getBody().front().getNumArguments() > 0)
+    mapper.map(source.getBody().front().getArgument(0), globalIv);
+
+  return buildTrailingLoopNestAndClone(source, /*dim=*/1, lowerBounds,
+                                       upperBounds, steps, mapper, rewriter,
+                                       computeBlock);
+}
+
+static LogicalResult materializeSuIterateAsGenericTaskDispatch(
+    sde::SdeSuIterateOp source, PatternRewriter &rewriter,
+    const IRMapping &outerMapping = IRMapping()) {
+  if (source.getLowerBounds().empty() || source.getUpperBounds().empty() ||
+      source.getSteps().empty())
+    return source.emitOpError("cannot materialize su_iterate without bounds");
+  if (source.getLowerBounds().size() != source.getUpperBounds().size() ||
+      source.getLowerBounds().size() != source.getSteps().size())
+    return source.emitOpError("cannot materialize su_iterate with mismatched "
+                              "bound ranks");
+
+  Location loc = source.getLoc();
+  MLIRContext *ctx = rewriter.getContext();
+  SmallVector<Value> lowerBounds, upperBounds, steps;
+  for (Value value : source.getLowerBounds())
+    lowerBounds.push_back(outerMapping.lookupOrDefault(value));
+  for (Value value : source.getUpperBounds())
+    upperBounds.push_back(outerMapping.lookupOrDefault(value));
+  for (Value value : source.getSteps())
+    steps.push_back(outerMapping.lookupOrDefault(value));
+
+  FailureOr<SuReductionPlan> maybeReductionPlan =
+      getSuReductionPlan(source, outerMapping);
+  if (failed(maybeReductionPlan))
+    return failure();
+  SuReductionPlan reductionPlan = std::move(*maybeReductionPlan);
+  if (reductionPlan.empty() && !source.getResults().empty())
+    return source.emitOpError("cannot materialize result-producing su_iterate "
+                              "without explicit SDE reduction accumulators");
+
+  Value zero = createZeroIndex(rewriter, loc);
+  Value one = createOneIndex(rewriter, loc);
+  Value workers = materializeGenericWorkerCount(rewriter, loc);
+
+  Value range = arith::SubIOp::create(rewriter, loc, upperBounds.front(),
+                                      lowerBounds.front());
+  Value totalIterations = createCeilDivUI(rewriter, loc, range, steps.front());
+  Value rawBlockSize = createCeilDivUI(rewriter, loc, totalIterations, workers);
+  Value blockSize =
+      arith::MaxUIOp::create(rewriter, loc, rawBlockSize, one);
+  Value totalChunks = createCeilDivUI(rewriter, loc, totalIterations, blockSize);
+  Value dispatchLanes =
+      arith::MinUIOp::create(rewriter, loc, workers, totalChunks);
+
+  SmallVector<MaterializedReduction> partialReductions =
+      allocatePartialReductionDbs(rewriter, loc, reductionPlan, dispatchLanes,
+                                  one);
+
+  auto epoch = EpochOp::create(rewriter, loc, ValueRange{});
+  stampSdeContractOnCoreOp(source, epoch.getOperation());
+  copyArtsMetadataAttrs(source, epoch);
+  Region &epochRegion = epoch.getRegion();
+  if (epochRegion.empty())
+    epochRegion.push_back(new Block());
+  Block *epochBlock = &epochRegion.front();
+
+  OpBuilder::InsertionGuard epochGuard(rewriter);
+  rewriter.setInsertionPointToStart(epochBlock);
+
+  auto dispatchLoop = scf::ForOp::create(rewriter, loc, zero, dispatchLanes,
+                                         one);
+  rewriter.setInsertionPointToStart(dispatchLoop.getBody());
+  Value lane = dispatchLoop.getInductionVar();
+  Value chunkStart =
+      arith::MulIOp::create(rewriter, loc, lane, blockSize);
+  Value remaining =
+      arith::SubIOp::create(rewriter, loc, totalIterations, chunkStart);
+  Value iterCount =
+      arith::MinUIOp::create(rewriter, loc, blockSize, remaining);
+
+  Value globalBaseOffset =
+      arith::MulIOp::create(rewriter, loc, chunkStart, steps.front());
+  Value globalBase =
+      arith::AddIOp::create(rewriter, loc, lowerBounds.front(),
+                            globalBaseOffset);
+
+  SmallVector<Value> taskDependencies =
+      createPartialReductionTaskDependencies(rewriter, loc, partialReductions,
+                                             lane);
+  auto task = EdtOp::create(rewriter, loc, EdtType::task,
+                            EdtConcurrency::intranode, taskDependencies);
+  task.setNoVerifyAttr(NoVerifyAttr::get(ctx));
+  stampSdeContractOnCoreOp(source, task.getOperation());
+  translateSdeExecutionHintsToCoreEdt(source, task);
+  copyArtsMetadataAttrs(source, task);
+
+  Block &taskBlock = task.getBody().front();
+  SmallVector<BlockArgument> dependencyArgs;
+  dependencyArgs.reserve(taskDependencies.size());
+  for (Value dep : taskDependencies)
+    dependencyArgs.push_back(taskBlock.addArgument(dep.getType(), loc));
+
+  rewriter.setInsertionPointToStart(&taskBlock);
+  IRMapping taskMapping = outerMapping;
+  SmallVector<Value> atomicScratchMemrefs;
+  if (!reductionPlan.empty() &&
+      reductionPlan.strategy == sde::SdeReductionStrategy::atomic) {
+    prepareAtomicReductionLocals(rewriter, loc, reductionPlan, taskMapping,
+                                 atomicScratchMemrefs);
+  } else if (!partialReductions.empty()) {
+    preparePartialReductionSlots(rewriter, loc, reductionPlan, task,
+                                 dependencyArgs, taskMapping);
+  }
+
+  auto localLoop = scf::ForOp::create(rewriter, loc, zero, iterCount, one);
+  if (failed(cloneSuIterateBodyIntoLocalLoop(source, localLoop, globalBase,
+                                             lowerBounds, upperBounds, steps,
+                                             taskMapping, rewriter)))
+    return failure();
+
+  rewriter.setInsertionPointToEnd(&taskBlock);
+  if (!atomicScratchMemrefs.empty())
+    finalizeAtomicReductionLocals(rewriter, loc, reductionPlan,
+                                  atomicScratchMemrefs);
+  if (taskBlock.empty() || !taskBlock.back().hasTrait<OpTrait::IsTerminator>())
+    YieldOp::create(rewriter, loc);
+
+  rewriter.setInsertionPointToEnd(epochBlock);
+  if (epochBlock->empty() ||
+      !epochBlock->back().hasTrait<OpTrait::IsTerminator>())
+    YieldOp::create(rewriter, loc);
+
+  rewriter.setInsertionPointAfter(epoch);
+  combinePartialReductionsAfterEpoch(rewriter, loc, reductionPlan,
+                                     partialReductions, zero, one,
+                                     dispatchLanes);
+  return success();
 }
 
 static void projectSingleNestedForContractToEdt(EdtOp edtOp) {
@@ -555,13 +1070,13 @@ static void projectSingleNestedForContractToEdt(EdtOp edtOp) {
   if (schedulingUnits != 1)
     return;
 
-  SmallVector<ForOp, 2> candidates;
+  SmallVector<Operation *, 2> candidates;
   for (Operation &nested : edtOp.getBody().front().without_terminator())
     collectTopLevelForContractCandidates(&nested, candidates);
   if (candidates.size() != 1)
     return;
 
-  Operation *source = candidates.front().getOperation();
+  Operation *source = candidates.front();
   copySemanticContractAttrs(source, edtOp.getOperation());
   copyPlanAttrs(source, edtOp.getOperation());
   copyCoreExecutionHintAttrs(source, edtOp.getOperation());
@@ -571,12 +1086,176 @@ static void projectSingleNestedForContractToEdt(EdtOp edtOp) {
 // Conversion Patterns
 //===----------------------------------------------------------------------===//
 
+static LogicalResult materializeSdeBlock(Operation *container, Block &block,
+                                         PatternRewriter &rewriter,
+                                         IRMapping &mapper);
+static LogicalResult materializeSdeBlockAtCurrentInsertion(
+    Block &block, PatternRewriter &rewriter, IRMapping &mapper);
+
+static SmallVector<Value> materializeCuTaskDeps(sde::SdeCuTaskOp op,
+                                                PatternRewriter &rewriter,
+                                                IRMapping &mapper) {
+  SmallVector<Value> artsDeps;
+  for (Value dep : op.getDeps()) {
+    auto muDep = dep.getDefiningOp<sde::SdeMuDepOp>();
+    if (!muDep)
+      continue;
+
+    ArtsMode mode = convertAccessMode(muDep.getMode());
+    SmallVector<Value> offsets;
+    SmallVector<Value> sizes;
+    offsets.reserve(muDep.getOffsets().size());
+    sizes.reserve(muDep.getSizes().size());
+    for (Value offset : muDep.getOffsets())
+      offsets.push_back(mapper.lookupOrDefault(offset));
+    for (Value size : muDep.getSizes())
+      sizes.push_back(mapper.lookupOrDefault(size));
+
+    SmallVector<Value> pinnedIndices, chunkOffsets, blockSizes;
+    if (!offsets.empty() && sizes.empty()) {
+      pinnedIndices = offsets;
+    } else {
+      for (size_t i = 0; i < offsets.size() && i < sizes.size(); ++i) {
+        if (ValueAnalysis::isOneConstant(sizes[i])) {
+          pinnedIndices.push_back(offsets[i]);
+        } else {
+          chunkOffsets.push_back(offsets[i]);
+          blockSizes.push_back(sizes[i]);
+        }
+      }
+    }
+
+    Value source = mapper.lookupOrDefault(muDep.getSource());
+    auto dbControl = DbControlOp::create(rewriter, op.getLoc(), mode, source,
+                                         pinnedIndices, chunkOffsets,
+                                         blockSizes);
+    artsDeps.push_back(dbControl);
+  }
+  return artsDeps;
+}
+
+static LogicalResult materializeCuTaskAsEdt(sde::SdeCuTaskOp op,
+                                            PatternRewriter &rewriter,
+                                            IRMapping &mapper) {
+  SmallVector<Value> artsDeps = materializeCuTaskDeps(op, rewriter, mapper);
+  auto edtOp = EdtOp::create(rewriter, op.getLoc(), EdtType::task,
+                             EdtConcurrency::intranode, artsDeps);
+  edtOp.setNoVerifyAttr(NoVerifyAttr::get(rewriter.getContext()));
+  if (auto depFamily = op.getDepFamilyAttr())
+    stampSimple(edtOp.getOperation(),
+                mapSdeDepFamilyToArtsDepPattern(depFamily.getValue()),
+                /*rev=*/1);
+
+  {
+    OpBuilder::InsertionGuard guard(rewriter);
+    Block &edtBlock = edtOp.getBody().front();
+    rewriter.setInsertionPointToStart(&edtBlock);
+    if (failed(materializeSdeBlockAtCurrentInsertion(op.getBody().front(),
+                                                     rewriter, mapper)))
+      return failure();
+    if (edtBlock.empty() ||
+        !edtBlock.back().hasTrait<OpTrait::IsTerminator>())
+      YieldOp::create(rewriter, op.getLoc());
+  }
+
+  rewriter.setInsertionPointAfter(edtOp);
+  return success();
+}
+
+static LogicalResult materializeSdeOp(Operation *op, PatternRewriter &rewriter,
+                                      IRMapping &mapper) {
+  if (auto iterate = dyn_cast<sde::SdeSuIterateOp>(op))
+    return materializeSuIterateAsGenericTaskDispatch(iterate, rewriter, mapper);
+
+  if (auto distribute = dyn_cast<sde::SdeSuDistributeOp>(op)) {
+    if (distribute.getBody().empty() ||
+        distribute.getBody().front().getNumArguments() != 0)
+      return distribute.emitOpError("cannot directly materialize non-empty "
+                                    "su_distribute block arguments");
+    for (Operation &nested : distribute.getBody().front().without_terminator()) {
+      auto iterate = dyn_cast<sde::SdeSuIterateOp>(nested);
+      if (iterate && !iterate.getDistributionKindAttr())
+        iterate.setDistributionKindAttr(distribute.getKindAttr());
+    }
+    return materializeSdeBlockAtCurrentInsertion(distribute.getBody().front(),
+                                                 rewriter, mapper);
+  }
+
+  if (auto task = dyn_cast<sde::SdeCuTaskOp>(op))
+    return materializeCuTaskAsEdt(task, rewriter, mapper);
+
+  if (auto barrier = dyn_cast<sde::SdeSuBarrierOp>(op)) {
+    if (!barrier.getBarrierEliminated()) {
+      ArtsBarrierReasonAttr reason;
+      if (auto sdeReason = barrier.getBarrierReasonAttr())
+        reason = convertSdeBarrierReason(rewriter.getContext(),
+                                         sdeReason.getValue());
+      BarrierOp::create(rewriter, barrier.getLoc(), reason);
+    }
+    return success();
+  }
+
+  if (isa<sde::SdeYieldOp>(op))
+    return success();
+
+  if (op->getDialect()->getNamespace() ==
+      sde::ArtsSdeDialect::getDialectNamespace())
+    return op->emitError("unsupported SDE operation at direct Core "
+                         "materialization boundary");
+
+  Operation *cloned = rewriter.clone(*op, mapper);
+  (void)cloned;
+  return success();
+}
+
+static LogicalResult materializeSdeBlockAtCurrentInsertion(
+    Block &block, PatternRewriter &rewriter, IRMapping &mapper) {
+  for (Operation &nested : block.without_terminator())
+    if (failed(materializeSdeOp(&nested, rewriter, mapper)))
+      return failure();
+  return success();
+}
+
+static LogicalResult materializeSdeBlock(Operation *container, Block &block,
+                                         PatternRewriter &rewriter,
+                                         IRMapping &mapper) {
+  rewriter.setInsertionPoint(container);
+  return materializeSdeBlockAtCurrentInsertion(block, rewriter, mapper);
+}
+
+/// sde.cu_region <parallel> -> generic Core work units.
+struct ParallelCuRegionToCorePattern
+    : public OpRewritePattern<sde::SdeCuRegionOp> {
+  explicit ParallelCuRegionToCorePattern(MLIRContext *context)
+      : OpRewritePattern<sde::SdeCuRegionOp>(context, /*benefit=*/2) {}
+
+  LogicalResult matchAndRewrite(sde::SdeCuRegionOp op,
+                                PatternRewriter &rewriter) const override {
+    if (op.getKind() != sde::SdeCuKind::parallel)
+      return failure();
+    if (op.getNumResults() != 0 || op.getBody().empty())
+      return failure();
+
+    Block &body = op.getBody().front();
+    IRMapping mapper;
+    if (failed(materializeSdeBlock(op.getOperation(), body, rewriter, mapper)))
+      return failure();
+
+    rewriter.eraseOp(op);
+    ++numCuRegionConverted;
+    return success();
+  }
+};
+
 /// sde.cu_region -> arts.edt
 struct CuRegionToArtsPattern : public OpRewritePattern<sde::SdeCuRegionOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(sde::SdeCuRegionOp op,
                                 PatternRewriter &rewriter) const override {
+    if (op.getKind() == sde::SdeCuKind::parallel)
+      return failure();
+
     // cu_regions with tensor iter_args (results) need ConvertToCodelet first.
     if (op.getNumResults() > 0)
       return failure();
@@ -589,9 +1268,7 @@ struct CuRegionToArtsPattern : public OpRewritePattern<sde::SdeCuRegionOp> {
     EdtConcurrency concurrency;
     switch (op.getKind()) {
     case sde::SdeCuKind::parallel:
-      edtType = EdtType::parallel;
-      concurrency = EdtConcurrency::internode;
-      break;
+      return failure();
     case sde::SdeCuKind::single:
       edtType = EdtType::single;
       concurrency = EdtConcurrency::intranode;
@@ -631,40 +1308,9 @@ struct CuTaskToArtsPattern : public OpRewritePattern<sde::SdeCuTaskOp> {
     auto loc = op.getLoc();
     auto *ctx = rewriter.getContext();
 
-    // Convert SDE deps to ARTS db_control ops
-    SmallVector<Value> artsDeps;
-    for (Value dep : op.getDeps()) {
-      auto muDep = dep.getDefiningOp<sde::SdeMuDepOp>();
-      if (!muDep)
-        continue;
-
-      ArtsMode mode = convertAccessMode(muDep.getMode());
-      SmallVector<Value> offsets(muDep.getOffsets().begin(),
-                                 muDep.getOffsets().end());
-      SmallVector<Value> sizes(muDep.getSizes().begin(),
-                               muDep.getSizes().end());
-
-      // Separate pinned dims (size=1) from chunk dims
-      SmallVector<Value> pinnedIndices, chunkOffsets, blockSizes;
-      if (!offsets.empty() && sizes.empty()) {
-        pinnedIndices = offsets;
-      } else {
-        for (size_t i = 0; i < offsets.size() && i < sizes.size(); ++i) {
-          if (ValueAnalysis::isOneConstant(sizes[i])) {
-            pinnedIndices.push_back(offsets[i]);
-          } else {
-            chunkOffsets.push_back(offsets[i]);
-            blockSizes.push_back(sizes[i]);
-          }
-        }
-      }
-
-      rewriter.setInsertionPoint(op);
-      auto dbControl =
-          DbControlOp::create(rewriter, loc, mode, muDep.getSource(),
-                              pinnedIndices, chunkOffsets, blockSizes);
-      artsDeps.push_back(dbControl);
-    }
+    rewriter.setInsertionPoint(op);
+    IRMapping mapper;
+    SmallVector<Value> artsDeps = materializeCuTaskDeps(op, rewriter, mapper);
 
     auto edtOp = EdtOp::create(rewriter, loc, EdtType::task,
                                EdtConcurrency::intranode, artsDeps);
@@ -717,171 +1363,14 @@ struct SuDistributeToArtsPattern
   }
 };
 
-/// sde.su_iterate -> arts.for
-/// Reads the SDE classification attrs stamped by StructuredSummaries and
-/// stamps the matching ARTS contract on the resulting arts.for. The loop/memref
-/// IR shape.
+/// sde.su_iterate -> generic Core task dispatch with local scf.for.
 struct SuIterateToArtsPattern : public OpRewritePattern<sde::SdeSuIterateOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(sde::SdeSuIterateOp op,
                                 PatternRewriter &rewriter) const override {
-    auto loc = op.getLoc();
-    auto *ctx = rewriter.getContext();
-
-    auto schedAttr = convertSchedule(ctx, op.getScheduleAttr());
-    auto enclosingDistributeOp = op->getParentOfType<sde::SdeSuDistributeOp>();
-    sde::SdeDistributionKindAttr enclosingDistribution =
-        enclosingDistributeOp ? enclosingDistributeOp.getKindAttr() : nullptr;
-    // Also check for distribution stamped directly on the su_iterate
-    // (used when su_iterate has results and can't be wrapped in su_distribute).
-    if (!enclosingDistribution)
-      enclosingDistribution = op.getDistributionKindAttr();
-
-    auto artsFor = ForOp::create(
-        rewriter, loc, op.getLowerBounds(), op.getUpperBounds(), op.getSteps(),
-        schedAttr, op.getChunkSize(), op.getReductionAccumulators(),
-        /*inPlaceSafe=*/nullptr, /*inPlaceSharedState=*/nullptr,
-        /*vectorizeWidth=*/nullptr, /*unrollFactor=*/nullptr,
-        /*interleaveCount=*/nullptr, /*depPattern=*/nullptr,
-        /*distribution_kind=*/nullptr, /*distribution_pattern=*/nullptr,
-        /*distribution_version=*/nullptr, /*planOwnerDims=*/nullptr,
-        /*planPhysicalBlockShape=*/nullptr, /*planLogicalWorkerSlice=*/nullptr,
-        /*planHaloShape=*/nullptr, /*planIterationTopology=*/nullptr,
-        /*planRepetitionStructure=*/nullptr, /*planAsyncStrategy=*/nullptr,
-        /*planCostSchedulerOverhead=*/nullptr,
-        /*planCostSliceWideningPressure=*/nullptr,
-        /*planCostExpectedLocalWork=*/nullptr,
-        /*planCostRelaunchAmortization=*/nullptr);
-
-    copyArtsMetadataAttrs(op, artsFor);
-    if (auto strategyAttr =
-            convertReductionStrategy(ctx, op.getReductionStrategyAttr())) {
-      artsFor->setAttr(AttrNames::Operation::Contract::ReductionStrategy,
-                       strategyAttr);
-      if (auto parentEdt = artsFor->getParentOfType<EdtOp>();
-          parentEdt && !parentEdt->hasAttr(
-                           AttrNames::Operation::Contract::ReductionStrategy))
-        parentEdt->setAttr(AttrNames::Operation::Contract::ReductionStrategy,
-                           strategyAttr);
-    }
-    if (auto reductionKindsAttr = op.getReductionKindsAttr()) {
-      // Convert SDE enum attrs to plain I32 array for consumption by core
-      // passes without introducing an SDE dialect dependency.
-      SmallVector<Attribute> intAttrs;
-      for (auto attr : reductionKindsAttr) {
-        if (auto enumAttr = dyn_cast<sde::SdeReductionKindAttr>(attr))
-          intAttrs.push_back(rewriter.getI32IntegerAttr(
-              static_cast<int32_t>(enumAttr.getValue())));
-      }
-      if (!intAttrs.empty())
-        artsFor->setAttr(AttrNames::Operation::Contract::ReductionKinds,
-                         rewriter.getArrayAttr(intAttrs));
-    }
-
-    // Move the body
-    Region &dstRegion = artsFor.getRegion();
-    Region &srcRegion = op.getBody();
-    if (!srcRegion.empty()) {
-      if (dstRegion.empty())
-        dstRegion.push_back(new Block());
-      Block &dst = dstRegion.front();
-      Block &src = srcRegion.front();
-
-      // Mirror the source IV list so cloned linalg/scf bodies keep using the
-      // same induction variable ordering after SDE->ARTS conversion.
-      while (dst.getNumArguments() < src.getNumArguments())
-        dst.addArgument(rewriter.getIndexType(), loc);
-
-      // Map block args and clone body
-      IRMapping mapper;
-      for (auto [srcArg, dstArg] :
-           llvm::zip(src.getArguments(), dst.getArguments()))
-        mapper.map(srcArg, dstArg);
-
-      // Look through an optional cu_region <parallel> wrapper inside the
-      // su_iterate body. Clone ops from the compute block, not the wrapper.
-      Block *computeBlock = sde::getSuIterateComputeBlock(op);
-
-      OpBuilder::InsertionGuard IG(rewriter);
-      rewriter.setInsertionPointToStart(&dst);
-      for (Operation &srcOp : computeBlock->without_terminator())
-        rewriter.clone(srcOp, mapper);
-      YieldOp::create(rewriter, loc);
-    }
-
-    // Route 1: Read stamped SDE classification attrs.
-    std::optional<ArtsDepPattern> selectedPattern;
-    std::optional<StructuredNeighborhoodSummary> selectedStencilContract;
-    int64_t selectedRevision = 1;
-
-    if (auto depFamily = op.getDepFamilyAttr()) {
-      selectedPattern = mapSdeDepFamilyToArtsDepPattern(depFamily.getValue());
-      selectedRevision = getPatternRevision(op.getOperation()).value_or(1);
-      if (selectedPattern && isStencilFamilyDepPattern(*selectedPattern))
-        selectedStencilContract = getSdeNeighborhoodSummary(op);
-    } else if (auto classAttr = op.getStructuredClassificationAttr()) {
-      selectedPattern =
-          mapStructuredClassificationToArtsDepPattern(classAttr.getValue());
-      selectedRevision = getPatternRevision(op.getOperation()).value_or(1);
-      if (selectedPattern && isStencilFamilyDepPattern(*selectedPattern))
-        selectedStencilContract = getSdeNeighborhoodSummary(op);
-    }
-
-    if (selectedPattern) {
-      ARTS_DEBUG("stamping SDE-derived contract: "
-                 << stringifyArtsDepPattern(*selectedPattern));
-      if (selectedStencilContract &&
-          isStencilFamilyDepPattern(*selectedPattern)) {
-        SmallVector<int64_t, 4> planOwnerDims;
-        SmallVector<int64_t, 4> planBlockShape;
-        if (auto ownerDims = readI64ArrayAttr(op.getPhysicalOwnerDimsAttr()))
-          planOwnerDims.assign(ownerDims->begin(), ownerDims->end());
-        if (auto blockShape = readI64ArrayAttr(op.getPhysicalBlockShapeAttr()))
-          planBlockShape.assign(blockShape->begin(), blockShape->end());
-        stampStencilContract(artsFor.getOperation(), *selectedPattern,
-                             *selectedStencilContract, planOwnerDims,
-                             planBlockShape, selectedRevision,
-                             op.getOperation());
-      } else {
-        stampPatternContract(artsFor.getOperation(), *selectedPattern,
-                             selectedRevision, op.getOperation());
-      }
-    } else {
-      auto classAttr = op.getStructuredClassificationAttr();
-      if (classAttr &&
-          classAttr.getValue() ==
-              sde::SdeStructuredClassification::reduction) {
-        setEdtDistributionPattern(artsFor.getOperation(),
-                                  EdtDistributionPattern::uniform);
-        if (shouldProjectLoopContractToParentEdt(artsFor.getOperation(),
-                                                 op.getOperation()))
-          if (auto parentEdt =
-                  artsFor.getOperation()->getParentOfType<EdtOp>())
-            setEdtDistributionPattern(parentEdt.getOperation(),
-                                      EdtDistributionPattern::uniform);
-      }
-    }
-
-    if (auto distributionKind =
-            convertDistributionKind(enclosingDistribution)) {
-      stampDistributionKind(artsFor.getOperation(), *distributionKind);
-      if (shouldProjectLoopContractToParentEdt(artsFor.getOperation(),
-                                               op.getOperation()))
-        if (auto parentEdt = artsFor.getOperation()->getParentOfType<EdtOp>())
-          stampDistributionKind(parentEdt.getOperation(), *distributionKind);
-    }
-
-    translateSdePhysicalPlanToArts(op, artsFor.getOperation());
-    translateSdeExecutionHintsToArts(op, artsFor);
-    if (auto workers = getWorkers(op.getOperation())) {
-      setWorkers(artsFor.getOperation(), *workers);
-      if (shouldProjectLoopContractToParentEdt(artsFor.getOperation(),
-                                               op.getOperation()))
-        if (auto parentEdt = artsFor.getOperation()->getParentOfType<EdtOp>())
-          setWorkers(parentEdt.getOperation(), *workers);
-    }
-
+    if (failed(materializeSuIterateAsGenericTaskDispatch(op, rewriter)))
+      return failure();
     ++numSuIterateConverted;
     rewriter.eraseOp(op);
     return success();
@@ -1390,12 +1879,75 @@ static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
   return success();
 }
 
+struct TensorMemrefView {
+  Value memref;
+  SmallVector<Value> offsets;
+  SmallVector<Value> strides;
+};
+
+static Value materializeIndexValue(OpBuilder &builder, Location loc,
+                                   OpFoldResult value) {
+  if (auto dynamic = value.dyn_cast<Value>())
+    return dynamic;
+  auto attr = cast<IntegerAttr>(value.dyn_cast<Attribute>());
+  return arts::createConstantIndex(builder, loc, attr.getInt());
+}
+
+static Value mulIndexIfNeeded(OpBuilder &builder, Location loc, Value lhs,
+                              Value rhs) {
+  if (ValueAnalysis::isOneConstant(rhs))
+    return lhs;
+  if (ValueAnalysis::isOneConstant(lhs))
+    return rhs;
+  if (ValueAnalysis::isZeroConstant(lhs) || ValueAnalysis::isZeroConstant(rhs))
+    return arts::createZeroIndex(builder, loc);
+  return arith::MulIOp::create(builder, loc, lhs, rhs).getResult();
+}
+
+static Value addIndexIfNeeded(OpBuilder &builder, Location loc, Value lhs,
+                              Value rhs) {
+  if (ValueAnalysis::isZeroConstant(lhs))
+    return rhs;
+  if (ValueAnalysis::isZeroConstant(rhs))
+    return lhs;
+  return arith::AddIOp::create(builder, loc, lhs, rhs).getResult();
+}
+
+static void composeSliceMap(TensorMemrefView &view, tensor::ExtractSliceOp slice,
+                            OpBuilder &builder, Location loc) {
+  SmallVector<Value> sliceOffsets;
+  SmallVector<Value> sliceStrides;
+  for (OpFoldResult offset : slice.getMixedOffsets())
+    sliceOffsets.push_back(materializeIndexValue(builder, loc, offset));
+  for (OpFoldResult stride : slice.getMixedStrides())
+    sliceStrides.push_back(materializeIndexValue(builder, loc, stride));
+
+  if (view.offsets.empty()) {
+    view.offsets = std::move(sliceOffsets);
+    view.strides = std::move(sliceStrides);
+    return;
+  }
+
+  for (size_t idx = 0, e = view.offsets.size(); idx < e; ++idx) {
+    Value scaledOffset =
+        mulIndexIfNeeded(builder, loc, view.offsets[idx], sliceStrides[idx]);
+    view.offsets[idx] =
+        addIndexIfNeeded(builder, loc, sliceOffsets[idx], scaledOffset);
+    view.strides[idx] =
+        mulIndexIfNeeded(builder, loc, view.strides[idx], sliceStrides[idx]);
+  }
+}
+
 /// Trace `tensor` back through `tensor.cast` / `tensor.extract_slice` /
 /// `tensor.insert` ops to the underlying memref that backs the tensor view.
-/// Returns nullptr if the tensor is not backed by a memref-view chain we
-/// can lower (e.g., it came from a non-tensor-path producer).
-static Value traceTensorToBackingMemref(Value tensor) {
+/// Slice offsets and strides are preserved so scalar tensor.extract/insert ops
+/// fold to the exact element addressed by the SDE token, not a coarse whole-DB
+/// copy. Returns std::nullopt if the tensor is not backed by a memref-view chain
+/// we can lower (e.g., it came from a non-tensor-path producer).
+static std::optional<TensorMemrefView>
+traceTensorToBackingMemref(Value tensor, OpBuilder &builder, Location loc) {
   Value cur = tensor;
+  TensorMemrefView view;
   for (;;) {
     if (auto cast = cur.getDefiningOp<tensor::CastOp>()) {
       cur = cast.getSource();
@@ -1405,11 +1957,25 @@ static Value traceTensorToBackingMemref(Value tensor) {
       cur = insert.getDest();
       continue;
     }
-    if (auto toTensor = cur.getDefiningOp<bufferization::ToTensorOp>())
-      return toTensor.getBuffer();
-    if (auto muToTensor = cur.getDefiningOp<sde::SdeMuMemrefToTensorOp>())
-      return muToTensor.getMemref();
-    return nullptr;
+    if (auto slice = cur.getDefiningOp<tensor::ExtractSliceOp>()) {
+      auto sourceType = dyn_cast<RankedTensorType>(slice.getSource().getType());
+      auto resultType = dyn_cast<RankedTensorType>(slice.getResult().getType());
+      if (!sourceType || !resultType ||
+          sourceType.getRank() != resultType.getRank())
+        return std::nullopt;
+      composeSliceMap(view, slice, builder, loc);
+      cur = slice.getSource();
+      continue;
+    }
+    if (auto toTensor = cur.getDefiningOp<bufferization::ToTensorOp>()) {
+      view.memref = toTensor.getBuffer();
+      return view;
+    }
+    if (auto muToTensor = cur.getDefiningOp<sde::SdeMuMemrefToTensorOp>()) {
+      view.memref = muToTensor.getMemref();
+      return view;
+    }
+    return std::nullopt;
   }
 }
 
@@ -1435,12 +2001,29 @@ static Value traceTensorToBackingMemref(Value tensor) {
 /// Rank-0 tensor backed by rank-1 memref: supply index 0 for the extra
 /// dimension (DB convention: elementSizes=[1] for scalars).
 /// Returns false if indices don't match memref rank after fixup.
-static bool fixupRank0Indices(SmallVectorImpl<Value> &indices,
-                              MemRefType mrType, OpBuilder &builder,
-                              Location loc) {
+static bool fixupRank0Indices(SmallVectorImpl<Value> &indices, MemRefType mrType,
+                              OpBuilder &builder, Location loc) {
   if (indices.empty() && mrType.getRank() == 1)
     indices.push_back(arts::createZeroIndex(builder, loc));
   return static_cast<int64_t>(indices.size()) == mrType.getRank();
+}
+
+static FailureOr<SmallVector<Value>>
+buildMemrefIndices(const TensorMemrefView &view, ValueRange tensorIndices,
+                   MemRefType mrType, OpBuilder &builder, Location loc) {
+  SmallVector<Value> indices(tensorIndices.begin(), tensorIndices.end());
+  if (!view.offsets.empty()) {
+    if (view.offsets.size() != indices.size() ||
+        view.strides.size() != indices.size())
+      return failure();
+    for (size_t i = 0, e = indices.size(); i < e; ++i) {
+      Value scaled = mulIndexIfNeeded(builder, loc, indices[i], view.strides[i]);
+      indices[i] = addIndexIfNeeded(builder, loc, view.offsets[i], scaled);
+    }
+  }
+  if (!fixupRank0Indices(indices, mrType, builder, loc))
+    return failure();
+  return indices;
 }
 
 static LogicalResult emitMemrefCopy(OpBuilder &builder, Location loc,
@@ -1521,33 +2104,40 @@ static void foldTensorPathToMemref(ModuleOp module) {
 
   for (Operation *op : ordered) {
     if (auto extract = dyn_cast<tensor::ExtractOp>(op)) {
-      Value memref = traceTensorToBackingMemref(extract.getTensor());
-      if (!memref)
+      OpBuilder builder(extract);
+      std::optional<TensorMemrefView> view =
+          traceTensorToBackingMemref(extract.getTensor(), builder,
+                                     extract.getLoc());
+      if (!view || !view->memref)
         continue;
-      auto mrType = dyn_cast<MemRefType>(memref.getType());
+      auto mrType = dyn_cast<MemRefType>(view->memref.getType());
       if (!mrType)
         continue;
-      SmallVector<Value> indices(extract.getIndices());
-      OpBuilder builder(extract);
-      if (!fixupRank0Indices(indices, mrType, builder, extract.getLoc()))
+      FailureOr<SmallVector<Value>> indices =
+          buildMemrefIndices(*view, extract.getIndices(), mrType, builder,
+                             extract.getLoc());
+      if (failed(indices))
         continue;
-      Value loaded =
-          memref::LoadOp::create(builder, extract.getLoc(), memref, indices);
+      Value loaded = memref::LoadOp::create(builder, extract.getLoc(),
+                                            view->memref, *indices);
       extract.getResult().replaceAllUsesWith(loaded);
       extract.erase();
     } else if (auto insert = dyn_cast<tensor::InsertOp>(op)) {
-      Value memref = traceTensorToBackingMemref(insert.getDest());
-      if (!memref)
+      OpBuilder builder(insert);
+      std::optional<TensorMemrefView> view =
+          traceTensorToBackingMemref(insert.getDest(), builder,
+                                     insert.getLoc());
+      if (!view || !view->memref)
         continue;
-      auto mrType = dyn_cast<MemRefType>(memref.getType());
+      auto mrType = dyn_cast<MemRefType>(view->memref.getType());
       if (!mrType)
         continue;
-      SmallVector<Value> indices(insert.getIndices());
-      OpBuilder builder(insert);
-      if (!fixupRank0Indices(indices, mrType, builder, insert.getLoc()))
+      FailureOr<SmallVector<Value>> indices = buildMemrefIndices(
+          *view, insert.getIndices(), mrType, builder, insert.getLoc());
+      if (failed(indices))
         continue;
       memref::StoreOp::create(builder, insert.getLoc(), insert.getScalar(),
-                              memref, indices);
+                              view->memref, *indices);
       insert.getResult().replaceAllUsesWith(insert.getDest());
       insert.erase();
     } else if (auto mat =
@@ -1562,13 +2152,14 @@ static void foldTensorPathToMemref(ModuleOp module) {
         }
       }
 
-      Value source = traceTensorToBackingMemref(mat.getSource());
-      if (!source)
+      OpBuilder builder(mat);
+      std::optional<TensorMemrefView> source =
+          traceTensorToBackingMemref(mat.getSource(), builder, mat.getLoc());
+      if (!source || !source->memref)
         continue;
       Value dest = mat.getDest();
-      if (source != dest) {
-        OpBuilder builder(mat);
-        if (failed(emitMemrefCopy(builder, mat.getLoc(), source, dest)))
+      if (source->memref != dest) {
+        if (failed(emitMemrefCopy(builder, mat.getLoc(), source->memref, dest)))
           continue;
       }
       mat.erase();
@@ -1765,6 +2356,7 @@ struct ConvertSdeToArtsPass
     RewritePatternSet patterns(context);
     // Process cu_task before mu_dep since cu_task consumes mu_dep results
     patterns.add<CuTaskToArtsPattern>(context);
+    patterns.add<ParallelCuRegionToCorePattern>(context);
     patterns.add<CuRegionToArtsPattern>(context);
     patterns.add<SuDistributeToArtsPattern>(context);
     patterns.add<SuIterateToArtsPattern>(context);

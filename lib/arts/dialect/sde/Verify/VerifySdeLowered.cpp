@@ -25,19 +25,15 @@ namespace {
 /// Returns true if the op is a transient carrier that should have been erased
 /// by ConvertSdeToArts.
 static bool isOrphanedCarrierOp(Operation *op) {
-  // Any linalg op nested under an arts.for is a transient carrier that should
-  // have been erased by SDE->ARTS lowering, regardless of whether it is
-  // still memref-backed or already tensor-backed.
-  if (isa<linalg::LinalgOp>(op))
-    return op->getParentOfType<arts::ForOp>() != nullptr;
+  auto underCoreBoundary = [&] {
+    return op->getParentOfType<arts::EdtOp>() ||
+           op->getParentOfType<arts::EpochOp>();
+  };
 
-  // bufferization.to_tensor inside arts.for is a carrier chain remnant.
-  if (isa<bufferization::ToTensorOp>(op))
-    return static_cast<bool>(op->getParentOfType<arts::ForOp>());
-
-  // tensor.empty inside arts.for is a carrier chain remnant.
-  if (isa<tensor::EmptyOp>(op))
-    return static_cast<bool>(op->getParentOfType<arts::ForOp>());
+  // Transient tensor/linalg carriers inside Core-owned work regions should
+  // have been materialized before the SDE-to-ARTS boundary verifier runs.
+  if (isa<linalg::LinalgOp, bufferization::ToTensorOp, tensor::EmptyOp>(op))
+    return underCoreBoundary();
 
   return false;
 }

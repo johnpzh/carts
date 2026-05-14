@@ -6,8 +6,8 @@
 
 // CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // CHECK: func.func @main
-// CHECK: arts.edt <parallel> <intranode> route(%{{.*}})
-// CHECK: arts.for(%c0) to(%c16) step(%{{.*}})
+// CHECK: arts.epoch
+// CHECK: arts.edt <task>
 // CHECK: memref.load
 // CHECK: memref.store
 // CHECK-NOT: arts_sde.mu_memref_to_tensor

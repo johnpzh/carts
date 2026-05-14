@@ -16,7 +16,6 @@
 // CHECK-NOT: arts_sde.mu_reduction_decl
 // CHECK-NOT: arts_sde.cu_region
 // CHECK-NOT: arts_sde.cu_task
-// CHECK: arts.edt <parallel>
 // CHECK: arts.edt <task>
 // CHECK: arts.barrier
 

@@ -18,9 +18,11 @@
 // CHECK-SAME: barrierReason = #arts_sde.barrier_reason<wavefront_frontier>
 // CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // CHECK: func.func @wavefront
-// CHECK: arts.edt <parallel> <intranode> route(%{{.*}}) attributes {
+// CHECK: arts.epoch attributes {
+// CHECK-SAME: depPattern = #arts.dep_pattern<wavefront_2d>
+// CHECK: arts.edt <task>
+// CHECK-SAME: depPattern = #arts.dep_pattern<wavefront_2d>
 // CHECK-SAME: no_verify = #arts.no_verify
-// CHECK: depPattern = #arts.dep_pattern<wavefront_2d>
 // CHECK: arts.barrier
 // CHECK-NOT: arts_sde.
 

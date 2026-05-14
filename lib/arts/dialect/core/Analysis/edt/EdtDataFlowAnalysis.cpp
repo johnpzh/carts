@@ -158,20 +158,11 @@ EdtDataFlowAnalysis::processEdt(EdtOp edtOp, Environment &env) {
 
     DbAllocNode *parentAlloc = writer->getParent();
     auto &defs = newEnv.writers[parentAlloc];
-    bool writerIsParallel = writer->getEdtUser() &&
-                            writer->getEdtUser().getType() == EdtType::parallel;
-    if (writerIsParallel) {
-      if (!defs.contains(writer)) {
-        defs.insert(writer);
-        changed = true;
-      }
-    } else {
-      bool needsUpdate = defs.size() != 1 || !defs.contains(writer);
-      if (needsUpdate) {
-        defs.clear();
-        defs.insert(writer);
-        changed = true;
-      }
+    bool needsUpdate = defs.size() != 1 || !defs.contains(writer);
+    if (needsUpdate) {
+      defs.clear();
+      defs.insert(writer);
+      changed = true;
     }
   }
 

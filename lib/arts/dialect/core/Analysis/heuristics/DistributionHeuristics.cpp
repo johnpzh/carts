@@ -6,15 +6,8 @@
 ///==========================================================================///
 
 #include "arts/dialect/core/Analysis/heuristics/DistributionHeuristics.h"
-#include "arts/dialect/core/Analysis/AnalysisManager.h"
-#include "arts/dialect/core/Analysis/heuristics/HeuristicUtils.h"
-#include "arts/dialect/core/Analysis/loop/LoopAnalysis.h"
-#include "arts/utils/LoopUtils.h"
-#include "arts/utils/LoweringContractUtils.h"
 #include "arts/utils/OperationAttributes.h"
 #include <algorithm>
-#include <cmath>
-#include <limits>
 
 using namespace mlir;
 using namespace mlir::arts;
@@ -53,21 +46,20 @@ ParallelismDecision DistributionHeuristics::resolveParallelismFromMachine(
 }
 
 std::optional<WorkerConfig>
-DistributionHeuristics::resolveWorkerConfig(EdtOp parallelEdt,
+DistributionHeuristics::resolveWorkerConfig(EdtOp edt,
                                             const RuntimeConfig *machine) {
   WorkerConfig cfg;
-  cfg.internode = parallelEdt.getConcurrency() == EdtConcurrency::internode;
+  cfg.internode = edt.getConcurrency() == EdtConcurrency::internode;
 
-  if (auto workers = parallelEdt ? arts::getWorkers(parallelEdt.getOperation())
-                                 : std::nullopt) {
+  if (auto workers = edt ? arts::getWorkers(edt.getOperation()) : std::nullopt) {
     cfg.totalWorkers = *workers;
     if (cfg.totalWorkers <= 0)
       return std::nullopt;
 
     if (cfg.internode) {
       if (auto workersPerNode =
-              parallelEdt ? arts::getWorkersPerNode(parallelEdt.getOperation())
-                          : std::nullopt) {
+              edt ? arts::getWorkersPerNode(edt.getOperation())
+                  : std::nullopt) {
         cfg.workersPerNode = *workersPerNode;
       } else if (machine && machine->getNodeCount() > 0) {
         int64_t nc = machine->getNodeCount();
@@ -81,7 +73,7 @@ DistributionHeuristics::resolveWorkerConfig(EdtOp parallelEdt,
     return cfg;
   }
 
-  if (auto module = parallelEdt->getParentOfType<ModuleOp>()) {
+  if (auto module = edt->getParentOfType<ModuleOp>()) {
     if (auto runtimeTotalWorkers = getRuntimeTotalWorkers(module);
         runtimeTotalWorkers && *runtimeTotalWorkers > 0) {
       cfg.totalWorkers = *runtimeTotalWorkers;
@@ -122,28 +114,6 @@ DistributionHeuristics::resolveWorkerConfig(EdtOp parallelEdt,
   return cfg;
 }
 
-LoopCoarseningDecision DistributionHeuristics::computeLoopCoarseningDecision(
-    ForOp forOp, LoopAnalysis &loopAnalysis, const WorkerConfig &workerCfg) {
-  LoopCoarseningDecision decision;
-  decision.desiredWorkers = std::max<int64_t>(1, workerCfg.totalWorkers);
-
-  if (workerCfg.totalWorkers <= 0)
-    return decision;
-
-  auto tripOpt = loopAnalysis.getStaticTripCount(forOp.getOperation());
-  if (!tripOpt)
-    return decision;
-
-  int64_t tripCount = *tripOpt;
-  if (tripCount <= 0)
-    return decision;
-
-  int64_t blockSize = ceilDivPositive(tripCount, workerCfg.totalWorkers);
-  if (blockSize > 1)
-    decision.blockSize = blockSize;
-  return decision;
-}
-
 DistributionStrategy
 DistributionHeuristics::analyzeStrategy(EdtConcurrency concurrency,
                                         const RuntimeConfig *machine) {
@@ -167,33 +137,6 @@ DistributionHeuristics::analyzeStrategy(EdtConcurrency concurrency,
     strategy.totalWorkers = machine->getRuntimeTotalWorkers();
   }
   strategy.useDbAlignment = true;
-  return strategy;
-}
-
-DistributionStrategy
-DistributionHeuristics::resolveLoweringStrategy(EdtOp originalParallel,
-                                                ForOp forOp) {
-  DistributionStrategy strategy =
-      analyzeStrategy(originalParallel.getConcurrency(), /*machine=*/nullptr);
-  if (auto selectedKind = getEdtDistributionKind(forOp.getOperation())) {
-    switch (*selectedKind) {
-    case EdtDistributionKind::block:
-      strategy.kind = DistributionKind::Flat;
-      break;
-    case EdtDistributionKind::two_level:
-      strategy.kind = DistributionKind::TwoLevel;
-      break;
-    case EdtDistributionKind::block_cyclic:
-      strategy.kind = DistributionKind::BlockCyclic;
-      break;
-    case EdtDistributionKind::tiling_2d:
-      strategy.kind = DistributionKind::Tiling2D;
-      break;
-    case EdtDistributionKind::replicated:
-      strategy.kind = DistributionKind::Replicated;
-      break;
-    }
-  }
   return strategy;
 }
 

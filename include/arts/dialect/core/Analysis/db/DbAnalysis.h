@@ -134,18 +134,6 @@ public:
     }
   };
 
-  /// Loop-facing summary for H2 distribution selection and related consumers.
-  /// This is a query result, not canonical storage for DB semantics.
-  struct LoopDbAccessSummary {
-    llvm::DenseMap<Operation *, DbAccessPattern> allocPatterns;
-    bool hasStencilOffset = false;
-    bool hasStencilAccessHint = false;
-    bool hasMatmulUpdate = false;
-    bool hasTriangularBound = false;
-    EdtDistributionPattern distributionPattern =
-        EdtDistributionPattern::unknown;
-  };
-
   DbAnalysis(AnalysisManager &AM);
 
   ~DbAnalysis();
@@ -165,8 +153,6 @@ public:
   /// Access analyses
   DbAliasAnalysis *getAliasAnalysis() { return dbAliasAnalysis.get(); }
   LoopAnalysis *getLoopAnalysis();
-  LoopDbAccessSummary analyzeLoopDbAccessPatterns(ForOp forOp);
-  std::optional<LoopDbAccessSummary> getLoopDbAccessSummary(ForOp forOp);
   AcquirePartitionSummary
   analyzeAcquirePartition(DbAcquireOp acquire, OpBuilder &builder,
                           const AcquireContractSummary *summary = nullptr);
@@ -177,8 +163,6 @@ public:
   buildCanonicalAcquireContractSummary(DbAcquireOp acquire);
   std::optional<AcquireContractSummary>
   getAcquireContractSummary(DbAcquireOp acquire);
-  std::optional<unsigned> inferLoopMappedDim(DbAcquireOp acquire, ForOp forOp);
-  std::optional<unsigned> inferLoopMappedDim(Value dep, ForOp forOp);
   AccessPattern resolveCanonicalAcquireAccessPattern(
       DbAcquireOp acquire, const AcquireContractSummary *summary = nullptr);
   ArtsDepPattern resolveCanonicalAcquireDepPattern(
@@ -194,7 +178,6 @@ public:
                                              ArtsMode requestedMode);
   bool operationHasDistributedDbContract(Operation *op);
   bool operationHasPeerInferredPartitionDims(Operation *op);
-  bool hasCrossElementSelfReadInLoop(DbAcquireOp acquire, ForOp loopOp);
 
   /// Return true when producerEdt writes DBs that are later consumed outside
   /// internode EDT flow.
@@ -272,8 +255,6 @@ public:
 private:
   llvm::DenseMap<func::FuncOp, std::unique_ptr<DbGraph>> functionGraphMap;
   mutable std::shared_mutex graphMutex;
-  llvm::DenseMap<Operation *, LoopDbAccessSummary> loopAccessSummaryByOp;
-  mutable std::shared_mutex accessSummaryMutex;
   std::unique_ptr<DbAliasAnalysis> dbAliasAnalysis;
 };
 

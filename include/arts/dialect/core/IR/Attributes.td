@@ -57,7 +57,6 @@ def DbAllocTypeAttr : Arts_I32EnumAttr<"alloc_type", DbAllocType>;
 
 /// Enum info for EDT types
 def EdtType : Arts_I32Enum<"EdtType", "ARTS EDT type", [
-  I32EnumAttrCase<"parallel", 0, "parallel">,
   I32EnumAttrCase<"single", 1, "single">, I32EnumAttrCase<"sync", 2, "sync">,
   I32EnumAttrCase<"task", 3, "task">
 ]>;
@@ -85,21 +84,6 @@ def DbReleaseType : Arts_I32Enum<"DbReleaseType", "ARTS DB release type", [
 
 /// Enum attribute for DB release types
 def DbReleaseTypeAttr : Arts_I32EnumAttr<"release_type", DbReleaseType>;
-
-/// NOTE: This enum intentionally duplicates omp::ClauseScheduleKind (from the
-/// OpenMP dialect). Using the OMP dialect enum directly would add a tablegen
-/// dependency on the OMP dialect for ARTS attributes, which is undesirable.
-/// ConvertOpenMPToArts.cpp maps between the two enums at conversion time.
-def ForScheduleKind
-    : Arts_I32Enum<"ForScheduleKind", "ARTS for-loop schedule kind", [
-      I32EnumAttrCase<"Static", 0, "static">,
-      I32EnumAttrCase<"Dynamic", 1, "dynamic">,
-      I32EnumAttrCase<"Guided", 2, "guided">,
-      I32EnumAttrCase<"Auto", 3, "auto">,
-      I32EnumAttrCase<"Runtime", 4, "runtime">
-    ]>;
-
-def ForScheduleKindAttr : Arts_I32EnumAttr<"for_schedule", ForScheduleKind>;
 
 def ArtsPlanIterationTopology
     : Arts_I32Enum<"ArtsPlanIterationTopology",
@@ -153,8 +137,7 @@ def RuntimeQueryKind
       I32EnumAttrCase<"totalWorkers", 0, "total_workers">,
       I32EnumAttrCase<"totalNodes", 1, "total_nodes">,
       I32EnumAttrCase<"currentWorker", 2, "current_worker">,
-      I32EnumAttrCase<"currentNode", 3, "current_node">,
-      I32EnumAttrCase<"parallelWorkerId", 4, "parallel_worker_id">
+      I32EnumAttrCase<"currentNode", 3, "current_node">
     ]>;
 
 /// Enum attribute for runtime query kinds
@@ -187,7 +170,7 @@ def PartitionMode
 /// Enum attribute for DB partition modes
 def PartitionModeAttr : Arts_I32EnumAttr<"partition_mode", PartitionMode>;
 
-/// DB access pattern classification (set by analysis, read by ForLowering).
+/// DB access pattern classification used by DB layout and acquire rewriting.
 def DbAccessPattern
     : Arts_I32Enum<"DbAccessPattern", "DB access pattern classification", [
       I32EnumAttrCase<"unknown", 0, "unknown">,
@@ -197,7 +180,7 @@ def DbAccessPattern
     ]>;
 def DbAccessPatternAttr : Arts_I32EnumAttr<"access_pattern", DbAccessPattern>;
 
-/// Distribution strategy selected for an arts.for loop by EdtDistribution pass.
+/// Distribution strategy carried by SDE-authored Core materialization plans.
 def EdtDistributionKind
     : Arts_I32Enum<"EdtDistributionKind", "EDT distribution strategy kind", [
       I32EnumAttrCase<"block", 0, "block">,

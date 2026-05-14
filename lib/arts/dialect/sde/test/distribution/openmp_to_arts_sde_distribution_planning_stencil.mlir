@@ -26,14 +26,14 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.edt <parallel> <internode> route(%{{.*}}) attributes {
+// ARTS: arts.epoch attributes {
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
 // ARTS-SAME: {{.*}}planHaloShape = [1]
 // ARTS-SAME: {{.*}}planLogicalWorkerSlice = [2, 64]
 // ARTS-SAME: {{.*}}planOwnerDims = [0]
 // ARTS-SAME: {{.*}}planPhysicalBlockShape = [2, 64]
-// ARTS: arts.for(%c1) to(%c63) step(%c1) {
-// ARTS: } {arts.pattern_revision = 1 : i64
+// ARTS: arts.edt <task>
+// ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
 // ARTS-SAME: {{.*}}planHaloShape = [1]
 // ARTS-SAME: {{.*}}planLogicalWorkerSlice = [2, 64]

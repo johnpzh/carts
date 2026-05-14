@@ -72,9 +72,6 @@ public:
   std::optional<int64_t> estimateStaticPerfectNestedWork(Operation *loopOp,
                                                          int64_t cap = 8);
 
-  /// Loop-facing DB analysis helpers backed by DbAnalysis / DbGraph facts.
-  std::optional<DbAnalysis::LoopDbAccessSummary>
-  getLoopDbAccessSummary(Operation *loopOp);
   bool operationHasDistributedDbContract(Operation *op);
   bool operationHasPeerInferredPartitionDims(Operation *op);
 

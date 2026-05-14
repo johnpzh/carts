@@ -7,8 +7,8 @@
 /// distribution-strategy selection, worker-topology defaults, and loop
 /// coarsening hints.
 ///
-/// Lowering-time SSA/runtime materialization for those policies lives in
-/// `arts/dialect/core/Transforms/edt/WorkDistributionUtils.h`.
+/// Lowering-time SSA/runtime materialization for those policies is performed by
+/// the SDE-to-Core materializer.
 ///
 ///===----------------------------------------------------------------------===///
 /// Strategies
@@ -83,15 +83,15 @@
 /// Key invariants
 ///===----------------------------------------------------------------------===///
 ///
-///   1. Worker ID mapping:
-///        nodeId        = workerId / workersPerNode
-///        localThreadId = workerId % workersPerNode
-///      This must match EDT routing in ForLowering.
+  ///   1. Worker ID mapping:
+  ///        nodeId        = workerId / workersPerNode
+  ///        localThreadId = workerId % workersPerNode
+  ///      This must match Core EDT routing during materialization/lowering.
 ///
 ///   2. DB alignment:
 ///        blockSize = ceil(arrayDim / numNodes)
-///      Must match DbPartitioning's block size so that ForLowering chunk
-///      boundaries align with DB block boundaries.
+  ///      Must match DbPartitioning's block size so task chunk boundaries align
+  ///      with DB block boundaries.
 ///
 ///   3. Stencil safety:
 ///        All workers on the same node have baseOffset within the same
@@ -110,7 +110,6 @@
 #define ARTS_DIALECT_CORE_ANALYSIS_HEURISTICS_DISTRIBUTIONHEURISTICS_H
 
 #include "arts/Dialect.h"
-#include "arts/utils/costs/SDECostModel.h"
 #include "arts/utils/machine/RuntimeConfig.h"
 #include <optional>
 
@@ -146,12 +145,6 @@ struct WorkerConfig {
   bool internode = false;
 };
 
-/// Shared result for arts.for coarsening policy.
-struct LoopCoarseningDecision {
-  std::optional<int64_t> blockSize;
-  int64_t desiredWorkers = 0;
-};
-
 /// Machine-derived EDT topology defaults.
 struct ParallelismDecision {
   EdtConcurrency concurrency = EdtConcurrency::intranode;
@@ -167,12 +160,6 @@ public:
   analyzeStrategy(EdtConcurrency concurrency,
                   const RuntimeConfig *machine = nullptr);
 
-  /// Resolve the effective lowering strategy for one arts.for by combining the
-  /// parent EDT topology with any distribution_kind contract stamped on the
-  /// loop itself.
-  static DistributionStrategy resolveLoweringStrategy(EdtOp originalParallel,
-                                                      ForOp forOp);
-
   /// Select IR distribution kind from machine strategy + detected loop pattern.
   static EdtDistributionKind
   selectDistributionKind(const DistributionStrategy &strategy,
@@ -186,14 +173,8 @@ public:
   /// Resolve compile-time worker topology for an EDT from attrs + machine.
   /// Returns nullopt when worker count is not computable.
   static std::optional<WorkerConfig>
-  resolveWorkerConfig(EdtOp parallelEdt,
-                      const RuntimeConfig *machine = nullptr);
+  resolveWorkerConfig(EdtOp edt, const RuntimeConfig *machine = nullptr);
 
-  /// Config-driven block-size hint for arts.for loops: split the static
-  /// trip count evenly across `workerCfg.totalWorkers`. No cost model.
-  static LoopCoarseningDecision
-  computeLoopCoarseningDecision(ForOp forOp, LoopAnalysis &loopAnalysis,
-                                const WorkerConfig &workerCfg);
 };
 
 } // namespace arts

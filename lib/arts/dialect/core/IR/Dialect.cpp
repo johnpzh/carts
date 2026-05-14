@@ -1403,34 +1403,3 @@ void OmpDepOp::build(OpBuilder &builder, OperationState &state, ArtsMode mode,
       builder.getDenseI32ArrayAttr({1, static_cast<int32_t>(indices.size()),
                                     static_cast<int32_t>(sizes.size())}));
 }
-
-void arts::ForOp::getCanonicalizationPatterns(RewritePatternSet &patterns,
-                                              MLIRContext *context) {}
-
-///===----------------------------------------------------------------------===///
-/// ForOp LoopLikeOpInterface implementation
-///===----------------------------------------------------------------------===///
-
-SmallVector<Region *> arts::ForOp::getLoopRegions() { return {&getRegion()}; }
-
-std::optional<SmallVector<Value>> arts::ForOp::getLoopInductionVars() {
-  auto numIVs = getLowerBound().size();
-  SmallVector<Value> ivs;
-  for (unsigned i = 0; i < numIVs; ++i)
-    ivs.push_back(getRegion().getArgument(i));
-  return ivs;
-}
-
-std::optional<SmallVector<OpFoldResult>> arts::ForOp::getLoopLowerBounds() {
-  return SmallVector<OpFoldResult>(getLowerBound().begin(),
-                                   getLowerBound().end());
-}
-
-std::optional<SmallVector<OpFoldResult>> arts::ForOp::getLoopUpperBounds() {
-  return SmallVector<OpFoldResult>(getUpperBound().begin(),
-                                   getUpperBound().end());
-}
-
-std::optional<SmallVector<OpFoldResult>> arts::ForOp::getLoopSteps() {
-  return SmallVector<OpFoldResult>(getStep().begin(), getStep().end());
-}

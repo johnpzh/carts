@@ -117,8 +117,8 @@ bool DbAllocNode::isParallelFriendly() const {
   SmallVector<const DbAcquireNode *, 16> allAcquireNodes =
       collectAllAcquireNodes();
 
-  /// Offset/size hints from ForLowering indicate parallel partition intent
-  /// even when loop metadata is missing.
+  /// Offset/size hints on acquires indicate parallel partition intent even
+  /// when loop metadata is missing.
   for (const DbAcquireNode *acqNode : allAcquireNodes) {
     if (!acqNode)
       continue;
@@ -144,10 +144,10 @@ bool DbAllocNode::canBePartitioned() {
   SmallVector<DbAcquireNode *, 16> allAcquireNodes = collectAllAcquireNodes();
 
   if (hasNonAffineAccesses && *hasNonAffineAccesses) {
-    /// Check if any acquire has offset/size hints from ForLowering.
-    /// If hints exist, trust ForLowering's parallel loop analysis over
-    /// the static non-affine classification (e.g., indirect indexing A[B[i]]
-    /// can still be chunkable when the parallel loop structure is valid).
+    /// Check if any acquire has explicit partition hints. If hints exist, trust
+    /// the authored task partition plan over the static non-affine
+    /// classification (e.g., indirect indexing A[B[i]] can still be chunkable
+    /// when the parallel work structure is valid).
     bool hasAcquireWithHints = false;
     for (DbAcquireNode *acqNode : allAcquireNodes) {
       if (!acqNode)

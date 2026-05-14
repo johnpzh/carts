@@ -36,11 +36,14 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.edt <parallel> <internode> route(%{{.*}}) attributes {
-// ARTS: arts.for(%c0) to(%c32) step(%{{.+}}) {
-// ARTS: } {arts.pattern_revision = 1 : i64
+// ARTS: arts.epoch attributes {
 // ARTS-SAME: depPattern = #arts.dep_pattern<matmul>
-// ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
+// ARTS-SAME: distribution_pattern = #arts.distribution_pattern<matmul>
+// ARTS-SAME: planOwnerDims = [0, 1]
+// ARTS-SAME: planPhysicalBlockShape = [2, 8]
+// ARTS: arts.edt <task>
+// ARTS-SAME: arts.pattern_revision = 1 : i64
+// ARTS-SAME: depPattern = #arts.dep_pattern<matmul>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<matmul>
 // ARTS-SAME: planOwnerDims = [0, 1]
 // ARTS-SAME: planPhysicalBlockShape = [2, 8]

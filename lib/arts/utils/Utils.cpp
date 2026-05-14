@@ -71,6 +71,15 @@ Value createOneIndex(OpBuilder &builder, Location loc) {
   return createConstantIndex(builder, loc, 1);
 }
 
+Value createCeilDivUI(OpBuilder &builder, Location loc, Value numerator,
+                      Value denominator) {
+  Value one = createOneIndex(builder, loc);
+  Value adjusted = arith::AddIOp::create(
+      builder, loc, numerator,
+      arith::SubIOp::create(builder, loc, denominator, one));
+  return arith::DivUIOp::create(builder, loc, adjusted, denominator);
+}
+
 Value createCurrentNodeRoute(OpBuilder &builder, Location loc) {
   return arith::ConstantIntOp::create(builder, loc, kCurrentNodeRoute, 32);
 }
@@ -473,7 +482,7 @@ bool hasWorkAfterInParentBlock(Operation *op) {
 bool isPureOp(Operation *op) {
   if (!op)
     return false;
-  if (isa<arts::ForOp, arts::YieldOp, memref::LoadOp, memref::StoreOp,
+  if (isa<arts::YieldOp, memref::LoadOp, memref::StoreOp,
           affine::AffineLoadOp, affine::AffineStoreOp, affine::AffineApplyOp,
           scf::ForOp, scf::YieldOp, affine::AffineForOp, affine::AffineYieldOp>(
           op))

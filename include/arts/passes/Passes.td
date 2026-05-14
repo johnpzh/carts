@@ -176,13 +176,6 @@ def EdtTransforms : Pass<"edt-transforms", "mlir::ModuleOp"> {
   let constructor = "mlir::arts::createEdtTransformsPass(nullptr)";
 }
 
-def Concurrency : Pass<"concurrency", "mlir::ModuleOp"> {
-  let summary =
-      "Build EDT concurrency graph and apply concurrency-driven cleanups";
-  let dependentDialects = ["::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createConcurrencyPass(nullptr)";
-}
-
 def CreateEpochs : Pass<"create-epochs", "mlir::ModuleOp"> {
   let summary = "Analyzes the program and creates ARTS epochs";
   let dependentDialects = [
@@ -219,99 +212,6 @@ def EdtPtrRematerialization
   let constructor = "mlir::arts::createEdtPtrRematerializationPass()";
 }
 
-def ParallelEdtLowering : Pass<"parallel-edt-lowering", "mlir::ModuleOp"> {
-  let summary = "Lower ARTS parallel EDTs to task graphs";
-  let description = [{This pass transforms parallel EDT operations that contain
-                          loop constructs into epoch -
-                      wrapped task graphs
-                          .It must execute before DB lowering to ensure
-                              proper dependency management.}];
-  let dependentDialects = [
-    "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::scf::SCFDialect",
-    "::mlir::polygeist::PolygeistDialect"
-  ];
-  let constructor = "mlir::arts::createParallelEdtLoweringPass()";
-}
-
-def ForOpt : Pass<"arts-for-opt", "mlir::ModuleOp"> {
-  let summary = "Apply pre-lowering optimization hints to arts.for";
-  let description = [{
-    Applies optimization hints to arts.for prior to lowering by writing explicit
-    `arts.partition_hint` metadata (block mode + block size). This pass can
-    coarsen work for both intra-node and inter-node execution while preserving
-    distributed worker utilization constraints for internode mode.
-  }];
-  let dependentDialects = [
-    "::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect",
-    "::mlir::scf::SCFDialect"
-  ];
-  let constructor = "mlir::arts::createForOptPass(nullptr)";
-}
-
-def DistributedHostLoopOutlining
-    : Pass<"distributed-host-loop-outlining", "mlir::ModuleOp"> {
-  let summary =
-      "Outline eligible host producer loops into distributed ARTS EDTs";
-  let description = [{
-    Converts eligible host-side scf.for loops (outside existing EDT regions)
-    into arts.edt<task><internode> containing arts.for. This is used by
-    --distributed-db to lift host producer loops into the regular distributed
-    distribution/lowering pipeline.
-  }];
-  let dependentDialects = [
-    "::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect",
-    "::mlir::scf::SCFDialect", "::mlir::memref::MemRefDialect"
-  ];
-  let constructor =
-      "mlir::arts::createDistributedHostLoopOutliningPass(nullptr)";
-}
-
-def EdtDistribution : Pass<"edt-distribution", "mlir::ModuleOp"> {
-  let summary = "Select and annotate distribution strategy for arts.for loops";
-  let description =
-      [{Classifies loop access patterns inside parallel EDTs and selects an
-            initial distribution strategy,
-        recording the decision as attributes consumed by ForLowering.}];
-  let dependentDialects = [
-    "::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect",
-    "::mlir::scf::SCFDialect", "::mlir::memref::MemRefDialect"
-  ];
-  let constructor = "mlir::arts::createEdtDistributionPass(nullptr)";
-}
-
-def EdtOrchestrationOpt : Pass<"edt-orchestration-opt", "mlir::ModuleOp"> {
-  let summary = "Recognize repeated sibling waves and stamp orchestration contracts";
-  let description = [{
-    Matches repeated multi-wave timestep loops where several sibling
-    arts.edt<parallel> regions inside one enclosing scf.for represent ordered
-    waves of the same repeated kernel family. The pass records a canonical
-    orchestration contract on the participating EDTs/arts.for ops so
-    ForLowering can preserve the group structure instead of lowering each wave
-    in isolation.
-  }];
-  let dependentDialects = [
-    "::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect",
-    "::mlir::scf::SCFDialect", "::mlir::memref::MemRefDialect"
-  ];
-  let constructor = "mlir::arts::createEdtOrchestrationOptPass()";
-}
-
-def ForLowering : Pass<"for-lowering", "mlir::ModuleOp"> {
-  let summary = "Lower arts.for inside parallel EDTs to chunked task EDTs";
-  let description = [{
-    Lowers arts.for operations nested within arts.edt<parallel> by creating a
-    symbolic worker-id placeholder, computing chunk bounds, acquiring required
-    DBs, and generating a task EDT with a local scf.for over the chunk.
-  }];
-  let dependentDialects = [
-    "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::scf::SCFDialect",
-    "::mlir::polygeist::PolygeistDialect"
-  ];
-  let constructor = "mlir::arts::createForLoweringPass()";
-}
-
 def LoweringContractCleanup : Pass<"lowering-contract-cleanup", "mlir::ModuleOp"> {
   let summary = "Erase arts.lowering_contract metadata ops before LLVM lowering";
   let description = [{
@@ -322,22 +222,6 @@ def LoweringContractCleanup : Pass<"lowering-contract-cleanup", "mlir::ModuleOp"
   }];
   let dependentDialects = ["::mlir::arts::ArtsDialect", "::mlir::func::FuncDialect"];
   let constructor = "mlir::arts::createLoweringContractCleanupPass()";
-}
-
-def LoopFusion : Pass<"arts-loop-fusion", "mlir::ModuleOp"> {
-  let summary = "Fuse independent arts.for loops within parallel EDTs";
-  let description = [{
-    Identifies consecutive arts.for operations within parallel EDTs that:
-    1. Have compatible iteration bounds
-    2. Access disjoint sets of memory locations (no data dependencies)
-    Uses LoopAnalysis for enhanced dependency checking.
-  }];
-  let dependentDialects = [
-    "::mlir::memref::MemRefDialect", "::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect",
-    "::mlir::arith::ArithDialect", "::mlir::scf::SCFDialect", "::mlir::omp::OpenMPDialect",
-    "::mlir::affine::AffineDialect"
-  ];
-  let constructor = "mlir::arts::createLoopFusionPass(nullptr)";
 }
 
 def EpochOpt : Pass<"arts-epoch-opt", "mlir::ModuleOp"> {
@@ -468,27 +352,16 @@ def VerifyEpochCreated : Pass<"verify-epoch-created", "mlir::ModuleOp"> {
   let constructor = "mlir::arts::createVerifyEpochCreatedPass()";
 }
 
-def VerifyForLowered : Pass<"verify-for-lowered", "mlir::ModuleOp"> {
-  let summary = "Verify all arts.for ops have been lowered";
-  let dependentDialects = ["::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createVerifyForLoweredPass()";
-}
-
 def VerifyCoreObjectsOnly : Pass<"verify-core-objects-only", "mlir::ModuleOp"> {
   let summary = "Verify the SDE/Core boundary contains only Core ARTS objects";
   let description = [{
-    Reports or rejects temporary scheduler carriers that violate the target
-    dialect layering contract: no residual SDE operations, no semantic
-    arts.for loop carriers, and no semantic parallel EDT wrappers at the
-    SDE/Core boundary.
+    Rejects IR that violates the target dialect layering contract: no residual
+    SDE operations may remain at the SDE/Core boundary after direct
+    materialization.
   }];
   let dependentDialects = [
     "::mlir::arts::ArtsDialect",
     "::mlir::arts::sde::ArtsSdeDialect"
-  ];
-  let options = [
-    Option<"reportOnly", "report-only", "bool", "false",
-           "Emit boundary debt diagnostics without failing the pass">
   ];
   let constructor = "mlir::arts::createVerifyCoreObjectsOnlyPass()";
 }

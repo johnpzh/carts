@@ -288,7 +288,7 @@ static void inferPartitionDims(DbAcquireNode *node,
   /// Coarse acquires often arrive here without any local partition entry even
   /// though the surrounding loop has already committed to an N-D worker
   /// ownership plan. In that case, reuse the scope-wide peer consensus instead
-  /// of falling back to an implicit leading dimension later in ForLowering.
+  /// of falling back to an implicit leading dimension later in DB rewriting.
   ///
   /// When local entries do exist, keep the older guard and only consult peer
   /// ownership when at least one entry explicitly preserves the distributed

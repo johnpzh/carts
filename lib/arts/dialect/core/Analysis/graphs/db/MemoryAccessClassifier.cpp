@@ -67,28 +67,6 @@ static bool loopBoundsAreIndirect(BlockArgument iv, Value partitionOffset,
     }
   }
 
-  if (auto artsFor = dyn_cast<arts::ForOp>(parentOp)) {
-    auto args = artsFor.getBody()->getArguments();
-    for (auto it : llvm::enumerate(args)) {
-      if (it.value() != iv)
-        continue;
-      unsigned idx = it.index();
-      auto lbs = artsFor.getLowerBound();
-      auto ubs = artsFor.getUpperBound();
-      auto steps = artsFor.getStep();
-      if (idx < lbs.size() &&
-          arts::isIndirectIndex(lbs[idx], partitionOffset, depth + 1))
-        return true;
-      if (idx < ubs.size() &&
-          arts::isIndirectIndex(ubs[idx], partitionOffset, depth + 1))
-        return true;
-      if (idx < steps.size() &&
-          arts::isIndirectIndex(steps[idx], partitionOffset, depth + 1))
-        return true;
-      return false;
-    }
-  }
-
   return false;
 }
 
@@ -130,12 +108,6 @@ bool arts::isIndirectIndex(Value idx, Value partitionOffset, int depth) {
     }
     if (auto parOp = dyn_cast<scf::ParallelOp>(parentOp)) {
       for (Value iv : parOp.getInductionVars()) {
-        if (blockArg == iv)
-          return loopBoundsAreIndirect(blockArg, partitionOffset, depth + 1);
-      }
-    }
-    if (auto artsFor = dyn_cast<arts::ForOp>(parentOp)) {
-      for (Value iv : artsFor.getBody()->getArguments()) {
         if (blockArg == iv)
           return loopBoundsAreIndirect(blockArg, partitionOffset, depth + 1);
       }

@@ -6,8 +6,6 @@
 
 #include "arts/dialect/core/Analysis/heuristics/EdtHeuristics.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
-#include "arts/dialect/core/Analysis/db/DbAnalysis.h"
-#include "arts/dialect/core/Analysis/edt/EdtAnalysis.h"
 
 using namespace mlir;
 using namespace mlir::arts;
@@ -34,42 +32,7 @@ ParallelismDecision EdtHeuristics::resolveParallelism() const {
 }
 
 std::optional<WorkerConfig>
-EdtHeuristics::resolveWorkerConfig(EdtOp parallelEdt) const {
-  return DistributionHeuristics::resolveWorkerConfig(parallelEdt,
+EdtHeuristics::resolveWorkerConfig(EdtOp edt) const {
+  return DistributionHeuristics::resolveWorkerConfig(edt,
                                                      &getRuntimeConfig());
-}
-
-DistributionStrategy
-EdtHeuristics::resolveLoweringStrategy(EdtOp originalParallel,
-                                       ForOp forOp) const {
-  return DistributionHeuristics::resolveLoweringStrategy(originalParallel,
-                                                         forOp);
-}
-
-LoopCoarseningDecision EdtHeuristics::computeLoopCoarseningDecision(
-    ForOp forOp, const WorkerConfig &workerCfg) const {
-  return DistributionHeuristics::computeLoopCoarseningDecision(
-      forOp, getAnalysisManager().getLoopAnalysis(), workerCfg);
-}
-
-ParallelEdtFusionDecision
-EdtHeuristics::evaluateParallelEdtFusion(EdtOp first, EdtOp second) const {
-  ParallelEdtFusionDecision decision;
-  if (!first || !second) {
-    decision.rationale = "missing parallel EDT";
-    return decision;
-  }
-  if (!EdtAnalysis::isParallelEdtFusable(first) ||
-      !EdtAnalysis::isParallelEdtFusable(second)) {
-    decision.rationale = "parallel EDT is not structurally fusable";
-    return decision;
-  }
-  if (DbAnalysis::hasDbConflict(first, second)) {
-    decision.rationale = "parallel EDTs have conflicting memory effects";
-    return decision;
-  }
-
-  decision.shouldFuse = true;
-  decision.rationale = "eligible";
-  return decision;
 }

@@ -2,7 +2,7 @@
 //   1. ConvertOpenMPToSde wraps su_iterate body in cu_region <parallel>
 //   2. RaiseToTensor threads scalar alloca through cu_region <single> as tensor iter_arg
 //   3. ConvertToCodelet + ConvertSdeToArts preserve scalar single state on the
-//      user-visible alloca and lower the loop to arts.for
+//      user-visible alloca and lower the loop to Core task dispatch
 
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 \
 // RUN:   | awk '/IR Dump After ConvertOpenMPToSde/,/IR Dump After RaiseToLinalg/' \
@@ -52,7 +52,6 @@
 
 // --- After ConvertSdeToArts ---
 // ARTS: func.func @main
-// ARTS: arts.edt <parallel>
 //   Single EDT keeps scalar state on the preserved alloca:
 // ARTS: arts.edt <single>
 // ARTS: memref.load %{{.*}}[] : memref<i32>
@@ -61,7 +60,8 @@
 //   Barrier between single and loop:
 // ARTS: arts.barrier
 //   Parallel loop:
-// ARTS: arts.for
+// ARTS: arts.epoch
+// ARTS: arts.edt <task>
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main() -> i32 attributes {llvm.linkage = #llvm.linkage<external>} {

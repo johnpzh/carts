@@ -5,24 +5,20 @@ Core is the ARTS-machine-aware layer after SDE and before RT-shaped lowering.
 It materializes SDE-authored plans into concrete DB, EDT, dependency, and epoch
 structure, then refines that structure with Core analyses.
 
-For the target dialect split, including the plan to remove Core `arts.for`,
-semantic `arts.edt<parallel>`, `ForLowering`, and related scheduler scaffolding,
-see [`../dialect-layering-vision.md`](../dialect-layering-vision.md). This
-README also describes current compatibility responsibilities that should shrink
-as that migration lands.
+For the dialect split that removed the Core loop carrier, semantic
+`arts.edt<parallel>`, `ForLowering`, and related scheduler scaffolding, see
+[`../dialect-layering-vision.md`](../dialect-layering-vision.md).
 
 ## Boundary
 
 Core owns:
 
 - `CreateDbs` and direct materialization of SDE-authored physical DB layouts.
-- DB, EDT, loop, epoch, and distributed-orchestration analyses.
+- DB, EDT, epoch, and distributed-orchestration analyses over runtime-shaped
+  Core objects.
 - DB mode tightening, DB/EDT transforms, dependency-window lowering, and
   contract validation.
-- Current compatibility passes such as EDT distribution, orchestration,
-  `ForLowering`, and host/machine-aware outlining decisions. In the target
-  architecture, semantic planning moves to SDE and Core only materializes
-  EDT/DB/Epoch objects from the SDE work plan.
+- Direct materialization of EDT/DB/Epoch objects from the SDE work plan.
 - Epoch creation, CPS/continuation structure, and Core-side epoch cleanup.
 
 Core must not own:
@@ -42,10 +38,6 @@ Core stages are:
 edt-transforms
 create-dbs
 db-opt
-edt-opt
-concurrency
-edt-distribution
-post-distribution-cleanup
 post-db-refinement
 late-concurrency-cleanup
 epochs

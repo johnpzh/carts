@@ -1,4 +1,4 @@
-// RUN: not %carts-compile %s --arts-config %arts_config --start-from concurrency --pipeline concurrency 2>&1 | %FileCheck %s
+// RUN: not %carts-compile %s --arts-config %arts_config --start-from initial-cleanup --pipeline initial-cleanup 2>&1 | %FileCheck %s
 
 // CHECK: partition_offsets_segments segment sum (3) must match operand count (2)
 

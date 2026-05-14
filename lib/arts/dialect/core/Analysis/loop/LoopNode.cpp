@@ -92,8 +92,6 @@ static Region *getPrimaryLoopRegion(Operation *loopOp) {
     return &scfFor.getRegion();
   if (auto affineFor = dyn_cast<affine::AffineForOp>(loopOp))
     return &affineFor.getRegion();
-  if (auto artsFor = dyn_cast<arts::ForOp>(loopOp))
-    return &artsFor.getRegion();
   if (auto loopLike = dyn_cast<LoopLikeOpInterface>(loopOp)) {
     SmallVector<Region *> regions = loopLike.getLoopRegions();
     if (regions.size() == 1)
@@ -155,7 +153,6 @@ void LoopNode::print(llvm::raw_ostream &os) const {
 
   llvm::TypeSwitch<Operation *>(loopOp)
       .Case<scf::ForOp>([&](auto) { os << " scf.for"; })
-      .Case<arts::ForOp>([&](auto) { os << " arts.for"; })
       .Case<scf::ParallelOp>([&](auto) { os << " scf.parallel"; })
       .Case<scf::WhileOp>([&](auto) { os << " scf.while"; });
   os << "\n";
@@ -171,12 +168,6 @@ Value LoopNode::getInductionVar() const {
       .Case<scf::ParallelOp>([](auto op) -> Value {
         return op.getInductionVars().empty() ? Value()
                                              : op.getInductionVars()[0];
-      })
-      .Case<arts::ForOp>([](auto op) -> Value {
-        if (op.getRegion().empty())
-          return Value();
-        Block &body = op.getRegion().front();
-        return body.getNumArguments() == 0 ? Value() : body.getArgument(0);
       })
       .Case<scf::WhileOp>([](auto op) { return getWhileInductionVar(op); })
       .Default([](Operation *op) {
@@ -239,11 +230,6 @@ static bool dependsOnLoopInitImpl(Value value, Value base, unsigned depth) {
       unsigned idx = blockArg.getArgNumber();
       if (idx < whileOp.getInits().size())
         return dependsOnLoopInitImpl(whileOp.getInits()[idx], base, depth + 1);
-    } else if (auto artsFor = dyn_cast_or_null<arts::ForOp>(parentOp)) {
-      unsigned idx = blockArg.getArgNumber();
-      auto lbs = artsFor.getLowerBound();
-      if (idx < lbs.size())
-        return dependsOnLoopInitImpl(lbs[idx], base, depth + 1);
     } else if (auto loopLike =
                    dyn_cast_or_null<LoopLikeOpInterface>(parentOp)) {
       unsigned idx = blockArg.getArgNumber();
@@ -491,15 +477,6 @@ std::optional<int64_t> LoopNode::getStepConstant() const {
           return constOp.value();
         return std::nullopt;
       })
-      .Case<arts::ForOp>([](auto op) -> std::optional<int64_t> {
-        auto steps = op.getStep();
-        if (!steps.empty()) {
-          int64_t val;
-          if (ValueAnalysis::getConstantIndex(steps[0], val))
-            return val;
-        }
-        return std::nullopt;
-      })
       .Default([](Operation *op) -> std::optional<int64_t> {
         if (auto loopLike = dyn_cast<LoopLikeOpInterface>(op))
           return getPrimaryLoopStepConstant(loopLike);
@@ -536,10 +513,6 @@ LoopNode::estimateStaticPerfectNestedWork(int64_t cap) const {
 Value LoopNode::getLowerBound() const {
   return llvm::TypeSwitch<Operation *, Value>(loopOp)
       .Case<scf::ForOp>([](auto op) { return op.getLowerBound(); })
-      .Case<arts::ForOp>([](auto op) -> Value {
-        auto lbs = op.getLowerBound();
-        return lbs.empty() ? Value() : lbs[0];
-      })
       .Default([](Operation *op) {
         if (auto loopLike = dyn_cast<LoopLikeOpInterface>(op))
           return getPrimaryLoopLowerBound(loopLike);
@@ -550,10 +523,6 @@ Value LoopNode::getLowerBound() const {
 Value LoopNode::getUpperBound() const {
   return llvm::TypeSwitch<Operation *, Value>(loopOp)
       .Case<scf::ForOp>([](auto op) { return op.getUpperBound(); })
-      .Case<arts::ForOp>([](auto op) -> Value {
-        auto ubs = op.getUpperBound();
-        return ubs.empty() ? Value() : ubs[0];
-      })
       .Default([](Operation *op) {
         if (auto loopLike = dyn_cast<LoopLikeOpInterface>(op))
           return getPrimaryLoopUpperBound(loopLike);
@@ -564,10 +533,6 @@ Value LoopNode::getUpperBound() const {
 Value LoopNode::getStep() const {
   return llvm::TypeSwitch<Operation *, Value>(loopOp)
       .Case<scf::ForOp>([](auto op) { return op.getStep(); })
-      .Case<arts::ForOp>([](auto op) -> Value {
-        auto steps = op.getStep();
-        return steps.empty() ? Value() : steps[0];
-      })
       .Default([](Operation *op) {
         if (auto loopLike = dyn_cast<LoopLikeOpInterface>(op))
           return getPrimaryLoopStep(loopLike);
@@ -612,13 +577,6 @@ bool LoopNode::hasEdt() const {
   return foundEdt;
 }
 
-std::optional<DbAnalysis::LoopDbAccessSummary>
-LoopNode::getDbAccessSummary() const {
-  if (!loopAnalysis || !loopOp)
-    return std::nullopt;
-  return loopAnalysis->getLoopDbAccessSummary(loopOp);
-}
-
 bool LoopNode::hasDistributedDbContract() const {
   return loopAnalysis && loopOp &&
          loopAnalysis->operationHasDistributedDbContract(loopOp);
@@ -646,30 +604,6 @@ bool LoopNode::haveCompatibleBounds(LoopNode *a, LoopNode *b) {
                ValueAnalysis::sameValue(forA.getUpperBound(),
                                         forB.getUpperBound()) &&
                ValueAnalysis::sameValue(forA.getStep(), forB.getStep());
-      })
-      .Case<arts::ForOp>([&](auto artsForA) {
-        auto artsForB = dyn_cast<arts::ForOp>(opB);
-        if (!artsForB)
-          return false;
-
-        auto lbA = artsForA.getLowerBound();
-        auto lbB = artsForB.getLowerBound();
-        if (lbA.size() != lbB.size())
-          return false;
-        for (size_t i = 0; i < lbA.size(); ++i) {
-          if (!ValueAnalysis::sameValue(lbA[i], lbB[i]))
-            return false;
-        }
-
-        auto ubA = artsForA.getUpperBound();
-        auto ubB = artsForB.getUpperBound();
-        if (ubA.size() != ubB.size())
-          return false;
-        for (size_t i = 0; i < ubA.size(); ++i) {
-          if (!ValueAnalysis::sameValue(ubA[i], ubB[i]))
-            return false;
-        }
-        return true;
       })
       .Default([&](Operation *genericA) {
         auto loopA = dyn_cast<LoopLikeOpInterface>(genericA);

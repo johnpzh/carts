@@ -7,11 +7,8 @@
 #include "arts/dialect/core/Analysis/AccessPatternAnalysis.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
 #include "arts/dialect/core/Analysis/db/DbAliasAnalysis.h"
-#include "arts/dialect/core/Analysis/db/DbPatternMatchers.h"
 #include "arts/dialect/core/Analysis/graphs/db/DbGraph.h"
 #include "arts/dialect/core/Analysis/graphs/db/DbNode.h"
-#include "arts/dialect/core/Analysis/graphs/edt/EdtGraph.h"
-#include "arts/dialect/core/Analysis/graphs/edt/EdtNode.h"
 #include "arts/dialect/core/Analysis/loop/LoopAnalysis.h"
 #include "arts/utils/DbUtils.h"
 #include "arts/utils/EdtUtils.h"
@@ -36,41 +33,6 @@ using namespace mlir;
 using namespace mlir::arts;
 
 namespace {
-
-static EdtDistributionPattern
-classifyDistributionPattern(const DbAnalysis::LoopDbAccessSummary &summary) {
-  if (summary.hasTriangularBound)
-    return EdtDistributionPattern::triangular;
-  if (summary.hasStencilAccessHint || summary.hasStencilOffset)
-    return EdtDistributionPattern::stencil;
-  if (summary.hasMatmulUpdate)
-    return EdtDistributionPattern::matmul;
-  return EdtDistributionPattern::uniform;
-}
-
-static void applyDependencePatternHint(DbAnalysis::LoopDbAccessSummary &summary,
-                                       ArtsDepPattern pattern) {
-  switch (pattern) {
-  case ArtsDepPattern::unknown:
-  case ArtsDepPattern::uniform:
-  case ArtsDepPattern::elementwise_pipeline:
-    return;
-  case ArtsDepPattern::stencil:
-  case ArtsDepPattern::stencil_tiling_nd:
-  case ArtsDepPattern::cross_dim_stencil_3d:
-  case ArtsDepPattern::higher_order_stencil:
-  case ArtsDepPattern::wavefront_2d:
-  case ArtsDepPattern::jacobi_alternating_buffers:
-    summary.hasStencilAccessHint = true;
-    return;
-  case ArtsDepPattern::matmul:
-    summary.hasMatmulUpdate = true;
-    return;
-  case ArtsDepPattern::triangular:
-    summary.hasTriangularBound = true;
-    return;
-  }
-}
 
 static bool canNarrowDirectReadSlice(const LoweringContractInfo &contract,
                                      const DbAcquirePartitionFacts &facts) {
@@ -151,7 +113,7 @@ static bool refineContractWithFacts(LoweringContractInfo &contract,
   /// Direct read-only block/stencil accesses with a resolved owner dimension
   /// can safely keep a worker-local dependency slice. Preserve that fact on
   /// the contract so generic acquire rewriting can narrow the dependency
-  /// window without pattern-specific branches in ForLowering.
+  /// window without pattern-specific branches.
   if (canNarrowDirectReadSlice(contract, facts) &&
       !contract.analysis.narrowableDep) {
     contract.analysis.narrowableDep = true;
@@ -303,134 +265,6 @@ mergeDerivedFactEvidence(DbAnalysis::AcquireContractSummary &summary,
 
 } // namespace
 
-std::optional<unsigned> DbAnalysis::inferLoopMappedDim(DbAcquireOp acquire,
-                                                       ForOp forOp) {
-  if (!acquire || !forOp)
-    return std::nullopt;
-
-  Block &forBody = forOp.getRegion().front();
-  if (forBody.getNumArguments() == 0)
-    return std::nullopt;
-
-  DbAcquireNode *acqNode = getDbAcquireNode(acquire);
-  if (!acqNode)
-    return std::nullopt;
-
-  Value loopIV = forBody.getArgument(0);
-  if (auto mappedDim =
-          acqNode->getPartitionOffsetDim(loopIV, /*requireLeading=*/false)) {
-    return mappedDim;
-  }
-
-  Region &forRegion = forOp.getRegion();
-  std::optional<unsigned> mappedDim;
-  DenseMap<DbRefOp, SetVector<Operation *>> dbRefToMemOps;
-  acqNode->collectAccessOperations(dbRefToMemOps);
-
-  for (auto &[dbRef, memOps] : dbRefToMemOps) {
-    for (Operation *memOp : memOps) {
-      Region *memRegion = memOp ? memOp->getParentRegion() : nullptr;
-      if (!memRegion)
-        continue;
-      if (memRegion != &forRegion && !forRegion.isAncestor(memRegion))
-        continue;
-
-      SmallVector<Value> fullChain =
-          DbUtils::collectFullIndexChain(dbRef, memOp);
-      if (fullChain.empty())
-        continue;
-
-      unsigned memrefStart = dbRef.getIndices().size();
-      if (memrefStart >= fullChain.size())
-        continue;
-
-      SmallVector<unsigned, 2> matchingDims;
-      ArrayRef<Value> memrefChain(fullChain);
-      memrefChain = memrefChain.drop_front(memrefStart);
-      for (auto [dimIdx, indexVal] : llvm::enumerate(memrefChain)) {
-        if (ValueAnalysis::dependsOn(ValueAnalysis::stripNumericCasts(indexVal),
-                                     loopIV))
-          matchingDims.push_back(dimIdx);
-      }
-
-      if (matchingDims.size() != 1)
-        return std::nullopt;
-
-      unsigned dim = matchingDims.front();
-      if (!mappedDim)
-        mappedDim = dim;
-      else if (*mappedDim != dim)
-        return std::nullopt;
-    }
-  }
-
-  return mappedDim;
-}
-
-std::optional<unsigned> DbAnalysis::inferLoopMappedDim(Value dep, ForOp forOp) {
-  if (!dep || !forOp)
-    return std::nullopt;
-
-  Block &forBody = forOp.getRegion().front();
-  if (forBody.getNumArguments() == 0)
-    return std::nullopt;
-
-  Value loopIV = forBody.getArgument(0);
-  Region &forRegion = forOp.getRegion();
-  std::optional<unsigned> mappedDim;
-  llvm::SetVector<Value> sources;
-  sources.insert(dep);
-  for (Operation *user : dep.getUsers()) {
-    auto edt = dyn_cast<EdtOp>(user);
-    if (!edt)
-      continue;
-
-    ValueRange deps = edt.getDependencies();
-    Block &edtBody = edt.getBody().front();
-    unsigned argCount = edtBody.getNumArguments();
-    for (auto [idx, operand] : llvm::enumerate(deps)) {
-      if (operand != dep || idx >= argCount)
-        continue;
-      sources.insert(edtBody.getArgument(static_cast<unsigned>(idx)));
-    }
-  }
-
-  llvm::SetVector<Operation *> memOps;
-  for (Value source : sources)
-    DbUtils::collectReachableMemoryOps(source, memOps, /*scope=*/nullptr);
-
-  for (Operation *memOp : memOps) {
-    Region *memRegion = memOp ? memOp->getParentRegion() : nullptr;
-    if (!memRegion)
-      continue;
-    if (memRegion != &forRegion && !forRegion.isAncestor(memRegion))
-      continue;
-
-    std::optional<DbUtils::MemoryAccessInfo> access =
-        DbUtils::getMemoryAccessInfo(memOp);
-    if (!access || access->indices.empty())
-      continue;
-
-    SmallVector<unsigned, 2> matchingDims;
-    for (auto [dimIdx, indexVal] : llvm::enumerate(access->indices)) {
-      if (ValueAnalysis::dependsOn(ValueAnalysis::stripNumericCasts(indexVal),
-                                   loopIV))
-        matchingDims.push_back(dimIdx);
-    }
-
-    if (matchingDims.size() != 1)
-      return std::nullopt;
-
-    unsigned dim = matchingDims.front();
-    if (!mappedDim)
-      mappedDim = dim;
-    else if (*mappedDim != dim)
-      return std::nullopt;
-  }
-
-  return mappedDim;
-}
-
 bool DbAnalysis::isTiling2DTaskAcquire(DbAcquireOp acquire) {
   if (!acquire)
     return false;
@@ -484,10 +318,6 @@ bool DbAnalysis::invalidateGraph(func::FuncOp func) {
   auto it = functionGraphMap.find(func);
   if (it != functionGraphMap.end()) {
     functionGraphMap.erase(it);
-    {
-      std::unique_lock<std::shared_mutex> summaryLock(accessSummaryMutex);
-      loopAccessSummaryByOp.clear();
-    }
     return true;
   }
   return false;
@@ -497,10 +327,6 @@ void DbAnalysis::invalidate() {
   ARTS_INFO("Invalidating all DbGraphs");
   std::unique_lock<std::shared_mutex> writeLock(graphMutex);
   functionGraphMap.clear();
-  {
-    std::unique_lock<std::shared_mutex> summaryLock(accessSummaryMutex);
-    loopAccessSummaryByOp.clear();
-  }
 }
 
 void DbAnalysis::print(func::FuncOp func) {
@@ -511,147 +337,6 @@ void DbAnalysis::print(func::FuncOp func) {
 
 LoopAnalysis *DbAnalysis::getLoopAnalysis() {
   return &getAnalysisManager().getLoopAnalysis();
-}
-
-DbAnalysis::LoopDbAccessSummary
-DbAnalysis::analyzeLoopDbAccessPatterns(ForOp forOp) {
-  LoopDbAccessSummary summary;
-  if (!forOp) {
-    summary.distributionPattern = EdtDistributionPattern::unknown;
-    return summary;
-  }
-
-  // Fast path: shared lock for cache read.
-  {
-    std::shared_lock<std::shared_mutex> readLock(accessSummaryMutex);
-    if (auto it = loopAccessSummaryByOp.find(forOp.getOperation());
-        it != loopAccessSummaryByOp.end())
-      return it->second;
-  }
-
-  Block &forBody = forOp.getRegion().front();
-  if (forBody.getNumArguments() == 0) {
-    summary.distributionPattern = EdtDistributionPattern::unknown;
-    std::unique_lock<std::shared_mutex> writeLock(accessSummaryMutex);
-    loopAccessSummaryByOp[forOp.getOperation()] = summary;
-    return summary;
-  }
-
-  Value loopIV = forBody.getArgument(0);
-  summary.hasTriangularBound = hasTriangularBoundPattern(forOp);
-  summary.hasMatmulUpdate = detectMatmulUpdatePattern(forOp, getLoopAnalysis());
-  std::optional<ArtsDepPattern> depPatternHint =
-      getDepPattern(forOp.getOperation());
-  if (depPatternHint)
-    applyDependencePatternHint(summary, *depPatternHint);
-
-  Region &forRegion = forOp.getRegion();
-  EdtOp edt = forOp->getParentOfType<EdtOp>();
-  func::FuncOp func = forOp->getParentOfType<func::FuncOp>();
-  if (!edt || !func) {
-    summary.distributionPattern = classifyDistributionPattern(summary);
-    std::unique_lock<std::shared_mutex> writeLock(accessSummaryMutex);
-    loopAccessSummaryByOp[forOp.getOperation()] = summary;
-    return summary;
-  }
-
-  DbGraph &graph = getOrCreateGraph(func);
-  graph.forEachAcquireNode([&](DbAcquireNode *acqNode) {
-    if (!acqNode || acqNode->getEdtUser() != edt)
-      return;
-
-    DbAllocNode *rootAlloc = acqNode->getRootAlloc();
-    if (!rootAlloc || !rootAlloc->getDbAllocOp())
-      return;
-    Operation *allocOp = rootAlloc->getDbAllocOp().getOperation();
-
-    DenseMap<DbRefOp, SetVector<Operation *>> dbRefToMemOps;
-    /// TODO(PERF): collectAccessOperations is called per acquire per loop with
-    /// no caching. Cache results on DbAcquireNode to avoid redundant
-    /// computation.
-    acqNode->collectAccessOperations(dbRefToMemOps);
-
-    SmallVector<AccessIndexInfo, 16> accesses;
-    bool hasLoopAccess = false;
-    for (auto &[dbRef, memOps] : dbRefToMemOps) {
-      for (Operation *memOp : memOps) {
-        Region *memRegion = memOp ? memOp->getParentRegion() : nullptr;
-        if (!memRegion)
-          continue;
-        if (memRegion != &forRegion && !forRegion.isAncestor(memRegion))
-          continue;
-        hasLoopAccess = true;
-
-        SmallVector<Value> indexChain =
-            DbUtils::collectFullIndexChain(dbRef, memOp);
-        if (indexChain.empty())
-          continue;
-        AccessIndexInfo info;
-        info.dbRefPrefix = dbRef.getIndices().size();
-        info.indexChain.append(indexChain.begin(), indexChain.end());
-        accesses.push_back(std::move(info));
-      }
-    }
-
-    if (!hasLoopAccess)
-      return;
-
-    DbAccessPattern combinedPattern = DbAccessPattern::unknown;
-
-    if (!accesses.empty()) {
-      AccessBoundsResult bounds =
-          analyzeAccessBoundsFromIndices(accesses, loopIV, loopIV);
-      if (bounds.valid) {
-        if (bounds.isStencil || bounds.minOffset != 0 ||
-            bounds.maxOffset != 0) {
-          combinedPattern =
-              DbUtils::mergeAccessPattern(combinedPattern, DbAccessPattern::stencil);
-          summary.hasStencilOffset = true;
-        } else {
-          combinedPattern =
-              DbUtils::mergeAccessPattern(combinedPattern, DbAccessPattern::uniform);
-        }
-      } else if (bounds.hasVariableOffset) {
-        combinedPattern =
-            DbUtils::mergeAccessPattern(combinedPattern, DbAccessPattern::indexed);
-      }
-    }
-
-    auto it = summary.allocPatterns.find(allocOp);
-    if (it == summary.allocPatterns.end()) {
-      summary.allocPatterns[allocOp] = combinedPattern;
-    } else {
-      it->second = DbUtils::mergeAccessPattern(it->second, combinedPattern);
-    }
-  });
-
-  if (depPatternHint) {
-    if (auto directPattern =
-            getDistributionPatternForDepPattern(*depPatternHint))
-      summary.distributionPattern = *directPattern;
-    else
-      summary.distributionPattern = classifyDistributionPattern(summary);
-  } else {
-    summary.distributionPattern = classifyDistributionPattern(summary);
-  }
-  {
-    std::unique_lock<std::shared_mutex> writeLock(accessSummaryMutex);
-    loopAccessSummaryByOp[forOp.getOperation()] = summary;
-  }
-  return summary;
-}
-
-std::optional<DbAnalysis::LoopDbAccessSummary>
-DbAnalysis::getLoopDbAccessSummary(ForOp forOp) {
-  if (!forOp)
-    return std::nullopt;
-  {
-    std::shared_lock<std::shared_mutex> readLock(accessSummaryMutex);
-    if (auto it = loopAccessSummaryByOp.find(forOp.getOperation());
-        it != loopAccessSummaryByOp.end())
-      return it->second;
-  }
-  return analyzeLoopDbAccessPatterns(forOp);
 }
 
 bool DbAnalysis::hasNonInternodeConsumerForWrittenDb(EdtOp producerEdt) {
@@ -858,10 +543,10 @@ static void analyzeBlockStencilPartition(
         info.partitionSizes[0] = refined;
     }
 
-    /// For read-only stencil inputs, ForLowering already materializes the
-    /// exact halo-expanded slice in partition_offsets/sizes. Re-running graph
-    /// bounds refinement here double-expands that window and breaks the later
-    /// ESD lowering contract.
+    /// For read-only stencil inputs, direct materialization already provides
+    /// the exact halo-expanded slice in partition_offsets/sizes. Re-running
+    /// graph bounds refinement here double-expands that window and breaks the
+    /// later ESD lowering contract.
     bool trustExplicitHaloSlice =
         acquire.getMode() == ArtsMode::in &&
         !acquire.getElementOffsets().empty() &&
@@ -1209,118 +894,6 @@ bool DbAnalysis::operationHasPeerInferredPartitionDims(Operation *op) {
   return found;
 }
 
-bool DbAnalysis::hasCrossElementSelfReadInLoop(DbAcquireOp acquire,
-                                               ForOp loopOp) {
-  if (!acquire || !loopOp)
-    return false;
-
-  func::FuncOp func = acquire->getParentOfType<func::FuncOp>();
-  if (!func)
-    return false;
-
-  DbGraph &dbGraph = getOrCreateGraph(func);
-  DbAcquireNode *acquireNode = dbGraph.getDbAcquireNode(acquire);
-  if (!acquireNode)
-    return false;
-
-  EdtOp edt = acquireNode->getEdtUser();
-  if (!edt || loopOp->getParentOfType<EdtOp>() != edt)
-    return false;
-
-  EdtGraph &edtGraph =
-      getAnalysisManager().getEdtAnalysis().getOrCreateEdtGraph(func);
-  EdtNode *edtNode = edtGraph.getEdtNode(edt);
-  if (!edtNode)
-    return false;
-
-  LoopAnalysis *loopAnalysis = getLoopAnalysis();
-  if (!loopAnalysis)
-    return false;
-  LoopNode *loopNode = loopAnalysis->getLoopNode(loopOp.getOperation());
-  if (!loopNode)
-    return false;
-
-  ArrayRef<LoopNode *> associatedLoops = edtNode->getAssociatedLoops();
-  if (!associatedLoops.empty() &&
-      llvm::find(associatedLoops, loopNode) == associatedLoops.end()) {
-    ARTS_DEBUG("Loop not recorded on EDT node; falling back to structural EDT "
-               "ancestry for cross-element self-read query");
-  }
-
-  DenseMap<DbRefOp, SetVector<Operation *>> dbRefToMemOps;
-  acquireNode->collectAccessOperations(dbRefToMemOps);
-  if (dbRefToMemOps.empty())
-    return false;
-
-  Value edtValue = acquireNode->getUseInEdt();
-  Value loopIV = loopNode->getInductionVar();
-  if (!edtValue || !loopIV)
-    return false;
-
-  SmallVector<AccessIndexInfo, 16> selfReadAccesses;
-  for (auto &[dbRef, memOps] : dbRefToMemOps) {
-    if (!DbAnalysis::isSameMemoryObject(dbRef.getSource(), edtValue))
-      continue;
-
-    for (Operation *memOp : memOps) {
-      if (!memOp || !loopOp.getRegion().isAncestor(memOp->getParentRegion()))
-        continue;
-
-      SmallVector<Value> indexChain =
-          DbUtils::collectFullIndexChain(dbRef, memOp);
-      if (indexChain.empty())
-        continue;
-
-      AccessIndexInfo info;
-      info.dbRefPrefix = dbRef.getIndices().size();
-      info.indexChain.append(indexChain.begin(), indexChain.end());
-      selfReadAccesses.push_back(std::move(info));
-    }
-  }
-
-  if (selfReadAccesses.empty()) {
-    ARTS_DEBUG("No self-read accesses found through DbGraph/EdtGraph analysis");
-    return false;
-  }
-
-  AccessBoundsResult bounds =
-      analyzeAccessBoundsFromIndices(selfReadAccesses, loopIV, loopIV);
-  auto hasCrossElementOffset = [](const AccessBoundsResult &candidate) {
-    return candidate.valid &&
-           (candidate.isStencil || candidate.minOffset != 0 ||
-            candidate.maxOffset != 0);
-  };
-
-  bool hasCrossElementSelfRead = hasCrossElementOffset(bounds);
-
-  if (!hasCrossElementSelfRead) {
-    loopOp.walk([&](scf::ForOp nestedLoop) {
-      if (hasCrossElementSelfRead || nestedLoop == loopOp)
-        return;
-      Value nestedIV = nestedLoop.getInductionVar();
-      if (!nestedIV)
-        return;
-      AccessBoundsResult nestedBounds =
-          analyzeAccessBoundsFromIndices(selfReadAccesses, nestedIV, nestedIV);
-      if (hasCrossElementOffset(nestedBounds)) {
-        ARTS_DEBUG("DbAnalysis nested self-read fallback: valid="
-                   << nestedBounds.valid << " min=" << nestedBounds.minOffset
-                   << " max=" << nestedBounds.maxOffset
-                   << " stencil=" << nestedBounds.isStencil
-                   << " variable=" << nestedBounds.hasVariableOffset);
-        hasCrossElementSelfRead = true;
-      }
-    });
-  }
-
-  ARTS_DEBUG("DbAnalysis cross-element self-read: valid="
-             << bounds.valid << " min=" << bounds.minOffset
-             << " max=" << bounds.maxOffset << " stencil=" << bounds.isStencil
-             << " variable=" << bounds.hasVariableOffset << " -> "
-             << hasCrossElementSelfRead);
-  return hasCrossElementSelfRead;
-}
-
 std::optional<AccessPattern>
 DbAnalysis::getAcquireAccessPattern(DbAcquireOp acquire) {
   if (!acquire)
@@ -1354,8 +927,7 @@ DbAnalysis::getAllocAccessPattern(DbAllocOp alloc) {
   if (!alloc)
     return std::nullopt;
 
-  /// Check for existing operation attribute first (may have been set by
-  /// ForOpt pass or other earlier analysis).
+  /// Check for an existing operation attribute first.
   std::optional<DbAccessPattern> attrPattern =
       getDbAccessPattern(alloc.getOperation());
 

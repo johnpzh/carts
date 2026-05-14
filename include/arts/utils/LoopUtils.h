@@ -22,8 +22,6 @@ namespace arts {
 
 class LoopNode;
 
-enum class PointwiseLoopComputeClass { arithmeticOnly, vectorMath, scalarCall };
-
 /// Check whether a scf::ForOp is a "worker loop" (i.e., contains at least one
 /// arts.edt operation anywhere in its body).
 /// Used by epoch-level passes to identify task-spawning loops.
@@ -51,37 +49,16 @@ inline bool isInnermostLoop(scf::ForOp loop) {
   return !hasNested;
 }
 
-/// Check whether two scf::ForOp loops have matching bounds (same lower
-/// bound, upper bound, and step). Uses ValueAnalysis::sameValue for comparison.
-/// Note: this overload is for scf::ForOp only; arts::ForOp has a separate
-/// bounds API and is handled in LoopFusion directly.
+/// Check whether two scf::ForOp loops have matching bounds (same lower bound,
+/// upper bound, and step). Uses ValueAnalysis::sameValue for comparison.
 inline bool haveCompatibleBounds(scf::ForOp a, scf::ForOp b) {
   return ValueAnalysis::sameValue(a.getLowerBound(), b.getLowerBound()) &&
          ValueAnalysis::sameValue(a.getUpperBound(), b.getUpperBound()) &&
          ValueAnalysis::sameValue(a.getStep(), b.getStep());
 }
 
-/// Check whether two arts::ForOp loops have the same iteration space (same
-/// lower bound, upper bound, and step). Uses ValueAnalysis::sameValue for
-/// comparison. Returns false if either loop is null or has multi-dimensional
-/// bounds.
-inline bool haveSameBounds(ForOp a, ForOp b) {
-  if (!a || !b)
-    return false;
-  if (a.getLowerBound().size() != 1 || a.getUpperBound().size() != 1 ||
-      a.getStep().size() != 1 || b.getLowerBound().size() != 1 ||
-      b.getUpperBound().size() != 1 || b.getStep().size() != 1)
-    return false;
-  return ValueAnalysis::sameValue(a.getLowerBound().front(),
-                                  b.getLowerBound().front()) &&
-         ValueAnalysis::sameValue(a.getUpperBound().front(),
-                                  b.getUpperBound().front()) &&
-         ValueAnalysis::sameValue(a.getStep().front(), b.getStep().front());
-}
-
-/// Return the induction variable of a loop operation (arts::ForOp or
-/// scf::ForOp). Returns a null Value for unsupported loop types or if the
-/// loop body is empty.
+/// Return the induction variable of a loop operation. Returns a null Value for
+/// unsupported loop types or if the loop body is empty.
 Value getLoopInductionVar(Operation *op);
 
 /// Check whether a value is a loop induction variable (i.e., a BlockArgument
@@ -99,9 +76,8 @@ inline bool isLoopInductionVar(Value value) {
 /// from less-than / greater-than comparisons.
 void collectWhileBounds(Value cond, Value iterArg, SmallVector<Value> &bounds);
 
-/// Compute the loop nesting depth of an operation by counting how many
-/// enclosing loop operations (scf::ForOp, scf::ParallelOp, scf::ForallOp,
-/// affine::AffineForOp, omp::WsloopOp, arts::ForOp) surround it.
+/// Compute the loop nesting depth of an operation by counting how many enclosing
+/// loop operations surround it.
 unsigned getLoopDepth(Operation *op);
 
 /// Returns true if the EDT's body contains any loop operations
@@ -109,8 +85,7 @@ unsigned getLoopDepth(Operation *op);
 bool containsLoop(EdtOp edt);
 
 /// Return the nearest enclosing loop-like op that contains the given operation.
-/// Searches for scf::ForOp, affine::AffineForOp, omp::WsloopOp,
-/// scf::ParallelOp, scf::ForallOp, and arts::ForOp.
+/// Searches for loop-like operations and omp.wsloop.
 inline Operation *findNearestLoop(Operation *op) {
   for (Operation *cur = op->getParentOp(); cur; cur = cur->getParentOp()) {
     if (isa<LoopLikeOpInterface>(cur) || isa<omp::WsloopOp>(cur))
@@ -138,12 +113,6 @@ std::optional<int64_t> getStaticTripCount(Operation *loopOp);
 int64_t getRepeatedParentTripProduct(Operation *op,
                                      int64_t maxProduct = 1 << 20);
 
-/// Returns true when a pointwise arts.for carries scalar libm-heavy floating
-/// point work (for example transcendentals or scalar FP helper calls). Fusion
-/// passes use this to avoid mixing such loops with arithmetic-only loops,
-/// which would otherwise suppress vectorization on the simple stages.
-PointwiseLoopComputeClass classifyPointwiseLoopCompute(arts::ForOp loop);
-
 /// Return true when a type is a floating-point type (F16, BF16, F32, F64, F80,
 /// F128) or a vector of one.
 bool hasFloatingPointType(Type type);
@@ -151,15 +120,6 @@ bool hasFloatingPointType(Type type);
 /// Return true when any operand or result of an operation has a floating-point
 /// type.
 bool operationTouchesFloatingPoint(Operation *op);
-
-/// Collect induction variables from a perfectly nested spatial loop nest rooted
-/// at an arts::ForOp.  Descends through nested scf::ForOp / AffineForOp levels
-/// as long as each level contains exactly one nested loop plus only pure
-/// (side-effect-free) operations.  On success, \p ivs contains the IVs from
-/// outermost to innermost, \p spatialBody points to the innermost body block,
-/// and the function returns true.
-bool collectSpatialNestIvs(ForOp artsFor, SmallVector<Value, 4> &ivs,
-                           Block *&spatialBody);
 
 } // namespace arts
 } // namespace mlir

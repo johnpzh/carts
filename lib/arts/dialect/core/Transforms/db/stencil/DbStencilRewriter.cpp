@@ -57,8 +57,8 @@ void DbStencilRewriter::transformAcquire(const DbRewriteAcquire &info,
   /// Stencil rewriter needs both:
   ///   - element offset (for local row rebasing),
   ///   - chunk index (for owned/halo DB selection).
-  /// Prefer explicit offsets for element base. If present, indices carry a
-  /// chunk-index hint from ForLowering (non-uniform worker chunks).
+  /// Prefer explicit offsets for element base. If present, indices carry the
+  /// materialized task chunk hint for non-uniform worker chunks.
   Value elemOffset =
       info.getOffsets().empty()
           ? (info.getIndices().empty() ? Value() : info.getIndices().front())
@@ -937,9 +937,9 @@ void DbStencilRewriter::addHaloAcquireToEdt(DbAcquireOp originalAcq,
   edtBody.addArgument(haloAcq.getPtr().getType(), haloAcq.getLoc());
   Value haloArg = edtBody.getArgument(edtBody.getNumArguments() - 1);
 
-  /// Ensure the halo acquire is released in the task body.
-  /// ForLowering only inserts releases for original dependencies; halo
-  /// dependencies are introduced later by this rewriter.
+  /// Ensure the halo acquire is released in the task body. Halo dependencies
+  /// are introduced later by this rewriter, after the original dependency
+  /// releases have already been materialized.
   bool hasRelease = false;
   for (Operation &op : edtBody.without_terminator()) {
     if (auto release = dyn_cast<DbReleaseOp>(&op)) {

@@ -80,10 +80,6 @@ public:
   /// Invalidate internal caches
   void invalidate() override;
 
-  /// Check if a parallel EDT is fusable: body contains only arts.for ops
-  /// and the yield terminator, no dependencies, no barriers or acquires.
-  static bool isParallelEdtFusable(EdtOp edt);
-
   /// Convenience: get EDT node by op (derives parent func internally).
   EdtNode *getEdtNode(EdtOp op);
 

@@ -520,16 +520,9 @@ struct RaiseMemrefToTensorPass
 
     // ---- Placement: mu_data anchors. ---------------------------------------
     //
-    // We place mu_data ops at the START of the outermost cu_region that
-    // contains the tasks. Placing INSIDE the region (not just before it) is
-    // important for downstream correctness: CreateDbs/ParallelEdtLowering's
-    // `ensureNestedEdtCaptures` walks each EDT and adds every memref-typed
-    // SSA value defined ABOVE the EDT as a dependency. If db_alloc (produced
-    // by lowering mu_data) lived outside the parallel EDT, the parallel EDT
-    // would end up with raw db_alloc ptr/guid deps — which the EDT verifier
-    // rejects (deps must come from db_acquire). Placing mu_data inside the
-    // outer cu_region keeps the DB definitions "inside the parallel EDT",
-    // matching the normal path (where EdtStructuralOpt moves allocas inside).
+    // Place mu_data at the start of the outermost cu_region containing the
+    // tasks so the SDE/Core materializer can keep memory anchors in the same
+    // scheduling scope as the tasks that consume them.
     sde::SdeCuRegionOp outerRegion = getOutermostCuRegion(tasks.front());
     OpBuilder builder(func.getContext());
     if (outerRegion) {

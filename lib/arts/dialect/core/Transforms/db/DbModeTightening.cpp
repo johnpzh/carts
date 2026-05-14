@@ -380,8 +380,7 @@ static bool isInsideRepeatableControl(Operation *op) {
   for (Operation *parent = op->getParentOp(); parent;
        parent = parent->getParentOp()) {
     if (isa<scf::ForOp, scf::WhileOp, scf::ParallelOp, scf::ForallOp,
-            affine::AffineForOp, affine::AffineParallelOp, arts::ForOp>(
-            parent))
+            affine::AffineForOp, affine::AffineParallelOp>(parent))
       return true;
   }
 

@@ -3,7 +3,7 @@
 
 // Verify that SDE authors a blocked distribution advisory for a local
 // reduction loop with a strategy, and that ConvertSdeToArts materializes
-// the advisory as an ARTS distribution kind.
+// the advisory as an ARTS distribution kind on concrete epoch/task IR.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
@@ -15,13 +15,14 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.edt <parallel> <intranode> route(%{{.*}}) attributes {
-// ARTS-SAME: arts.reduction_strategy = "atomic"
+// ARTS: arts.epoch
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
-// ARTS: arts.for(%c0) to(%c128) step(%c1) reduction(%{{.*}} : memref<?xi32>)
-// ARTS: arts.reduction_kinds = [0 : i32]
-// ARTS-SAME: arts.reduction_strategy = "atomic"
+// ARTS: scf.for
+// ARTS: arts.edt <task> <intranode>
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
+// ARTS: memref.alloca
+// ARTS: arts.atomic_add
+// ARTS-NOT: arts.for
 // ARTS-NOT: arts_sde.
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {

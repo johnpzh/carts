@@ -23,33 +23,6 @@ using namespace mlir::arts;
 namespace mlir {
 namespace arts {
 
-SmallVector<ForOp, 2> EdtUtils::getTopLevelForOps(EdtOp edt) {
-  SmallVector<ForOp, 2> result;
-  if (!edt)
-    return result;
-  Block &body = edt.getBody().front();
-  for (Operation &op : body.without_terminator())
-    if (auto forOp = dyn_cast<ForOp>(&op))
-      result.push_back(forOp);
-  return result;
-}
-
-ForOp EdtUtils::getSingleTopLevelFor(EdtOp edt) {
-  if (!edt)
-    return nullptr;
-
-  ForOp result = nullptr;
-  for (Operation &op : edt.getBody().front().without_terminator()) {
-    auto forOp = dyn_cast<ForOp>(&op);
-    if (!forOp)
-      return nullptr;
-    if (result)
-      return nullptr;
-    result = forOp;
-  }
-  return result;
-}
-
 std::pair<EdtOp, BlockArgument>
 EdtUtils::getBlockArgumentForAcquire(DbAcquireOp acquireOp) {
   /// Find the EDT that uses this acquire's pointer result

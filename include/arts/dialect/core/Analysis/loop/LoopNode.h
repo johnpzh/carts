@@ -93,7 +93,6 @@ public:
   bool hasEdt() const;
 
   /// Loop-scoped DB partition analysis, proxied through LoopAnalysis.
-  std::optional<DbAnalysis::LoopDbAccessSummary> getDbAccessSummary() const;
   bool hasDistributedDbContract() const;
   bool hasPeerInferredPartitionDims() const;
 

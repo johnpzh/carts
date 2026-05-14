@@ -258,32 +258,6 @@ void EpochLoweringPass::runOnOperation() {
       edtCreateOp->erase();
     }
 
-    if (needsWait) {
-      SmallVector<EdtCreateOp, 8> localAccumulateCreates;
-      epochOp.walk([&](EdtCreateOp edtCreateOp) {
-        if (edtCreateOp.getEpochGuid() != currentEpoch)
-          return;
-        auto strategy = edtCreateOp->getAttrOfType<StringAttr>(
-            AttrNames::Operation::Contract::ReductionStrategy);
-        if (strategy && strategy.getValue() ==
-                            AttrNames::Operation::Contract::
-                                ReductionStrategyValue::LocalAccumulate)
-          localAccumulateCreates.push_back(edtCreateOp);
-      });
-
-      for (EdtCreateOp edtCreateOp : localAccumulateCreates) {
-        Operation *insertAfter = edtCreateOp.getOperation();
-        while (Operation *next = insertAfter->getNextNode()) {
-          auto recordDep = dyn_cast<RecordDepOp>(next);
-          if (!recordDep || recordDep.getEdtGuid() != edtCreateOp.getGuid())
-            break;
-          insertAfter = next;
-        }
-        AC->setInsertionPointAfter(insertAfter);
-        AC->create<WaitOnEpochOp>(edtCreateOp.getLoc(), currentEpoch);
-      }
-    }
-
     /// Move operations out of the epoch region, tracking where to insert
     /// the wait afterward.
     auto &epochRegionForMove = epochOp.getRegion();

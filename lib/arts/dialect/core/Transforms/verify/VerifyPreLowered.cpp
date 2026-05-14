@@ -6,7 +6,7 @@
 ///
 /// By the end of pre-lowering, high-level structural ops should already be
 /// converted into runtime-facing forms (e.g., edt_create/create_epoch), so
-/// residual arts.edt/arts.for/arts.epoch indicate a lowering boundary bug.
+/// residual arts.edt/arts.epoch indicate a lowering boundary bug.
 ///==========================================================================///
 
 #include "arts/Dialect.h"
@@ -23,8 +23,7 @@ struct VerifyPreLoweredPass
   void runOnOperation() override {
     bool found = false;
     getOperation().walk([&](Operation *op) {
-      if (isa<arts::EdtOp, arts::ForOp, arts::EpochOp, arts::CPSAdvanceOp>(
-              op)) {
+      if (isa<arts::EdtOp, arts::EpochOp, arts::CPSAdvanceOp>(op)) {
         op->emitError(
             "high-level scheduler op survived past pre-lowering step");
         found = true;

@@ -33,7 +33,7 @@ using AttrNames::Operation::ContinuationForEpoch;
 static bool isInsideLoop(Operation *op) {
   Operation *parent = op ? op->getParentOp() : nullptr;
   while (parent) {
-    if (isa<arts::ForOp, scf::ForOp, scf::WhileOp, scf::ParallelOp,
+    if (isa<scf::ForOp, scf::WhileOp, scf::ParallelOp,
             affine::AffineForOp>(parent))
       return true;
     parent = parent->getParentOp();

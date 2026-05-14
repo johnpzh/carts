@@ -98,15 +98,6 @@ static std::optional<RelativeOffsetRange> getSmallLoopOffsetRange(Value value) {
     return std::nullopt;
   }
 
-  if (auto artsFor = dyn_cast<arts::ForOp>(parentOp)) {
-    for (auto [idx, iv] : llvm::enumerate(artsFor.getBody()->getArguments())) {
-      if (blockArg != iv)
-        continue;
-      return buildRange(artsFor.getLowerBound()[idx],
-                        artsFor.getUpperBound()[idx], artsFor.getStep()[idx]);
-    }
-  }
-
   return std::nullopt;
 }
 

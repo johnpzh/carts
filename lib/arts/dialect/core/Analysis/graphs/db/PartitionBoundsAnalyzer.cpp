@@ -951,12 +951,12 @@ bool PartitionBoundsAnalyzer::shouldPreserveDistributedContract(
   };
   bool hasExplicitOwnerDims =
       !contractSummary.contract.spatial.ownerDims.empty();
-  /// ForLowering/H2 rewrites uniform worker tasks to consume an EDT-local
-  /// nested DB pointer. After that rewrite the outer block offset no longer
-  /// appears in the inner memref access expressions, so raw offset matching
-  /// cannot rediscover the worker-local ownership. Keep the explicit block
-  /// contract narrow: only task-scoped uniform workers with explicit owner
-  /// dims and a single EDT-local leaf selection.
+  /// Direct task materialization rewrites uniform workers to consume an
+  /// EDT-local nested DB pointer. After that rewrite the outer block offset no
+  /// longer appears in the inner memref access expressions, so raw offset
+  /// matching cannot rediscover the worker-local ownership. Keep the explicit
+  /// block contract narrow: only task-scoped uniform workers with explicit
+  /// owner dims and a single EDT-local leaf selection.
   bool nestedUniformWorkerAcquire =
       edt && edt.getType() == EdtType::task && hasExplicitOwnerDims &&
       selectsConstantLeafFromNestedDb() && !node->hasIndirectAccess() &&

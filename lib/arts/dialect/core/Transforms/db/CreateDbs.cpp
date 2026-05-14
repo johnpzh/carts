@@ -512,16 +512,6 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
   };
 
   SmallVector<Operation *, 4> candidates;
-  module.walk([&](ForOp forOp) {
-    if (!hasPhysicalDbLayoutPlan(forOp.getOperation()))
-      return WalkResult::advance();
-    if (!compatiblePlanTarget(forOp.getOperation()))
-      return WalkResult::advance();
-    if (!writesAlloc(forOp.getOperation()))
-      return WalkResult::advance();
-    candidates.push_back(forOp.getOperation());
-    return WalkResult::advance();
-  });
   module.walk([&](EdtOp edt) {
     if (!hasPhysicalDbLayoutPlan(edt.getOperation()))
       return WalkResult::advance();
@@ -1193,9 +1183,9 @@ Value CreateDbsPass::findParentAcquireSource(EdtOp edt, Operation *dbAllocOp,
   };
 
   /// Walk outward through enclosing block arguments and look for a handle that
-  /// is already available in scope at the current insertion point.
-  /// This handles nested EDTs inside arts.for/scf.for regions where the
-  /// immediate block has only loop IV arguments.
+  /// is already available in scope at the current insertion point. This handles
+  /// nested EDTs inside scf.for regions where the immediate block has only loop
+  /// IV arguments.
   Block *scanBlock = parentBlock;
   Operation *anchorOp = edt.getOperation();
 

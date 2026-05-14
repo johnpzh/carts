@@ -26,15 +26,6 @@ Value getLoopInductionVar(Operation *op) {
   if (!op)
     return Value();
 
-  if (auto artsFor = dyn_cast<arts::ForOp>(op)) {
-    if (artsFor.getRegion().empty())
-      return Value();
-    Block &block = artsFor.getRegion().front();
-    if (block.getNumArguments() == 0)
-      return Value();
-    return block.getArgument(0);
-  }
-
   if (auto scfFor = dyn_cast<scf::ForOp>(op))
     return scfFor.getInductionVar();
 
@@ -108,20 +99,6 @@ static std::optional<int64_t> getStaticTripCount(scf::ForOp loop) {
   if (!tripCount || !tripCount->isSignedIntN(64))
     return std::nullopt;
   return tripCount->getSExtValue();
-}
-
-static std::optional<int64_t> getStaticTripCount(arts::ForOp loop) {
-  if (!loop || loop.getLowerBound().size() != 1 ||
-      loop.getUpperBound().size() != 1 || loop.getStep().size() != 1)
-    return std::nullopt;
-
-  auto lb = ValueAnalysis::tryFoldConstantIndex(loop.getLowerBound().front());
-  auto ub = ValueAnalysis::tryFoldConstantIndex(loop.getUpperBound().front());
-  auto step = ValueAnalysis::tryFoldConstantIndex(loop.getStep().front());
-  if (!lb || !ub || !step || *step <= 0)
-    return std::nullopt;
-  int64_t span = std::max<int64_t>(0, *ub - *lb);
-  return (span + *step - 1) / *step;
 }
 
 static std::optional<int64_t> getStaticTripCount(LoopLikeOpInterface loop) {
@@ -233,8 +210,6 @@ std::optional<int64_t> getStaticTripCount(Operation *loopOp) {
     return std::nullopt;
   if (auto scfFor = dyn_cast<scf::ForOp>(loopOp))
     return getStaticTripCount(scfFor);
-  if (auto artsFor = dyn_cast<arts::ForOp>(loopOp))
-    return getStaticTripCount(artsFor);
   if (auto affineFor = dyn_cast<affine::AffineForOp>(loopOp))
     return getStaticTripCount(affineFor);
   if (auto wsloop = dyn_cast<omp::WsloopOp>(loopOp))
@@ -286,83 +261,6 @@ bool operationTouchesFloatingPoint(Operation *op) {
       return true;
   }
   return false;
-}
-
-static bool isFusionHostileMathOp(Operation *op) {
-  llvm::StringRef name = op->getName().getStringRef();
-  return name == "math.exp" || name == "math.exp2" || name == "math.expm1" ||
-         name == "math.log" || name == "math.log1p" || name == "math.log2" ||
-         name == "math.log10" || name == "math.sin" || name == "math.cos" ||
-         name == "math.tan" || name == "math.tanh" || name == "math.erf" ||
-         name == "math.powf";
-}
-
-PointwiseLoopComputeClass classifyPointwiseLoopCompute(arts::ForOp loop) {
-  if (!loop)
-    return PointwiseLoopComputeClass::arithmeticOnly;
-
-  PointwiseLoopComputeClass computeClass =
-      PointwiseLoopComputeClass::arithmeticOnly;
-  loop.walk([&](Operation *op) {
-    if (auto call = dyn_cast<func::CallOp>(op)) {
-      if (operationTouchesFloatingPoint(call)) {
-        computeClass = PointwiseLoopComputeClass::scalarCall;
-        return WalkResult::interrupt();
-      }
-      return WalkResult::advance();
-    }
-
-    if (computeClass == PointwiseLoopComputeClass::arithmeticOnly &&
-        isFusionHostileMathOp(op) && operationTouchesFloatingPoint(op))
-      computeClass = PointwiseLoopComputeClass::vectorMath;
-    return WalkResult::advance();
-  });
-  return computeClass;
-}
-
-/// Return true when an operation is considered "pure" for spatial nest
-/// traversal: loop ops, memory ops, and side-effect-free ops are allowed,
-/// while calls are conservatively rejected.
-bool collectSpatialNestIvs(ForOp artsFor, SmallVector<Value, 4> &ivs,
-                           Block *&spatialBody) {
-  if (!artsFor)
-    return false;
-  if (artsFor.getBody()->getNumArguments() == 0)
-    return false;
-  ivs.push_back(artsFor.getBody()->getArgument(0));
-
-  Block *block = artsFor.getBody();
-  while (block) {
-    SmallVector<Operation *, 2> nestedFors;
-    for (Operation &op : block->without_terminator()) {
-      if (isa<scf::ForOp, affine::AffineForOp>(&op)) {
-        nestedFors.push_back(&op);
-        continue;
-      }
-      if (!isPureOp(&op))
-        return false;
-    }
-
-    /// Allow index/scalar setup alongside the single nested spatial loop.
-    /// Real kernels often materialize loop-local arithmetic before descending
-    /// into the next loop, and treating that as a structural mismatch causes
-    /// us to miss reusable stencil families like sw4lite/rhs4sg-base.
-    if (nestedFors.size() != 1)
-      break;
-
-    Operation *nestedLoop = nestedFors.front();
-    if (auto scfFor = dyn_cast<scf::ForOp>(nestedLoop)) {
-      ivs.push_back(scfFor.getInductionVar());
-      block = scfFor.getBody();
-      continue;
-    }
-    auto affineFor = cast<affine::AffineForOp>(nestedLoop);
-    ivs.push_back(affineFor.getInductionVar());
-    block = affineFor.getBody();
-  }
-
-  spatialBody = block;
-  return !ivs.empty() && spatialBody;
 }
 
 } // namespace arts

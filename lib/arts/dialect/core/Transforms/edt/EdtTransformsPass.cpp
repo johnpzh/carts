@@ -17,10 +17,6 @@
 ///              actual data footprint is smaller than the full DB, enabling
 ///              downstream lowering to use arts_add_dependence_at (ESD).
 ///
-///   ET-5:      Reduction strategy selection -- detect scalar reduction
-///              patterns (load-modify-store on single-element inout DBs)
-///              and annotate EDTs with arts.reduction_strategy for lowering.
-///
 ///   ET-6:      Critical path analysis -- compute longest dependency chain
 ///              via topological sort and annotate critical_path_distance.
 ///
@@ -39,19 +35,15 @@
 /// Arts
 #include "arts/Dialect.h"
 #include "arts/dialect/core/Analysis/AnalysisManager.h"
-#include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Analysis/edt/EdtInfo.h"
 #include "arts/dialect/core/Analysis/graphs/base/EdgeBase.h"
 #include "arts/dialect/core/Analysis/graphs/base/NodeBase.h"
 #include "arts/dialect/core/Analysis/graphs/edt/EdtGraph.h"
 #include "arts/dialect/core/Analysis/graphs/edt/EdtNode.h"
 #include "arts/utils/DbUtils.h"
-#include "arts/utils/EdtUtils.h"
-#include "arts/utils/LoopUtils.h"
 #include "arts/utils/LoweringContractUtils.h"
 #include "arts/utils/OperationAttributes.h"
 #include "arts/utils/RemovalUtils.h"
-#include "arts/utils/ValueAnalysis.h"
 /// Statistics
 #include "llvm/ADT/Statistic.h"
 /// Debug
@@ -71,9 +63,6 @@ ARTS_DEBUG_SETUP(edt_transforms);
 static llvm::Statistic numGranularityAnnotations{
     "edt_transforms", "NumGranularityAnnotations",
     "Number of ET-1 granularity annotations"};
-static llvm::Statistic numReductionAnnotations{
-    "edt_transforms", "NumReductionAnnotations",
-    "Number of ET-5 reduction strategy annotations"};
 static llvm::Statistic numNarrowedDeps{
     "edt_transforms", "NumNarrowedDeps",
     "Number of ET-3 narrowed dependency chains"};
@@ -117,12 +106,6 @@ private:
   /// actual data footprint is smaller than the full DB.
   /// Returns the number of narrowed dependencies.
   unsigned narrowDepChains();
-
-  /// ET-5: Detect scalar reduction patterns on single-element inout DBs
-  /// and annotate EDTs with a strategy recommendation (atomic/tree/
-  /// local_accumulate) for lowering to consume.
-  /// Returns the number of annotated EDTs.
-  unsigned selectReductionStrategies();
 
   /// EXT-EDT-2: Walk all EDTs and remove unused dependency slots.
   /// Returns the number of eliminated dependencies.
@@ -187,20 +170,6 @@ void EdtTransformsPass::runOnOperation() {
                                  << " EDTs with estimated task cost");
 
   ///===--------------------------------------------------------------------===///
-  /// ET-5: Reduction strategy selection
-  ///
-  /// Detect scalar reduction patterns (load-modify-store on single-element
-  /// inout DBs) and annotate each matching EDT with an
-  /// arts.reduction_strategy attribute recommending atomic, tree, or
-  /// local_accumulate lowering.
-  ///===--------------------------------------------------------------------===///
-  unsigned et5Count = selectReductionStrategies();
-  numReductionAnnotations += et5Count;
-  if (et5Count > 0)
-    ARTS_INFO("ET-5: annotated " << et5Count
-                                 << " EDTs with reduction strategy");
-
-  ///===--------------------------------------------------------------------===///
   /// ET-3: Dep chain narrowing
   ///
   /// For stencil and wavefront EDTs, identify neighbor halo dependencies
@@ -245,9 +214,6 @@ EdtTransformsPass::ModuleEdtMetrics EdtTransformsPass::gatherModuleEdtFacts() {
     ARTS_DEBUG("Processing function: " << func.getName());
 
     func.walk([&](EdtOp edt) {
-      if (edt->hasAttr(AttrNames::Operation::Contract::ReductionStrategy))
-        return;
-
       EdtNode *node = edtGraph.getEdtNode(edt);
       if (!node)
         return;
@@ -406,132 +372,6 @@ unsigned EdtTransformsPass::analyzeCriticalPath(func::FuncOp func,
   }
 
   return annotated;
-}
-
-///===----------------------------------------------------------------------===///
-/// ET-5: Reduction strategy selection
-///===----------------------------------------------------------------------===///
-
-unsigned EdtTransformsPass::selectReductionStrategies() {
-  /// ForLowering now consumes this attribute for the current narrow subset.
-  /// Atomic uses an atomic result combine for integer add reductions, tree
-  /// uses a pairwise combine loop, and local_accumulate keeps the existing
-  /// linear per-worker combine path. Broader parity across reduction kinds
-  /// and topologies is still future work.
-  ModuleOp module = getOperation();
-  unsigned count = 0;
-  int64_t workerCount = getRuntimeTotalWorkers(module).value_or(0);
-
-  module.walk([&](func::FuncOp func) {
-    auto &edtGraph = AM->getEdtAnalysis().getOrCreateEdtGraph(func);
-    if (edtGraph.size() == 0)
-      return;
-
-    func.walk([&](EdtOp edt) {
-      EdtNode *node = edtGraph.getEdtNode(edt);
-      if (!node)
-        return;
-
-      /// SDE owns reduction strategy selection for structured loops; if it
-      /// already stamped a decision via SdeToArtsPatterns, do not overwrite.
-      if (edt->hasAttr(AttrNames::Operation::Contract::ReductionStrategy))
-        return;
-
-      /// Walk each dependency acquire for this EDT.
-      for (Value dep : edt.getDependencies()) {
-        auto acquire = dep.getDefiningOp<DbAcquireOp>();
-        if (!acquire)
-          continue;
-
-        /// Only consider inout acquires — those are the ones that serialize.
-        if (acquire.getMode() != ArtsMode::inout)
-          continue;
-
-        /// Single-element (size=1) DB — the common scalar reduction pattern.
-        if (!DbAnalysis::hasSingleSize(acquire.getOperation()))
-          continue;
-
-        /// Trace back to the DbAllocOp and verify it is also single-element.
-        auto *rootOp = DbUtils::getUnderlyingDbAlloc(acquire.getSourcePtr());
-        auto allocOp = dyn_cast_or_null<DbAllocOp>(rootOp);
-        if (!allocOp)
-          continue;
-        if (!DbAnalysis::isCoarseGrained(allocOp))
-          continue;
-
-        /// Find the block argument inside the EDT body for this acquire.
-        auto [edtForArg, blockArg] = EdtUtils::getBlockArgumentForAcquire(acquire);
-        if (!edtForArg || edtForArg != edt || !blockArg)
-          continue;
-
-        /// Look for a DbRefOp at index [0] on the block argument for the
-        /// memref.
-        DbRefOp dbRef = nullptr;
-        for (Operation *user : blockArg.getUsers()) {
-          if (isa<DbReleaseOp>(user))
-            continue;
-          auto ref = dyn_cast<DbRefOp>(user);
-          if (!ref)
-            continue;
-          /// Accept only zero-index refs (single element access).
-          if (!ref.getIndices().empty() &&
-              !llvm::all_of(ref.getIndices(), [](Value v) {
-                return ValueAnalysis::isZeroConstant(v);
-              }))
-            continue;
-          if (dbRef) {
-            /// Multiple DbRefOps — ambiguous; bail out conservatively.
-            dbRef = nullptr;
-            break;
-          }
-          dbRef = ref;
-        }
-
-        if (!dbRef)
-          continue;
-
-        /// Match the load-modify-store reduction pattern.
-        auto reductionKind =
-            EdtAnalysis::matchLoadModifyStore(dbRef.getResult(), edt.getBody());
-        if (!reductionKind)
-          continue;
-
-        /// Select reduction strategy.
-        StringRef strategy;
-        bool isLoopNested = containsLoop(edt);
-        namespace ReductionStrategyValue =
-            AttrNames::Operation::Contract::ReductionStrategyValue;
-
-        if (isLoopNested) {
-          strategy = ReductionStrategyValue::LocalAccumulate;
-        } else if (EdtAnalysis::isAtomicCapable(*reductionKind)) {
-          // Atomic contention scales linearly with workers; tree scales as
-          // log2(workers). Pick tree once worker count is large enough.
-          strategy = workerCount > 4 ? ReductionStrategyValue::Tree
-                                     : ReductionStrategyValue::Atomic;
-        } else {
-          strategy = ReductionStrategyValue::Tree;
-        }
-
-        /// Stamp the attribute on the EdtOp.
-        edt->setAttr(AttrNames::Operation::Contract::ReductionStrategy,
-                     StringAttr::get(edt.getContext(), strategy));
-        ++count;
-
-        ARTS_DEBUG("ET-5: EDT [" << node->getHierId() << "]"
-                                 << " reduction="
-                                 << EdtAnalysis::reductionOpName(*reductionKind)
-                                 << " strategy=" << strategy
-                                 << " workerCount=" << workerCount
-                                 << " loopNested=" << isLoopNested);
-
-        /// One reduction annotation per EDT; first match determines strategy.
-        break;
-      }
-    });
-  });
-
-  return count;
 }
 
 ///===----------------------------------------------------------------------===///

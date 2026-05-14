@@ -272,9 +272,6 @@ struct RuntimeQueryPattern : public ArtsToLLVMPattern<RuntimeQueryOp> {
     case RuntimeQueryKind::currentNode:
       result = AC->getCurrentNode(op.getLoc());
       break;
-    case RuntimeQueryKind::parallelWorkerId:
-      return op.emitOpError("parallel_worker_id should have been replaced "
-                            "by ParallelEdtLowering before LLVM lowering");
     }
     rewriter.replaceOp(op, result);
     ++numMiscOpsConverted;

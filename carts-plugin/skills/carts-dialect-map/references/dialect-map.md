@@ -31,8 +31,9 @@ Paths:
 - `lib/arts/dialect/core/`
 - tests: `lib/arts/dialect/core/test/`
 
-Purpose: high-level ARTS orchestration IR: EDTs, DBs, epochs, `arts.for`,
-barriers, atomics, runtime queries, and lowering contracts.
+Purpose: high-level ARTS orchestration IR: EDTs, DBs, epochs, implementation
+`scf.for` loops inside tasks/dispatch, barriers, atomics, runtime queries, and
+lowering contracts.
 
 Limits: Core should not become a runtime ABI shim or a place to patch frontend
 semantic loss. It should own orchestration invariants and analysis-backed

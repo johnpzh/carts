@@ -21,7 +21,7 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.edt <parallel> <internode> route(%{{.*}}) attributes {
+// ARTS: arts.epoch attributes {
 // ARTS-SAME: depPattern = #arts.dep_pattern<cross_dim_stencil_3d>
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
 // ARTS-SAME: planHaloShape = [1, 1, 1]
@@ -29,10 +29,12 @@
 // ARTS-SAME: planLogicalWorkerSlice = [4, 8, 8, 3]
 // ARTS-SAME: planOwnerDims = [0, 1, 2]
 // ARTS-SAME: planPhysicalBlockShape = [4, 8, 8, 3]
-// ARTS-SAME: stencil_block_shape = [4, 8, 8]
+// ARTS-SAME: stencil_block_shape = [4, 8, 8, 3]
+// ARTS-SAME: stencil_max_offsets = [1, 1, 1, 0]
+// ARTS-SAME: stencil_min_offsets = [-1, -1, -1, 0]
 // ARTS-SAME: stencil_owner_dims = [0, 1, 2]
-// ARTS: arts.for(%c1, %c1, %c1, %c0) to(%c15, %c15, %c15, %c3) step(%c1, %c1, %c1, %c1) {
-// ARTS: } {arts.pattern_revision = 1 : i64
+// ARTS: arts.edt <task>
+// ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: planLogicalWorkerSlice = [4, 8, 8, 3]
 // ARTS-SAME: planOwnerDims = [0, 1, 2]
 // ARTS-SAME: planPhysicalBlockShape = [4, 8, 8, 3]

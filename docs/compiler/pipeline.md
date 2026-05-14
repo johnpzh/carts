@@ -5,8 +5,8 @@ If this file disagrees with the compiler source or `dekk carts pipeline --json`,
 the live compiler wins.
 
 For layer-specific optimization planning, see [`sde/`](./sde/),
-[`core/`](./core/), and [`rt/`](./rt/). For the target split that removes Core
-`arts.for` and keeps SDE/Core/RT responsibilities separate, see
+[`core/`](./core/), and [`rt/`](./rt/). For the split that removed the Core
+loop carrier and keeps SDE/Core/RT responsibilities separate, see
 [`dialect-layering-vision.md`](./dialect-layering-vision.md).
 
 ## CLI Introspection
@@ -26,15 +26,11 @@ Core stages:
 4. `edt-transforms`
 5. `create-dbs`
 6. `db-opt`
-7. `edt-opt`
-8. `concurrency`
-9. `edt-distribution`
-10. `post-distribution-cleanup`
-11. `post-db-refinement`
-12. `late-concurrency-cleanup`
-13. `epochs`
-14. `pre-lowering`
-15. `arts-to-llvm`
+7. `post-db-refinement`
+8. `late-concurrency-cleanup`
+9. `epochs`
+10. `pre-lowering`
+11. `arts-to-llvm`
 
 `--pipeline` also accepts the sentinel `complete`. `--start-from` accepts core
 stages only.
@@ -95,6 +91,7 @@ TensorCleanup
 TokenModeRefine
 ConvertSdeToArts
 VerifySdeLowered
+VerifyCoreObjectsOnly
 DeadCodeElimination
 CSE
 VerifyEdtCreated
@@ -114,9 +111,7 @@ EdtPtrRematerialization
 ### `create-dbs`
 
 ```text
-DistributedHostLoopOutlining (conditional)
 CreateDbs
-CSE (bridge cleanup, conditional)
 PolygeistCanonicalize
 CSE
 SymbolDCE
@@ -131,46 +126,6 @@ DbModeTightening
 PolygeistCanonicalize
 CSE
 Mem2Reg
-```
-
-### `edt-opt`
-
-```text
-PolygeistCanonicalize
-EdtStructuralOpt(runAnalysis=true)
-LoopFusion
-CSE
-```
-
-### `concurrency`
-
-```text
-PolygeistCanonicalize
-Concurrency
-ForOpt
-PolygeistCanonicalize
-```
-
-### `edt-distribution`
-
-```text
-EdtDistribution
-EdtOrchestrationOpt
-ForLowering
-VerifyForLowered
-```
-
-### `post-distribution-cleanup`
-
-```text
-EdtStructuralOpt(runAnalysis=false)
-DeadCodeElimination
-PolygeistCanonicalize
-CSE
-EdtStructuralOpt(runAnalysis=false)
-EpochOpt
-PolygeistCanonicalize
-CSE
 ```
 
 ### `post-db-refinement`
@@ -210,8 +165,6 @@ PolygeistCanonicalize
 
 ```text
 EdtAllocaSinking
-ParallelEdtLowering
-EpochOpt (conditional)
 PolygeistCanonicalize
 CSE
 DbLowering
@@ -256,10 +209,8 @@ VerifyLowered
 - `openmp-to-arts` depends on `initial-cleanup`.
 - `edt-transforms` depends on `openmp-to-arts`.
 - `create-dbs` depends on `openmp-to-arts`.
-- `db-opt`, `edt-opt`, and `concurrency` depend on `create-dbs`.
-- `edt-distribution` depends on `concurrency`.
-- `post-distribution-cleanup` and `post-db-refinement` depend on
-  `edt-distribution`.
+- `db-opt` depends on `create-dbs`.
+- `post-db-refinement` depends on `db-opt`.
 - `late-concurrency-cleanup` depends on `post-db-refinement`.
 - `pre-lowering` depends on `epochs` and `late-concurrency-cleanup`.
 - `arts-to-llvm` depends on `pre-lowering`.

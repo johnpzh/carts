@@ -18,38 +18,37 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.edt <parallel> <intranode> route(%{{.*}}) attributes {
+// ARTS: arts.epoch attributes {
 // ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
 // ARTS-SAME: planOwnerDims = [0]
 // ARTS-SAME: planPhysicalBlockShape = [4, 64]
-// ARTS-SAME: stencil_block_shape = [4]
-// ARTS-SAME: stencil_max_offsets = [1]
-// ARTS-SAME: stencil_min_offsets = [-1]
+// ARTS-SAME: stencil_block_shape = [4, 64]
+// ARTS-SAME: stencil_max_offsets = [1, 1]
+// ARTS-SAME: stencil_min_offsets = [-1, -1]
 // ARTS-SAME: stencil_owner_dims = [0]
 // ARTS-SAME: stencil_spatial_dims = [0, 1]
 // ARTS-SAME: stencil_supported_block_halo
-// ARTS-SAME: stencil_write_footprint = [1]
-// ARTS: arts.for(%c1) to(%c63) step(%c1) {
-// ARTS: } {arts.pattern_revision = 1 : i64
+// ARTS-SAME: stencil_write_footprint = [1, 1]
+// ARTS: arts.edt <task>
+// ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
 // ARTS-SAME: planOwnerDims = [0]
 // ARTS-SAME: planPhysicalBlockShape = [4, 64]
-// ARTS-SAME: stencil_block_shape = [4]
-// ARTS-SAME: stencil_max_offsets = [1]
-// ARTS-SAME: stencil_min_offsets = [-1]
+// ARTS-SAME: stencil_block_shape = [4, 64]
+// ARTS-SAME: stencil_max_offsets = [1, 1]
+// ARTS-SAME: stencil_min_offsets = [-1, -1]
 // ARTS-SAME: stencil_owner_dims = [0]
 // ARTS-SAME: stencil_spatial_dims = [0, 1]
 // ARTS-SAME: stencil_supported_block_halo
-// ARTS-SAME: stencil_write_footprint = [1]
+// ARTS-SAME: stencil_write_footprint = [1, 1]
 // ARTS: func.func @in_place_neighbor_stencil
-// ARTS: arts.edt <parallel> <intranode> route(%{{.*}}) attributes {
+// ARTS: arts.epoch attributes {
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
 // ARTS-NOT: planPhysicalBlockShape
-// ARTS: arts.for(%c1) to(%c63) step(%c1) {
-// ARTS: } {
+// ARTS: arts.edt <task>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
 // ARTS-NOT: arts_sde.
 

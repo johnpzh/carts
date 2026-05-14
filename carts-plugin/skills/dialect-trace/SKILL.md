@@ -32,10 +32,10 @@ and destroyed.
 C/OMP source
   → [Stage 3]    inside openmp-to-arts: OMP → SDE (ConvertOpenMPToSde) →
                  SDE transforms → SDE → Core (ConvertSdeToArts)
-  → [Stage 4-14] Core transforms (arts.edt, arts.db_*, arts.for, ...)
-  → [Stage 15]   Core → RT lowering in pre-lowering
+  → [Stage 4-9]  Core transforms (arts.edt, arts.db_*, arts.epoch, scf.for)
+  → [Stage 10]   Core → RT lowering in pre-lowering
                  (EdtLowering.cpp, EpochLowering.cpp, DbLowering.cpp)
-  → [Stage 16]   RT → LLVM lowering in arts-to-llvm
+  → [Stage 11]   RT → LLVM lowering in arts-to-llvm
                  (ConvertArtsToLLVM + rt-specific RuntimeCallOpt etc.)
 ```
 
@@ -44,23 +44,22 @@ C/OMP source
 | Verifier | After Stage | Checks |
 |----------|-------------|--------|
 | VerifySdeLowered | 3 (openmp-to-arts) | No SDE ops survive |
+| VerifyCoreObjectsOnly | 3 (openmp-to-arts) | No Core loop carrier or semantic parallel EDT survives |
 | VerifyEdtCreated | 3 (openmp-to-arts) | EDTs created from OMP regions |
-| VerifyForLowered | 9 (edt-distribution) | arts.for lowered after distribution |
-| VerifyPreLowered | 15 (pre-lowering) | No arts.edt/epoch/for/db_* survive |
-| VerifyLowered | 16 (arts-to-llvm) | No ARTS ops survive |
+| VerifyPreLowered | 10 (pre-lowering) | No arts.edt/epoch/db_* survive |
+| VerifyLowered | 11 (arts-to-llvm) | No ARTS ops survive |
 
 ## Op Lifecycle Quick Reference
 
 ### Core Ops
 | Op | Created | Lowered | Stages Active |
 |----|---------|---------|---------------|
-| `arts.edt` | openmp-to-arts (3) | pre-lowering (15) | 3-15 |
-| `arts.db_alloc` | create-dbs (5) | pre-lowering (15) | 5-15 |
-| `arts.db_acquire` | create-dbs (5) | pre-lowering (15) | 5-15 |
-| `arts.db_ref` | create-dbs (5) | pre-lowering (15) | 5-15 |
-| `arts.for` | openmp-to-arts (3) | edt-distribution (9) | 3-9 |
-| `arts.epoch` | epochs (14) | pre-lowering (15) | 14-15 |
-| `arts.barrier` | openmp-to-arts (3) | epochs (14) | 3-14 |
+| `arts.edt` | openmp-to-arts (3) | pre-lowering (10) | 3-10 |
+| `arts.db_alloc` | create-dbs (5) | pre-lowering (10) | 5-10 |
+| `arts.db_acquire` | create-dbs (5) | pre-lowering (10) | 5-10 |
+| `arts.db_ref` | create-dbs (5) | pre-lowering (10) | 5-10 |
+| `arts.epoch` | openmp-to-arts (3) or epochs (9) | pre-lowering (10) | 3-10 |
+| `arts.barrier` | openmp-to-arts (3) | epochs (9) | 3-9 |
 
 ### RT Ops
 | Op | Created | Lowered | Stages Active |

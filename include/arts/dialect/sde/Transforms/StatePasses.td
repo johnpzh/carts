@@ -51,16 +51,15 @@ def RaiseToLinalg : Pass<"raise-to-linalg", "mlir::ModuleOp"> {
     - reduction: has reduction iterators with accumulation pattern
 
     The pass also stamps an SDE-owned classification on the source loop so
-    SDE->ARTS can recover contracts even when the loop stays on the fallback
-    path.
+    SDE->ARTS can materialize the matching Core contracts directly.
 
     Today, only the elementwise/matmul-style subset is materialized as a
-    linalg.generic carrier. Stencil/reduction bodies currently stay on the
-    stamped-attribute fallback path.
+    linalg.generic carrier. Stencil/reduction bodies keep their SDE loop shape
+    and explicit plan attributes until direct Core materialization.
 
     ConvertSdeToArts consumes the transient linalg.generic ops, stamps pattern
-    contracts on the created arts.for, and erases the carriers so downstream
-    passes continue on loop/memref IR.
+    contracts on generated Core EDT/epoch/DB operations, and erases the
+    carriers so downstream passes continue on Core object IR.
   }];
   let dependentDialects = ["::mlir::memref::MemRefDialect",
                            "::mlir::func::FuncDialect",

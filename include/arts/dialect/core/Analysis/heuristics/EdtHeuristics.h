@@ -20,11 +20,6 @@
 namespace mlir {
 namespace arts {
 
-struct ParallelEdtFusionDecision {
-  bool shouldFuse = false;
-  std::string rationale;
-};
-
 class EdtHeuristics : public ArtsAnalysis {
 public:
   explicit EdtHeuristics(AnalysisManager &manager) : ArtsAnalysis(manager) {}
@@ -35,14 +30,7 @@ public:
   EdtDistributionKind chooseKind(const DistributionStrategy &strategy,
                                  EdtDistributionPattern pattern) const;
   ParallelismDecision resolveParallelism() const;
-  std::optional<WorkerConfig> resolveWorkerConfig(EdtOp parallelEdt) const;
-  DistributionStrategy resolveLoweringStrategy(EdtOp originalParallel,
-                                               ForOp forOp) const;
-  LoopCoarseningDecision
-  computeLoopCoarseningDecision(ForOp forOp,
-                                const WorkerConfig &workerCfg) const;
-  ParallelEdtFusionDecision evaluateParallelEdtFusion(EdtOp first,
-                                                      EdtOp second) const;
+  std::optional<WorkerConfig> resolveWorkerConfig(EdtOp edt) const;
 
 private:
   const RuntimeConfig &getRuntimeConfig() const;

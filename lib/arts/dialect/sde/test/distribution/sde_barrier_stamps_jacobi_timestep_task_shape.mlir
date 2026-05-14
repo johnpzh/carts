@@ -19,13 +19,16 @@
 // CHECK-SAME: repetitionStructure = #arts_sde.repetition_structure<full_timestep>
 // CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // CHECK: func.func @jacobi_pair
-// CHECK: arts.edt <parallel> <intranode> route(%{{.*}}) attributes {
+// CHECK: arts.epoch attributes {
+// CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
+// CHECK: arts.edt <task>
+// CHECK-SAME: depPattern = #arts.dep_pattern<uniform>
 // CHECK-SAME: no_verify = #arts.no_verify
-// CHECK: depPattern = #arts.dep_pattern<uniform>
 // CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
 // CHECK: arts.barrier
 // CHECK-SAME: barrierReason = #arts.barrier_reason<timestep_stage_boundary>
-// CHECK: depPattern = #arts.dep_pattern<jacobi_alternating_buffers>
+// CHECK: arts.edt <task>
+// CHECK-SAME: depPattern = #arts.dep_pattern<jacobi_alternating_buffers>
 // CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
 // CHECK-NOT: arts_sde.
 

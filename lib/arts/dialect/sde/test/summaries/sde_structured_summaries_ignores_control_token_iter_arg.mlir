@@ -16,7 +16,7 @@
 // CHECK-SAME: physicalOwnerDims = [0]
 // CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // CHECK: func.func @control_token_elementwise
-// CHECK: arts.edt <parallel>
+// CHECK: arts.epoch
 // CHECK-SAME: depPattern = #arts.dep_pattern<uniform>
 // CHECK-NOT: arts_sde.
 

@@ -8,8 +8,8 @@ effect summaries, task shape, and physical DB layout policy before
 until SDE/Core plans are present and traces still show launch, CPS, dependency,
 or runtime scheduling overhead.
 
-For the target dialect split, including SDE logical-worker planning and the
-migration away from Core `arts.for`, see
+For the current dialect split, including SDE logical-worker planning after the
+removal of the Core loop carrier, see
 [`../dialect-layering-vision.md`](../dialect-layering-vision.md). SDE should
 model logical worker capacity, not ARTS nodes, routes, workers-per-node, or
 runtime API queries.

@@ -333,8 +333,7 @@ void EdtLoweringPass::gatherLowerableTaskEdts(
     SmallVectorImpl<EdtOp> &taskEdts) {
   module.walk<WalkOrder::PostOrder>([&](EdtOp edtOp) {
     /// Demote any remaining non-task EDTs (e.g., single) so we can lower
-    /// them uniformly. Parallel EDTs should have been handled by
-    /// ParallelEdtLowering already.
+    /// them uniformly.
     if (edtOp.getType() != EdtType::task) {
       ARTS_DEBUG("Demoting non-task EDT to task: " << edtOp);
       ++numEdtsDemotedToTask;
@@ -527,11 +526,6 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
   if (auto depSchema = edtOp->getAttrOfType<DenseI64ArrayAttr>(
           AttrNames::Operation::LaunchState::DepSchema))
     outlineOp->setAttr(AttrNames::Operation::LaunchState::DepSchema, depSchema);
-  if (auto reductionStrategy = edtOp->getAttrOfType<StringAttr>(
-          AttrNames::Operation::Contract::ReductionStrategy))
-    outlineOp->setAttr(AttrNames::Operation::Contract::ReductionStrategy,
-                       reductionStrategy);
-
   int64_t baseId = getArtsId(edtOp);
   if (!baseId)
     baseId = idRegistry.getOrCreate(edtOp.getOperation());

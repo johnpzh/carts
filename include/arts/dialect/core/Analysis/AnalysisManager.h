@@ -47,10 +47,6 @@ public:
   DbHeuristics &getDbHeuristics();
   EdtHeuristics &getEdtHeuristics();
 
-  /// Unified analysis queries spanning EDT and DB analyses.
-  std::optional<DbAnalysis::LoopDbAccessSummary>
-  getLoopDbAccessSummary(Operation *loopOp);
-
   /// Invalidate and rebuild DB graphs for all functions in the module.
   void invalidateAndRebuildGraphs(ModuleOp module);
 

@@ -5,11 +5,10 @@
 
 // CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // CHECK: func.func @main
-// CHECK: arts.edt <parallel> <intranode> route(%{{.*}}) attributes {
+// CHECK: arts.epoch attributes {
 // CHECK-SAME: planAsyncStrategy = #arts.plan_async_strategy<advance_edt>
 // CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
-// CHECK: arts.for(%c0) to(%c8) step(%c1) {
-// CHECK: } {
+// CHECK: arts.edt <task>
 // CHECK-SAME: planAsyncStrategy = #arts.plan_async_strategy<advance_edt>
 // CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
 // CHECK-NOT: arts_sde.

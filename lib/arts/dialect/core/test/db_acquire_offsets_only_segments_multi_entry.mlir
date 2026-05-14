@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --arts-config %arts_config --start-from concurrency --pipeline concurrency | %FileCheck %s
+// RUN: %carts-compile %s --arts-config %arts_config --start-from initial-cleanup --pipeline initial-cleanup | %FileCheck %s
 
 // Offsets/sizes-only partition entries are valid stencil/block metadata.
 // They must remain multi-entry even when partition_indices_segments is absent.

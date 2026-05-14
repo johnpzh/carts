@@ -13,9 +13,9 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.edt <parallel> <internode> route(%{{.*}}) attributes {
-// ARTS: arts.for(%c0) to(%c128) step(%{{.+}}) {
-// ARTS: } {arts.pattern_revision = 1 : i64
+// ARTS: arts.epoch attributes {
+// ARTS: arts.edt <task>
+// ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: depPattern = #arts.dep_pattern<uniform>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<uniform>
 

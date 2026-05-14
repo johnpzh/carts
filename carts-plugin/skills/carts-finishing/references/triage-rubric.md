@@ -39,12 +39,12 @@ Each verification pass is a freeze point. If barrier X passes but barrier Y fail
 
 | Barrier | File | Asserts | Failure severity |
 |---|---|---|---|
-| `VerifySdeLowered` | `lib/arts/dialect/sde/Verify/VerifySdeLowered.cpp` | No `arts_sde.*` ops survive stage 3. No transient linalg/tensor carriers nested in `arts.for`. | Fatal |
+| `VerifySdeLowered` | `lib/arts/dialect/sde/Verify/VerifySdeLowered.cpp` | No `arts_sde.*` ops survive stage 3. No transient linalg/tensor carriers survive the SDE/Core boundary. | Fatal |
+| `VerifyCoreObjectsOnly` | `lib/arts/dialect/core/Transforms/verify/VerifyCoreObjectsOnly.cpp` | No Core loop carrier or semantic parallel EDT survives stage 3. Core contains runtime-shaped EDT/DB/epoch objects plus implementation `scf.for`. | Fatal |
 | `VerifyEdtCreated` | `lib/arts/dialect/core/Transforms/verify/VerifyEdtCreated.cpp` | At least one `arts.edt` exists post-OpenMP conversion. | Warning |
-| `VerifyForLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyForLowered.cpp` | No `arts.for` survives stage 12. All become `scf.for` + dep wiring. | Fatal |
-| `VerifyDbLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyDbLowered.cpp` | No `arts.db_alloc` / `db_acquire` / `db_release` survive stage 13. | Fatal |
-| `VerifyEpochLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyEpochLowered.cpp` | No `arts.epoch` survives stage 14. All become `arts_rt.create_epoch` + `wait_on_epoch`. | Fatal |
-| `VerifyEdtLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyEdtLowered.cpp` | No `arts.edt` survives stage 15. All lower to `arts_rt.edt_create` + pack. | Fatal |
+| `VerifyDbLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyDbLowered.cpp` | No `arts.db_alloc` / `db_acquire` / `db_release` survive pre-lowering. | Fatal |
+| `VerifyEpochLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyEpochLowered.cpp` | No `arts.epoch` survives pre-lowering. All become `arts_rt.create_epoch` + `wait_on_epoch`. | Fatal |
+| `VerifyEdtLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyEdtLowered.cpp` | No `arts.edt` survives pre-lowering. All lower to `arts_rt.edt_create` + pack. | Fatal |
 | `VerifyPreLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyPreLowered.cpp` | IR ready for codegen. Param packs, dep routing, CPS attrs all consistent. | Fatal |
 | `VerifyLowered` | `lib/arts/dialect/rt/Transforms/VerifyLowered.cpp` | No `arts.*` or `arts_rt.*` ops survive post-LLVM lowering. | Fatal |
 

@@ -41,6 +41,8 @@ ArtsMode combineAccessModes(ArtsMode mode1, ArtsMode mode2);
 Value createConstantIndex(OpBuilder &builder, Location loc, int64_t val);
 Value createZeroIndex(OpBuilder &builder, Location loc);
 Value createOneIndex(OpBuilder &builder, Location loc);
+Value createCeilDivUI(OpBuilder &builder, Location loc, Value numerator,
+                      Value denominator);
 
 /// Route sentinel used by the ARTS runtime to mean "run/create on the current
 /// node" when no explicit destination rank is requested.

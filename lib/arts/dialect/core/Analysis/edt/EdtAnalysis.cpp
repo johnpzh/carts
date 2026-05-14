@@ -44,7 +44,6 @@ void EdtAnalysis::analyze() {
 
 void EdtAnalysis::analyzeFunc(func::FuncOp func) {
   unsigned edtIndex = 0;
-  auto &analysisManager = getAnalysisManager();
   EdtGraph &edtGraph = getOrCreateEdtGraph(func);
   func.walk([&](EdtOp edt) {
     auto edtNode = edtGraph.getEdtNode(edt);
@@ -57,16 +56,14 @@ void EdtAnalysis::analyzeFunc(func::FuncOp func) {
     /// Compute max loop depth within the EDT body.
     unsigned maxDepth = 0;
     edt.getBody().walk([&](Operation *op) {
-      if (!isa<scf::ForOp, affine::AffineForOp, scf::ParallelOp, arts::ForOp>(
-              op))
+      if (!isa<scf::ForOp, affine::AffineForOp, scf::ParallelOp>(op))
         return;
       unsigned depth = 0;
       for (Operation *parent = op->getParentOp(); parent;
            parent = parent->getParentOp()) {
         if (parent == edt.getOperation())
           break;
-        if (isa<scf::ForOp, affine::AffineForOp, scf::ParallelOp, arts::ForOp>(
-                parent))
+        if (isa<scf::ForOp, affine::AffineForOp, scf::ParallelOp>(parent))
           ++depth;
       }
       maxDepth = std::max(maxDepth, depth + 1);
@@ -76,38 +73,6 @@ void EdtAnalysis::analyzeFunc(func::FuncOp func) {
     info.loopDistributionPatterns.clear();
     info.dominantDistributionPattern = EdtDistributionPattern::unknown;
 
-    bool sawLoop = false;
-    bool mixed = false;
-    EdtDistributionPattern summary = EdtDistributionPattern::unknown;
-
-    edt.walk([&](arts::ForOp forOp) {
-      if (forOp->getParentOfType<EdtOp>() != edt)
-        return;
-      DbAnalysis::LoopDbAccessSummary loopAccessSummary;
-      if (auto summary =
-              analysisManager.getLoopDbAccessSummary(forOp.getOperation()))
-        loopAccessSummary = *summary;
-      for (auto &[allocOp, pattern] : loopAccessSummary.allocPatterns) {
-        auto it = allocPatternByOp.find(allocOp);
-        if (it == allocPatternByOp.end()) {
-          allocPatternByOp[allocOp] = pattern;
-        } else {
-          it->second = DbUtils::mergeAccessPattern(it->second, pattern);
-        }
-      }
-
-      EdtDistributionPattern pattern = loopAccessSummary.distributionPattern;
-      info.loopDistributionPatterns[forOp.getOperation()] = pattern;
-      if (!sawLoop) {
-        summary = pattern;
-        sawLoop = true;
-      } else if (summary != pattern) {
-        mixed = true;
-      }
-    });
-
-    if (sawLoop && !mixed)
-      info.dominantDistributionPattern = summary;
     edtPatternByOp[edt.getOperation()] = info.dominantDistributionPattern;
   });
 }
@@ -220,22 +185,6 @@ bool EdtAnalysis::invalidateGraph(func::FuncOp func) {
     return true;
   }
   return false;
-}
-
-bool EdtAnalysis::isParallelEdtFusable(EdtOp edt) {
-  if (edt.getType() != arts::EdtType::parallel)
-    return false;
-  if (!edt.getDependencies().empty())
-    return false;
-  Block &body = edt.getBody().front();
-  for (Operation &op : body) {
-    if (isa<arts::ForOp>(&op))
-      continue;
-    if (isa<arts::YieldOp>(&op))
-      continue;
-    return false;
-  }
-  return true;
 }
 
 void EdtAnalysis::invalidate() {

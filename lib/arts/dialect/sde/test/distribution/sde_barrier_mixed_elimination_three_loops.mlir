@@ -18,18 +18,18 @@
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
 // Loop A:
-// ARTS: arts.for(%c0) to(%c128)
+// ARTS: arts.edt <task>
 // ARTS: memref.load
 // ARTS: memref.store
 // No barrier between A and B (eliminated):
 // Loop B:
-// ARTS: arts.for(%c0) to(%c128)
+// ARTS: arts.edt <task>
 // ARTS: memref.load
 // ARTS: memref.store
 // Barrier between B and C (preserved):
 // ARTS: arts.barrier
 // Loop C:
-// ARTS: arts.for(%c0) to(%c128)
+// ARTS: arts.edt <task>
 // ARTS: memref.load
 // ARTS: memref.store
 // ARTS-NOT: arts_sde.

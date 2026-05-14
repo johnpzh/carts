@@ -150,15 +150,6 @@ LoopAnalysis::estimateStaticPerfectNestedWork(Operation *loopOp, int64_t cap) {
   return std::nullopt;
 }
 
-std::optional<DbAnalysis::LoopDbAccessSummary>
-LoopAnalysis::getLoopDbAccessSummary(Operation *loopOp) {
-  ensureAnalyzed();
-  auto forOp = dyn_cast_or_null<arts::ForOp>(loopOp);
-  if (!forOp)
-    return std::nullopt;
-  return getAnalysisManager().getDbAnalysis().getLoopDbAccessSummary(forOp);
-}
-
 bool LoopAnalysis::operationHasDistributedDbContract(Operation *op) {
   ensureAnalyzed();
   return getAnalysisManager().getDbAnalysis().operationHasDistributedDbContract(
@@ -187,8 +178,6 @@ void LoopAnalysis::collectLoopsInOperation(Operation *op,
 template void LoopAnalysis::collectLoopsInOperation<scf::ForOp>(
     Operation *op, SmallVectorImpl<LoopNode *> &loops);
 template void LoopAnalysis::collectLoopsInOperation<scf::WhileOp>(
-    Operation *op, SmallVectorImpl<LoopNode *> &loops);
-template void LoopAnalysis::collectLoopsInOperation<arts::ForOp>(
     Operation *op, SmallVectorImpl<LoopNode *> &loops);
 
 LoopNode *LoopAnalysis::findEnclosingLoopDrivenBy(Operation *op, Value idx) {

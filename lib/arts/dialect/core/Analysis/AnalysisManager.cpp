@@ -106,16 +106,6 @@ EdtHeuristics &AnalysisManager::getEdtHeuristics() {
   return *edtHeuristics;
 }
 
-std::optional<DbAnalysis::LoopDbAccessSummary>
-AnalysisManager::getLoopDbAccessSummary(Operation *loopOp) {
-  if (!loopOp)
-    return std::nullopt;
-  auto forOp = dyn_cast<ForOp>(loopOp);
-  if (!forOp)
-    return std::nullopt;
-  return getDbAnalysis().getLoopDbAccessSummary(forOp);
-}
-
 void AnalysisManager::invalidateAndRebuildGraphs(ModuleOp module) {
   module.walk([&](func::FuncOp func) {
     invalidateFunction(func);

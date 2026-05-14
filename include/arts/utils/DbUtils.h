@@ -302,7 +302,7 @@ public:
   /// Block Size and Malloc Pattern Extraction
   ///===----------------------------------------------------------------------===///
 
-  /// Extract block size from ForLowering's size hint.
+  /// Extract block size from an explicit partition-size hint.
   /// Handles direct constants, minui/minsi patterns, addi halo patterns,
   /// and maxui clamp patterns with recursive descent up to depth 4.
   static std::optional<int64_t> extractBlockSizeFromHint(Value sizeHint,

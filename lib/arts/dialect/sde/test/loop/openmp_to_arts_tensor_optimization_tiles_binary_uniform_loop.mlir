@@ -11,7 +11,7 @@
 // CHECK-NOT: linalg.generic
 // CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // CHECK: func.func @main
-// CHECK: arts.for
+// CHECK: arts.edt <task>
 // CHECK: memref.store
 // CHECK-NOT: arts_sde.
 

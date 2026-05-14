@@ -22,9 +22,9 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.edt <parallel> <intranode> route(%{{.*}}) attributes {
+// ARTS: arts.epoch attributes {
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
-// ARTS: arts.for(%c0) to(%c128) step(%c1)
+// ARTS: arts.edt <task>
 // ARTS: depPattern = #arts.dep_pattern<uniform>
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
 // ARTS-NOT: arts_sde.

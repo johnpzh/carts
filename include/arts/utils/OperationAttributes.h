@@ -127,13 +127,6 @@ constexpr StringLiteral SupportedBlockHalo = "supported_block_halo";
 constexpr StringLiteral StencilIndependentDims = "stencil_independent_dims";
 constexpr StringLiteral PostDbRefined = "post_db_refined";
 constexpr StringLiteral CriticalPathDistance = "critical_path_distance";
-constexpr StringLiteral ReductionStrategy = "arts.reduction_strategy";
-namespace ReductionStrategyValue {
-constexpr StringLiteral Atomic = "atomic";
-constexpr StringLiteral Tree = "tree";
-constexpr StringLiteral LocalAccumulate = "local_accumulate";
-} // namespace ReductionStrategyValue
-constexpr StringLiteral ReductionKinds = "arts.reduction_kinds";
 constexpr StringLiteral SpatialDims = "spatial_dims";
 constexpr StringLiteral NarrowableDep = "narrowable_dep";
 constexpr StringLiteral ContractKindKey = "contract_kind";
@@ -207,33 +200,13 @@ inline void copyCoreExecutionHintAttrs(Operation *source, Operation *dest) {
   IntegerAttr unrollFactor;
   IntegerAttr interleaveCount;
 
-  if (auto forOp = dyn_cast<ForOp>(source)) {
-    inPlaceSafe = forOp.getInPlaceSafeAttr();
-    inPlaceSharedState = forOp.getInPlaceSharedStateAttr();
-    vectorizeWidth = forOp.getVectorizeWidthAttr();
-    unrollFactor = forOp.getUnrollFactorAttr();
-    interleaveCount = forOp.getInterleaveCountAttr();
-  } else if (auto edtOp = dyn_cast<EdtOp>(source)) {
+  if (auto edtOp = dyn_cast<EdtOp>(source)) {
     inPlaceSafe = edtOp.getInPlaceSafeAttr();
     inPlaceSharedState = edtOp.getInPlaceSharedStateAttr();
     vectorizeWidth = edtOp.getVectorizeWidthAttr();
     unrollFactor = edtOp.getUnrollFactorAttr();
     interleaveCount = edtOp.getInterleaveCountAttr();
   } else {
-    return;
-  }
-
-  if (auto forOp = dyn_cast<ForOp>(dest)) {
-    if (inPlaceSafe)
-      forOp.setInPlaceSafeAttr(inPlaceSafe);
-    if (inPlaceSharedState)
-      forOp.setInPlaceSharedStateAttr(inPlaceSharedState);
-    if (vectorizeWidth)
-      forOp.setVectorizeWidthAttr(vectorizeWidth);
-    if (unrollFactor)
-      forOp.setUnrollFactorAttr(unrollFactor);
-    if (interleaveCount)
-      forOp.setInterleaveCountAttr(interleaveCount);
     return;
   }
 
@@ -308,8 +281,6 @@ inline bool hasStringAttrValue(Operation *op, StringRef attrName,
 inline ArrayAttr getPlanOwnerDimsAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    return forOp.getPlanOwnerDimsAttr();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     return edtOp.getPlanOwnerDimsAttr();
   if (auto epochOp = dyn_cast<EpochOp>(op))
@@ -322,8 +293,6 @@ inline ArrayAttr getPlanOwnerDimsAttr(Operation *op) {
 inline ArrayAttr getPlanPhysicalBlockShapeAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    return forOp.getPlanPhysicalBlockShapeAttr();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     return edtOp.getPlanPhysicalBlockShapeAttr();
   if (auto epochOp = dyn_cast<EpochOp>(op))
@@ -336,8 +305,6 @@ inline ArrayAttr getPlanPhysicalBlockShapeAttr(Operation *op) {
 inline ArrayAttr getPlanLogicalWorkerSliceAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    return forOp.getPlanLogicalWorkerSliceAttr();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     return edtOp.getPlanLogicalWorkerSliceAttr();
   if (auto epochOp = dyn_cast<EpochOp>(op))
@@ -350,8 +317,6 @@ inline ArrayAttr getPlanLogicalWorkerSliceAttr(Operation *op) {
 inline ArrayAttr getPlanHaloShapeAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    return forOp.getPlanHaloShapeAttr();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     return edtOp.getPlanHaloShapeAttr();
   if (auto epochOp = dyn_cast<EpochOp>(op))
@@ -365,8 +330,6 @@ inline ArtsPlanIterationTopologyAttr
 getPlanIterationTopologyAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    return forOp.getPlanIterationTopologyAttr();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     return edtOp.getPlanIterationTopologyAttr();
   if (auto epochOp = dyn_cast<EpochOp>(op))
@@ -380,8 +343,6 @@ inline ArtsPlanRepetitionStructureAttr
 getPlanRepetitionStructureAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    return forOp.getPlanRepetitionStructureAttr();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     return edtOp.getPlanRepetitionStructureAttr();
   if (auto epochOp = dyn_cast<EpochOp>(op))
@@ -394,8 +355,6 @@ getPlanRepetitionStructureAttr(Operation *op) {
 inline ArtsPlanAsyncStrategyAttr getPlanAsyncStrategyAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    return forOp.getPlanAsyncStrategyAttr();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     return edtOp.getPlanAsyncStrategyAttr();
   if (auto epochOp = dyn_cast<EpochOp>(op))
@@ -408,8 +367,6 @@ inline ArtsPlanAsyncStrategyAttr getPlanAsyncStrategyAttr(Operation *op) {
 inline IntegerAttr getPlanCostSchedulerOverheadAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    return forOp.getPlanCostSchedulerOverheadAttr();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     return edtOp.getPlanCostSchedulerOverheadAttr();
   if (auto epochOp = dyn_cast<EpochOp>(op))
@@ -422,8 +379,6 @@ inline IntegerAttr getPlanCostSchedulerOverheadAttr(Operation *op) {
 inline IntegerAttr getPlanCostSliceWideningPressureAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    return forOp.getPlanCostSliceWideningPressureAttr();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     return edtOp.getPlanCostSliceWideningPressureAttr();
   if (auto epochOp = dyn_cast<EpochOp>(op))
@@ -436,8 +391,6 @@ inline IntegerAttr getPlanCostSliceWideningPressureAttr(Operation *op) {
 inline IntegerAttr getPlanCostExpectedLocalWorkAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    return forOp.getPlanCostExpectedLocalWorkAttr();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     return edtOp.getPlanCostExpectedLocalWorkAttr();
   if (auto epochOp = dyn_cast<EpochOp>(op))
@@ -450,8 +403,6 @@ inline IntegerAttr getPlanCostExpectedLocalWorkAttr(Operation *op) {
 inline IntegerAttr getPlanCostRelaunchAmortizationAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    return forOp.getPlanCostRelaunchAmortizationAttr();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     return edtOp.getPlanCostRelaunchAmortizationAttr();
   if (auto epochOp = dyn_cast<EpochOp>(op))
@@ -464,9 +415,7 @@ inline IntegerAttr getPlanCostRelaunchAmortizationAttr(Operation *op) {
 inline void setPlanOwnerDimsAttr(Operation *op, ArrayAttr attr) {
   if (!op || !attr)
     return;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setPlanOwnerDimsAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setPlanOwnerDimsAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setPlanOwnerDimsAttr(attr);
@@ -477,9 +426,7 @@ inline void setPlanOwnerDimsAttr(Operation *op, ArrayAttr attr) {
 inline void setPlanPhysicalBlockShapeAttr(Operation *op, ArrayAttr attr) {
   if (!op || !attr)
     return;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setPlanPhysicalBlockShapeAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setPlanPhysicalBlockShapeAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setPlanPhysicalBlockShapeAttr(attr);
@@ -490,9 +437,7 @@ inline void setPlanPhysicalBlockShapeAttr(Operation *op, ArrayAttr attr) {
 inline void setPlanLogicalWorkerSliceAttr(Operation *op, ArrayAttr attr) {
   if (!op || !attr)
     return;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setPlanLogicalWorkerSliceAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setPlanLogicalWorkerSliceAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setPlanLogicalWorkerSliceAttr(attr);
@@ -503,9 +448,7 @@ inline void setPlanLogicalWorkerSliceAttr(Operation *op, ArrayAttr attr) {
 inline void setPlanHaloShapeAttr(Operation *op, ArrayAttr attr) {
   if (!op || !attr)
     return;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setPlanHaloShapeAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setPlanHaloShapeAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setPlanHaloShapeAttr(attr);
@@ -517,9 +460,7 @@ inline void setPlanIterationTopologyAttr(
     Operation *op, ArtsPlanIterationTopologyAttr attr) {
   if (!op || !attr)
     return;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setPlanIterationTopologyAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setPlanIterationTopologyAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setPlanIterationTopologyAttr(attr);
@@ -531,9 +472,7 @@ inline void setPlanRepetitionStructureAttr(
     Operation *op, ArtsPlanRepetitionStructureAttr attr) {
   if (!op || !attr)
     return;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setPlanRepetitionStructureAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setPlanRepetitionStructureAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setPlanRepetitionStructureAttr(attr);
@@ -545,9 +484,7 @@ inline void setPlanAsyncStrategyAttr(Operation *op,
                                      ArtsPlanAsyncStrategyAttr attr) {
   if (!op || !attr)
     return;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setPlanAsyncStrategyAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setPlanAsyncStrategyAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setPlanAsyncStrategyAttr(attr);
@@ -558,9 +495,7 @@ inline void setPlanAsyncStrategyAttr(Operation *op,
 inline void setPlanCostSchedulerOverheadAttr(Operation *op, IntegerAttr attr) {
   if (!op || !attr)
     return;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setPlanCostSchedulerOverheadAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setPlanCostSchedulerOverheadAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setPlanCostSchedulerOverheadAttr(attr);
@@ -572,9 +507,7 @@ inline void setPlanCostSliceWideningPressureAttr(Operation *op,
                                                  IntegerAttr attr) {
   if (!op || !attr)
     return;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setPlanCostSliceWideningPressureAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setPlanCostSliceWideningPressureAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setPlanCostSliceWideningPressureAttr(attr);
@@ -586,9 +519,7 @@ inline void setPlanCostExpectedLocalWorkAttr(Operation *op,
                                              IntegerAttr attr) {
   if (!op || !attr)
     return;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setPlanCostExpectedLocalWorkAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setPlanCostExpectedLocalWorkAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setPlanCostExpectedLocalWorkAttr(attr);
@@ -600,9 +531,7 @@ inline void setPlanCostRelaunchAmortizationAttr(Operation *op,
                                                 IntegerAttr attr) {
   if (!op || !attr)
     return;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setPlanCostRelaunchAmortizationAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setPlanCostRelaunchAmortizationAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setPlanCostRelaunchAmortizationAttr(attr);
@@ -993,9 +922,6 @@ inline std::optional<EdtDistributionKind>
 getEdtDistributionKind(Operation *op) {
   if (!op)
     return std::nullopt;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    if (auto attr = forOp.getDistributionKindAttr())
-      return attr.getValue();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     if (auto attr = edtOp.getDistributionKindAttr())
       return attr.getValue();
@@ -1018,9 +944,7 @@ inline void setEdtDistributionKind(Operation *op, EdtDistributionKind kind) {
   if (!op)
     return;
   auto attr = EdtDistributionKindAttr::get(op->getContext(), kind);
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setDistributionKindAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setDistributionKindAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setDistributionKindAttr(attr);
@@ -1036,9 +960,6 @@ inline std::optional<EdtDistributionPattern>
 getEdtDistributionPattern(Operation *op) {
   if (!op)
     return std::nullopt;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    if (auto attr = forOp.getDistributionPatternAttr())
-      return attr.getValue();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     if (auto attr = edtOp.getDistributionPatternAttr())
       return attr.getValue();
@@ -1062,9 +983,7 @@ inline void setEdtDistributionPattern(Operation *op,
   if (!op)
     return;
   auto attr = EdtDistributionPatternAttr::get(op->getContext(), pattern);
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setDistributionPatternAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setDistributionPatternAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setDistributionPatternAttr(attr);
@@ -1079,9 +998,6 @@ inline void setEdtDistributionPattern(Operation *op,
 inline std::optional<ArtsDepPattern> getDepPattern(Operation *op) {
   if (!op)
     return std::nullopt;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    if (auto attr = forOp.getDepPatternAttr())
-      return attr.getValue();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     if (auto attr = edtOp.getDepPatternAttr())
       return attr.getValue();
@@ -1104,9 +1020,7 @@ inline void setDepPattern(Operation *op, ArtsDepPattern pattern) {
   if (!op)
     return;
   auto attr = ArtsDepPatternAttr::get(op->getContext(), pattern);
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setDepPatternAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setDepPatternAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setDepPatternAttr(attr);
@@ -1121,8 +1035,6 @@ inline void setDepPattern(Operation *op, ArtsDepPattern pattern) {
 inline IntegerAttr getDistributionVersionAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto forOp = dyn_cast<ForOp>(op))
-    return forOp.getDistributionVersionAttr();
   if (auto edtOp = dyn_cast<EdtOp>(op))
     return edtOp.getDistributionVersionAttr();
   if (auto epochOp = dyn_cast<EpochOp>(op))
@@ -1141,9 +1053,7 @@ inline void setDistributionVersionAttr(Operation *op, IntegerAttr attr) {
     op->removeAttr(AttrNames::Operation::DistributionVersion);
     return;
   }
-  if (auto forOp = dyn_cast<ForOp>(op))
-    forOp.setDistributionVersionAttr(attr);
-  else if (auto edtOp = dyn_cast<EdtOp>(op))
+  if (auto edtOp = dyn_cast<EdtOp>(op))
     edtOp.setDistributionVersionAttr(attr);
   else if (auto epochOp = dyn_cast<EpochOp>(op))
     epochOp.setDistributionVersionAttr(attr);
@@ -1400,7 +1310,8 @@ inline void copySemanticContractAttrs(Operation *source, Operation *dest) {
 }
 
 /// Copy structured kernel plan attrs from source to dest.
-/// Used by ForLowering to propagate plan attrs from ForOp to EpochOp/EdtOp.
+/// Used by Core materializers to propagate SDE-authored plan attrs to concrete
+/// ARTS objects.
 inline void copyPlanAttrs(Operation *source, Operation *dest) {
   if (!source || !dest)
     return;

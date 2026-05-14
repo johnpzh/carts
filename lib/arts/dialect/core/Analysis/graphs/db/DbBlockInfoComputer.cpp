@@ -159,7 +159,6 @@ LogicalResult DbBlockInfoComputer::computeBlockInfo(DbAcquireNode *node,
   SmallVector<LoopNode *> forLoopNodes;
   SmallVector<LoopNode *> whileLoopNodes;
   loopAnalysis.collectLoopsInOperation<scf::ForOp>(edt, forLoopNodes);
-  loopAnalysis.collectLoopsInOperation<arts::ForOp>(edt, forLoopNodes);
   loopAnalysis.collectLoopsInOperation<scf::WhileOp>(edt, whileLoopNodes);
 
   scf::WhileOp blockWhile;
@@ -576,7 +575,7 @@ LogicalResult DbBlockInfoComputer::computeBlockInfoFromForLoop(
   for (LoopNode *loopNode : loopNodes) {
     Value offsetCandidate;
     Operation *loopOp = loopNode->getLoopOp();
-    if (!loopOp || !isa<scf::ForOp, arts::ForOp>(loopOp))
+    if (!loopOp || !isa<scf::ForOp>(loopOp))
       continue;
     Value loopIV = loopNode->getInductionVar();
     auto pickCandidateFromIndex = [&](Value idx) -> Value {

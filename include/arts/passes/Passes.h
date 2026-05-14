@@ -39,7 +39,6 @@ std::unique_ptr<Pass> createDCEPass();
 /// EDT and loop-structure transformation passes.
 std::unique_ptr<Pass> createEdtStructuralOptPass(AnalysisManager *AM,
                                                  bool runAnalysis);
-std::unique_ptr<Pass> createConcurrencyPass(AnalysisManager *AM);
 std::unique_ptr<Pass> createCreateDbsPass(AnalysisManager *AM);
 std::unique_ptr<Pass> createDbModeTighteningPass(AnalysisManager *AM,
                                                  bool forceInout = false);
@@ -63,21 +62,12 @@ std::unique_ptr<Pass> createRuntimeCallOptPass();
 std::unique_ptr<Pass> createEdtPtrRematerializationPass();
 std::unique_ptr<Pass> createDbLoweringPass(uint64_t idStride = 1000);
 std::unique_ptr<Pass> createEpochLoweringPass();
-std::unique_ptr<Pass> createParallelEdtLoweringPass();
 std::unique_ptr<Pass> createEdtLoweringPass(uint64_t idStride = 1000);
 std::unique_ptr<Pass> createEdtLoweringPass(AnalysisManager *AM,
                                             uint64_t idStride = 1000);
 std::unique_ptr<Pass> createLoweringContractCleanupPass();
 
-/// High-level scheduling and distribution passes.
-std::unique_ptr<Pass> createForOptPass(AnalysisManager *AM);
-std::unique_ptr<Pass>
-createDistributedHostLoopOutliningPass(AnalysisManager *AM);
-std::unique_ptr<Pass> createEdtDistributionPass(AnalysisManager *AM);
-std::unique_ptr<Pass> createEdtOrchestrationOptPass();
-std::unique_ptr<Pass> createForLoweringPass();
-std::unique_ptr<Pass> createForLoweringPass(AnalysisManager *AM);
-std::unique_ptr<Pass> createLoopFusionPass(AnalysisManager *AM);
+/// High-level epoch scheduling passes.
 std::unique_ptr<Pass> createEpochOptPass();
 std::unique_ptr<Pass> createEpochOptPass(AnalysisManager *AM);
 /// Create EpochOpt with explicit scheduling flags.
@@ -104,8 +94,7 @@ std::unique_ptr<Pass> createContractValidationPass(bool failOnError = false);
 /// Verification passes at lowering boundaries.
 std::unique_ptr<Pass> createVerifyEdtCreatedPass();
 std::unique_ptr<Pass> createVerifyEpochCreatedPass();
-std::unique_ptr<Pass> createVerifyForLoweredPass();
-std::unique_ptr<Pass> createVerifyCoreObjectsOnlyPass(bool reportOnly = false);
+std::unique_ptr<Pass> createVerifyCoreObjectsOnlyPass();
 std::unique_ptr<Pass> createVerifyPreLoweredPass();
 std::unique_ptr<Pass> createVerifyLoweredPass();
 std::unique_ptr<Pass> createVerifyEdtLoweredPass();

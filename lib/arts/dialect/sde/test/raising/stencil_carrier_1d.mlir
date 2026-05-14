@@ -22,7 +22,7 @@
 // CHECK: linalg.yield
 // CHECK: tensor.insert_slice
 
-// After full pipeline: stencil contract stamped on arts.for.
+// After full pipeline: stencil contract stamped on Core task dispatch.
 // CHECK: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // CHECK: arts.edt
 // CHECK-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>

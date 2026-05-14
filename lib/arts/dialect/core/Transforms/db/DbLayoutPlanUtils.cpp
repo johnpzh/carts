@@ -6,6 +6,7 @@
 
 #include "arts/utils/OperationAttributes.h"
 #include "arts/utils/StencilAttributes.h"
+#include "arts/utils/Utils.h"
 #include "arts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "llvm/ADT/DenseSet.h"
@@ -17,14 +18,9 @@ using namespace mlir::arts;
 
 namespace {
 
-static Value createIndexConstant(OpBuilder &builder, Location loc,
-                                 int64_t value) {
-  return arith::ConstantIndexOp::create(builder, loc, value);
-}
-
 static Value ceilDivPositiveIndex(OpBuilder &builder, Location loc, Value value,
                                   Value divisor) {
-  Value one = createIndexConstant(builder, loc, 1);
+  Value one = createOneIndex(builder, loc);
   divisor = arith::MaxUIOp::create(builder, loc, divisor, one);
   Value adjusted = arith::AddIOp::create(
       builder, loc, value, arith::SubIOp::create(builder, loc, divisor, one));
@@ -37,7 +33,7 @@ materializeIndexConstants(OpBuilder &builder, Location loc,
   SmallVector<Value, 4> result;
   result.reserve(values.size());
   for (int64_t value : values)
-    result.push_back(createIndexConstant(builder, loc, value));
+    result.push_back(createConstantIndex(builder, loc, value));
   return result;
 }
 
