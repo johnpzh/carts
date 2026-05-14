@@ -1216,6 +1216,9 @@ static LogicalResult materializeSdeOp(Operation *op, PatternRewriter &rewriter,
   if (auto task = dyn_cast<sde::SdeCuTaskOp>(op))
     return materializeCuTaskAsEdt(task, rewriter, mapper);
 
+  if (isa<sde::SdeMuDepOp>(op))
+    return success();
+
   if (auto barrier = dyn_cast<sde::SdeSuBarrierOp>(op)) {
     if (!barrier.getBarrierEliminated()) {
       ArtsBarrierReasonAttr reason;
@@ -1448,6 +1451,18 @@ struct ControlTokenToArtsPattern
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(sde::SdeControlTokenOp op,
+                                PatternRewriter &rewriter) const override {
+    if (!op->use_empty())
+      return failure();
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct MuDepToArtsPattern : public OpRewritePattern<sde::SdeMuDepOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(sde::SdeMuDepOp op,
                                 PatternRewriter &rewriter) const override {
     if (!op->use_empty())
       return failure();
@@ -2443,8 +2458,9 @@ struct ConvertSdeToArtsPass
     }
 
     RewritePatternSet patterns(context);
-    // Process cu_task before mu_dep since cu_task consumes mu_dep results
+    // Process cu_task before mu_dep since cu_task consumes mu_dep results.
     patterns.add<CuTaskToArtsPattern>(context);
+    patterns.add<MuDepToArtsPattern>(context);
     patterns.add<ParallelCuRegionToCorePattern>(context);
     patterns.add<CuRegionToArtsPattern>(context);
     patterns.add<SuDistributeToArtsPattern>(context);

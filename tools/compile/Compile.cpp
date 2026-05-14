@@ -253,8 +253,9 @@ static const std::array<llvm::StringLiteral, 10>
                                         "CSE"};
 static const std::array<llvm::StringLiteral, 3> kInitialCleanupPasses = {
     "LowerAffine(func)", "CSE(func)", "PolygeistCanonicalizeFor(func)"};
-static const std::array<llvm::StringLiteral, 27> kOpenMPToArtsPasses = {
+static const std::array<llvm::StringLiteral, 28> kOpenMPToArtsPasses = {
     "ConvertOpenMPToSde",
+    "RaiseMemrefToTensor",
     "RaiseToTensor",
     "RaiseToLinalg",
     "PatternAnalysis",
@@ -645,6 +646,10 @@ void buildOpenMPToArtsPipeline(PassManager &pm,
                                arts::AnalysisManager *AM = nullptr) {
   arts::sde::SDECostModel *costModel = AM ? &AM->getCostModel() : nullptr;
   pm.addPass(arts::sde::createConvertOpenMPToSdePass(costModel));
+  // Convert eligible task-depend raw memrefs into SDE MU/token/codelet form
+  // before the tensor/linalg pipeline has a chance to collapse them back to the
+  // raw CreateDbs bridge.
+  pm.addPass(arts::sde::createRaiseMemrefToTensorPass());
   // Raise tensor FIRST (mem2reg), then classify+create linalg carriers
   // from tensor-native form — no bufferization wrapping needed.
   pm.addPass(arts::sde::createRaiseToTensorPass());
