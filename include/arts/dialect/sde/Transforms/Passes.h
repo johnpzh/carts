@@ -23,6 +23,10 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/Pass.h"
 
+namespace mlir::arts::sde {
+std::unique_ptr<Pass> createMemoryUnitMaterializationPass();
+} // namespace mlir::arts::sde
+
 namespace mlir::arts {
 
 #define GEN_PASS_DECL
@@ -51,6 +55,7 @@ class SDECostModel;
 
 // --- State passes (IR cleanup before planning) ---
 std::unique_ptr<Pass> createScalarForwardingPass();
+std::unique_ptr<Pass> createMemoryUnitMaterializationPass();
 
 // --- Dep passes (structural transforms) ---
 std::unique_ptr<Pass> createPatternAnalysisPass(

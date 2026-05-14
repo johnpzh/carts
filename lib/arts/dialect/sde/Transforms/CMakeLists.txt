@@ -1,5 +1,6 @@
 set(CARTS_SDE_TRANSFORMS_SOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/state/PatternAnalysis.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/state/MemoryUnitMaterialization.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/state/codelet/ScalarForwarding.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/dep/loop/IterationSpaceDecomposition.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/dep/loop/Vectorization.cpp"

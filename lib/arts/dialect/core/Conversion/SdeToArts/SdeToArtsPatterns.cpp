@@ -44,6 +44,7 @@ namespace mlir::arts {
 #include "arts/utils/Debug.h"
 ARTS_DEBUG_SETUP(convert_sde_to_arts);
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 static llvm::Statistic numCuRegionConverted{
@@ -430,6 +431,167 @@ static Value materializeGenericWorkerCount(OpBuilder &builder, Location loc) {
   Value workers = ValueAnalysis::castToIndex(runtimeWorkers, builder, loc);
   return arith::MaxUIOp::create(builder, loc, workers,
                                 createOneIndex(builder, loc));
+}
+
+//===----------------------------------------------------------------------===//
+// Boundary DB dependency helpers.
+//
+// SDE owns the decision that a scheduling unit/codelet communicates through
+// MU-backed memrefs. At this boundary we only consume memrefs that are already
+// backed by `sde.mu_alloc`/`sde.mu_data` lowering and pass acquired payload
+// views into generated EDTs. Raw memref captures stay on the compatibility
+// bridge until SDE has rewritten their MU storage and access shape explicitly.
+//===----------------------------------------------------------------------===//
+
+/// Trace the DbAllocOp that backs a storage value. Sources may already be
+/// DB-backed payloads or may pass through memref view/cast operations.
+static DbAllocOp findBackingDbAlloc(Value storage) {
+  if (Operation *allocOp = DbUtils::getUnderlyingDbAlloc(storage))
+    if (auto dbAlloc = dyn_cast<DbAllocOp>(allocOp))
+      return dbAlloc;
+  return nullptr;
+}
+
+/// Given a DB `sourcePtr` whose element type is the payload memref
+/// `memref<SHAPExT>`, materialize that inner memref via `arts.db_ref[0]`.
+static Value materializeInnerPayload(OpBuilder &builder, Location loc,
+                                     Value sourcePtr) {
+  Value zero = arts::createZeroIndex(builder, loc);
+  return DbRefOp::create(builder, loc, sourcePtr, SmallVector<Value>{zero});
+}
+
+static FailureOr<SmallVector<Value>>
+buildElementSizes(OpBuilder &builder, Location loc, MemRefType memrefType,
+                  ValueRange dynamicSizes) {
+  SmallVector<Value> elementSizes;
+  if (memrefType.getRank() == 0) {
+    if (!dynamicSizes.empty())
+      return failure();
+    elementSizes.push_back(arts::createOneIndex(builder, loc));
+    return elementSizes;
+  }
+
+  elementSizes.reserve(memrefType.getRank());
+  unsigned dynamicIdx = 0;
+  for (int64_t dim = 0, rank = memrefType.getRank(); dim < rank; ++dim) {
+    if (memrefType.isDynamicDim(dim)) {
+      if (dynamicIdx >= dynamicSizes.size())
+        return failure();
+      elementSizes.push_back(dynamicSizes[dynamicIdx++]);
+      continue;
+    }
+    elementSizes.push_back(
+        arts::createConstantIndex(builder, loc, memrefType.getDimSize(dim)));
+  }
+  if (dynamicIdx != dynamicSizes.size())
+    return failure();
+  return elementSizes;
+}
+
+static LogicalResult
+createDbBackedMemref(OpBuilder &builder, Location loc, MemRefType memrefType,
+                     ValueRange dynamicSizes, Value &memref) {
+  FailureOr<SmallVector<Value>> elementSizes =
+      buildElementSizes(builder, loc, memrefType, dynamicSizes);
+  if (failed(elementSizes))
+    return failure();
+
+  SmallVector<Value> sizes{arts::createOneIndex(builder, loc)};
+  Value route = arts::createCurrentNodeRoute(builder, loc);
+  Type pointerType = MemRefType::get({ShapedType::kDynamic}, memrefType);
+
+  auto dbAlloc = DbAllocOp::create(
+      builder, loc, ArtsMode::inout, route, DbAllocType::heap, DbMode::write,
+      memrefType.getElementType(), pointerType, std::move(sizes),
+      std::move(*elementSizes));
+
+  memref = materializeInnerPayload(builder, loc, dbAlloc.getPtr());
+  return success();
+}
+
+struct BoundaryMemrefAccess {
+  Value payload;
+  DbAllocOp dbAlloc;
+  ArtsMode mode = ArtsMode::uninitialized;
+};
+
+static bool isDefinedInside(Operation *container, Value value) {
+  if (!container || !value)
+    return false;
+  if (auto blockArg = dyn_cast<BlockArgument>(value))
+    return container->isAncestor(blockArg.getOwner()->getParentOp());
+  Operation *def = value.getDefiningOp();
+  return def && container->isAncestor(def);
+}
+
+static void combineMemrefMode(DenseMap<Value, ArtsMode> &modes, Value root,
+                              ArtsMode mode) {
+  auto it = modes.find(root);
+  if (it == modes.end()) {
+    modes[root] = mode;
+    return;
+  }
+  it->second = combineAccessModes(it->second, mode);
+}
+
+static DenseMap<Value, ArtsMode>
+collectExternalMemrefAccessModes(Operation *container, Region &region) {
+  DenseMap<Value, ArtsMode> modes;
+  region.walk([&](Operation *op) {
+    if (auto load = dyn_cast<memref::LoadOp>(op)) {
+      Value root = ValueAnalysis::stripMemrefViewOps(load.getMemref());
+      if (root && isa<MemRefType>(root.getType()) &&
+          !isDefinedInside(container, root))
+        combineMemrefMode(modes, root, ArtsMode::in);
+      return;
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(op)) {
+      Value root = ValueAnalysis::stripMemrefViewOps(store.getMemref());
+      if (root && isa<MemRefType>(root.getType()) &&
+          !isDefinedInside(container, root))
+        combineMemrefMode(modes, root, ArtsMode::out);
+    }
+  });
+  return modes;
+}
+
+static FailureOr<SmallVector<BoundaryMemrefAccess>>
+materializeBoundaryMemrefs(Operation *container, Region &region,
+                           PatternRewriter &rewriter) {
+  DenseMap<Value, ArtsMode> rootModes =
+      collectExternalMemrefAccessModes(container, region);
+  SmallVector<BoundaryMemrefAccess> accesses;
+  accesses.reserve(rootModes.size());
+
+  for (auto &entry : rootModes) {
+    Value root = entry.first;
+    ArtsMode mode = entry.second;
+
+    DbAllocOp dbAlloc = findBackingDbAlloc(root);
+    if (!dbAlloc)
+      continue;
+
+    accesses.push_back(BoundaryMemrefAccess{root, dbAlloc, mode});
+  }
+
+  return accesses;
+}
+
+static DbAcquireOp createWholeStorageAcquire(OpBuilder &builder, Location loc,
+                                             BoundaryMemrefAccess access) {
+  SmallVector<Value> offsets{arts::createZeroIndex(builder, loc)};
+  SmallVector<Value> sizes{arts::createOneIndex(builder, loc)};
+  return DbAcquireOp::create(
+      builder, loc, access.mode == ArtsMode::uninitialized ? ArtsMode::inout
+                                                           : access.mode,
+      access.dbAlloc.getGuid(), access.dbAlloc.getPtr(), PartitionMode::coarse,
+      /*indices=*/SmallVector<Value>{}, std::move(offsets), std::move(sizes),
+      /*partitionIndices=*/SmallVector<Value>{},
+      /*partitionOffsets=*/SmallVector<Value>{},
+      /*partitionSizes=*/SmallVector<Value>{},
+      /*boundsValid=*/Value{},
+      /*elementOffsets=*/SmallVector<Value>{},
+      /*elementSizes=*/SmallVector<Value>{});
 }
 
 struct SuReductionPlan {
@@ -908,6 +1070,14 @@ static LogicalResult materializeSuIterateAsGenericTaskDispatch(
     return source.emitOpError("cannot materialize result-producing su_iterate "
                               "without explicit SDE reduction accumulators");
 
+  FailureOr<SmallVector<BoundaryMemrefAccess>> maybeBoundaryMemrefs =
+      materializeBoundaryMemrefs(source.getOperation(), source.getBody(),
+                                 rewriter);
+  if (failed(maybeBoundaryMemrefs))
+    return failure();
+  SmallVector<BoundaryMemrefAccess> boundaryMemrefs =
+      std::move(*maybeBoundaryMemrefs);
+
   Value zero = createZeroIndex(rewriter, loc);
   Value one = createOneIndex(rewriter, loc);
   Value workers = materializeGenericWorkerCount(rewriter, loc);
@@ -957,6 +1127,12 @@ static LogicalResult materializeSuIterateAsGenericTaskDispatch(
   SmallVector<Value> taskDependencies =
       createPartialReductionTaskDependencies(rewriter, loc, partialReductions,
                                              lane);
+  unsigned partialDependencyCount = taskDependencies.size();
+  for (const BoundaryMemrefAccess &access : boundaryMemrefs) {
+    DbAcquireOp acquire = createWholeStorageAcquire(rewriter, loc, access);
+    taskDependencies.push_back(acquire.getPtr());
+  }
+
   auto task = EdtOp::create(rewriter, loc, EdtType::task,
                             EdtConcurrency::intranode, taskDependencies);
   task.setNoVerifyAttr(NoVerifyAttr::get(ctx));
@@ -973,8 +1149,17 @@ static LogicalResult materializeSuIterateAsGenericTaskDispatch(
   rewriter.setInsertionPointToStart(&taskBlock);
   IRMapping taskMapping = outerMapping;
   if (!partialReductions.empty()) {
+    ArrayRef<BlockArgument> partialDependencyArgs(
+        dependencyArgs.data(), partialDependencyCount);
     preparePartialReductionSlots(rewriter, loc, reductionPlan, task,
-                                 dependencyArgs, taskMapping);
+                                 partialDependencyArgs, taskMapping);
+  }
+
+  for (auto [idx, access] : llvm::enumerate(boundaryMemrefs)) {
+    BlockArgument depArg =
+        dependencyArgs[partialDependencyCount + static_cast<unsigned>(idx)];
+    Value payload = materializeInnerPayload(rewriter, loc, depArg);
+    taskMapping.map(access.payload, payload);
   }
 
   auto localLoop = scf::ForOp::create(rewriter, loc, zero, iterCount, one);
@@ -1410,72 +1595,6 @@ struct MuReductionDeclToArtsPattern
 // `arts.db_ref %ptr[0]` has exactly the MU memref type selected by SDE, even
 // when the element sizes are dynamic.
 //===----------------------------------------------------------------------===//
-
-/// Trace the DbAllocOp that backs a token source value. SDE token sources are
-/// memrefs and may pass through memref view/cast ops after tiling.
-static DbAllocOp findBackingDbAlloc(Value storage) {
-  if (Operation *allocOp = DbUtils::getUnderlyingDbAlloc(storage))
-    if (auto dbAlloc = dyn_cast<DbAllocOp>(allocOp))
-      return dbAlloc;
-  return nullptr;
-}
-
-/// Given a DB `sourcePtr` whose element type is the payload memref
-/// `memref<SHAPExT>`, materialize that inner memref via `arts.db_ref[0]`.
-static Value materializeInnerPayload(OpBuilder &builder, Location loc,
-                                     Value sourcePtr) {
-  Value zero = arts::createZeroIndex(builder, loc);
-  return DbRefOp::create(builder, loc, sourcePtr, SmallVector<Value>{zero});
-}
-
-static FailureOr<SmallVector<Value>>
-buildElementSizes(OpBuilder &builder, Location loc, MemRefType memrefType,
-                  ValueRange dynamicSizes) {
-  SmallVector<Value> elementSizes;
-  if (memrefType.getRank() == 0) {
-    if (!dynamicSizes.empty())
-      return failure();
-    elementSizes.push_back(arts::createOneIndex(builder, loc));
-    return elementSizes;
-  }
-
-  elementSizes.reserve(memrefType.getRank());
-  unsigned dynamicIdx = 0;
-  for (int64_t dim = 0, rank = memrefType.getRank(); dim < rank; ++dim) {
-    if (memrefType.isDynamicDim(dim)) {
-      if (dynamicIdx >= dynamicSizes.size())
-        return failure();
-      elementSizes.push_back(dynamicSizes[dynamicIdx++]);
-      continue;
-    }
-    elementSizes.push_back(
-        arts::createConstantIndex(builder, loc, memrefType.getDimSize(dim)));
-  }
-  if (dynamicIdx != dynamicSizes.size())
-    return failure();
-  return elementSizes;
-}
-
-static LogicalResult
-createDbBackedMemref(OpBuilder &builder, Location loc, MemRefType memrefType,
-                     ValueRange dynamicSizes, Value &memref) {
-  FailureOr<SmallVector<Value>> elementSizes =
-      buildElementSizes(builder, loc, memrefType, dynamicSizes);
-  if (failed(elementSizes))
-    return failure();
-
-  SmallVector<Value> sizes{arts::createOneIndex(builder, loc)};
-  Value route = arts::createCurrentNodeRoute(builder, loc);
-  Type pointerType = MemRefType::get({ShapedType::kDynamic}, memrefType);
-
-  auto dbAlloc = DbAllocOp::create(
-      builder, loc, ArtsMode::inout, route, DbAllocType::heap, DbMode::write,
-      memrefType.getElementType(), pointerType, std::move(sizes),
-      std::move(*elementSizes));
-
-  memref = materializeInnerPayload(builder, loc, dbAlloc.getPtr());
-  return success();
-}
 
 static LogicalResult lowerMuData(sde::SdeMuDataOp op) {
   auto memrefType = dyn_cast<MemRefType>(op.getHandle().getType());

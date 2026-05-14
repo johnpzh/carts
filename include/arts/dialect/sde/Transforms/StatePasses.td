@@ -22,4 +22,23 @@ def ScalarForwarding : Pass<"scalar-forwarding", "mlir::ModuleOp"> {
   let constructor = "mlir::arts::sde::createScalarForwardingPass()";
 }
 
+def MemoryUnitMaterialization
+    : Pass<"sde-memory-unit-materialization", "mlir::ModuleOp"> {
+  let summary = "Materialize coarse SDE shared memrefs as memory units";
+  let description = [{
+    Rewrites shared memref allocations used by SDE scheduling units into
+    `sde.mu_alloc` storage before the SDE/Core boundary. This pass is
+    intentionally SDE-local: it creates target-neutral MU storage declarations
+    and leaves conversion to Core DB objects to `ConvertSdeToArts`.
+
+    Blocked physical layouts are skipped until SDE block-local access rewriting
+    covers the allocation. Those layouts remain on the raw compatibility bridge
+    instead of being silently lowered to an incorrect first-block host view.
+  }];
+  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
+                           "::mlir::memref::MemRefDialect"];
+  let constructor =
+      "mlir::arts::sde::createMemoryUnitMaterializationPass()";
+}
+
 #endif // ARTS_DIALECT_SDE_TRANSFORMS_STATE_PASSES

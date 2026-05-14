@@ -1313,6 +1313,7 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
       SmallVector<Value> groupDbOffsets(dbOffsets.begin(), dbOffsets.end());
       SmallVector<Value> groupDbSizes(dbSizes.begin(), dbSizes.end());
       bool promoteOutToInoutForPartialPhysicalBlocks = false;
+      bool preserveModeForRawBlockedAcquire = false;
       auto materializeExplicitOwnerSlice = [&]() -> bool {
         if (!plan.usesBlockedLayout() || depGroup.size() != 1 ||
             plan.partitionedDims.empty())
@@ -1370,6 +1371,14 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
         acquireMode = ArtsMode::inout;
         ++numOutAcquiresPromotedForPartialBlocks;
       }
+      if (deps.empty() && plan.usesBlockedLayout() &&
+          acquireMode == ArtsMode::out) {
+        ARTS_DEBUG(" - Promoting raw blocked out acquire to inout because no "
+                   "SDE slice record proves whole-block ownership");
+        acquireMode = ArtsMode::inout;
+        preserveModeForRawBlockedAcquire = true;
+        ++numOutAcquiresPromotedForPartialBlocks;
+      }
 
       Value acqGuid = sourceGuid;
       Value acqPtr = sourcePtr;
@@ -1423,6 +1432,8 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
         if (preserveDepEdge)
           acquireOp.setPreserveDepEdge();
       }
+      if (preserveModeForRawBlockedAcquire)
+        acquireOp.setPreserveAccessMode();
 
       acquireOp.setPartitionSegments(indicesSegments, offsetsSegments,
                                      sizesSegments, entryModes);
