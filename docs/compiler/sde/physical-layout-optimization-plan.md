@@ -12,9 +12,10 @@ available.
 Layer limits:
 
 - SDE owns semantic recognition, legality proofs, tiling, task shape, barrier
-  intent, reduction strategy, and physical DB layout policy.
+  intent, reduction strategy, and target-neutral physical layout/grain intent.
 - Core owns materializing SDE-authored plans in `CreateDbs`, preserving the
-  chosen DB/EDT shape, validating contracts, and lowering dependency windows.
+  chosen DB/EDT shape, validating contracts, lowering dependency windows, and
+  binding SDE logical-resource queries to ARTS runtime queries.
 - RT/runtime work waits until the SDE/Core shape is present and traces still
   show launch, CPS, dependency, or scheduling overhead.
 
@@ -29,6 +30,7 @@ Every optimization should produce or refine the SDE plan before
 - `physicalBlockShape`
 - `logicalWorkerSlice`
 - `physicalHaloShape`
+- `sde.resource_query <logical_workers>` for symbolic grain expressions
 - `iterationTopology`
 - `repetitionStructure`
 - `asyncStrategy`
@@ -39,7 +41,8 @@ The plan belongs on the SDE scheduling unit that owns the proof.
 `ConvertSdeToArts` lowers the final plan into Core `arts.plan.*` and dependency
 contracts at the boundary; `CreateDbs` must create the chosen physical DB layout
 directly from that lowered contract. Late ARTS heuristics may refine mechanics
-but must not invent partition policy.
+but must not invent partition policy. SDE passes must not materialize
+`arts.runtime_query` or ARTS worker ids directly.
 
 ## Optimization Tracks
 
@@ -58,11 +61,13 @@ largest class of coarse-DB bottlenecks.
 
 Target `gemm`, `2mm`, `3mm`, and batched tensor contractions.
 
-SDE should normalize matmul-like loops to output-tile ownership, choose tile
-sizes from the cost model, and preserve real phase edges for chained products.
-`3mm` first-phase products should remain independent when their roots are
-disjoint; `2mm` intermediates should become physical DB blocks before the
-consumer phase.
+SDE should normalize matmul-like loops to contraction-tile ownership, choose
+tile sizes from tensor shape, cache/reuse facts, and abstract logical capacity,
+and preserve real phase edges for chained products. Direct-memory output
+ownership must stay row-strip until SDE can also prove packed A/B panel or
+intermediate-tile reuse. `3mm` first-phase products should remain independent
+when their roots are disjoint; `2mm` intermediates should become physical DB
+blocks before the consumer phase.
 
 ### Vector, Reduction, And Elementwise Fusion
 

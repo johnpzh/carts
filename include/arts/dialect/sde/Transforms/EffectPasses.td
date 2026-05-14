@@ -35,12 +35,14 @@ def ScheduleRefinement
 }
 
 def ChunkOpt : Pass<"chunk-opt", "mlir::ModuleOp"> {
-  let summary = "Fill missing SDE chunk sizes from the cost model";
+  let summary = "Fill missing SDE chunk sizes from logical capacity";
   let description = [{
-    Uses the SDE-owned cost model to synthesize chunk sizes for eligible
+    Uses SDE-owned logical capacity to synthesize chunk sizes for eligible
     sde.su_iterate operations when the source program left them unspecified.
-    The current implementation handles one-dimensional dynamic/guided loops
-    with constant trip counts and preserves explicit source chunk sizes.
+    Symbolic trip-count cases use `sde.resource_query <logical_workers>` so
+    Core, not SDE, binds the expression to the ARTS runtime query. The current
+    implementation handles one-dimensional dynamic/guided loops and preserves
+    explicit source chunk sizes.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
                            "::mlir::arith::ArithDialect"];
@@ -64,8 +66,8 @@ def DistributionPlanning
     : Pass<"distribution-planning", "mlir::ModuleOp"> {
   let summary = "Derive SDE-owned distribution intent from structured SDE loops";
   let description = [{
-    Uses SDE-owned structured classification, concurrency scope, and the active
-    SDE cost model to wrap eligible `sde.su_iterate` operations in
+    Uses SDE-owned structured classification, concurrency scope, and abstract
+    logical-capacity heuristics to wrap eligible `sde.su_iterate` operations in
     `sde.su_distribute`. The current implementation is deliberately
     narrow: it only authors a blocked advisory for local elementwise loops and
     an owner-compute advisory for distributed stencil loops with enough work to

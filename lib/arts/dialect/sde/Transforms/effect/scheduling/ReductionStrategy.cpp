@@ -76,7 +76,8 @@ struct ReductionStrategyPass
     if (!costModel)
       return;
 
-    int64_t workerCount = std::max<int64_t>(1, costModel->getWorkerCount());
+    int64_t workerCount =
+        std::max<int64_t>(1, costModel->getLogicalWorkerCapacity());
     if (workerCount <= 1)
       return;
 

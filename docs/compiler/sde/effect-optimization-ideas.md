@@ -33,6 +33,8 @@ Current analysis facts:
 Tile sizes should come from structured effect facts and the cost model:
 
 - enough useful work per EDT to amortize launch;
+- abstract logical worker capacity, using `sde.resource_query
+  <logical_workers>` when the grain expression must stay symbolic until Core;
 - cache footprint and read-reuse for tensor contractions;
 - halo widening pressure for stencils;
 - local reduction footprint for vector and norm kernels;
@@ -40,6 +42,8 @@ Tile sizes should come from structured effect facts and the cost model:
 
 The selected tile should be the same shape SDE stamps as `physicalBlockShape`,
 avoiding a mismatch between loop tiling and DB materialization.
+SDE should not create `arts.runtime_query` or ARTS worker-specific control; Core
+does that binding from the final SDE plan.
 
 ### Block Pipeline Fusion
 

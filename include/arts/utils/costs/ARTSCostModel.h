@@ -1,8 +1,10 @@
 ///==========================================================================///
 /// File: ARTSCostModel.h
 ///
-/// ARTS-specific implementation of SDECostModel. Costs change based on
-/// RuntimeConfig topology (local vs distributed):
+/// ARTS-backed implementation of SDECostModel. SDE passes consume only the
+/// runtime-neutral SDECostModel interface; this adapter maps abstract logical
+/// capacity and normalized costs to the configured ARTS runtime.
+/// Costs change based on RuntimeConfig topology (local vs distributed):
 ///   - Halo exchange: 0.01/byte local vs 0.5/byte distributed (50x)
 ///   - Task sync: 3000 local vs 5000 distributed (1.7x)
 ///   - Task creation: 1800 local vs 2500 distributed (1.4x)
@@ -66,11 +68,11 @@ public:
   int getVectorWidth() const override { return 2; } // generic x86-64 SSE2 / f64
   int64_t getL2CacheSize() const override { return 262144; } // 256KB
 
-  // --- Topology ---
-  int getWorkerCount() const override {
+  // --- Abstract execution capacity ---
+  int getLogicalWorkerCapacity() const override {
     return machine.getRuntimeTotalWorkers();
   }
-  int getNodeCount() const override { return machine.getNodeCount(); }
+  int getLogicalNodeCapacity() const override { return machine.getNodeCount(); }
 };
 
 } // namespace mlir::arts

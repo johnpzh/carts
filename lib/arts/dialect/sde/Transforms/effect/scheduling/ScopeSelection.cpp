@@ -72,7 +72,7 @@ static void refineDistributedScope(Operation *operation,
         break;
 
       // Distributed cost: only (N-1)/N of accesses are remote.
-      int nodeCount = std::max(1, costModel.getNodeCount());
+      int nodeCount = std::max(1, costModel.getLogicalNodeCapacity());
       double remoteFraction = (nodeCount - 1.0) / nodeCount;
       double distributedCost =
           memAccessCount * *tripCount *

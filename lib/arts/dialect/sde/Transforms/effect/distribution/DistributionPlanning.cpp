@@ -1,9 +1,10 @@
 ///==========================================================================///
 /// File: DistributionPlanning.cpp
 ///
-/// Cost-model-backed SDE distribution planning. This pass keeps distribution
-/// ownership on the SDE side of the boundary by wrapping eligible
-/// `sde.su_iterate` operations in `sde.su_distribute`.
+/// SDE distribution planning. This pass keeps distribution ownership on the SDE
+/// side of the boundary by wrapping eligible `sde.su_iterate` operations in
+/// `sde.su_distribute`; it uses only SDE pattern/effect facts and abstract
+/// logical-capacity estimates.
 ///==========================================================================///
 
 #include "arts/dialect/sde/Transforms/Passes.h"
@@ -228,7 +229,7 @@ static void applyPhysicalPlan(sde::SdeSuIterateOp op,
 static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
                                      sde::SDECostModel &costModel) {
   if ((op.getPhysicalOwnerDimsAttr() && op.getPhysicalBlockShapeAttr()) ||
-      costModel.getWorkerCount() <= 1)
+      costModel.getLogicalWorkerCapacity() <= 1)
     return;
   if (auto plannedWorkers = getWorkers(op.getOperation());
       plannedWorkers && *plannedWorkers <= 1)
@@ -257,7 +258,8 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
     if (outputPlan) {
       SmallVector<unsigned, 4> ownerLoopDims =
           chooseMappedSdeOwnerLoopDims(op, *outputPlan);
-      int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+      int64_t workers =
+          std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
       // One-dimensional halo stencils form a dependency pipeline between
       // neighboring owner blocks. Planning modestly more owner blocks than
       // hardware workers gives Core enough ready tasks to keep workers busy
@@ -294,7 +296,8 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
       return;
   }
 
-  int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+  int64_t workers =
+      std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
   SmallVector<int64_t, 4> ownerDims;
   SmallVector<int64_t, 4> physicalBlockShape;
   if (!buildOwnerDimPlan(*fallbackPlan, workers, ownerDims,
@@ -306,7 +309,7 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
 static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
                                      sde::SDECostModel &costModel) {
   if ((op.getPhysicalOwnerDimsAttr() && op.getPhysicalBlockShapeAttr()) ||
-      costModel.getWorkerCount() <= 1)
+      costModel.getLogicalWorkerCapacity() <= 1)
     return;
   auto classification = op.getStructuredClassification();
   if (classification) {
@@ -332,7 +335,8 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
       return;
   }
 
-  int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+  int64_t workers =
+      std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
   if (outputPlan->shape.front() >= workers * 4LL * 1024LL * 1024LL)
     workers *= 2;
   SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
@@ -356,7 +360,7 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
 static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
                                     sde::SDECostModel &costModel) {
   if ((op.getPhysicalOwnerDimsAttr() && op.getPhysicalBlockShapeAttr()) ||
-      costModel.getWorkerCount() <= 1)
+      costModel.getLogicalWorkerCapacity() <= 1)
     return;
   auto classification = op.getStructuredClassification();
   if (!classification ||
@@ -376,7 +380,8 @@ static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
   if (effects.hasUnknownEffects || !effects.writes.contains(outputPlan->root))
     return;
 
-  int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+  int64_t workers =
+      std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
   SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
   SmallVector<int64_t, 4> ownerExtents{outputPlan->shape[0],
                                        outputPlan->shape[1]};
@@ -399,7 +404,8 @@ static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
 
 static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
                                         sde::SDECostModel &costModel) {
-  if (op.getLogicalWorkerSliceAttr() || costModel.getWorkerCount() <= 1)
+  if (op.getLogicalWorkerSliceAttr() ||
+      costModel.getLogicalWorkerCapacity() <= 1)
     return;
   auto classification = op.getStructuredClassification();
   if (!classification ||
@@ -412,7 +418,8 @@ static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
   if (!tripCount || *tripCount <= 0)
     return;
 
-  int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+  int64_t workers =
+      std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
   int64_t slice = ceilDivPositive(*tripCount, workers);
   op.setLogicalWorkerSliceAttr(
       buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{slice}));
@@ -442,7 +449,7 @@ static bool hasEnoughDistributedWork(sde::SdeSuIterateOp op,
 
   int64_t baseThreshold =
       std::max<int64_t>(1, costModel.getMinIterationsPerWorker()) *
-      std::max<int64_t>(1, costModel.getNodeCount());
+      std::max<int64_t>(1, costModel.getLogicalNodeCapacity());
 
   // For stencils, account for halo exchange overhead.
   int64_t threshold = baseThreshold;
@@ -480,7 +487,7 @@ static std::optional<sde::SdeDistributionKind>
 chooseDistributionKind(sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
   if (op->getParentOfType<sde::SdeSuDistributeOp>())
     return std::nullopt;
-  if (costModel.getWorkerCount() <= 1)
+  if (costModel.getLogicalWorkerCapacity() <= 1)
     return std::nullopt;
 
   auto scope = getEnclosingParallelScope(op);

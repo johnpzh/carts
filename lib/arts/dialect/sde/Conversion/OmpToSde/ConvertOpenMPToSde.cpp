@@ -228,7 +228,7 @@ extractDependSlice(Value depVar, OpBuilder &builder, Location loc) {
 
   // Path 3: polygeist.subindex — common for task depend(element) after C
   // lowering. Preserve the base source plus element offset so SDE can identify
-  // task-dependency families before Core DB creation.
+  // source task-dependency patterns before Core DB creation.
   if (auto subIndexOp = depVar.getDefiningOp<polygeist::SubIndexOp>()) {
     OmpDependSlice slice;
     slice.source = subIndexOp.getSource();
@@ -908,8 +908,8 @@ struct ConvertOpenMPToSdePass
   }
 
 private:
-  // Keep the pass wired to the SDE-owned cost-model interface without
-  // reintroducing AnalysisManager or other ARTS-layer plumbing here.
+  // Keep the pass wired to the SDE-owned planning model without reintroducing
+  // AnalysisManager or other ARTS-layer plumbing here.
   sde::SDECostModel *costModel = nullptr;
 };
 } // namespace

@@ -1,7 +1,7 @@
 ///==========================================================================///
 /// File: SDECostModel.h
 ///
-/// Runtime-agnostic cost model for SDE optimization decisions.
+/// Runtime-agnostic planning model for SDE optimization decisions.
 /// Every target runtime (ARTS, Legion, StarPU, GPU) provides a concrete
 /// implementation. SDE passes see ONLY this interface — never ARTS types.
 ///
@@ -40,10 +40,15 @@ public:
   virtual double getSchedulingOverhead(SdeScheduleKind kind,
                                        int64_t tripCount) const = 0;
 
-  // --- Machine topology (abstract) ---
-  virtual int getWorkerCount() const = 0;
-  virtual int getNodeCount() const = 0;
-  virtual bool isDistributed() const { return getNodeCount() > 1; }
+  // --- Abstract execution capacity ---
+  virtual int getLogicalWorkerCapacity() const = 0;
+  virtual int getLogicalNodeCapacity() const = 0;
+  virtual bool isDistributed() const { return getLogicalNodeCapacity() > 1; }
+
+  // Compatibility shims for non-SDE callers that have not adopted the
+  // runtime-neutral names yet.
+  int getWorkerCount() const { return getLogicalWorkerCapacity(); }
+  int getNodeCount() const { return getLogicalNodeCapacity(); }
 
   // --- Hardware parameters ---
   virtual int getVectorWidth() const = 0;

@@ -1,7 +1,7 @@
 ///==========================================================================///
 /// File: Tiling.cpp
 ///
-/// Cost-model-driven tiling in SDE. The current implementation focuses on
+/// Pattern-driven tiling in SDE. The current implementation focuses on
 /// executable loop nests whose tensor-backed linalg carrier proves that
 /// strip-mining the outer SDE loop preserves a disjoint write set. The pass
 /// rewrites the surrounding sde.su_iterate so the tiled loop nest survives
@@ -50,6 +50,16 @@ static Value getConstantIndex(OpBuilder &builder, Location loc, int64_t value) {
   return arith::ConstantIndexOp::create(builder, loc, value);
 }
 
+static Value buildLogicalWorkerCapacityValue(OpBuilder &builder,
+                                             Location loc) {
+  Value logicalWorkers =
+      sde::SdeResourceQueryOp::create(
+          builder, loc, sde::SdeResourceQueryKind::logicalWorkers)
+          .getResult();
+  return arith::MaxUIOp::create(builder, loc, logicalWorkers,
+                                getConstantIndex(builder, loc, 1));
+}
+
 static Value buildTripCountValue(OpBuilder &builder, Location loc,
                                  sde::SdeSuIterateOp op) {
   if (std::optional<int64_t> tripCount = getStaticTripCount(op.getOperation()))
@@ -93,8 +103,7 @@ static Value buildTileIterationValue(OpBuilder &builder, Location loc,
     return Value();
 
   Value one = getConstantIndex(builder, loc, 1);
-  Value workerCountValue = getConstantIndex(
-      builder, loc, std::max<int64_t>(1, costModel.getWorkerCount()));
+  Value workerCountValue = buildLogicalWorkerCapacityValue(builder, loc);
   Value minIterationsValue = getConstantIndex(
       builder, loc,
       std::max<int64_t>(1, costModel.getMinIterationsPerWorker()));
@@ -155,7 +164,8 @@ buildPerDimTileIterations(OpBuilder &builder, Location loc,
   unsigned numDims = tripCounts.size();
   int workersPerDim =
       std::max(1, static_cast<int>(std::ceil(
-                      std::pow(costModel.getWorkerCount(), 1.0 / numDims))));
+                      std::pow(costModel.getLogicalWorkerCapacity(),
+                               1.0 / numDims))));
   int64_t minIter = costModel.getMinIterationsPerWorker();
 
   SmallVector<Value> tileIterations;
@@ -228,7 +238,8 @@ buildDirectMatmulTilePlan(OpBuilder &builder, Location loc,
   if (rows <= 1 || columns <= 1)
     return std::nullopt;
 
-  int64_t workers = std::max<int64_t>(1, costModel.getWorkerCount());
+  int64_t workers =
+      std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
   int64_t columnWorkers = chooseMatmulColumnWorkers(workers);
   int64_t minIterations =
       std::max<int64_t>(1, costModel.getMinIterationsPerWorker());
@@ -617,7 +628,9 @@ computeStaticTileIterations(sde::SdeSuIterateOp op,
     if (tripCount <= 0)
       return std::nullopt;
     int64_t balanced =
-        ceilDivPositive(tripCount, std::max<int64_t>(1, costModel.getWorkerCount()));
+        ceilDivPositive(
+            tripCount,
+            std::max<int64_t>(1, costModel.getLogicalWorkerCapacity()));
     tileIterations.push_back(
         std::clamp(std::max<int64_t>(balanced, minIter), int64_t{1},
                    tripCount));
@@ -626,7 +639,8 @@ computeStaticTileIterations(sde::SdeSuIterateOp op,
 
   int64_t workersPerDim =
       std::max<int64_t>(1, static_cast<int64_t>(std::ceil(std::pow(
-                              costModel.getWorkerCount(), 1.0 / numDims))));
+                              costModel.getLogicalWorkerCapacity(),
+                              1.0 / numDims))));
   for (int64_t tripCount : tripCounts) {
     if (tripCount <= 0)
       return std::nullopt;
@@ -770,8 +784,9 @@ buildNdStencilPhysicalTilePlan(sde::SdeSuIterateOp op,
     return std::nullopt;
 
   SmallVector<int64_t, 4> grid =
-      factorWorkersAcrossDims(std::max<int64_t>(1, costModel.getWorkerCount()),
-                              ownerExtents);
+      factorWorkersAcrossDims(
+          std::max<int64_t>(1, costModel.getLogicalWorkerCapacity()),
+          ownerExtents);
   for (auto [idx, physicalDim] : llvm::enumerate(plan.ownerPhysicalDims)) {
     int64_t tile =
         ceilDivPositive(outputPlan->shape[physicalDim], grid[idx]);
@@ -1204,7 +1219,8 @@ struct TilingPass : public arts::impl::TilingBase<TilingPass> {
         if (std::optional<int64_t> tripCount =
                 getStaticTripCount(op.getOperation())) {
           int64_t balancedTile = llvm::divideCeil(
-              *tripCount, std::max<int64_t>(1, costModel->getWorkerCount()));
+              *tripCount,
+              std::max<int64_t>(1, costModel->getLogicalWorkerCapacity()));
           int64_t tileCount = std::clamp(
               std::max<int64_t>(balancedTile,
                                 costModel->getMinIterationsPerWorker()),

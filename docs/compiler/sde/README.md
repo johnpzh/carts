@@ -2,17 +2,20 @@
 
 This directory is the compiler-facing home for SDE optimization planning. SDE is
 runtime-agnostic: it owns OpenMP semantics, structured state, dependence proofs,
-effect summaries, task shape, and physical DB layout policy before
+effect summaries, task shape, and target-neutral layout/grain intent before
 `ConvertSdeToArts`. Core is ARTS-machine-aware and materializes those plans in
-`CreateDbs`, preserving DB/EDT/epoch orchestration. RT/runtime work should wait
-until SDE/Core plans are present and traces still show launch, CPS, dependency,
-or runtime scheduling overhead.
+`CreateDbs`, preserving DB/EDT/epoch orchestration and binding SDE logical
+resource queries to ARTS runtime queries. RT/runtime work should wait until
+SDE/Core plans are present and traces still show launch, CPS, dependency, or
+runtime scheduling overhead.
 
 For the current dialect split, including SDE logical-worker planning after the
 removal of the Core loop carrier, see
 [`../dialect-layering-vision.md`](../dialect-layering-vision.md). SDE should
 model logical worker capacity, not ARTS nodes, routes, workers-per-node, or
-runtime API queries.
+runtime API queries. When symbolic SDE arithmetic needs execution capacity, use
+`sde.resource_query <logical_workers>` and let `ConvertSdeToArts` lower it to
+Core.
 
 ## Current SDE Spine
 
@@ -75,6 +78,7 @@ SDE optimization work should stamp or refine SDE-owned plan facts before
 - `physicalBlockShape`
 - `logicalWorkerSlice`
 - `physicalHaloShape`
+- `sde.resource_query <logical_workers>` for symbolic grain arithmetic
 - `iterationTopology`
 - `repetitionStructure`
 - `asyncStrategy`
@@ -87,8 +91,9 @@ These facts are the SDE plan. `PatternAnalysis` and later SDE transforms may
 consume and update them; raw SDE pattern-analysis facts must not become a Core
 analysis API. At the dialect boundary, `ConvertSdeToArts` mechanically lowers
 the final SDE plan into Core `arts.plan.*`, dependency-pattern, distribution,
-DB, EDT, and barrier contracts. Core and RT may materialize or validate that
-lowered contract, but they must not invent tensor partition policy late.
+DB, EDT, barrier contracts, and `arts.runtime_query` operations for SDE logical
+resource queries. Core and RT may materialize or validate that lowered
+contract, but they must not invent tensor partition policy late.
 
 ## Verification Rule
 

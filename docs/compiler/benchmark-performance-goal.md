@@ -7,14 +7,18 @@ against OpenMP at `large`, 64 threads, and 1 node by keeping decisions in the
 right dialect layer.
 
 SDE is runtime-agnostic. It must prove legality and author the semantic plan:
-tensor/vector partitions, tiling, reductions, halo/window shapes, task grain,
-barrier intent, and timestep or wavefront structure for matrix/tensor outputs,
-vector/reduction kernels, 3D component stencils, and time-stepped kernels.
+tensor/vector partitions, tiling, reductions, halo/window shapes, logical task
+grain, barrier intent, and timestep or wavefront structure for matrix/tensor
+outputs, vector/reduction kernels, 3D component stencils, and time-stepped
+kernels. When SDE needs symbolic execution capacity, it uses
+`sde.resource_query <logical_workers>` rather than an ARTS runtime query.
 
 Core is ARTS-machine-aware. It must materialize SDE-authored plans through
 `CreateDbs`, preserve and refine the chosen DB/EDT/dependency/epoch shape, and
 use Core analyses to orchestrate work without inventing tensor partition policy
-late.
+late. Core is the boundary that binds `sde.resource_query` and SDE plan
+contracts to `arts.runtime_query`, ARTS worker counts, DB granularity, EDT
+counts, and dependency-slot mechanics.
 
 RT is the low-level runtime-call lowering layer. It should optimize launch,
 CPS/continuation, dependency-slot, packing, scalar replacement, GUID/runtime
@@ -52,8 +56,9 @@ owns:
 - memory-effect summaries over source roots, carrier tensors, and memrefs;
 - owner dimensions, spatial dimensions, component dimensions, and batch
   dimensions;
-- physical DB layout policy through `physicalOwnerDims`,
-  `physicalBlockShape`, `physicalHaloShape`, and `logicalWorkerSlice`;
+- target-neutral physical layout and grain intent through `physicalOwnerDims`,
+  `physicalBlockShape`, `physicalHaloShape`, and `logicalWorkerSlice`; these
+  are SDE plan facts, not ARTS DB objects or worker identifiers;
 - scheduling-unit topology through `iterationTopology`,
   `repetitionStructure`, `asyncStrategy`, reduction strategy, and barrier
   reason;
@@ -64,11 +69,13 @@ owns:
   vectorization hints, owner-slice partitioning, wavefront/timestep grouping,
   CPS conversion, and barrier removal.
 
-SDE must reject or leave unplanned any case whose legality depends on runtime
-machine behavior instead of source semantics. It may stamp conservative plans,
-but it must not stamp a performance plan unless the SDE analysis can explain
-why the chosen owner slices are independent or why their dependency windows are
-complete.
+SDE must reject or leave unplanned any case whose legality depends on
+runtime-specific machine behavior instead of source semantics. It may use an
+abstract logical-capacity cost model and `sde.resource_query` for target-neutral
+grain arithmetic, but it must not name ARTS workers, routes, nodes, EDTs, DBs,
+or runtime APIs. It may stamp conservative plans, but it must not stamp a
+performance plan unless the SDE analysis can explain why the chosen owner
+slices are independent or why their dependency windows are complete.
 
 The latest CPS contract follows this rule. `CpsPlanning` marks full-timestep
 `advance_edt` stages as SDE CPS candidates only when SDE can provide an
@@ -87,6 +94,9 @@ policy as input, not as a place to invent tensor partitioning. Core owns:
 
 - converting SDE plan attributes into Core `arts.plan.*`, dependency pattern,
   distribution kind, and stencil/layout contracts;
+- lowering `sde.resource_query <logical_workers>` into the concrete ARTS
+  runtime query or static worker materialization selected by the Core/runtime
+  configuration;
 - materializing SDE CPS, barrier, async, and repeated-timestep plans into ARTS
   EDT/epoch/control structure without changing their legality policy;
 - creating the chosen physical DB layout directly in `CreateDbs`;
@@ -102,7 +112,8 @@ Core may refine an ARTS object graph, but any refinement must be a mechanical
 consequence of the SDE plan or an ARTS-machine constraint. If Core has to guess
 which tensor dimension to block, which reduction strategy to use, or whether a
 stencil, timestep, or CPS chain is owner-slice/dataflow safe, the fix belongs
-in SDE.
+in SDE. If SDE starts naming ARTS topology directly, the fix is to move that
+binding to Core and leave only logical-capacity intent in SDE.
 
 ### RT: runtime-call lowering dialect
 
@@ -144,6 +155,21 @@ materialization check, and the RT/runtime evidence. The goal is not to add more
 heuristics everywhere; it is to make each heuristic live in the earliest layer
 where it can be proven.
 
+Pass responsibility rule:
+
+- `PatternAnalysis` stamps approved `sde.pattern` and structured tensor/linalg
+  facts. It does not stamp Core attrs and it does not pass raw analysis objects
+  across the dialect boundary.
+- SDE structural/effect passes consume those approved SDE facts to decide
+  interchange, tiling, fusion, chunking, reduction strategy, distribution
+  intent, barriers, and CPS candidates.
+- SDE may emit `sde.resource_query <logical_workers>` when symbolic arithmetic
+  needs a logical execution capacity. Core lowers that query to ARTS runtime
+  machinery.
+- `ConvertSdeToArts` lowers only the final SDE plan contract. Core then
+  materializes ARTS DB/EDT/dependency shape and validates that it preserved the
+  contract.
+
 ### Required SDE analyses
 
 - **Structured loop summary:** classify the loop family, iterator roles,
@@ -154,7 +180,8 @@ where it can be proven.
   slice or are covered by a halo/window plan.
 - **Physical layout synthesis:** choose owner dims, block shape, halo shape,
   logical worker slice, component locality, and task topology from tensor shape,
-  access footprint, worker count, and minimum useful work per task.
+  access footprint, abstract logical capacity, and minimum useful work per
+  task.
 - **Reduction strategy selection:** choose local accumulate, tree, or atomic
   based on accumulator visibility, write contention, output rank, and expected
   task count.
@@ -335,6 +362,9 @@ until they are re-enabled or removed with a documented reason.
   nests, and scheduling-unit topology when SDE can prove legality. SDE should
   not merely stamp late contracts if the loop shape itself must change for good
   work distribution.
+- Logical resource queries: use `sde.resource_query <logical_workers>` for
+  symbolic SDE grain arithmetic. Do not materialize `arts.runtime_query`, ARTS
+  worker counts, routes, or node ids in SDE passes.
 - Loop transforms: use tiling, interchange, fusion, vectorization, and
   decomposition only where legality is proven by SDE pattern and effect facts.
 - Dependency granularity: choose DB/task windows from structured access facts,
@@ -550,6 +580,19 @@ Focused post-fix evidence:
   | `polybench/convolution-2d` | `3.31s` | `2.90s` | `0.88x` | Competitive stencil materialization; useful control for SDE physical halo/block planning. |
   | `polybench/jacobi2d` | `5.36s` | `0.75s` | `0.14x` | Still blocked on timestep/CPS and stencil task-grain overhead despite correct SDE tiled-step/timestep recognition. |
 
+- SDE logical-resource architecture validation run:
+  `.carts/outputs/benchmarks-gemm-family-large-64-sde-resource-query-20260514/20260514_162624`.
+  Command:
+  `dekk carts benchmarks run polybench/gemm polybench/2mm polybench/3mm --size large --timeout 120 --threads 64 --nodes 1 --trace --results-dir .carts/outputs/benchmarks-gemm-family-large-64-sde-resource-query-20260514`.
+  All 3 benchmarks passed checksum verification; geometric mean kernel speedup
+  was `0.24x`.
+
+  | Benchmark | ARTS kernel | OpenMP kernel | Speedup | Current reading |
+  |---|---:|---:|---:|---|
+  | `polybench/gemm` | `16.39s` | `6.38s` | `0.39x` | Resource-query refactor preserved the accepted row-strip shape; no 25% GEMM performance gain. |
+  | `polybench/2mm` | `28.52s` | `5.59s` | `0.20x` | Slightly better than the previous accepted row-strip focused run, still blocked on input/intermediate reuse. |
+  | `polybench/3mm` | `27.97s` | `4.96s` | `0.18x` | Slower than the previous accepted focused run; still blocked on phase-aware contraction planning. |
+
 Matmul root-cause update:
 
 - CARTS is not slow because GEMM is unrecognized anymore. The accepted SDE
@@ -612,16 +655,33 @@ Research-backed direction:
   and generate a small `MR x NR` microkernel that holds C in registers across
   the K tile.
 - In CARTS terms, SDE should add a `sde.pattern<matmul>` plan variant for
-  `packed_panel` or `contract_tile` with explicit:
-  `owner dims`, `output tile shape`, `k tile`, `packed A/B panel shapes`,
-  `micro tile`, and `phase reuse` for chained contractions. This remains SDE
-  metadata and must not be passed raw to Core.
+  `packed_panel` or `contract_tile` with explicit `owner dims`,
+  `output tile shape`, `k tile`, `packed A/B panel shapes`, `micro tile`, and
+  `phase reuse` for chained contractions. This remains SDE plan metadata.
+  SDE may use `sde.resource_query <logical_workers>` to size symbolic grain,
+  but it must not materialize ARTS workers or runtime calls.
 - Core should materialize the final SDE plan as DBs and task/codelet structure:
   output tile DBs, packed-panel scratch or DBs when cross-task reuse is legal,
-  and phase-local intermediate DBs for `2mm`/`3mm`.
+  phase-local intermediate DBs for `2mm`/`3mm`, and concrete ARTS worker/query
+  binding from SDE logical-resource queries.
 - RT/codelet lowering should run generic LICM, scalar replacement, loop
   vectorization, and alias/noalias cleanup on the already-materialized codelet.
   These passes must be pattern-agnostic; matmul-specific legality stays in SDE.
+
+Professional pass split for the contraction work:
+
+- `PatternAnalysis`: recognize tensor contraction and stamp only approved
+  `sde.pattern<matmul>` facts plus contraction dimensions.
+- `LoopInterchange`: perform legality-preserving order changes backed by the
+  approved contraction facts.
+- `Tiling`: build the SDE contraction-tile plan. It may refuse direct-memory
+  2D owner tiling when packed panels/intermediate reuse are not available.
+- `DistributionPlanning`: convert the chosen tile plan into SDE distribution
+  intent and logical grain. It should not rederive matmul legality.
+- `ConvertSdeToArts` and Core `CreateDbs`: bind the SDE plan to ARTS DBs,
+  EDTs, dependency windows, and runtime resource queries.
+- RT/codelet passes: generic loop/codelet cleanup only after the Core shape is
+  correct.
 
 Next optimization task:
 

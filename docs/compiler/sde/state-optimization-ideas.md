@@ -44,8 +44,8 @@ Make matmul-like state explicit before Core:
 
 - output tile ownership for `C`, `tmp`, `D`, `E`, `F`, `G`, and batched tensor
   outputs;
-- cost-model tile sizes based on useful work per EDT, cache footprint, and
-  reduction locality;
+- tile sizes based on useful work per EDT, cache footprint, reduction locality,
+  and abstract logical capacity;
 - phase state for chained products, with only true producer-consumer edges.
 
 This prevents Core from seeing one coarse output DB plus late per-task slices.

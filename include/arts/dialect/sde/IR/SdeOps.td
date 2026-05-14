@@ -187,6 +187,41 @@ def SdeBarrierReason
 def SdeBarrierReasonAttr
     : ArtsSde_I32EnumAttr<"barrier_reason", SdeBarrierReason>;
 
+def SdeResourceQueryKind
+    : ArtsSde_I32Enum<"SdeResourceQueryKind",
+                      "Target-neutral SDE resource query kind", [
+      I32EnumAttrCase<"logicalWorkers", 0, "logical_workers">
+    ]>;
+def SdeResourceQueryKindAttr
+    : ArtsSde_I32EnumAttr<"resource_query_kind", SdeResourceQueryKind>;
+
+//===----------------------------------------------------------------------===//
+// Resource Ops
+//===----------------------------------------------------------------------===//
+
+def SdeResourceQueryOp : ArtsSde_Op<"resource_query", [Pure]> {
+  let summary = "Query target-neutral SDE execution resources";
+  let description = [{
+    Queries a runtime-neutral execution resource needed to build SDE-level
+    symbolic grain expressions. The result is target-neutral SDE intent; the
+    Core lowering boundary binds it to the concrete runtime mechanism.
+
+    `logical_workers` is the number of logical execution slots available to an
+    SDE scheduling unit. It is not an ARTS worker, route, node, or EDT count.
+  }];
+  let arguments = (ins SdeResourceQueryKindAttr:$kind);
+  let results = (outs Index:$result);
+  let assemblyFormat = "$kind attr-dict";
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<(ins "SdeResourceQueryKind":$kind), [{
+      $_state.addTypes($_builder.getIndexType());
+      $_state.addAttribute("kind",
+          SdeResourceQueryKindAttr::get($_builder.getContext(), kind));
+    }]>
+  ];
+}
+
 //===----------------------------------------------------------------------===//
 // CU (Compute Unit) Ops
 //===----------------------------------------------------------------------===//

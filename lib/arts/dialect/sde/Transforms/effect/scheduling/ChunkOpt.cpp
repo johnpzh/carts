@@ -45,6 +45,16 @@ static Value getConstantIndex(OpBuilder &builder, Location loc, int64_t value) {
   return arith::ConstantIndexOp::create(builder, loc, value);
 }
 
+static Value buildLogicalWorkerCapacityValue(OpBuilder &builder,
+                                             Location loc) {
+  Value logicalWorkers =
+      sde::SdeResourceQueryOp::create(
+          builder, loc, sde::SdeResourceQueryKind::logicalWorkers)
+          .getResult();
+  return arith::MaxUIOp::create(builder, loc, logicalWorkers,
+                                getConstantIndex(builder, loc, 1));
+}
+
 static Value buildTripCountValue(OpBuilder &builder, Location loc,
                                  sde::SdeSuIterateOp op) {
   if (std::optional<int64_t> tripCount = getStaticTripCount(op.getOperation()))
@@ -87,15 +97,13 @@ static Value buildTripCountValue(OpBuilder &builder, Location loc,
 
 static Value buildSymbolicChunkValue(OpBuilder &builder, Location loc,
                                      sde::SdeSuIterateOp op,
-                                     int64_t workerCount,
                                      int64_t minIterations) {
   Value tripCount = buildTripCountValue(builder, loc, op);
   if (!tripCount)
     return Value();
 
   Value one = getConstantIndex(builder, loc, 1);
-  Value workerCountValue =
-      getConstantIndex(builder, loc, std::max<int64_t>(1, workerCount));
+  Value workerCountValue = buildLogicalWorkerCapacityValue(builder, loc);
   Value minIterationsValue =
       getConstantIndex(builder, loc, std::max<int64_t>(1, minIterations));
 
@@ -131,7 +139,8 @@ struct ChunkOptPass : public arts::impl::ChunkOptBase<ChunkOptPass> {
         return;
 
       if (tripCount) {
-        int64_t workerCount = std::max<int64_t>(1, costModel->getWorkerCount());
+        int64_t workerCount =
+            std::max<int64_t>(1, costModel->getLogicalWorkerCapacity());
         int64_t minIterations =
             std::max<int64_t>(1, costModel->getMinIterationsPerWorker());
         int64_t balancedChunk = llvm::divideCeil(*tripCount, workerCount);
@@ -159,7 +168,6 @@ struct ChunkOptPass : public arts::impl::ChunkOptBase<ChunkOptPass> {
       } else {
         chunkSize = buildSymbolicChunkValue(
             rewriter, rewrite.op.getLoc(), rewrite.op,
-            std::max<int64_t>(1, costModel->getWorkerCount()),
             std::max<int64_t>(1, costModel->getMinIterationsPerWorker()));
       }
       if (!chunkSize)

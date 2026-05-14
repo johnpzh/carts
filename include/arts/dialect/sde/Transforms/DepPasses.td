@@ -25,12 +25,15 @@ def LoopInterchange
 }
 
 def Tiling : Pass<"tiling", "mlir::ModuleOp"> {
-  let summary = "Apply cost-model-driven tiling using SDE linalg carriers";
+  let summary = "Apply SDE pattern-driven tiling using linalg carriers";
   let description = [{
-    Uses the SDE-owned cost model together with the transient tensor-backed
-    linalg carriers to apply real loop tiling before SDE->ARTS lowering.
+    Uses SDE-owned pattern/effect facts, abstract logical capacity, and the
+    transient tensor-backed linalg carriers to apply real loop tiling before
+    SDE->ARTS lowering. Symbolic capacity is represented with
+    `sde.resource_query <logical_workers>` and is bound to ARTS only at
+    ConvertSdeToArts.
     The current implementation focuses on the first executable subset:
-    one-dimensional elementwise loops are strip-mined into cost-model-sized
+    one-dimensional elementwise loops are strip-mined into logical-capacity
     tiles and the surrounding sde.su_iterate step is rewritten so the
     transformed loop nest survives into later ARTS lowering without exposing
     tensor IR past the SDE boundary.

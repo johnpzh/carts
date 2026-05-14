@@ -11,6 +11,7 @@
 ///   sde.su_iterate          ->  scf.for dispatch lanes + arts.edt <task>
 ///   sde.su_barrier          ->  arts.barrier
 ///   sde.cu_atomic           ->  arts.atomic_add
+///   sde.resource_query      ->  arts.runtime_query
 ///   sde.mu_dep              ->  arts.db_control
 ///   sde.yield               ->  arts.yield
 ///==========================================================================///
@@ -2282,6 +2283,28 @@ struct CuReduceToArtsPattern : public OpRewritePattern<sde::SdeCuReduceOp> {
   }
 };
 
+struct ResourceQueryToArtsPattern
+    : public OpRewritePattern<sde::SdeResourceQueryOp> {
+  using OpRewritePattern<sde::SdeResourceQueryOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(sde::SdeResourceQueryOp op,
+                                PatternRewriter &rewriter) const override {
+    RuntimeQueryKind kind;
+    switch (op.getKind()) {
+    case sde::SdeResourceQueryKind::logicalWorkers:
+      kind = RuntimeQueryKind::totalWorkers;
+      break;
+    }
+
+    Value runtimeQuery =
+        RuntimeQueryOp::create(rewriter, op.getLoc(), kind).getResult();
+    Value indexValue = ValueAnalysis::castToIndex(runtimeQuery, rewriter,
+                                                  op.getLoc());
+    rewriter.replaceOp(op, indexValue);
+    return success();
+  }
+};
+
 static LogicalResult rejectUnmaterializedCpsChain(ModuleOp module) {
   WalkResult result = module.walk([&](sde::SdeSuIterateOp op) {
     auto strategy = op.getAsyncStrategy();
@@ -2333,6 +2356,7 @@ struct ConvertSdeToArtsPass
     patterns.add<ControlTokenToArtsPattern>(context);
     patterns.add<CuAtomicToArtsPattern>(context);
     patterns.add<CuReduceToArtsPattern>(context);
+    patterns.add<ResourceQueryToArtsPattern>(context);
     patterns.add<SdeYieldToArtsPattern>(context);
     patterns.add<MuReductionDeclToArtsPattern>(context);
     // Tensor-path lowerings (mu_data, mu_token, cu_codelet).

@@ -81,7 +81,8 @@ static int64_t saturatingMultiply(int64_t lhs, int64_t rhs) {
 
 static std::optional<sde::SdeScheduleKind>
 selectSymbolicSchedule(sde::SDECostModel &costModel) {
-  int64_t workerCount = std::max<int64_t>(1, costModel.getWorkerCount());
+  int64_t workerCount =
+      std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
   int64_t minIterations =
       std::max<int64_t>(1, costModel.getMinIterationsPerWorker());
   std::array<int64_t, 4> probeTripCounts = {

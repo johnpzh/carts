@@ -12,7 +12,7 @@ ARTS objects: EDTs, DBs, and epochs. RT maps those objects to runtime API calls.
 ## SDE
 
 SDE owns OpenMP semantics, structured program analysis, tensor/linalg facts,
-scheduling-unit intent, dependency families, reductions, and task-body
+scheduling-unit intent, approved `sde.pattern` facts, reductions, and task-body
 isolation.
 
 SDE may contain:
@@ -22,16 +22,19 @@ SDE may contain:
 - `su_barrier`: source synchronization and SDE barrier decisions.
 - `mu_data`, `mu_dep`, `mu_token`: high-level data and dependency handles.
 - `cu_codelet`: isolated task bodies with explicit tokens and captures.
+- `resource_query <logical_workers>`: target-neutral logical execution capacity
+  for symbolic SDE grain arithmetic.
 - Logical work-plan attrs for chunks, access windows, reductions,
   orchestration groups, and fallback diagnostics.
 
 SDE must not contain ARTS-machine concepts: node count, workers per node,
-routes, current node/worker, runtime topology queries, depv layout, DB pointer
-layout, or placement decisions.
+routes, current node/worker, ARTS runtime topology queries, depv layout, DB
+pointer layout, or placement decisions.
 
-SDE may use a machine-neutral logical capacity such as requested workers or
-logical lanes. Core decides whether those lanes become local workers, nodes, or
-a two-level ARTS mapping.
+SDE may use machine-neutral logical capacity through
+`sde.resource_query <logical_workers>` or compile-time logical-capacity
+estimates. Core decides whether those lanes become ARTS runtime workers, static
+workers, nodes, or a two-level ARTS mapping.
 
 ## Core ARTS
 
@@ -97,7 +100,8 @@ The SDE plan on a work unit should include:
 
 - work family: elementwise, stencil, matmul, reduction, wavefront, Jacobi, or
   explicit unsupported diagnostic;
-- logical worker count or requested logical lanes;
+- logical worker capacity or requested logical lanes, expressed as SDE plan
+  attrs or `sde.resource_query <logical_workers>`;
 - iteration domain: rank, bounds, steps, owner dims, spatial dims, and local
   task-loop shape;
 - schedule: source intent and selected logical chunking;
