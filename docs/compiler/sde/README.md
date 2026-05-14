@@ -25,9 +25,6 @@ The live SDE pass order is inside `openmp-to-arts`:
 
 ```text
 ConvertOpenMPToSde
-RaiseMemrefToTensor
-RaiseToTensor
-RaiseToLinalg
 PatternAnalysis
 LoopInterchange
 Tiling
@@ -41,11 +38,6 @@ IterationSpaceDecomposition
 BarrierElimination
 CpsPlanning
 VerifySdeCpsPlan
-Vectorization
-LowerToMemref
-ConvertToCodelet
-TensorCleanup
-TokenModeRefine
 ConvertSdeToArts
 VerifySdeLowered
 DeadCodeElimination
@@ -61,8 +53,8 @@ of truth when pass order matters.
 - [`physical-layout-optimization-plan.md`](physical-layout-optimization-plan.md):
   SDE-first roadmap for moving physical DB layout and access-slice authorship
   into MU/token plans, with `CreateDbs` left only as the raw-memref bridge.
-- [`state-optimization-ideas.md`](state-optimization-ideas.md): state, tensor,
-  carrier, tiling, and task-shape ideas.
+- [`state-optimization-ideas.md`](state-optimization-ideas.md): memref-level
+  state, MU/token, tiling, and task-shape ideas.
 - [`dependency-optimization-ideas.md`](dependency-optimization-ideas.md):
   barrier removal, dependency windows, phase edges, timestep, and wavefront
   ideas.
@@ -83,8 +75,8 @@ SDE optimization work should stamp or refine SDE-owned plan facts before
 - `physicalBlockShape`
 - `logicalWorkerSlice`
 - `physicalHaloShape`
-- MU facts: `mu_data` roots, `mu_token` access mode, token offsets, token sizes,
-  and codelet token/capture boundaries
+- MU facts: `mu_data` roots, memref or tensor `mu_token` access mode, token
+  offsets, token sizes, and codelet token/capture boundaries
 - `sde.resource_query <logical_workers>` for symbolic grain arithmetic
 - `iterationTopology`
 - `repetitionStructure`
@@ -100,12 +92,12 @@ analysis API. At the dialect boundary, `ConvertSdeToArts` mechanically lowers
 the final SDE plan into Core `arts.plan.*`, dependency-pattern, distribution,
 DB, EDT, barrier contracts, and `arts.runtime_query` operations for SDE logical
 resource queries. For canonical MU/CU form this means direct DB/acquire/EDT
-materialization. For legacy raw-memref `su_iterate` form, SDE currently emits
-explicit dependency-slice controls from the physical owner plan so `CreateDbs`
-consumes a plan instead of deriving one from body shape. The migration target is
-to turn those same SDE facts into MU tokens/codelets before Core so no
-`arts.db_control` bridge is needed. Core and RT may materialize or validate that
-lowered contract, but they must not invent tensor partition policy late.
+materialization. For legacy raw-memref `su_iterate` form, Core may still
+materialize raw external memref captures using SDE physical plan attrs, but
+there is no Core dependency-marker op. Task dependency declarations that remain
+as `sde.mu_dep` at the boundary are rejected; SDE must turn those facts into
+memref-level MU tokens/codelets before Core. Core and RT may materialize or
+validate that lowered contract, but they must not invent partition policy late.
 
 ## Heuristic Analysis Spine
 
@@ -113,7 +105,7 @@ Use `PatternAnalysis` as the name for the shared SDE fact pass. It is not a
 Core input object and it should not be renamed to vague "structured summaries".
 The pass should stamp stable SDE facts that downstream SDE passes can consume:
 
-- tensor/linalg family and rank;
+- memref/tensor family and rank;
 - read/write roots, access modes, and self-read status;
 - owner, spatial, component, batch, and reduction dimensions;
 - affine or structured index maps when available;

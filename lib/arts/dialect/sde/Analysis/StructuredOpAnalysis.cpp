@@ -10,7 +10,6 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "arts/utils/ValueAnalysis.h"
 #include "llvm/ADT/SmallBitVector.h"
@@ -207,20 +206,11 @@ static std::optional<AffineMap> tryBuildIndexingMap(OperandRange indices,
   return AffineMap::get(/*dimCount=*/ivs.size(), /*symbolCount=*/0, exprs, ctx);
 }
 
-static bool isRankZeroI1Tensor(Type type) {
-  auto tensorType = dyn_cast<RankedTensorType>(type);
-  if (!tensorType || tensorType.getRank() != 0)
-    return false;
-  auto elementType = dyn_cast<IntegerType>(tensorType.getElementType());
-  return elementType && elementType.getWidth() == 1;
-}
-
 static bool
 collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
                           SmallVectorImpl<MemrefAccessEntry> &reads,
                           SmallVectorImpl<MemrefAccessEntry> &writes,
-                          MLIRContext *ctx, bool &sawAccess,
-                          bool ignoreControlTokenAccesses) {
+                          MLIRContext *ctx, bool &sawAccess) {
   for (auto &op : body) {
     if (op.hasTrait<OpTrait::IsTerminator>())
       continue;
@@ -256,51 +246,17 @@ collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
       continue;
     }
 
-    if (auto extractOp = dyn_cast<tensor::ExtractOp>(&op)) {
-      if (ignoreControlTokenAccesses &&
-          isRankZeroI1Tensor(extractOp.getTensor().getType()))
-        continue;
-
-      // Skip extracts that return tensor values (nested tensor types).
-      if (isa<TensorType>(extractOp.getResult().getType()))
-        continue;
-
-      auto map = tryBuildIndexingMap(extractOp.getIndices(), ivs, ctx);
-      if (!map)
-        return false;
-      reads.push_back({extractOp.getTensor(), *map, extractOp.getOperation(),
-                       /*isRead=*/true});
-      sawAccess = true;
-      continue;
-    }
-
-    if (auto insertOp = dyn_cast<tensor::InsertOp>(&op)) {
-      if (ignoreControlTokenAccesses &&
-          isRankZeroI1Tensor(insertOp.getDest().getType()))
-        continue;
-
-      auto map = tryBuildIndexingMap(insertOp.getIndices(), ivs, ctx);
-      if (!map)
-        return false;
-      writes.push_back({insertOp.getDest(), *map, insertOp.getOperation(),
-                        /*isRead=*/false});
-      sawAccess = true;
-      continue;
-    }
-
     if (auto ifOp = dyn_cast<scf::IfOp>(&op)) {
       bool thenSawAccess = false;
       if (!collectMemrefAccessesImpl(ifOp.getThenRegion().front(), ivs, reads,
-                                     writes, ctx, thenSawAccess,
-                                     ignoreControlTokenAccesses))
+                                     writes, ctx, thenSawAccess))
         return false;
       sawAccess |= thenSawAccess;
 
       if (!ifOp.getElseRegion().empty()) {
         bool elseSawAccess = false;
         if (!collectMemrefAccessesImpl(ifOp.getElseRegion().front(), ivs, reads,
-                                       writes, ctx, elseSawAccess,
-                                       ignoreControlTokenAccesses))
+                                       writes, ctx, elseSawAccess))
           return false;
         sawAccess |= elseSawAccess;
       }
@@ -310,8 +266,7 @@ collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
     if (auto nestedFor = dyn_cast<scf::ForOp>(&op)) {
       bool nestedSawAccess = false;
       if (!collectMemrefAccessesImpl(*nestedFor.getBody(), ivs, reads, writes,
-                                     ctx, nestedSawAccess,
-                                     ignoreControlTokenAccesses))
+                                     ctx, nestedSawAccess))
         return false;
       sawAccess |= nestedSawAccess;
       continue;
@@ -332,11 +287,9 @@ collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
 static bool collectMemrefAccesses(Block &body, ArrayRef<Value> ivs,
                                   SmallVectorImpl<MemrefAccessEntry> &reads,
                                   SmallVectorImpl<MemrefAccessEntry> &writes,
-                                  MLIRContext *ctx,
-                                  bool ignoreControlTokenAccesses) {
+                                  MLIRContext *ctx) {
   bool sawAccess = false;
-  if (!collectMemrefAccessesImpl(body, ivs, reads, writes, ctx, sawAccess,
-                                 ignoreControlTokenAccesses))
+  if (!collectMemrefAccessesImpl(body, ivs, reads, writes, ctx, sawAccess))
     return false;
   return sawAccess;
 }
@@ -472,18 +425,6 @@ static Value normalizeOutputRoot(Value value) {
     return {};
   if (isa<BaseMemRefType>(value.getType()))
     return ValueAnalysis::stripMemrefViewOps(value);
-
-  while (value) {
-    if (auto cast = value.getDefiningOp<tensor::CastOp>()) {
-      value = cast.getSource();
-      continue;
-    }
-    if (auto slice = value.getDefiningOp<tensor::ExtractSliceOp>()) {
-      value = slice.getSource();
-      continue;
-    }
-    break;
-  }
   return value;
 }
 
@@ -576,41 +517,6 @@ bool hasConstantOffsets(AffineMap map) {
   return false;
 }
 
-bool StructuredLoopSummary::supportsLinalgCarrier() const {
-  if (classification == SdeStructuredClassification::stencil) {
-    // Stencil carriers require a branch-free innermost body: no scf.if or
-    // nested scf.for that would make the access pattern ambiguous.
-    if (!nest.innermostBody)
-      return false;
-    for (Operation &op : nest.innermostBody->without_terminator()) {
-      if (isa<scf::IfOp, scf::ForOp>(op))
-        return false;
-    }
-    // Stencil carriers require static constant offsets that we can decompose
-    // into shifted extract_slice views. Verify every read has dim+const form.
-    for (const MemrefAccessEntry &entry : reads) {
-      for (AffineExpr result : entry.indexingMap.getResults()) {
-        auto dimOffset = extractDimOffset(result);
-        if (!dimOffset || !dimOffset->dim)
-          return false;
-      }
-    }
-    // Also require at least one write with all-identity maps.
-    for (const MemrefAccessEntry &entry : writes) {
-      for (AffineExpr result : entry.indexingMap.getResults()) {
-        auto dimOffset = extractDimOffset(result);
-        if (!dimOffset || !dimOffset->dim || dimOffset->offset != 0)
-          return false;
-      }
-    }
-    return true;
-  }
-  // Reduction-only su_iterate bodies already carry the reduction dimension.
-  // Raising them to a full linalg.generic carrier here would materialize a
-  // whole-domain reduction inside each distributed iteration lane.
-  return classification != SdeStructuredClassification::reduction;
-}
-
 std::optional<StructuredLoopSummary>
 analyzeStructuredLoop(SdeSuIterateOp iterOp) {
   MLIRContext *ctx = iterOp.getContext();
@@ -620,21 +526,16 @@ analyzeStructuredLoop(SdeSuIterateOp iterOp) {
   if (!summary.nest.innermostBody || summary.nest.ivs.empty())
     return std::nullopt;
 
-  bool hasExplicitReductionKinds =
-      iterOp.getReductionKindsAttr() && !iterOp.getReductionKindsAttr().empty();
-  bool ignoreControlTokenAccesses = !hasExplicitReductionKinds;
   if (!collectMemrefAccesses(*summary.nest.innermostBody, summary.nest.ivs,
-                             summary.reads, summary.writes, ctx,
-                             ignoreControlTokenAccesses))
+                             summary.reads, summary.writes, ctx))
     return std::nullopt;
 
   summary.outputMaps.reserve(summary.writes.size() +
                              iterOp.getReductionAccumulators().size());
   for (const MemrefAccessEntry &write : summary.writes)
     summary.outputMaps.push_back(write.indexingMap);
-  for (Value acc : iterOp.getReductionAccumulators()) {
-    if (ignoreControlTokenAccesses && isRankZeroI1Tensor(acc.getType()))
-      continue;
+  for (Value ignored : iterOp.getReductionAccumulators()) {
+    (void)ignored;
     summary.outputMaps.push_back(
         AffineMap::get(summary.nest.ivs.size(), 0, {}, ctx));
   }

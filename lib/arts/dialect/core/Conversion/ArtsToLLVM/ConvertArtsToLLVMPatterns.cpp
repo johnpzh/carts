@@ -1473,19 +1473,6 @@ struct DbFreePattern : public ArtsToLLVMPattern<DbFreeOp> {
   }
 };
 
-/// Pattern to reject leaked arts.db_control operations.
-struct DbControlPattern : public ArtsToLLVMPattern<DbControlOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
-
-  LogicalResult matchAndRewrite(DbControlOp op,
-                                PatternRewriter &rewriter) const override {
-    return op.emitOpError()
-           << "must be consumed by create-dbs before runtime lowering; "
-              "canonical SDE mu_token/codelet paths should lower directly to "
-              "arts.db_acquire and never produce arts.db_control";
-  }
-};
-
 /// Pattern to convert arts.db_num_elements operations
 struct DbNumElementsPattern : public ArtsToLLVMPattern<DbNumElementsOp> {
   using ArtsToLLVMPattern::ArtsToLLVMPattern;
@@ -1617,7 +1604,6 @@ void populateRuntimePatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
 void populateDbPatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
   MLIRContext *context = patterns.getContext();
   /// DB patterns (DbGepOp/DepDbAcquireOp moved to RtToLLVMPatterns)
-  patterns.add<DbControlPattern>(context, AC);
   patterns.add<DbRefPattern, DbAcquirePattern, DbReleasePattern>(context, AC);
 }
 

@@ -145,46 +145,39 @@ Core
 Runtime calls
 ```
 
-The remaining compatibility path exists only when a `su_iterate` body has been
-lowered back to raw memref loads/stores before codelet formation:
+The remaining compatibility path exists only when a `su_iterate` body still
+reaches Core as raw memref loads/stores before codelet formation:
 
 ```text
 SDE raw-memref fallback
-  sde.su_iterate attrs: pattern, physicalOwnerDims, physicalBlockShape, slice
-  sde.mu_dep or SDE owner-slice dependency
+  sde.su_iterate attrs: pattern, physicalOwnerDims, physicalBlockShape
         |
         | ConvertSdeToArts
         v
-Core bridge marker
-  arts.db_control    memory root + mode + element-space slice
-        |
-        | create-dbs
-        v
 Core DB form
   arts.db_alloc      physical DB layout from SDE attrs
-  arts.db_acquire    DB-space slice derived from SDE element-space slice
+  arts.db_acquire    dependency for the raw external memref capture
   arts.db_ref        raw memref body rewritten to DB-relative indices
 ```
 
-`arts.db_control` is therefore not an SDE control token. It is a temporary
-Core-side memory-slice marker used only because some SDE work still reaches the
-boundary as raw memref bodies. `sde.control_token` is an SDE
-ordering/completion edge consumed by SDE synchronization planning; it should not
-be used to describe memory roots or DB slices.
+Core no longer has an `arts.db_control` operation. `sde.control_token` is an
+SDE ordering/completion edge consumed by SDE synchronization planning; it must
+not describe memory roots or DB slices. `sde.mu_dep` is also SDE-only: if it
+still feeds a `cu_task` at `ConvertSdeToArts`, conversion fails instead of
+creating a Core marker.
 
-## Removing `arts.db_control`
+## Removed Core Dependency Markers
 
-The SDE replacement is not a new Core op. The SDE-level representation already
-exists conceptually:
+The SDE replacement is not a new Core op. The SDE-level representation is:
 
 - `sde.mu_dep` carries user-provided memref dependency slices from
   `omp.task depend(...)` and any SDE-authored owner-slice dependency that has
-  not yet become a tensor token.
-- `sde.mu_token` carries the canonical tensor/codelet dependency slice.
+  not yet become a concrete token.
+- `sde.mu_token` carries the canonical memref/codelet dependency slice.
 - `sde.control_token` carries ordering/completion only.
 
-Deleting `arts.db_control` requires making every raw-memref path produce
-canonical SDE MU/CU form before `ConvertSdeToArts`:
+Every dependency-bearing raw-memref path must produce canonical SDE MU/CU form
+before `ConvertSdeToArts`:
 
 1. SDE must attach every shared data root to an MU root. Function arguments,
    globals, allocas, and backed memrefs need a single `mu_data`/backing handle
@@ -206,10 +199,10 @@ canonical SDE MU/CU form before `ConvertSdeToArts`:
    objects, but it must not rediscover DB roots, task slices, tensor owner dims,
    or tiling policy from raw memrefs.
 
-Only after those items cover `su_iterate`, `cu_task`, task depend slices,
-function-argument memrefs, globals, reductions, and ND/stencil windows should
-`arts.db_control`, the raw-memref portions of `CreateDbs`, and the remaining
-compatibility indexers be deleted.
+The Core op is gone. The remaining migration work is to cover `su_iterate`,
+`cu_task`, task depend slices, function-argument memrefs, globals, reductions,
+and ND/stencil windows with SDE tokens/codelets, then shrink the raw-memref
+portions of `CreateDbs` and the compatibility indexers.
 
 ## Work-Plan Contract
 

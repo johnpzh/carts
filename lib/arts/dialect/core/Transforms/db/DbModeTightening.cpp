@@ -199,22 +199,6 @@ static bool writesFullAllocation(DbAnalysis &dbAnalysis, DbAcquireNode *acqNode,
   return true;
 }
 
-static bool canPreservePartialPartitionedStencilWrite(DbAcquireOp acquire) {
-  if (!acquire)
-    return false;
-
-  auto partitionMode =
-      acquire.getPartitionMode().value_or(PartitionMode::coarse);
-  if (partitionMode == PartitionMode::coarse)
-    return false;
-
-  auto contract = resolveAcquireContract(acquire);
-  if (!contract || !contract->hasExplicitStencilContract())
-    return false;
-
-  return contract->supportsBlockHalo();
-}
-
 static bool canPreserveProofTrustedPartitionedWrite(DbAcquireOp acquire) {
   if (!acquire)
     return false;
@@ -223,6 +207,10 @@ static bool canPreserveProofTrustedPartitionedWrite(DbAcquireOp acquire) {
       acquire.getPartitionMode().value_or(PartitionMode::coarse);
   if (partitionMode == PartitionMode::coarse)
     return false;
+
+  if (auto info = resolveAcquireContract(acquire))
+    if (info->hasExplicitStencilContract() && info->supportsBlockHalo())
+      return false;
 
   LoweringContractOp contract = getLoweringContractOp(acquire.getPtr());
   if (!contract)
@@ -522,18 +510,10 @@ bool DbModeTighteningPass::adjustDbModes() {
         bool fullWrite =
             !allocOp ||
             writesFullAllocation(dbAnalysis, acqNode, allocOp, loopAnalysis);
-        bool partialPartitionedStencilWrite =
-            allocOp && !fullWrite &&
-            canPreservePartialPartitionedStencilWrite(acqOp);
         bool proofTrustedPartitionedWrite =
             allocOp && !fullWrite &&
             canPreserveProofTrustedPartitionedWrite(acqOp);
-        if (partialPartitionedStencilWrite) {
-          ARTS_DEBUG("AcquireOp: " << acqOp
-                                   << " writes a partial partitioned stencil "
-                                      "tile; keeping out mode so the runtime "
-                                      "can use the cheaper writer path");
-        } else if (proofTrustedPartitionedWrite) {
+        if (proofTrustedPartitionedWrite) {
           ARTS_DEBUG("AcquireOp: "
                      << acqOp
                      << " writes within a proof-trusted partitioned slice; "

@@ -148,8 +148,7 @@ bool isArtsRegion(Operation *op) { return isa<EdtOp>(op) || isa<EpochOp>(op); }
 bool isArtsOp(Operation *op) {
   return isArtsRegion(op) ||
          isa<arts::BarrierOp, arts::AllocOp, arts::DbAllocOp, arts::DbAcquireOp,
-             arts::DbReleaseOp, arts::DbFreeOp, arts::DbControlOp,
-             arts::RuntimeQueryOp>(op);
+             arts::DbReleaseOp, arts::DbFreeOp, arts::RuntimeQueryOp>(op);
 }
 
 /// Arts Dialect Types
@@ -331,15 +330,6 @@ void DbDimOp::build(OpBuilder &builder, OperationState &state, Value source,
   Value c = arts::createConstantIndex(builder, state.location, dim);
   state.addOperands(c);
   state.addTypes(builder.getIndexType());
-}
-
-void DbControlOp::build(OpBuilder &builder, OperationState &state,
-                        ArtsMode mode, Value ptr, SmallVector<Value> indices,
-                        SmallVector<Value> offsets, SmallVector<Value> sizes) {
-  auto subviewType =
-      MemRefType::get({ShapedType::kDynamic}, builder.getI64Type());
-  DbControlOp::build(builder, state, subviewType, mode, ptr, indices, offsets,
-                     sizes);
 }
 
 void EdtOp::build(OpBuilder &builder, OperationState &state, EdtType type,

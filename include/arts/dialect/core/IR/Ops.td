@@ -548,50 +548,6 @@ def DbFreeOp : Arts_Op<"db_free", []> {
     `(` $source `)` `:` type($source) attr-dict}];
 }
 
-def DbControlOp : Arts_Op<"db_control", [AttrSizedOperandSegments]> {
-  let summary = "Raw-memref memory-slice dependency marker for CreateDbs";
-  let description = [{
-    This operation is a compatibility marker emitted from SDE `mu_dep` or
-    SDE-authored owner-slice plans when a task body still uses raw memrefs.
-    `create-dbs` consumes it, creates the real `arts.db_acquire`, and erases
-    the marker before runtime lowering.
-
-    It is not equivalent to `sde.control_token`: `sde.control_token` expresses
-    completion/order edges inside SDE, while `arts.db_control` describes a
-    memory root plus an access mode and element-space slice.
-
-    - mode: "in", "out", "inout"
-    - ptr: source memref before DB materialization
-    - indices: pinned indices for the subview (dimensions with size=1)
-    - offsets: chunk offsets for the subview (dimensions with size>1)
-    - sizes: block sizes for the subview (dimensions with size>1)
-  }];
-  let arguments = (ins
-    ArtsModeAttr:$mode,
-    AnyMemRef:$ptr,
-    Variadic<Index>:$indices,
-    Variadic<Index>:$offsets,
-    Variadic<Index>:$sizes
-  );
-
-  let results = (outs MemRefOf<[I64]> : $subview);
-  let assemblyFormat = [{
-    `[` $mode `]` `(` $ptr `:` type($ptr) `)`
-    `indices` `[` $indices `]`
-    `offsets` `[` $offsets `]`
-    `sizes` `[` $sizes `]`
-    attr-dict `:` type($subview)
-  }];
-
-  let builders = [
-    OpBuilder<(ins "ArtsMode":$mode,
-                   "Value":$ptr,
-                   CArg<"SmallVector<Value>", "{}">:$indices,
-                   CArg<"SmallVector<Value>", "{}">:$offsets,
-                   CArg<"SmallVector<Value>", "{}">:$sizes)>
-  ];
-}
-
 def DbNumElementsOp : Arts_Op<"db_num_elements", [Pure]> {
   let summary = "Compute the number of elements in a datablock.";
   let description = [{

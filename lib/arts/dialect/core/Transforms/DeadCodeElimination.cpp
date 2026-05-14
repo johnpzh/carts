@@ -114,8 +114,6 @@ struct DeadCodeEliminationPass
       } else if (auto load = dyn_cast<affine::AffineLoadOp>(user)) {
         if (load.getMemref() == value)
           return true;
-      } else if (isa<DbControlOp>(user)) {
-        return true;
       } else if (isForwardingMemrefAliasOp(user, value)) {
         if (hasLoadThroughAlias(user->getResult(0), visited))
           return true;

@@ -15,6 +15,7 @@
 ///===----------------------------------------------------------------------===///
 
 #include "arts/Dialect.h"
+#include "arts/dialect/sde/Analysis/AffineAccessUtils.h"
 #include "arts/passes/Passes.h"
 #include "arts/utils/Debug.h"
 #include "arts/utils/LoopUtils.h"
@@ -206,6 +207,11 @@ struct DepInfo {
   SmallVector<Operation *> opsToRemove;
 };
 
+struct FlatStridedPlan {
+  SmallVector<Value, 2> dimensions;
+  SmallVector<SmallVector<Value, 2>> accessIndices;
+};
+
 /// Pre-collected task dependency reference for O(1) lookup
 struct TaskDepRef {
   omp::TaskOp taskOp;
@@ -248,6 +254,17 @@ static Value materializeDependView(OpBuilder &builder, Location loc,
   return memref::SubViewOp::create(builder, loc, source, offsets, viewSizes,
                                    strides)
       .getResult();
+}
+
+static bool isWholeFlatDep(const DepInfo &dep, Value totalElements) {
+  return dep.indices.size() == 1 && dep.sizes.size() == 1 &&
+         ValueAnalysis::isZeroConstant(dep.indices.front()) &&
+         ValueAnalysis::sameValue(dep.sizes.front(), totalElements);
+}
+
+static bool isUnitFlatDep(const DepInfo &dep) {
+  return dep.indices.size() == 1 && dep.sizes.size() == 1 &&
+         ValueAnalysis::isOneConstant(dep.sizes.front());
 }
 
 /// Pattern for a nested allocation structure
@@ -379,9 +396,14 @@ private:
   bool hasOnlySupportedUseGraph(const AllocPattern &pattern);
   bool hasOnlySupportedUses(Value value, DenseSet<Value> &visitedValues);
   bool hasOnlySupportedSubviewUses(Value value, DenseSet<Value> &visitedValues);
+  std::optional<FlatStridedPlan>
+  inferFlatStridedPlan(AllocPattern &pattern);
 
   /// Phase 3: Transform the pattern
   LogicalResult transformPattern(AllocPattern &pattern, OpBuilder &builder);
+  LogicalResult transformFlatStridedWrapper(AllocPattern &pattern,
+                                            const FlatStridedPlan &plan,
+                                            OpBuilder &builder);
   LogicalResult transformSimpleWrapper(AllocPattern &pattern,
                                        OpBuilder &builder);
   void rewriteTracedMemref2PointerUses(AllocPattern &pattern, Value ndAlloc,
@@ -535,7 +557,20 @@ void MemrefNormalizationPass::runOnOperation() {
       ARTS_DEBUG("  Collected " << patternOpt->dependencies.size()
                                 << " OMP dependencies");
 
-      /// Phase 3: Transform - SROA for simple wrapper
+      /// Phase 3: Transform. Prefer a true N-D rewrite when a flat allocation
+      /// is only accessed through a consistent row-major linearization
+      /// (`outer * stride + inner`). Otherwise fall back to simple SROA.
+      if (auto flatPlan = inferFlatStridedPlan(*patternOpt)) {
+        if (failed(transformFlatStridedWrapper(*patternOpt, *flatPlan,
+                                               builder))) {
+          ARTS_DEBUG("  Skipping flat strided wrapper pattern - "
+                     "transformation failed at "
+                     << patternOpt->rootAlloc.getLoc());
+          continue;
+        }
+        continue;
+      }
+
       if (failed(transformSimpleWrapper(*patternOpt, builder))) {
         ARTS_DEBUG("  Skipping simple wrapper pattern - transformation failed "
                    "(e.g. dimension hoisting) at "
@@ -1552,9 +1587,89 @@ bool MemrefNormalizationPass::hasOnlySupportedUses(
   return true;
 }
 
+std::optional<FlatStridedPlan>
+MemrefNormalizationPass::inferFlatStridedPlan(AllocPattern &pattern) {
+  auto rootType = dyn_cast<MemRefType>(pattern.rootAlloc.getType());
+  if (!rootType || rootType.getRank() != 1 || pattern.dimensions.size() != 1 ||
+      pattern.accesses.empty())
+    return std::nullopt;
+
+  if (!hasOnlySupportedUseGraph(pattern))
+    return std::nullopt;
+
+  FlatStridedPlan plan;
+  Value stride;
+  plan.accessIndices.reserve(pattern.accesses.size());
+  for (const AccessInfo &access : pattern.accesses) {
+    if (access.indices.size() != 1)
+      return std::nullopt;
+
+    auto linear =
+        sde::decomposeRowMajorLinearizedIndex(access.indices.front(), stride);
+    if (!linear)
+      return std::nullopt;
+    if (!stride)
+      stride = linear->stride;
+
+    plan.accessIndices.push_back({linear->outer, linear->inner});
+  }
+
+  if (!stride)
+    return std::nullopt;
+
+  std::optional<SmallVector<Value, 2>> shape =
+      sde::inferRowMajorFlatShape(pattern.dimensions.front(), stride);
+  if (!shape)
+    return std::nullopt;
+  plan.dimensions = *shape;
+
+  Value totalElements = pattern.dimensions.front();
+  for (DepInfo &dep : pattern.dependencies) {
+    OpBuilder builder(dep.taskOp.getContext());
+    builder.setInsertionPoint(dep.taskOp);
+    if (isWholeFlatDep(dep, totalElements)) {
+      dep.indices = {arts::createConstantIndex(builder, dep.taskOp.getLoc(), 0),
+                     arts::createConstantIndex(builder, dep.taskOp.getLoc(), 0)};
+      dep.sizes = {plan.dimensions[0], plan.dimensions[1]};
+      continue;
+    }
+
+    if (isUnitFlatDep(dep)) {
+      auto linear =
+          sde::decomposeRowMajorLinearizedIndex(dep.indices.front(), stride);
+      if (!linear)
+        return std::nullopt;
+      dep.indices = {linear->outer, linear->inner};
+      dep.sizes = {arts::createConstantIndex(builder, dep.taskOp.getLoc(), 1),
+                   arts::createConstantIndex(builder, dep.taskOp.getLoc(), 1)};
+      continue;
+    }
+
+    return std::nullopt;
+  }
+
+  ARTS_DEBUG("  Detected flat row-major strided pattern with stride "
+             << stride);
+  return plan;
+}
+
 ///===----------------------------------------------------------------------===///
 /// Phase 3: Transformation
 ///===----------------------------------------------------------------------===///
+
+LogicalResult MemrefNormalizationPass::transformFlatStridedWrapper(
+    AllocPattern &pattern, const FlatStridedPlan &plan, OpBuilder &builder) {
+  if (plan.accessIndices.size() != pattern.accesses.size())
+    return failure();
+
+  pattern.dimensions.assign(plan.dimensions.begin(), plan.dimensions.end());
+  pattern.hoistedDimensions.clear();
+  for (auto [idx, newIndices] : llvm::enumerate(plan.accessIndices)) {
+    pattern.accesses[idx].indices.assign(newIndices.begin(), newIndices.end());
+  }
+
+  return transformPattern(pattern, builder);
+}
 
 LogicalResult MemrefNormalizationPass::transformPattern(AllocPattern &pattern,
                                                         OpBuilder &builder) {

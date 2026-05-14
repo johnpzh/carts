@@ -925,8 +925,6 @@ static bool isDerivedFromPtrImpl(Value value, Value source,
     return trace(dbAcquire.getSourcePtr());
   if (auto dbGep = dyn_cast<DbGepOp>(defOp))
     return trace(dbGep.getBasePtr());
-  if (auto dbControl = dyn_cast<DbControlOp>(defOp))
-    return trace(dbControl.getPtr());
   if (auto gepOp = dyn_cast<LLVM::GEPOp>(defOp))
     return trace(gepOp.getBase());
   if (auto ptr2memref = dyn_cast<polygeist::Pointer2MemrefOp>(defOp))
@@ -1116,8 +1114,6 @@ static Value getUnderlyingValueImpl(Value v, SmallPtrSet<Value, 16> &visited,
     return trace(dbAcquire.getSourcePtr());
   if (auto dbGep = dyn_cast<DbGepOp>(op))
     return trace(dbGep.getBasePtr());
-  if (auto dbControl = dyn_cast<DbControlOp>(op))
-    return trace(dbControl.getPtr());
   if (auto dbRef = dyn_cast<DbRefOp>(op))
     return trace(dbRef.getSource());
   if (auto subview = dyn_cast<memref::SubViewOp>(op))

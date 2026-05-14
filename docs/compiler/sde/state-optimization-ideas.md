@@ -2,30 +2,29 @@
 
 ## Current State Surface
 
-SDE state work is centered on `sde.su_iterate` and the tensor/carrier
-pipeline before Core. The important state-bearing attributes are structured
-classification, approved pattern, owner dims, spatial dims, write footprint,
-physical owner dims, physical block shape, logical worker slice, physical halo
-shape, iteration topology, repetition structure, async strategy, and
-distribution kind.
+SDE state work is centered on `sde.su_iterate`, memref-level access analysis,
+and MU/token/codelet planning before Core. The important state-bearing
+attributes are structured classification, approved pattern, owner dims, spatial
+dims, write footprint, physical owner dims, physical block shape, logical
+worker slice, physical halo shape, iteration topology, repetition structure,
+async strategy, and distribution kind.
 
 Current state-related passes and utilities:
 
-- `RaiseMemrefToTensor` converts eligible task-depend raw memrefs into canonical
-  SDE MU/token/codelet form before the raw-memref compatibility bridge.
-- `RaiseToTensor` and `RaiseToLinalg` create the tensor/linalg form used for
-  structured analysis.
+- `ConvertOpenMPToSde` creates the initial SDE semantic structure and explicit
+  memory/control dependency surfaces.
 - `PatternAnalysis` classifies loops, records stencil neighborhoods,
   recognizes wavefront and alternating-buffer families, and stamps approved
-  SDE-only pattern facts for later SDE consumers.
+  SDE-only memref/ND pattern facts for later SDE consumers.
 - `LoopInterchange` and `Tiling` consume approved SDE pattern facts before
   distribution planning.
 - `DistributionPlanning` is currently the main pass that stamps physical block
   plans.
-- `LowerToMemref`, `ConvertToCodelet`, and `TensorCleanup` must preserve valid
-  physical plan attributes until `ConvertSdeToArts`.
 - `StructuredOpAnalysis` and `SdeAnalysisUtils` provide output-layout,
   loop-indexed output, in-place self-read, and root memory-effect facts.
+- Memref-level `sde.mu_token` is the canonical access handle for planned MU
+  slices. Tensor tokens remain a legacy/non-default representation for existing
+  tests and compatibility, not the production structured-loop path.
 
 ## Optimization Ideas
 
@@ -90,9 +89,7 @@ block plan is safe.
 Keep the high-level spine:
 
 ```text
-RaiseMemrefToTensor
-RaiseToTensor
-RaiseToLinalg
+ConvertOpenMPToSde
 PatternAnalysis
 LoopInterchange
 Tiling
@@ -106,11 +103,6 @@ IterationSpaceDecomposition
 BarrierElimination
 CpsPlanning
 VerifySdeCpsPlan
-Vectorization
-LowerToMemref
-ConvertToCodelet
-TensorCleanup
-TokenModeRefine
 ConvertSdeToArts
 ```
 

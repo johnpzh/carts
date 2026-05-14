@@ -10,9 +10,7 @@
 #include "arts/dialect/sde/IR/SdeDialect.h"
 #include "arts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -33,29 +31,9 @@ inline Block *getSuIterateComputeBlock(SdeSuIterateOp op) {
   return &body;
 }
 
-/// Trace a carrier tensor operand back to its backing memref root through
-/// mu_memref_to_tensor and tensor view/cast chains.
-inline Value traceCarrierTensorToMemrefRoot(Value tensorOperand) {
-  Value cur = tensorOperand;
-  while (cur) {
-    if (auto muOp = cur.getDefiningOp<SdeMuMemrefToTensorOp>())
-      return ValueAnalysis::stripMemrefViewOps(muOp.getMemref());
-    if (auto castOp = cur.getDefiningOp<tensor::CastOp>()) {
-      cur = castOp.getSource();
-      continue;
-    }
-    if (auto sliceOp = cur.getDefiningOp<tensor::ExtractSliceOp>()) {
-      cur = sliceOp.getSource();
-      continue;
-    }
-    break;
-  }
-  return {};
-}
-
 /// Root-level memory effects for an SDE structured region. This intentionally
-/// stays in SDE because carrier tensors and DPS linalg operands are SDE
-/// scheduling facts, not Core DB graph facts.
+/// stays in SDE because memref reads/writes are SDE scheduling facts, not Core
+/// DB graph facts.
 struct StructuredMemoryEffectSummary {
   llvm::DenseSet<Value> reads;
   llvm::DenseSet<Value> writes;
@@ -136,7 +114,7 @@ inline bool hasUnmodeledMemoryEffect(Operation *op) {
   if (!op || op->hasTrait<OpTrait::IsTerminator>() || isa<SdeYieldOp>(op))
     return false;
 
-  if (isa<memref::LoadOp, memref::StoreOp, linalg::GenericOp>(op))
+  if (isa<memref::LoadOp, memref::StoreOp>(op))
     return false;
 
   if (isKnownPureScalarLibmCall(op))
@@ -173,20 +151,6 @@ inline void collectStructuredMemoryEffects(
     if (auto storeOp = dyn_cast<memref::StoreOp>(op)) {
       summary.writes.insert(
           ValueAnalysis::stripMemrefViewOps(storeOp.getMemref()));
-      return;
-    }
-
-    if (auto generic = dyn_cast<linalg::GenericOp>(op)) {
-      for (Value input : generic.getDpsInputs()) {
-        Value root = traceCarrierTensorToMemrefRoot(input);
-        if (root)
-          summary.reads.insert(root);
-      }
-      for (Value output : generic.getDpsInits()) {
-        Value root = traceCarrierTensorToMemrefRoot(output);
-        if (root)
-          summary.writes.insert(root);
-      }
       return;
     }
 

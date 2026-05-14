@@ -17,14 +17,10 @@
 #include "arts/dialect/sde/IR/SdeDialect.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/OpenMP/OpenMPDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
-#include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/Pass/Pass.h"
 
 namespace mlir::arts {
@@ -53,15 +49,8 @@ inline NamedAttrList getRewrittenAttrs(SdeSuIterateOp op) {
 
 class SDECostModel;
 
-// --- State passes (IR form changes) ---
-std::unique_ptr<Pass> createRaiseToLinalgPass();
-std::unique_ptr<Pass> createRaiseToTensorPass();
-std::unique_ptr<Pass> createRaiseMemrefToTensorPass();
+// --- State passes (IR cleanup before planning) ---
 std::unique_ptr<Pass> createScalarForwardingPass();
-std::unique_ptr<Pass> createLowerToMemrefPass();
-std::unique_ptr<Pass> createConvertToCodeletPass();
-std::unique_ptr<Pass> createTensorCleanupPass();
-std::unique_ptr<Pass> createTokenModeRefinementPass();
 
 // --- Dep passes (structural transforms) ---
 std::unique_ptr<Pass> createPatternAnalysisPass(
@@ -70,7 +59,6 @@ std::unique_ptr<Pass> createLoopInterchangePass();
 std::unique_ptr<Pass> createTilingPass(SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass> createElementwiseFusionPass();
 std::unique_ptr<Pass> createIterationSpaceDecompositionPass();
-std::unique_ptr<Pass> createVectorizationPass();
 
 // --- Effect passes (scheduling decisions) ---
 std::unique_ptr<Pass>

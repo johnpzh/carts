@@ -24,7 +24,7 @@ def SdeCompletionType
            "SDE completion token">;
 def SdeTokenType
     : Type<CPred<"::llvm::isa<::mlir::arts::sde::TokenType>($_self)">,
-           "SDE tensor access token">;
+           "SDE memref access token">;
 
 //===----------------------------------------------------------------------===//
 // Enum helpers
@@ -239,7 +239,7 @@ def SdeCuRegionOp
     The `nowait` attribute preserves OpenMP nowait semantics. The
     `concurrency_scope` attribute indicates local vs distributed execution.
 
-    Optional `iter_args` thread tensor SSA values through the region body.
+    Optional `iter_args` thread loop-carried SSA values through the region body.
     When present, the body block receives matching block arguments and the
     region must terminate with `sde.yield` returning updated values. When
     absent, the body may omit a terminator or yield empty.
@@ -268,8 +268,7 @@ def SdeCuTaskOp
   let summary = "Task with explicit data dependencies";
   let description = [{
     Captures `omp.task` with `depend(in/out/inout)` clauses. Dependencies
-    are specified via `sde.mu_dep` results or inferred from SSA when using
-    tensor operands.
+    are specified via `sde.mu_dep` results.
   }];
 
   let arguments = (ins
@@ -372,7 +371,7 @@ def SdeSuIterateOp
     Reduction accumulators can carry the combiner kind and identity value,
     preserving information lost by the current pipeline.
 
-    Optional `iter_args` thread tensor SSA values through the loop body.
+    Optional `iter_args` thread loop-carried SSA values through the loop body.
     When present, the body block receives matching block arguments (after
     induction variables) and the region must terminate with `sde.yield`
     returning updated values.  Results match iter_args 1:1.
@@ -478,16 +477,12 @@ def SdeMuDepOp
 
     This is distinct from `sde.control_token`, which carries ordering or
     completion semantics, and from `sde.mu_token`, which is the canonical
-    tensor/codelet access token that lowers directly to `arts.db_acquire`.
-    In the tensor path, `tensor.extract_slice`/`tensor.insert_slice` and
-    `sde.mu_token` carry the same slice information natively.
+    MU/codelet memref access token that lowers directly to `arts.db_acquire`.
 
-    Transitional note: remaining raw-memref paths currently lower `sde.mu_dep`
-    through a temporary Core `arts.db_control` marker that `create-dbs` must
-    consume. The target path is for an SDE materialization pass to turn these
-    deps into `mu_data`/`mu_token`/`cu_codelet` form before the SDE/Core
-    boundary, after which `ConvertSdeToArts` can create DBs and acquires
-    directly and `arts.db_control` can be deleted.
+    `sde.mu_dep` is an SDE-only declaration. It must be consumed by SDE
+    materialization into memref-level `mu_data`/`mu_token`/`cu_codelet` form
+    before the SDE/Core boundary; Core must see concrete DB allocation/acquire
+    requests, not dependency declarations.
   }];
 
   let arguments = (ins
@@ -507,24 +502,25 @@ def SdeMuDepOp
 
 def SdeMuTokenOp
     : ArtsSde_Op<"mu_token", [Pure, AttrSizedOperandSegments]> {
-  let summary = "Produce a tensor-path access token (whole or slice).";
+  let summary = "Produce an MU access token (whole storage or slice).";
   let description = [{
-    Names a tensor (or a rectangular slice of one) for consumption by a
+    Names a memref (or a rectangular slice of one) for consumption by a
     `sde.cu_codelet`, with an explicit access mode. When `offsets` / `sizes`
-    are omitted the token addresses the whole tensor.
+    are omitted the token addresses the whole storage object.
 
-    Tokens are the tensor-path analogue of `sde.mu_dep`. At the SDE to ARTS
-    boundary a `mu_token` lowers 1:1 to `arts.db_acquire <mode>`.
+    Tokens are the canonical SDE dependency surface for MU-backed work. At the
+    SDE to ARTS boundary a `mu_token` lowers 1:1 to
+    `arts.db_acquire <mode>`.
 
-    Two tokens with disjoint slices of the same tensor expose slice-
-    parallelism that would be serialized if codelets took raw tensor
-    operands; the SSA dep edge still flows through the parent tensor, but
-    the analyses see the disjointness.
+    Two tokens with disjoint slices of the same source expose slice
+    parallelism that would be serialized if codelets took raw storage
+    operands; the SSA dep edge still flows through the parent storage value,
+    but analyses see the disjointness.
   }];
 
   let arguments = (ins
     SdeAccessModeAttr:$mode,
-    AnyTensor:$source,
+    AnyMemRef:$source,
     Variadic<Index>:$offsets,
     Variadic<Index>:$sizes
   );
@@ -546,23 +542,18 @@ def SdeCuCodeletOp
       RecursiveMemoryEffects,
       AttrSizedOperandSegments
     ]> {
-  let summary = "Dataflow codelet with tensor tokens and explicit captures.";
+  let summary = "Dataflow codelet with MU tokens and explicit captures.";
   let description = [{
     A compute unit whose only communication with the enclosing scope is
-    through `sde.mu_token` operands, explicit capture operands, and yielded
-    tensor results. The name follows OCR's "codelet": a purely asynchronous,
-    pure-dataflow unit of work whose inputs and outputs are entirely explicit.
+    through `sde.mu_token` operands and explicit capture operands. Memref
+    tokens pass mutable views directly and do not require yielded replacement
+    values.
 
-    Operand shape: token operands are `!sde.token<tensor<...>>`; scalar
+    Operand shape: token operands are `!sde.token<memref<...>>`; scalar
     captures are ordinary SSA values that are copied into the downstream EDT
-    parameter pack. The body's block arguments first list one tensor view per
+    parameter pack. The body's block arguments first list one memref view per
     token, typed as the token's `slice_type`, followed by one block argument per
     explicit capture.
-
-    Result shape: one SSA result per `write` or `readwrite` token, of the
-    same type as the source parent tensor. The op implicitly reconstructs
-    the parent tensor with the slice replaced by the yielded value
-    (destination-passing style, as in linalg-on-tensors).
 
     `IsolatedFromAbove` guarantees the body references no SSA value from
     outside its block arguments. Dependencies are SSA-visible via the token
@@ -574,13 +565,11 @@ def SdeCuCodeletOp
     Variadic<SdeTokenType>:$tokens,
     Variadic<AnyType>:$captures
   );
-  let results   = (outs Variadic<AnyTensor>:$outputs);
   let regions   = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
     `(` ($tokens^ `:` type($tokens))? `)`
     (`captures` `(` $captures^ `:` type($captures) `)`)?
-    (`->` `(` type($outputs)^ `)`)?
     $body attr-dict
   }];
 
@@ -588,52 +577,22 @@ def SdeCuCodeletOp
 }
 
 def SdeMuAllocOp : ArtsSde_Op<"mu_alloc", [Pure]> {
-  let summary = "Allocate a tensor value with given shape.";
+  let summary = "Allocate an SDE memref value with given shape.";
   let description = [{
-    Creates a tensor SSA value of the given type with undefined contents.
-    This is the SDE-level equivalent of `memref.alloca` — it declares a
-    data container for the SDE dataflow graph. Supports both static and
-    dynamic dimensions.
-
-    Lowered by ConvertSdeToArts to `tensor.empty()` for the bufferization
-    path, or directly to `arts.db_alloc` for distributed execution.
+    Creates a memref SSA value for an SDE memory unit. This is the SDE-level
+    declaration of storage that later lowers to an ARTS DB allocation. Supports
+    static and dynamic memref dimensions.
 
     Examples:
-      %arr = sde.mu_alloc : tensor<100xi32>
-      %mat = sde.mu_alloc(%n, %m) : tensor<?x?xf64>
+      %arr = sde.mu_alloc : memref<100xi32>
+      %mat = sde.mu_alloc(%n, %m) : memref<?x?xf64>
   }];
   let arguments = (ins Variadic<Index>:$dynamicSizes);
-  let results = (outs AnyRankedTensor:$tensor);
+  let results = (outs AnyMemRef:$memref);
   let assemblyFormat = [{
-    (`(` $dynamicSizes^ `)`)? attr-dict `:` type($tensor)
+    (`(` $dynamicSizes^ `)`)? attr-dict `:` type($memref)
   }];
   let hasVerifier = 1;
-}
-
-def SdeMuMemrefToTensorOp : ArtsSde_Op<"mu_memref_to_tensor", [Pure]> {
-  let summary = "Snapshot a memref into a tensor value at an SDE boundary.";
-  let description = [{
-    Creates a tensor SSA value from a memref at an SDE region boundary (e.g.,
-    before entering a cu_region). The tensor value enters pure SSA dataflow;
-    the memref is not modified. Lowered by ConvertSdeToArts to
-    `bufferization.to_tensor`.
-  }];
-  let arguments = (ins AnyMemRef:$memref);
-  let results = (outs AnyTensor:$tensor);
-  let assemblyFormat = "$memref `:` type($memref) `->` type($tensor) attr-dict";
-}
-
-def SdeMuTensorToMemrefOp
-    : ArtsSde_Op<"mu_tensor_to_memref", [MemoryEffects<[MemWrite]>]> {
-  let summary = "Materialize a tensor value back into a memref at an SDE boundary.";
-  let description = [{
-    Writes a tensor SSA value back to its backing memref at an SDE region
-    boundary (e.g., after a cu_region yields tensor results). This is the
-    inverse of `sde.mu_memref_to_tensor`. Lowered by ConvertSdeToArts to
-    `bufferization.materialize_in_destination`.
-  }];
-  let arguments = (ins AnyTensor:$source, Arg<AnyMemRef, "", [MemWrite]>:$dest);
-  let assemblyFormat = "$source `in` `writable` $dest `:` type($source) `,` type($dest) attr-dict";
 }
 
 def SdeMuDataOp : ArtsSde_Op<"mu_data", [Pure]> {
@@ -642,9 +601,9 @@ def SdeMuDataOp : ArtsSde_Op<"mu_data", [Pure]> {
     Canonical anchor for data that crosses SDE tasks. Replaces the pattern
     of inheriting Polygeist `memref.alloca` for OMP-shared variables.
     Produced by `ConvertOpenMPToSde` for every variable named by an OMP
-    `shared(...)` clause (or otherwise shared across tasks), consumed by
-    `RaiseMemrefToTensor` as an enumeration anchor, lowered by
-    `ConvertSdeToArts` to `arts.db_alloc`.
+    `shared(...)` clause (or otherwise shared across tasks), consumed by SDE
+    MU/token/codelet planning, lowered by `ConvertSdeToArts` to
+    `arts.db_alloc`.
   }];
 
   let arguments = (ins

@@ -71,9 +71,6 @@ The complete SDE lifecycle lives inside this stage.
 
 ```text
 ConvertOpenMPToSde
-RaiseMemrefToTensor
-RaiseToTensor
-RaiseToLinalg
 PatternAnalysis
 LoopInterchange
 Tiling
@@ -87,11 +84,6 @@ IterationSpaceDecomposition
 BarrierElimination
 CpsPlanning
 VerifySdeCpsPlan
-Vectorization
-LowerToMemref
-ConvertToCodelet
-TensorCleanup
-TokenModeRefine
 ConvertSdeToArts
 VerifySdeLowered
 VerifyCoreObjectsOnly

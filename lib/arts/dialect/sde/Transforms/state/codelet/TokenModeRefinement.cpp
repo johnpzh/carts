@@ -4,9 +4,9 @@
 /// Downgrade access modes on mu_token ops inside cu_codelet bodies.
 ///
 /// If a token is declared readwrite but the codelet body only reads the
-/// corresponding block argument (no tensor.insert, no writes), the token's
-/// mode is downgraded to read. This enables more efficient DB acquire modes
-/// downstream (read-only acquire avoids write-back).
+/// corresponding block argument (no tensor.insert and no memref write), the
+/// token's mode is downgraded to read. This enables more efficient DB acquire
+/// modes downstream (read-only acquire avoids write-back).
 ///==========================================================================///
 
 #include "arts/dialect/sde/Transforms/Passes.h"
@@ -16,15 +16,36 @@ namespace mlir::arts {
 } // namespace mlir::arts
 
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 using namespace mlir;
 using namespace mlir::arts;
 
 namespace {
 
-/// Check whether a codelet block argument is written to (tensor.insert or
-/// any op that yields a modified version of the arg).
+/// Check whether a codelet block argument is written to (tensor.insert,
+/// memref.store, or any op that yields a modified version of the arg).
 static bool hasWriteUse(BlockArgument arg, sde::SdeCuCodeletOp codelet) {
+  if (isa<MemRefType>(arg.getType())) {
+    bool written = false;
+    codelet.getBody().walk([&](Operation *op) {
+      if (auto store = dyn_cast<memref::StoreOp>(op)) {
+        if (store.getMemref() == arg)
+          written = true;
+      }
+      if (auto subview = dyn_cast<memref::SubViewOp>(op)) {
+        if (subview.getSource() != arg)
+          return;
+        for (Operation *user : subview.getResult().getUsers()) {
+          if (auto store = dyn_cast<memref::StoreOp>(user))
+            if (store.getMemref() == subview.getResult())
+              written = true;
+        }
+      }
+    });
+    return written;
+  }
+
   // Check if this arg is yielded back (indicates a write).
   auto yield = cast<sde::SdeYieldOp>(codelet.getBody().front().getTerminator());
   for (Value yieldedVal : yield.getValues()) {

@@ -1106,15 +1106,6 @@ bool DbAnalysis::hasStaticHints(DbAcquireOp acqOp) {
   return offsetConst && sizeConst;
 }
 
-Operation *DbAnalysis::findUserEdt(DbControlOp dbControl) {
-  for (Operation *user : dbControl.getResult().getUsers()) {
-    if (auto edt = dyn_cast<EdtOp>(user)) {
-      return edt;
-    }
-  }
-  return nullptr;
-}
-
 std::optional<int64_t> DbAnalysis::getConstantOffsetBetween(Value idx,
                                                             Value base) {
   if (!idx || !base)

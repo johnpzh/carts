@@ -6,6 +6,7 @@
 #include "arts/dialect/sde/IR/SdeDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpImplementation.h"
 
@@ -21,7 +22,7 @@ static bool isSdeCpsPortableCarryType(Type type) {
 }
 
 static bool isSdeCpsBareDataOrPointerType(Type type) {
-  return isa<MemRefType, TensorType, LLVM::LLVMPointerType>(type);
+  return isa<MemRefType, LLVM::LLVMPointerType>(type);
 }
 
 static LogicalResult checkSdeCpsPortableCarry(Operation *op, StringRef role,
@@ -609,14 +610,14 @@ std::optional<SmallVector<OpFoldResult>> SdeSuIterateOp::getLoopSteps() {
 }
 
 ///===----------------------------------------------------------------------===///
-/// SdeMuAllocOp verifier — dynamic dim count must match `?` in result type.
+/// SdeMuAllocOp verifier — dynamic dim count must match `?` in result memref.
 ///===----------------------------------------------------------------------===///
 LogicalResult SdeMuAllocOp::verify() {
-  auto tensorTy = cast<RankedTensorType>(getTensor().getType());
-  int64_t numDynamic = tensorTy.getNumDynamicDims();
+  auto memrefTy = cast<MemRefType>(getMemref().getType());
+  int64_t numDynamic = memrefTy.getNumDynamicDims();
   if (static_cast<int64_t>(getDynamicSizes().size()) != numDynamic)
     return emitOpError() << "expects " << numDynamic
-                         << " dynamic size(s) for result type " << tensorTy
+                         << " dynamic size(s) for result type " << memrefTy
                          << "; got " << getDynamicSizes().size();
   return success();
 }
@@ -625,18 +626,20 @@ LogicalResult SdeMuAllocOp::verify() {
 /// SdeMuTokenOp verifier.
 ///===----------------------------------------------------------------------===///
 LogicalResult SdeMuTokenOp::verify() {
-  // `source` is an `AnyTensor` (enforced by the TableGen operand constraint,
-  // so no runtime check required here).
-  auto tensorTy = llvm::dyn_cast<RankedTensorType>(getSource().getType());
-  if (!tensorTy) {
-    // Unranked tensor: skip rank-specific checks.
-    return success();
+  auto sourceTy = cast<MemRefType>(getSource().getType());
+  auto tokenTy = cast<TokenType>(getToken().getType());
+  MemRefType sliceTy = tokenTy.getSliceType();
+
+  if (sourceTy.getElementType() != sliceTy.getElementType()) {
+    return emitOpError()
+           << "expects token slice_type element type to match source type ("
+           << sourceTy << " vs " << sliceTy << ")";
   }
 
   auto offsets = getOffsets();
   auto sizes = getSizes();
 
-  // Offsets and sizes must either both be empty (whole-tensor token) or both
+  // Offsets and sizes must either both be empty (whole-storage token) or both
   // be supplied.
   if (offsets.size() != sizes.size()) {
     return emitOpError()
@@ -644,19 +647,32 @@ LogicalResult SdeMuTokenOp::verify() {
            << offsets.size() << " offsets, " << sizes.size() << " sizes)";
   }
 
-  if (offsets.empty())
-    return success();
+  int64_t rank = sourceTy.getRank();
+  if (sliceTy.getRank() != rank) {
+    return emitOpError() << "expects token slice_type rank ("
+                         << sliceTy.getRank() << ") to match source rank ("
+                         << rank << ")";
+  }
 
-  // Rank match between offsets/sizes and source tensor.
-  int64_t rank = tensorTy.getRank();
+  if (offsets.empty()) {
+    if (sliceTy != sourceTy) {
+      return emitOpError()
+             << "expects whole-storage token slice_type to match source type ("
+             << sourceTy << "), got " << sliceTy;
+    }
+    return success();
+  }
+
+  // Rank match between offsets/sizes and source storage.
   if (static_cast<int64_t>(offsets.size()) != rank) {
     return emitOpError() << "expects offsets/sizes count (" << offsets.size()
-                         << ") to match source tensor rank (" << rank << ")";
+                         << ") to match source rank (" << rank << ")";
   }
 
   // Static sizes must be non-negative; when both offset and size are constants
   // for a dimension, offset + size <= source_dim.
-  auto shape = tensorTy.getShape();
+  ArrayRef<int64_t> sourceShape = sourceTy.getShape();
+  ArrayRef<int64_t> sliceShape = sliceTy.getShape();
   for (int64_t i = 0; i < rank; ++i) {
     APInt sizeVal;
     bool sizeIsConst = matchPattern(sizes[i], m_ConstantInt(&sizeVal));
@@ -668,18 +684,27 @@ LogicalResult SdeMuTokenOp::verify() {
     APInt offsetVal;
     bool offsetIsConst = matchPattern(offsets[i], m_ConstantInt(&offsetVal));
 
-    if (sizeIsConst && offsetIsConst && !ShapedType::isDynamic(shape[i])) {
+    if (sizeIsConst && !ShapedType::isDynamic(sliceShape[i]) &&
+        sliceShape[i] != sizeVal.getSExtValue()) {
+      return emitOpError() << "expects token slice_type dimension " << i
+                           << " (" << sliceShape[i]
+                           << ") to match static token size "
+                           << sizeVal.getSExtValue();
+    }
+
+    if (sizeIsConst && offsetIsConst &&
+        !ShapedType::isDynamic(sourceShape[i])) {
       int64_t off = offsetVal.getSExtValue();
       int64_t sz = sizeVal.getSExtValue();
       if (off < 0) {
         return emitOpError() << "expects non-negative offset at dimension " << i
                              << " (got " << off << ")";
       }
-      if (off + sz > shape[i]) {
+      if (off + sz > sourceShape[i]) {
         return emitOpError()
                << "slice at dimension " << i << " (offset=" << off
                << ", size=" << sz
-               << ") exceeds source tensor bound (dim=" << shape[i] << ")";
+               << ") exceeds source bound (dim=" << sourceShape[i] << ")";
       }
     }
   }
@@ -698,7 +723,7 @@ LogicalResult SdeCuCodeletOp::verify() {
     return type.isIntOrIndexOrFloat();
   };
 
-  // Every token operand must be `!sde.token<Ti>` for ranked Ti.
+  // Every token operand must be `!sde.token<memref<...>>`.
   SmallVector<TokenType> tokenTypes;
   tokenTypes.reserve(tokens.size());
   for (auto token : tokens) {
@@ -745,73 +770,17 @@ LogicalResult SdeCuCodeletOp::verify() {
     }
   }
 
-  // Collect writable (write / readwrite) tokens.
-  SmallVector<unsigned> writableIndices;
-  unsigned readOnlyCount = 0;
-  for (auto [idx, token] : llvm::enumerate(tokens)) {
-    auto muToken = token.getDefiningOp<SdeMuTokenOp>();
-    if (!muToken) {
-      // Without knowing the mode we cannot statically classify writability;
-      // fall back to treating as read-only for result-count purposes. The
-      // producer should almost always be `sde.mu_token`.
-      ++readOnlyCount;
-      continue;
-    }
-    SdeAccessMode mode = muToken.getMode();
-    if (mode == SdeAccessMode::write || mode == SdeAccessMode::readwrite) {
-      writableIndices.push_back(idx);
-    } else {
-      ++readOnlyCount;
-    }
-  }
-  (void)readOnlyCount;
-
-  // Result count equals writable-token count.
-  if (getOutputs().size() != writableIndices.size()) {
-    return emitOpError()
-           << "expects one result per writable token: got "
-           << getOutputs().size() << " result(s) and " << writableIndices.size()
-           << " writable (write / readwrite) token(s); a <read> token must "
-              "not have a yielded counterpart";
-  }
-
-  // Terminator is sde.yield; operand count matches result count; types match
-  // the writable token's slice_type (destination-passing style).
+  // Terminator is sde.yield with no values. Memref codelets update through
+  // token block arguments directly.
   auto yield = llvm::dyn_cast_or_null<SdeYieldOp>(entry.getTerminator());
   if (!yield)
     return emitOpError() << "expects body to terminate with sde.yield";
-  if (yield.getValues().size() != getOutputs().size()) {
-    return emitOpError() << "sde.yield operand count ("
-                         << yield.getValues().size()
-                         << ") does not match codelet result count ("
-                         << getOutputs().size() << ")";
-  }
-  for (auto [i, writableIdx] : llvm::enumerate(writableIndices)) {
-    Type yieldedTy = yield.getValues()[i].getType();
-    Type sliceTy = tokenTypes[writableIdx].getSliceType();
-    if (yieldedTy != sliceTy) {
-      return emitOpError() << "sde.yield operand #" << i << " type ("
-                           << yieldedTy
-                           << ") does not match writable token slice type ("
-                           << sliceTy << ")";
-    }
-
-    // The result type matches the parent tensor type of the writable token's
-    // producer (mu_token source).
-    auto muToken = tokens[writableIdx].getDefiningOp<SdeMuTokenOp>();
-    if (muToken) {
-      Type parentTy = muToken.getSource().getType();
-      if (getOutputs()[i].getType() != parentTy) {
-        return emitOpError()
-               << "result #" << i << " type (" << getOutputs()[i].getType()
-               << ") does not match parent tensor type (" << parentTy
-               << ") of the corresponding writable token";
-      }
-    }
-  }
+  if (!yield.getValues().empty())
+    return emitOpError() << "expects memref codelet yield to carry no values";
 
   // Best-effort check for conflicting modes on statically-overlapping slices
-  // of the same source tensor. Non-constant slices are delegated to runtime.
+  // of the same source storage value. Non-constant slices are delegated to
+  // runtime.
   auto modeKind = [](SdeAccessMode m) {
     // 0 = read, 1 = write-ish (write or readwrite).
     return (m == SdeAccessMode::read) ? 0 : 1;
@@ -835,7 +804,7 @@ LogicalResult SdeCuCodeletOp::verify() {
 
   auto slicesOverlap = [](ArrayRef<int64_t> aOff, ArrayRef<int64_t> aSz,
                           ArrayRef<int64_t> bOff, ArrayRef<int64_t> bSz) {
-    // Whole-tensor tokens (empty offsets/sizes) overlap everything from the
+    // Whole-storage tokens (empty offsets/sizes) overlap everything from the
     // same parent.
     if (aOff.empty() || bOff.empty())
       return true;
@@ -875,7 +844,7 @@ LogicalResult SdeCuCodeletOp::verify() {
         return emitOpError()
                << "tokens #" << i << " and #" << j
                << " have conflicting access modes on statically-overlapping "
-                  "slices of the same source tensor";
+                  "slices of the same source storage";
       }
     }
   }

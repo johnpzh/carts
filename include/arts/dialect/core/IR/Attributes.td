@@ -254,9 +254,9 @@ def PreserveAccessModeAttr : AttrDef<ArtsDialect, "PreserveAccessMode"> {
 }
 
 /// Marker on DbAcquireOp to preserve an explicit dependency edge.
-/// This is only set for acquires materialized from explicit DbControlOp/task
-/// dependency contracts whose EDT dependency must not be DCE'd away just
-/// because the local pointer/block argument is otherwise unused.
+/// This is set for acquires materialized from explicit SDE task dependency
+/// contracts whose EDT dependency must not be DCE'd away just because the
+/// local pointer/block argument is otherwise unused.
 def PreserveDepEdgeAttr : AttrDef<ArtsDialect, "PreserveDepEdge"> {
   let summary = "Preserve explicit dependency edge semantics on a DbAcquireOp";
   let description = [{

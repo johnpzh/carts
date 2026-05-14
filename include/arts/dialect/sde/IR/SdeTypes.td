@@ -32,17 +32,15 @@ def DepType : ArtsSde_Type<"Dep", "dep"> {
 }
 
 def TokenType : ArtsSde_Type<"Token", "token"> {
-  let summary = "Handle to a (sub)region of a shared tensor.";
+  let summary = "Handle to a (sub)region of shared memref storage.";
   let description = [{
-    `!sde.token` names a subset of a tensor's storage with a declared
-    access mode. It is the tensor-world analogue of `!sde.dep`: carries
-    the same "mode + region" information that `sde.mu_dep` carries for
-    memrefs, but with tensor SSA for the underlying value.
+    `!sde.token` names a subset of an MU-backed memref with a declared access
+    mode. It is the canonical SDE access handle for codelet memory operands.
 
     The `slice_type` parameter records the shape of the addressed region so
     codelet block arguments can be typed directly.
   }];
-  let parameters = (ins "::mlir::RankedTensorType":$slice_type);
+  let parameters = (ins "::mlir::MemRefType":$slice_type);
   let assemblyFormat = "`<` $slice_type `>`";
 }
 

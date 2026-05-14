@@ -4,15 +4,15 @@
 /// Reusable structural loop analysis for SDE scheduling-unit loops.
 ///
 /// This analysis stays on the SDE side of the pipeline so semantic pattern
-/// classification can be shared by RaiseToLinalg, tensor transforms, and later
-/// SDE-owned distribution planning without depending on ARTS runtime IR.
+/// classification can be shared by SDE-owned distribution and tiling planning
+/// without depending on ARTS runtime IR.
 ///==========================================================================///
 
 #ifndef ARTS_DIALECT_SDE_ANALYSIS_STRUCTUREDMETHODANALYSIS_H
 #define ARTS_DIALECT_SDE_ANALYSIS_STRUCTUREDMETHODANALYSIS_H
 
 #include "arts/dialect/sde/IR/SdeDialect.h"
-#include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 #include "mlir/IR/AffineMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include <optional>
@@ -41,8 +41,6 @@ struct StructuredLoopSummary {
   SdeStructuredClassification classification =
       SdeStructuredClassification::elementwise;
   bool supportsReductionCarrier = false;
-
-  bool supportsLinalgCarrier() const;
 };
 
 struct StructuredNeighborhoodInfo {

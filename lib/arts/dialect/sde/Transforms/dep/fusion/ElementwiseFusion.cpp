@@ -14,7 +14,6 @@ namespace mlir::arts {
 #include "arts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "arts/utils/ValueAnalysis.h"
 
-#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
@@ -215,53 +214,24 @@ static bool isElementwiseStage(Operation *root, ElementwiseStage &stage) {
   SmallVector<MemrefAccess, 4> writes;
   bool hasDuplicateWrite = false;
 
-  // Carrier-authoritative path: extract write-set from carrier DPS outputs.
-  Block *computeBody = sde::getSuIterateComputeBlock(op);
-  linalg::GenericOp carrier;
-  for (Operation &inner : computeBody->without_terminator())
-    if (auto g = dyn_cast<linalg::GenericOp>(inner)) {
-      carrier = g;
-      break;
+  op.getBody().walk([&](memref::LoadOp loadOp) {
+    Value target = getWriteRoot(loadOp.getMemref());
+    if (!target)
+      return;
+    reads.push_back(
+        MemrefAccess{target, SmallVector<Value, 4>(loadOp.getIndices())});
+  });
+  op.getBody().walk([&](memref::StoreOp storeOp) {
+    Value target = getWriteRoot(storeOp.getMemref());
+    if (!target)
+      return;
+    if (!seenWrites.insert(target).second) {
+      hasDuplicateWrite = true;
+      return;
     }
-
-  if (carrier) {
-    for (Value input : carrier.getDpsInputs()) {
-      Value target = sde::traceCarrierTensorToMemrefRoot(input);
-      if (!target)
-        return false;
-      reads.push_back(MemrefAccess{target, {}});
-    }
-    for (Value output : carrier.getDpsInits()) {
-      Value target = sde::traceCarrierTensorToMemrefRoot(output);
-      if (!target)
-        return false;
-      if (!seenWrites.insert(target).second) {
-        hasDuplicateWrite = true;
-        break;
-      }
-      writes.push_back(MemrefAccess{target, {}});
-    }
-  } else {
-    // Fallback: walk memref.store ops (dual-rep / stencil path).
-    op.getBody().walk([&](memref::LoadOp loadOp) {
-      Value target = getWriteRoot(loadOp.getMemref());
-      if (!target)
-        return;
-      reads.push_back(
-          MemrefAccess{target, SmallVector<Value, 4>(loadOp.getIndices())});
-    });
-    op.getBody().walk([&](memref::StoreOp storeOp) {
-      Value target = getWriteRoot(storeOp.getMemref());
-      if (!target)
-        return;
-      if (!seenWrites.insert(target).second) {
-        hasDuplicateWrite = true;
-        return;
-      }
-      writes.push_back(
-          MemrefAccess{target, SmallVector<Value, 4>(storeOp.getIndices())});
-    });
-  }
+    writes.push_back(
+        MemrefAccess{target, SmallVector<Value, 4>(storeOp.getIndices())});
+  });
 
   if (writes.empty() || hasDuplicateWrite)
     return false;

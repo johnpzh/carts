@@ -12,7 +12,7 @@
 ///   sde.su_barrier          ->  arts.barrier
 ///   sde.cu_atomic           ->  arts.atomic_add
 ///   sde.resource_query      ->  arts.runtime_query
-///   sde.mu_dep              ->  transient arts.db_control fallback
+///   sde.mu_dep              ->  invalid at the SDE/Core boundary
 ///   sde.mu_token + codelet  ->  arts.db_alloc/acquire + arts.edt directly
 ///   sde.yield               ->  arts.yield
 ///==========================================================================///
@@ -31,11 +31,9 @@ namespace mlir::arts {
 #include "arts/utils/Utils.h"
 #include "arts/utils/ValueAnalysis.h"
 
-#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/AffineExpr.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Builders.h"
@@ -432,85 +430,6 @@ static Value materializeGenericWorkerCount(OpBuilder &builder, Location loc) {
   Value workers = ValueAnalysis::castToIndex(runtimeWorkers, builder, loc);
   return arith::MaxUIOp::create(builder, loc, workers,
                                 createOneIndex(builder, loc));
-}
-
-static std::optional<ArtsMode>
-getExternalRootAccessMode(sde::SdeSuIterateOp source, Value root) {
-  if (!source || !root)
-    return std::nullopt;
-
-  sde::StructuredMemoryEffectSummary effects =
-      sde::collectStructuredMemoryEffects(source.getBody());
-  if (effects.hasUnknownEffects)
-    return std::nullopt;
-
-  bool reads = effects.reads.contains(root);
-  bool writes = effects.writes.contains(root);
-  if (!reads && !writes)
-    return std::nullopt;
-  if (reads && writes)
-    return ArtsMode::inout;
-  if (writes)
-    return ArtsMode::out;
-  return ArtsMode::in;
-}
-
-static SmallVector<Value> materializeSdeOwnerSliceTaskDependencies(
-    sde::SdeSuIterateOp source, PatternRewriter &rewriter,
-    const IRMapping &outerMapping, Value globalBase, Value iterCount,
-    ArrayRef<Value> upperBounds, ArrayRef<Value> steps) {
-  SmallVector<Value> deps;
-  if (!source || !globalBase || !iterCount || upperBounds.empty() ||
-      steps.empty())
-    return deps;
-
-  /// The generic SU materialization currently decomposes the first SDE
-  /// iteration dimension into dispatch lanes. Only create explicit MU slice
-  /// dependencies when the SDE physical plan also owns exactly that dimension.
-  auto ownerDims = readI64ArrayAttr(source.getPhysicalOwnerDimsAttr());
-  if (!ownerDims || ownerDims->size() != 1 || (*ownerDims)[0] != 0)
-    return deps;
-
-  sde::StructuredMemoryEffectSummary effects =
-      sde::collectStructuredMemoryEffects(source.getBody());
-  if (effects.hasUnknownEffects)
-    return deps;
-
-  SmallVector<Value, 4> writableRoots;
-  for (Value root : effects.writes) {
-    if (!root || sde::isDefinedInside(source.getOperation(), root))
-      continue;
-    if (!isa<MemRefType>(root.getType()))
-      continue;
-    writableRoots.push_back(root);
-  }
-  if (writableRoots.size() != 1)
-    return deps;
-
-  Value sourceRoot = writableRoots.front();
-  std::optional<ArtsMode> mode = getExternalRootAccessMode(source, sourceRoot);
-  if (!mode || !DbUtils::isWriterMode(*mode))
-    return deps;
-
-  Value root = outerMapping.lookupOrDefault(sourceRoot);
-  if (!root || !isa<MemRefType>(root.getType()))
-    return deps;
-
-  Location loc = source.getLoc();
-  Value rawSize = arith::MulIOp::create(rewriter, loc, iterCount, steps.front());
-  Value remaining = arith::SubIOp::create(rewriter, loc, upperBounds.front(),
-                                          globalBase);
-  Value sliceSize = arith::MinUIOp::create(rewriter, loc, rawSize, remaining);
-
-  /// This is the SDE-authored MU address-space slice for the task. Core will
-  /// turn it into DB-space offsets after it creates the blocked DB layout.
-  auto control = DbControlOp::create(
-      rewriter, loc, *mode, root,
-      /*indices=*/SmallVector<Value>{},
-      /*offsets=*/SmallVector<Value>{globalBase},
-      /*sizes=*/SmallVector<Value>{sliceSize});
-  deps.push_back(control.getSubview());
-  return deps;
 }
 
 struct SuReductionPlan {
@@ -1038,12 +957,6 @@ static LogicalResult materializeSuIterateAsGenericTaskDispatch(
   SmallVector<Value> taskDependencies =
       createPartialReductionTaskDependencies(rewriter, loc, partialReductions,
                                              lane);
-  SmallVector<Value> ownerSliceDependencies =
-      materializeSdeOwnerSliceTaskDependencies(source, rewriter, outerMapping,
-                                               globalBase, iterCount,
-                                               upperBounds, steps);
-  taskDependencies.append(ownerSliceDependencies.begin(),
-                          ownerSliceDependencies.end());
   auto task = EdtOp::create(rewriter, loc, EdtType::task,
                             EdtConcurrency::intranode, taskDependencies);
   task.setNoVerifyAttr(NoVerifyAttr::get(ctx));
@@ -1121,57 +1034,30 @@ static LogicalResult materializeSdeBlock(Operation *container, Block &block,
 static LogicalResult materializeSdeBlockAtCurrentInsertion(
     Block &block, PatternRewriter &rewriter, IRMapping &mapper);
 
-static SmallVector<Value> materializeCuTaskDeps(sde::SdeCuTaskOp op,
-                                                PatternRewriter &rewriter,
-                                                IRMapping &mapper) {
-  SmallVector<Value> artsDeps;
+static LogicalResult rejectUnmaterializedCuTaskDeps(sde::SdeCuTaskOp op) {
   for (Value dep : op.getDeps()) {
-    auto muDep = dep.getDefiningOp<sde::SdeMuDepOp>();
-    if (!muDep)
-      continue;
-
-    ArtsMode mode = convertAccessMode(muDep.getMode());
-    SmallVector<Value> offsets;
-    SmallVector<Value> sizes;
-    offsets.reserve(muDep.getOffsets().size());
-    sizes.reserve(muDep.getSizes().size());
-    for (Value offset : muDep.getOffsets())
-      offsets.push_back(mapper.lookupOrDefault(offset));
-    for (Value size : muDep.getSizes())
-      sizes.push_back(mapper.lookupOrDefault(size));
-
-    SmallVector<Value> pinnedIndices, chunkOffsets, blockSizes;
-    if (!offsets.empty() && sizes.empty()) {
-      pinnedIndices = offsets;
-    } else {
-      for (size_t i = 0; i < offsets.size() && i < sizes.size(); ++i) {
-        if (ValueAnalysis::isOneConstant(sizes[i])) {
-          pinnedIndices.push_back(offsets[i]);
-        } else {
-          chunkOffsets.push_back(offsets[i]);
-          blockSizes.push_back(sizes[i]);
-        }
-      }
+    if (auto muDep = dep.getDefiningOp<sde::SdeMuDepOp>()) {
+      InFlightDiagnostic diag =
+          op.emitOpError("has unmaterialized sde.mu_dep at the SDE/Core "
+                         "boundary; SDE must rewrite task dependencies into "
+                         "mu_data/mu_token/cu_codelet form before conversion");
+      diag.attachNote(muDep.getLoc()) << "dependency declared here";
+      return failure();
     }
-
-    /// Raw-memref fallback only.  Canonical SDE codelets use `sde.mu_token`,
-    /// and `lowerCuCodelet` lowers those tokens directly to `arts.db_acquire`
-    /// without routing through DbControlOp/CreateDbs.
-    Value source = mapper.lookupOrDefault(muDep.getSource());
-    auto dbControl = DbControlOp::create(rewriter, op.getLoc(), mode, source,
-                                         pinnedIndices, chunkOffsets,
-                                         blockSizes);
-    artsDeps.push_back(dbControl);
+    return op.emitOpError()
+           << "has unsupported dependency value " << dep
+           << "; only SDE-materialized codelet tokens may reach Core";
   }
-  return artsDeps;
+  return success();
 }
 
 static LogicalResult materializeCuTaskAsEdt(sde::SdeCuTaskOp op,
                                             PatternRewriter &rewriter,
                                             IRMapping &mapper) {
-  SmallVector<Value> artsDeps = materializeCuTaskDeps(op, rewriter, mapper);
+  if (failed(rejectUnmaterializedCuTaskDeps(op)))
+    return failure();
   auto edtOp = EdtOp::create(rewriter, op.getLoc(), EdtType::task,
-                             EdtConcurrency::intranode, artsDeps);
+                             EdtConcurrency::intranode);
   edtOp.setNoVerifyAttr(NoVerifyAttr::get(rewriter.getContext()));
   if (auto pattern = op.getPatternAttr())
     stampSimple(edtOp.getOperation(),
@@ -1339,12 +1225,9 @@ struct CuRegionToArtsPattern : public OpRewritePattern<sde::SdeCuRegionOp> {
 
 /// sde.cu_task -> arts.edt <task>.
 ///
-/// Current raw-memref fallback: task deps are represented as `sde.mu_dep` and
-/// temporarily materialized as `arts.db_control` so CreateDbs can allocate DBs,
-/// acquire the requested slices, and rewrite the still-raw memref body.
-/// Target path: SDE converts those deps to `mu_data`/`mu_token`/`cu_codelet`
-/// before this boundary, so this pattern can wire real `arts.db_acquire`
-/// dependencies directly and the Core bridge marker disappears.
+/// Raw `sde.mu_dep` values are not a Core contract. SDE must consume task
+/// dependence declarations before this boundary and materialize
+/// `mu_data`/`mu_token`/`cu_codelet` form when memory dependencies are needed.
 struct CuTaskToArtsPattern : public OpRewritePattern<sde::SdeCuTaskOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -1353,12 +1236,12 @@ struct CuTaskToArtsPattern : public OpRewritePattern<sde::SdeCuTaskOp> {
     auto loc = op.getLoc();
     auto *ctx = rewriter.getContext();
 
-    rewriter.setInsertionPoint(op);
-    IRMapping mapper;
-    SmallVector<Value> artsDeps = materializeCuTaskDeps(op, rewriter, mapper);
+    if (failed(rejectUnmaterializedCuTaskDeps(op)))
+      return failure();
 
+    rewriter.setInsertionPoint(op);
     auto edtOp = EdtOp::create(rewriter, loc, EdtType::task,
-                               EdtConcurrency::intranode, artsDeps);
+                               EdtConcurrency::intranode);
     edtOp.setNoVerifyAttr(NoVerifyAttr::get(ctx));
     if (auto pattern = op.getPatternAttr())
       stampSimple(edtOp.getOperation(),
@@ -1510,74 +1393,31 @@ struct MuReductionDeclToArtsPattern
 };
 
 //===----------------------------------------------------------------------===//
-// Tensor-path SDE → ARTS lowering patterns.
+// MU/token SDE -> ARTS lowering.
 //
-// Three tensor-path SDE ops are lowered here:
-//   - sde.mu_data     : tensor<...>            -> arts.db_alloc
-//   - sde.mu_token    <mode>                    -> arts.db_acquire <mode>
-//   - sde.cu_codelet (tokens...) -> (...)        -> arts.edt
+// SDE is memref-native at this boundary:
+//   - sde.mu_data     : memref<...>       -> arts.db_alloc + arts.db_ref
+//   - sde.mu_alloc    : memref<...>       -> arts.db_alloc + arts.db_ref
+//   - sde.mu_token    : !sde.token<memref<...>> -> arts.db_acquire
+//   - sde.cu_codelet  : memref-token body -> arts.edt
 //
-// RaiseMemrefToTensor generates these ops from `sde.cu_task` / shared-memref
-// IR; this file handles them whenever present.
+// The SDE layer owns CU/SU/MU planning and any tiling/view rewrites. Core does
+// not rediscover tensor carriers or destination-passing results here; it only
+// materializes the DB/acquire/EDT objects requested by SDE.
 //
-// DB shape convention: one logical DB per `mu_data` with `sizes=[1]`,
-// `elementSizes=SHAPE`, `elementType=T`. The ptr type is
-// `memref<?xmemref<SHAPE x T>>`. Downstream code recovers the inner
-// `memref<SHAPE x T>` via `arts.db_ref %ptr[0]`, then projects into tensor
-// land with `bufferization.to_tensor`.
+// DB shape convention: one logical DB per MU allocation with outer `sizes=[1]`
+// and `elementSizes=<memref shape>`. The DB pointer type is explicit so
+// `arts.db_ref %ptr[0]` has exactly the MU memref type selected by SDE, even
+// when the element sizes are dynamic.
 //===----------------------------------------------------------------------===//
 
-/// Trace the DbAllocOp that backs a tensor value. Expected chain:
-///   `%ptr = arts.db_alloc ...`
-///   `%elem = arts.db_ref %ptr[0] : memref<?xmemref<SHAPExT>> ->
-///   memref<SHAPExT>`
-///   `%tensor = bufferization.to_tensor %elem`
-/// Returns nullptr when the tensor is not backed by a DbAllocOp chain.
-static DbAllocOp findBackingDbAlloc(Value tensor) {
-  // Walk past any intervening tensor.cast ops. The raise / codelet lowering
-  // chain inserts these to reconcile dynamic-shape DB tensors with the
-  // (static) codelet operand / yielded types, so a token whose source is a
-  // codelet result typically has the chain:
-  //   `%cast = tensor.cast %to_tensor : tensor<?xT> to tensor<SHAPExT>`
-  //   `%to_tensor = bufferization.to_tensor %db_ref`.
-  Value cur = tensor;
-  while (auto cast = cur.getDefiningOp<tensor::CastOp>())
-    cur = cast.getSource();
-  if (auto fromElements = cur.getDefiningOp<tensor::FromElementsOp>()) {
-    if (fromElements.getElements().size() == 1) {
-      Value element = fromElements.getElements().front();
-      if (auto load = element.getDefiningOp<memref::LoadOp>()) {
-        Value buffer = load.getMemref();
-        if (auto alloc = buffer.getDefiningOp<DbAllocOp>())
-          return alloc;
-        if (auto ref = buffer.getDefiningOp<DbRefOp>())
-          return ref.getSource().getDefiningOp<DbAllocOp>();
-      }
-    }
-  }
-  auto toTensor = cur.getDefiningOp<bufferization::ToTensorOp>();
-  if (!toTensor)
-    return nullptr;
-  Value buffer = toTensor.getBuffer();
-  if (auto alloc = buffer.getDefiningOp<DbAllocOp>())
-    return alloc;
-  if (auto ref = buffer.getDefiningOp<DbRefOp>())
-    return ref.getSource().getDefiningOp<DbAllocOp>();
+/// Trace the DbAllocOp that backs a token source value. SDE token sources are
+/// memrefs and may pass through memref view/cast ops after tiling.
+static DbAllocOp findBackingDbAlloc(Value storage) {
+  if (Operation *allocOp = DbUtils::getUnderlyingDbAlloc(storage))
+    if (auto dbAlloc = dyn_cast<DbAllocOp>(allocOp))
+      return dbAlloc;
   return nullptr;
-}
-
-/// Build a `bufferization.to_tensor` for a memref, producing a ranked tensor
-/// of the same shape/element type.
-static Value makeToTensor(OpBuilder &builder, Location loc, Value memref,
-                          bool writable = false) {
-  auto mrType = dyn_cast<MemRefType>(memref.getType());
-  assert(mrType && "expected memref type");
-  auto tensorType =
-      RankedTensorType::get(mrType.getShape(), mrType.getElementType());
-  UnitAttr writableAttr =
-      writable ? UnitAttr::get(builder.getContext()) : UnitAttr{};
-  return bufferization::ToTensorOp::create(
-      builder, loc, tensorType, memref, /*restrict=*/UnitAttr{}, writableAttr);
 }
 
 /// Given a DB `sourcePtr` whose element type is the payload memref
@@ -1588,75 +1428,127 @@ static Value materializeInnerPayload(OpBuilder &builder, Location loc,
   return DbRefOp::create(builder, loc, sourcePtr, SmallVector<Value>{zero});
 }
 
-/// sde.mu_data : tensor<SHAPE x T>  ->  arts.db_alloc + db_ref + to_tensor
-///
-/// The tensor SSA value that downstream code still expects is preserved via
-/// a `bufferization.to_tensor` over the DB's inner element memref (obtained
-/// via `arts.db_ref %ptr[0]`).
-static LogicalResult lowerMuData(sde::SdeMuDataOp op) {
-  auto tensorType = dyn_cast<RankedTensorType>(op.getHandle().getType());
-  if (!tensorType || !tensorType.hasStaticShape()) {
-    // Memref-typed mu_data belongs to the v3+ fallback path; leave it alone.
-    return success();
+static FailureOr<SmallVector<Value>>
+buildElementSizes(OpBuilder &builder, Location loc, MemRefType memrefType,
+                  ValueRange dynamicSizes) {
+  SmallVector<Value> elementSizes;
+  if (memrefType.getRank() == 0) {
+    if (!dynamicSizes.empty())
+      return failure();
+    elementSizes.push_back(arts::createOneIndex(builder, loc));
+    return elementSizes;
   }
 
-  OpBuilder builder(op);
-  Location loc = op.getLoc();
+  elementSizes.reserve(memrefType.getRank());
+  unsigned dynamicIdx = 0;
+  for (int64_t dim = 0, rank = memrefType.getRank(); dim < rank; ++dim) {
+    if (memrefType.isDynamicDim(dim)) {
+      if (dynamicIdx >= dynamicSizes.size())
+        return failure();
+      elementSizes.push_back(dynamicSizes[dynamicIdx++]);
+      continue;
+    }
+    elementSizes.push_back(
+        arts::createConstantIndex(builder, loc, memrefType.getDimSize(dim)));
+  }
+  if (dynamicIdx != dynamicSizes.size())
+    return failure();
+  return elementSizes;
+}
 
-  // One DB holds the entire tensor. Outer `sizes=[1]` + inner
-  // `elementSizes=SHAPE` keeps the payload addressable as a single
-  // `memref<SHAPE x T>` via `arts.db_ref %ptr[0]`.
+static LogicalResult
+createDbBackedMemref(OpBuilder &builder, Location loc, MemRefType memrefType,
+                     ValueRange dynamicSizes, Value &memref) {
+  FailureOr<SmallVector<Value>> elementSizes =
+      buildElementSizes(builder, loc, memrefType, dynamicSizes);
+  if (failed(elementSizes))
+    return failure();
+
   SmallVector<Value> sizes{arts::createOneIndex(builder, loc)};
-  SmallVector<Value> elementSizes;
-  elementSizes.reserve(tensorType.getRank());
-  for (int64_t dim : tensorType.getShape())
-    elementSizes.push_back(arts::createConstantIndex(builder, loc, dim));
-
   Value route = arts::createCurrentNodeRoute(builder, loc);
+  Type pointerType = MemRefType::get({ShapedType::kDynamic}, memrefType);
 
-  // TODO: honor `init` attribute. Until `arts.db_alloc` grows a first-class
-  // init operand, the init attribute is dropped and the DB comes up
-  // uninitialized. RaiseMemrefToTensor can synthesize an initializer EDT.
   auto dbAlloc = DbAllocOp::create(
       builder, loc, ArtsMode::inout, route, DbAllocType::heap, DbMode::write,
-      tensorType.getElementType(),
-      /*address=*/Value{}, std::move(sizes), std::move(elementSizes));
+      memrefType.getElementType(), pointerType, std::move(sizes),
+      std::move(*elementSizes));
 
-  Value inner = materializeInnerPayload(builder, loc, dbAlloc.getPtr());
-  Value replacementTensor;
-  if (tensorType.getRank() == 0) {
-    Value zero = arts::createZeroIndex(builder, loc);
-    Value scalar =
-        memref::LoadOp::create(builder, loc, inner, SmallVector<Value>{zero});
-    replacementTensor =
-        tensor::FromElementsOp::create(builder, loc, tensorType, scalar);
-  } else {
-    replacementTensor = makeToTensor(builder, loc, inner, /*writable=*/true);
-  }
-  op.getResult().replaceAllUsesWith(replacementTensor);
+  memref = materializeInnerPayload(builder, loc, dbAlloc.getPtr());
+  return success();
+}
+
+static LogicalResult lowerMuData(sde::SdeMuDataOp op) {
+  auto memrefType = dyn_cast<MemRefType>(op.getHandle().getType());
+  if (!memrefType)
+    return op.emitOpError()
+           << "expects a memref handle before DB materialization, got "
+           << op.getHandle().getType();
+  if (memrefType.getNumDynamicDims() != 0)
+    return op.emitOpError()
+           << "has dynamic dimensions but carries no dynamic size operands; "
+              "use sde.mu_alloc for dynamic MU storage";
+
+  OpBuilder builder(op);
+  Value replacement;
+  if (failed(createDbBackedMemref(builder, op.getLoc(), memrefType,
+                                  ValueRange{}, replacement)))
+    return op.emitOpError() << "failed to build DB-backed memref";
+
+  op.getHandle().replaceAllUsesWith(replacement);
   op.erase();
   return success();
 }
 
-/// sde.cu_codelet (+ associated sde.mu_token operands) -> arts.edt
-///
-/// Each token operand becomes an `arts.db_acquire` whose ptr is carried as
-/// an EDT dependency. The codelet body runs inside the EDT, with
-/// `bufferization.to_tensor` bridging the memref block arg back to the
-/// tensor-typed value the codelet body expects. Writable tokens surface as
-/// destination-passing-style results: the yielded tensor is materialized
-/// into the acquired DB memref, and the codelet's SSA result becomes a
-/// fresh `bufferization.to_tensor` over the same DB ptr (the update is
-/// observable through the DB handle, not through a new tensor SSA value).
+static LogicalResult lowerMuAlloc(sde::SdeMuAllocOp op) {
+  auto memrefType = dyn_cast<MemRefType>(op.getMemref().getType());
+  if (!memrefType)
+    return op.emitOpError()
+           << "expects a memref result before DB materialization, got "
+           << op.getMemref().getType();
+
+  OpBuilder builder(op);
+  Value replacement;
+  if (failed(createDbBackedMemref(builder, op.getLoc(), memrefType,
+                                  op.getDynamicSizes(), replacement)))
+    return op.emitOpError()
+           << "dynamic size operands do not match result memref shape";
+
+  op.getMemref().replaceAllUsesWith(replacement);
+  op.erase();
+  return success();
+}
+
+static Value buildTokenMemrefView(OpBuilder &builder, Location loc,
+                                  Value payload, MemRefType targetType,
+                                  sde::SdeMuTokenOp token) {
+  if (token.getOffsets().empty() && token.getSizes().empty()) {
+    if (payload.getType() == targetType)
+      return payload;
+    return memref::CastOp::create(builder, loc, targetType, payload);
+  }
+
+  SmallVector<OpFoldResult> offsets;
+  SmallVector<OpFoldResult> sizes;
+  SmallVector<OpFoldResult> strides;
+  offsets.reserve(targetType.getRank());
+  sizes.reserve(targetType.getRank());
+  strides.reserve(targetType.getRank());
+  for (int dim = 0, rank = targetType.getRank(); dim < rank; ++dim) {
+    offsets.push_back(OpFoldResult(token.getOffsets()[dim]));
+    sizes.push_back(OpFoldResult(token.getSizes()[dim]));
+    strides.push_back(builder.getIndexAttr(1));
+  }
+  return memref::SubViewOp::create(builder, loc, targetType, payload, offsets,
+                                   sizes, strides);
+}
+
 static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
   Location loc = codelet.getLoc();
-  auto *ctx = codelet.getContext();
   OpBuilder rewriter(codelet);
 
-  // Each codelet operand must be produced by a `sde.mu_token` whose source
-  // tensor is backed by a concrete DbAllocOp. If any token is not DB-backed
-  // we cannot lower this codelet — bail out so the invariant is enforced at
-  // VerifySdeLowered time rather than producing half-converted IR.
+  // Each codelet operand must be produced by a `sde.mu_token` whose source is
+  // backed by a concrete DbAllocOp. If any token is not DB-backed we cannot
+  // lower this codelet — bail out rather than producing half-converted IR.
   SmallVector<sde::SdeMuTokenOp> muTokens;
   muTokens.reserve(codelet.getTokens().size());
   SmallVector<DbAllocOp> backingAllocs;
@@ -1669,8 +1561,8 @@ static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
     DbAllocOp alloc = findBackingDbAlloc(muToken.getSource());
     if (!alloc)
       return codelet.emitOpError(
-          "token source is not backed by arts.db_alloc; RaiseMemrefToTensor "
-          "must produce db-backed tensors for codelets to lower");
+          "token source is not backed by arts.db_alloc; SDE MU planning must "
+          "produce db-backed memref storage for codelets to lower");
     muTokens.push_back(muToken);
     backingAllocs.push_back(alloc);
   }
@@ -1685,18 +1577,12 @@ static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
   SmallVector<Value> acquirePtrs;
   SmallVector<Type> blockArgTypes;
   SmallVector<Location> blockArgLocs;
-  SmallVector<bool> writableFlags;
   acquirePtrs.reserve(muTokens.size());
   blockArgTypes.reserve(muTokens.size());
   blockArgLocs.reserve(muTokens.size());
-  writableFlags.reserve(muTokens.size());
 
   for (auto [idx, muToken] : llvm::enumerate(muTokens)) {
     ArtsMode mode = convertAccessMode(muToken.getMode());
-    bool writable = muToken.getMode() == sde::SdeAccessMode::write ||
-                    muToken.getMode() == sde::SdeAccessMode::readwrite;
-    writableFlags.push_back(writable);
-
     SmallVector<Value> partitionOffsets(muToken.getOffsets().begin(),
                                         muToken.getOffsets().end());
     SmallVector<Value> partitionSizes(muToken.getSizes().begin(),
@@ -1706,7 +1592,7 @@ static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
     std::optional<PartitionMode> partitionMode;
     if (!partitionOffsets.empty() || !partitionSizes.empty())
       partitionMode = PartitionMode::block;
-    // The DB's outer rank is 1 (one partition holding the whole tensor);
+    // The DB's outer rank is 1 (one partition holding the whole storage);
     // mirror that on the acquire so db_ref can index into it later.
     SmallVector<Value> dbOffsets{
         arts::createZeroIndex(rewriter, muToken.getLoc())};
@@ -1727,8 +1613,8 @@ static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
     blockArgLocs.push_back(muToken.getLoc());
   }
 
-  // Create the EDT. Task-intranode is the default codelet concurrency per
-  // The raise does not encode cross-node placement yet.
+  // Create the EDT. Task-intranode is the default codelet concurrency; SDE
+  // does not encode runtime placement here.
   auto edtOp = EdtOp::create(rewriter, loc, EdtType::task,
                              EdtConcurrency::intranode, acquirePtrs);
 
@@ -1736,70 +1622,26 @@ static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
   for (auto [argTy, argLoc] : llvm::zip(blockArgTypes, blockArgLocs))
     edtBlock.addArgument(argTy, argLoc);
 
-  // Inside the EDT, materialize a tensor view for each block argument.
-  // The block arg is the acquire's ptr (memref<?xmemref<SHAPExT>>); we use
-  // `arts.db_ref[0]` + `bufferization.to_tensor` to land in tensor space
-  // with shape `SHAPE`. Slice tokens then take `tensor.extract_slice` to
-  // reach the codelet block arg's slice_type.
+  // Inside the EDT, materialize the storage view for each token block
+  // argument. Memref tokens map directly to the DB payload or a memref.subview.
   OpBuilder::InsertionGuard bodyGuard(rewriter);
   rewriter.setInsertionPointToStart(&edtBlock);
 
   IRMapping mapper;
-  SmallVector<Value> innerPayloads; // per-token inner memref
-  innerPayloads.reserve(muTokens.size());
   Block &codeletBlock = codelet.getBody().front();
   unsigned numTokens = codelet.getTokens().size();
   for (unsigned idx = 0; idx < numTokens; ++idx) {
     BlockArgument codeletArg = codeletBlock.getArgument(idx);
+    auto memrefArgType = dyn_cast<MemRefType>(codeletArg.getType());
+    if (!memrefArgType)
+      return codelet.emitOpError()
+             << "codelet block argument #" << idx
+             << " must be a memref, got " << codeletArg.getType();
     Value edtArg = edtBlock.getArgument(idx);
     Value inner = materializeInnerPayload(rewriter, codelet.getLoc(), edtArg);
-    innerPayloads.push_back(inner);
-
-    Value view = makeToTensor(rewriter, codelet.getLoc(), inner,
-                              /*writable=*/writableFlags[idx]);
-
-    // Map the codelet block arg to the tensor view, narrowing to the
-    // slice_type when the token addressed a sub-region.
-    auto slicedType = dyn_cast<RankedTensorType>(codeletArg.getType());
-    auto viewType = cast<RankedTensorType>(view.getType());
-    if (slicedType && slicedType != viewType) {
-      sde::SdeMuTokenOp muToken = muTokens[idx];
-      if (slicedType.getRank() == 0 && viewType.getRank() == 1) {
-        // Rank-0 tensor backed by rank-1 memref (DB scalar convention).
-        // Load the scalar from memref[0] and create a rank-0 tensor.
-        Value zero = arts::createZeroIndex(rewriter, codelet.getLoc());
-        Value scalar = memref::LoadOp::create(rewriter, codelet.getLoc(), inner,
-                                              SmallVector<Value>{zero});
-        view = tensor::FromElementsOp::create(rewriter, codelet.getLoc(),
-                                              slicedType, scalar);
-      } else if (muToken.getOffsets().empty() && muToken.getSizes().empty()) {
-        // Whole-tensor token; the only mismatch is dynamic vs. static
-        // shape, which is a plain tensor.cast.
-        view = tensor::CastOp::create(rewriter, codelet.getLoc(), slicedType,
-                                      view);
-      } else {
-        // Slice token: carry explicit offsets/sizes through extract_slice.
-        // Offsets/sizes are dynamic SSA values, so ExtractSliceOp infers a
-        // fully dynamic result type. Cast to the codelet block arg's
-        // (possibly static) slice type afterwards.
-        SmallVector<OpFoldResult> offsets, sizes, strides;
-        offsets.reserve(slicedType.getRank());
-        sizes.reserve(slicedType.getRank());
-        strides.reserve(slicedType.getRank());
-        Value oneV = arts::createOneIndex(rewriter, codelet.getLoc());
-        for (int dim = 0; dim < slicedType.getRank(); ++dim) {
-          offsets.push_back(OpFoldResult(muToken.getOffsets()[dim]));
-          sizes.push_back(OpFoldResult(muToken.getSizes()[dim]));
-          strides.push_back(OpFoldResult(oneV));
-        }
-        Value sliced = tensor::ExtractSliceOp::create(
-            rewriter, codelet.getLoc(), view, offsets, sizes, strides);
-        if (sliced.getType() != slicedType)
-          sliced = tensor::CastOp::create(rewriter, codelet.getLoc(),
-                                          slicedType, sliced);
-        view = sliced;
-      }
-    }
+    Value view =
+        buildTokenMemrefView(rewriter, codelet.getLoc(), inner, memrefArgType,
+                             muTokens[idx]);
     mapper.map(codeletArg, view);
   }
 
@@ -1809,119 +1651,21 @@ static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
   }
 
   // Clone codelet body ops (except the terminator) into the EDT body. The
-  // terminator is a `sde.yield` whose operands drive destination-passing
-  // materialization; we handle it explicitly below.
+  // terminator is a value-less `sde.yield`; memref token writes happen
+  // in-place through the mapped block arguments.
   Operation *terminator = codeletBlock.getTerminator();
   for (Operation &nested : codeletBlock.without_terminator())
     rewriter.insert(nested.clone(mapper));
 
-  // For each writable token, materialize the yielded tensor into the
-  // corresponding block-arg memref. `sde.cu_codelet` has one result per
-  // writable token, and the terminator is `sde.yield`
-  // with one operand per result.
-  SmallVector<Value> yieldedValues;
   if (auto yieldOp = dyn_cast<sde::SdeYieldOp>(terminator)) {
-    for (Value operand : yieldOp.getOperands())
-      yieldedValues.push_back(mapper.lookupOrDefault(operand));
-  }
-
-  // Pair each yielded tensor with the writable inner payload in positional
-  // order. If the yielded tensor is a slice, insert it
-  // back into a whole-tensor view via `tensor.insert_slice` so the final
-  // materialization target has the full shape.
-  unsigned yieldIdx = 0;
-  for (auto [idx, writable] : llvm::enumerate(writableFlags)) {
-    if (!writable)
-      continue;
-    if (yieldIdx >= yieldedValues.size())
-      break;
-    Value src = yieldedValues[yieldIdx++];
-    Value destMemref = innerPayloads[idx];
-    auto destMrType = cast<MemRefType>(destMemref.getType());
-    auto destTensorType = RankedTensorType::get(destMrType.getShape(),
-                                                destMrType.getElementType());
-    auto srcTensorType = cast<RankedTensorType>(src.getType());
-    if (srcTensorType != destTensorType) {
-      sde::SdeMuTokenOp muToken = muTokens[idx];
-      if (srcTensorType.getRank() == 0 && destMrType.getRank() == 1) {
-        // Rank-0 tensor yielded into rank-1 memref (DB scalar convention).
-        // Extract the scalar and store directly — skip materialize.
-        Value scalar = tensor::ExtractOp::create(rewriter, codelet.getLoc(),
-                                                 src, ValueRange{});
-        Value zero = arts::createZeroIndex(rewriter, codelet.getLoc());
-        memref::StoreOp::create(rewriter, codelet.getLoc(), scalar, destMemref,
-                                SmallVector<Value>{zero});
-        continue; // No materialize_in_destination needed.
-      } else if (muToken.getOffsets().empty() && muToken.getSizes().empty()) {
-        // Whole-tensor token: static-vs-dynamic mismatch only.
-        src = tensor::CastOp::create(rewriter, codelet.getLoc(), destTensorType,
-                                     src);
-      } else {
-        // Slice update: stitch the slice back into a whole-tensor view
-        // before materializing, preserving unchanged elements.
-        Value viewTensor = makeToTensor(rewriter, codelet.getLoc(), destMemref,
-                                        /*writable=*/true);
-        SmallVector<OpFoldResult> offsets, sizes, strides;
-        offsets.reserve(destTensorType.getRank());
-        sizes.reserve(destTensorType.getRank());
-        strides.reserve(destTensorType.getRank());
-        Value oneV = arts::createOneIndex(rewriter, codelet.getLoc());
-        for (int dim = 0; dim < destTensorType.getRank(); ++dim) {
-          offsets.push_back(OpFoldResult(muToken.getOffsets()[dim]));
-          sizes.push_back(OpFoldResult(muToken.getSizes()[dim]));
-          strides.push_back(OpFoldResult(oneV));
-        }
-        src =
-            tensor::InsertSliceOp::create(rewriter, codelet.getLoc(), src,
-                                          viewTensor, offsets, sizes, strides);
-      }
-    }
-    bufferization::MaterializeInDestinationOp::create(
-        rewriter, codelet.getLoc(), /*result=*/TypeRange{}, src, destMemref,
-        /*restrict=*/UnitAttr{}, /*writable=*/UnitAttr::get(ctx));
+    if (!yieldOp.getOperands().empty())
+      return codelet.emitOpError()
+             << "memref codelet yield must not carry replacement values";
   }
 
   YieldOp::create(rewriter, loc);
 
-  // Rewire codelet results: each SSA result corresponds to a writable
-  // token's parent tensor. Re-materialize the parent tensor from the DB's
-  // inner payload so tensor users continue to type-check.
-  rewriter.setInsertionPointAfter(edtOp);
-  SmallVector<Value> newResults;
-  newResults.reserve(codelet.getNumResults());
-  unsigned writableIdx = 0;
-  for (auto [idx, writable] : llvm::enumerate(writableFlags)) {
-    if (!writable)
-      continue;
-    if (writableIdx >= codelet.getNumResults())
-      break;
-    DbAllocOp alloc = backingAllocs[idx];
-    Value inner =
-        materializeInnerPayload(rewriter, codelet.getLoc(), alloc.getPtr());
-    Value parentTensor =
-        makeToTensor(rewriter, codelet.getLoc(), inner, /*writable=*/true);
-    Value result = codelet.getResult(writableIdx);
-    if (parentTensor.getType() != result.getType()) {
-      auto dstType = dyn_cast<RankedTensorType>(result.getType());
-      auto srcType = cast<RankedTensorType>(parentTensor.getType());
-      if (dstType && dstType.getRank() == 0 && srcType.getRank() == 1) {
-        // Rank-0 result from rank-1 memref: load scalar, wrap in rank-0.
-        Value zero = arts::createZeroIndex(rewriter, codelet.getLoc());
-        Value scalar = memref::LoadOp::create(rewriter, codelet.getLoc(), inner,
-                                              SmallVector<Value>{zero});
-        parentTensor = tensor::FromElementsOp::create(
-            rewriter, codelet.getLoc(), dstType, scalar);
-      } else if (dstType) {
-        parentTensor = tensor::CastOp::create(rewriter, codelet.getLoc(),
-                                              dstType, parentTensor);
-      }
-    }
-    newResults.push_back(parentTensor);
-    ++writableIdx;
-  }
-
   // Erase the codelet and its mu_token producers.
-  codelet.getResults().replaceAllUsesWith(newResults);
   codelet.erase();
   for (sde::SdeMuTokenOp tok : muTokens)
     if (tok->use_empty())
@@ -1929,367 +1673,39 @@ static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
   return success();
 }
 
-struct TensorMemrefView {
-  Value memref;
-  SmallVector<Value> offsets;
-  SmallVector<Value> strides;
-};
+static LogicalResult lowerTokenSource(Value source,
+                                      DenseSet<Operation *> &loweredMuOps) {
+  Value root = ValueAnalysis::stripMemrefViewOps(source);
+  Operation *rootOp = root ? root.getDefiningOp() : nullptr;
+  if (!rootOp || !loweredMuOps.insert(rootOp).second)
+    return success();
 
-static Value materializeIndexValue(OpBuilder &builder, Location loc,
-                                   OpFoldResult value) {
-  if (auto dynamic = value.dyn_cast<Value>())
-    return dynamic;
-  auto attr = cast<IntegerAttr>(value.dyn_cast<Attribute>());
-  return arts::createConstantIndex(builder, loc, attr.getInt());
-}
-
-static Value mulIndexIfNeeded(OpBuilder &builder, Location loc, Value lhs,
-                              Value rhs) {
-  if (ValueAnalysis::isOneConstant(rhs))
-    return lhs;
-  if (ValueAnalysis::isOneConstant(lhs))
-    return rhs;
-  if (ValueAnalysis::isZeroConstant(lhs) || ValueAnalysis::isZeroConstant(rhs))
-    return arts::createZeroIndex(builder, loc);
-  return arith::MulIOp::create(builder, loc, lhs, rhs).getResult();
-}
-
-static Value addIndexIfNeeded(OpBuilder &builder, Location loc, Value lhs,
-                              Value rhs) {
-  if (ValueAnalysis::isZeroConstant(lhs))
-    return rhs;
-  if (ValueAnalysis::isZeroConstant(rhs))
-    return lhs;
-  return arith::AddIOp::create(builder, loc, lhs, rhs).getResult();
-}
-
-static void composeSliceMap(TensorMemrefView &view, tensor::ExtractSliceOp slice,
-                            OpBuilder &builder, Location loc) {
-  SmallVector<Value> sliceOffsets;
-  SmallVector<Value> sliceStrides;
-  for (OpFoldResult offset : slice.getMixedOffsets())
-    sliceOffsets.push_back(materializeIndexValue(builder, loc, offset));
-  for (OpFoldResult stride : slice.getMixedStrides())
-    sliceStrides.push_back(materializeIndexValue(builder, loc, stride));
-
-  if (view.offsets.empty()) {
-    view.offsets = std::move(sliceOffsets);
-    view.strides = std::move(sliceStrides);
-    return;
-  }
-
-  for (size_t idx = 0, e = view.offsets.size(); idx < e; ++idx) {
-    Value scaledOffset =
-        mulIndexIfNeeded(builder, loc, view.offsets[idx], sliceStrides[idx]);
-    view.offsets[idx] =
-        addIndexIfNeeded(builder, loc, sliceOffsets[idx], scaledOffset);
-    view.strides[idx] =
-        mulIndexIfNeeded(builder, loc, view.strides[idx], sliceStrides[idx]);
-  }
-}
-
-/// Trace `tensor` back through `tensor.cast` / `tensor.extract_slice` /
-/// `tensor.insert` ops to the underlying memref that backs the tensor view.
-/// Slice offsets and strides are preserved so scalar tensor.extract/insert ops
-/// fold to the exact element addressed by the SDE token, not a coarse whole-DB
-/// copy. Returns std::nullopt if the tensor is not backed by a memref-view chain
-/// we can lower (e.g., it came from a non-tensor-path producer).
-static std::optional<TensorMemrefView>
-traceTensorToBackingMemref(Value tensor, OpBuilder &builder, Location loc) {
-  Value cur = tensor;
-  TensorMemrefView view;
-  for (;;) {
-    if (auto cast = cur.getDefiningOp<tensor::CastOp>()) {
-      cur = cast.getSource();
-      continue;
-    }
-    if (auto insert = cur.getDefiningOp<tensor::InsertOp>()) {
-      cur = insert.getDest();
-      continue;
-    }
-    if (auto slice = cur.getDefiningOp<tensor::ExtractSliceOp>()) {
-      auto sourceType = dyn_cast<RankedTensorType>(slice.getSource().getType());
-      auto resultType = dyn_cast<RankedTensorType>(slice.getResult().getType());
-      if (!sourceType || !resultType ||
-          sourceType.getRank() != resultType.getRank())
-        return std::nullopt;
-      composeSliceMap(view, slice, builder, loc);
-      cur = slice.getSource();
-      continue;
-    }
-    if (auto toTensor = cur.getDefiningOp<bufferization::ToTensorOp>()) {
-      view.memref = toTensor.getBuffer();
-      return view;
-    }
-    if (auto muToTensor = cur.getDefiningOp<sde::SdeMuMemrefToTensorOp>()) {
-      view.memref = muToTensor.getMemref();
-      return view;
-    }
-    return std::nullopt;
-  }
-}
-
-/// Fold the tensor-path ops introduced by codelet lowering down to memref
-/// load/store semantics. See `lowerTensorPathOps` Step 4 for context.
-///
-/// We walk the module in program order and transform each op in place:
-///   - `tensor.extract %t[idx]` becomes `memref.load %m[idx]` when %t
-///     traces to a memref view.
-///   - `tensor.insert %val into %t[idx]` becomes `memref.store %val, %m[idx]`
-///     and the insert's SSA result is RAUW'd with its dest (so downstream
-///     extracts re-trace to the SAME backing memref, reading the store we
-///     just emitted).
-///   - `bufferization.materialize_in_destination` whose source tensor traces
-///     back to the same memref is a no-op (the stores already happened).
-///   - Dead tensor.cast / tensor.extract_slice / bufferization.to_tensor are
-///     erased.
-///
-/// Walk order matters: a later `tensor.extract` on a value produced by an
-/// earlier `tensor.insert` must be translated AFTER that insert has become a
-/// memref.store, so the emitted `memref.load` is placed AFTER the store and
-/// reads the fresh value.
-/// Rank-0 tensor backed by rank-1 memref: supply index 0 for the extra
-/// dimension (DB convention: elementSizes=[1] for scalars).
-/// Returns false if indices don't match memref rank after fixup.
-static bool fixupRank0Indices(SmallVectorImpl<Value> &indices, MemRefType mrType,
-                              OpBuilder &builder, Location loc) {
-  if (indices.empty() && mrType.getRank() == 1)
-    indices.push_back(arts::createZeroIndex(builder, loc));
-  return static_cast<int64_t>(indices.size()) == mrType.getRank();
-}
-
-static FailureOr<SmallVector<Value>>
-buildMemrefIndices(const TensorMemrefView &view, ValueRange tensorIndices,
-                   MemRefType mrType, OpBuilder &builder, Location loc) {
-  SmallVector<Value> indices(tensorIndices.begin(), tensorIndices.end());
-  if (!view.offsets.empty()) {
-    if (view.offsets.size() != indices.size() ||
-        view.strides.size() != indices.size())
-      return failure();
-    for (size_t i = 0, e = indices.size(); i < e; ++i) {
-      Value scaled = mulIndexIfNeeded(builder, loc, indices[i], view.strides[i]);
-      indices[i] = addIndexIfNeeded(builder, loc, view.offsets[i], scaled);
-    }
-  }
-  if (!fixupRank0Indices(indices, mrType, builder, loc))
-    return failure();
-  return indices;
-}
-
-static void eraseDeadTensorPathCarrierOps(ModuleOp module) {
-  // Iteratively erase dead tensor-path carriers. These ops are transient
-  // SDE/Core glue; after scalar tensor ops are folded to memref operations,
-  // any remaining dead carrier must be removed before VerifySdeLowered runs.
-  for (;;) {
-    SmallVector<Operation *> dead;
-    module.walk([&](Operation *op) {
-      if (isa<bufferization::ToTensorOp, tensor::CastOp,
-              tensor::ExtractSliceOp, tensor::InsertSliceOp, tensor::EmptyOp,
-              tensor::FromElementsOp>(op) &&
-          op->use_empty()) {
-        dead.push_back(op);
-      }
-    });
-    if (dead.empty())
-      return;
-    for (Operation *op : llvm::reverse(dead))
-      op->erase();
-  }
-}
-
-static LogicalResult emitMemrefCopy(OpBuilder &builder, Location loc,
-                                    Value source, Value dest) {
-  auto sourceType = dyn_cast<MemRefType>(source.getType());
-  auto destType = dyn_cast<MemRefType>(dest.getType());
-  if (!sourceType || !destType)
-    return failure();
-
-  unsigned destRank = destType.getRank();
-  unsigned sourceRank = sourceType.getRank();
-  if (sourceRank != destRank &&
-      !(destRank == 0 && sourceRank == 1 && sourceType.getDimSize(0) == 1))
-    return failure();
-
-  SmallVector<Value> destIndices;
-  std::function<void(unsigned)> emitLoopNest = [&](unsigned dim) {
-    if (dim == destRank) {
-      SmallVector<Value> sourceIndices(destIndices.begin(), destIndices.end());
-      if (destRank == 0 && sourceRank == 1)
-        sourceIndices.push_back(arts::createZeroIndex(builder, loc));
-      Value loaded =
-          memref::LoadOp::create(builder, loc, source, sourceIndices);
-      memref::StoreOp::create(builder, loc, loaded, dest, destIndices);
-      return;
-    }
-
-    Value lower = arts::createZeroIndex(builder, loc);
-    Value upper;
-    if (destType.isDynamicDim(dim))
-      upper = memref::DimOp::create(builder, loc, dest, dim);
-    else
-      upper = arts::createConstantIndex(builder, loc, destType.getDimSize(dim));
-    Value step = arts::createOneIndex(builder, loc);
-    auto loop = scf::ForOp::create(builder, loc, lower, upper, step);
-
-    OpBuilder::InsertionGuard guard(builder);
-    builder.setInsertionPointToStart(loop.getBody());
-    destIndices.push_back(loop.getInductionVar());
-    emitLoopNest(dim + 1);
-    destIndices.pop_back();
-  };
-
-  emitLoopNest(0);
+  if (auto muData = dyn_cast<sde::SdeMuDataOp>(rootOp))
+    return lowerMuData(muData);
+  if (auto muAlloc = dyn_cast<sde::SdeMuAllocOp>(rootOp))
+    return lowerMuAlloc(muAlloc);
   return success();
 }
 
-static LogicalResult emitFromElementsStore(OpBuilder &builder, Location loc,
-                                           tensor::FromElementsOp source,
-                                           Value dest) {
-  auto tensorType = dyn_cast<RankedTensorType>(source.getType());
-  auto destType = dyn_cast<MemRefType>(dest.getType());
-  if (!tensorType || !destType || tensorType.getRank() != 0 ||
-      source.getElements().size() != 1)
-    return failure();
-
-  Value scalar = source.getElements().front();
-  SmallVector<Value> indices;
-  if (destType.getRank() == 1 && destType.getDimSize(0) == 1)
-    indices.push_back(arts::createZeroIndex(builder, loc));
-  else if (destType.getRank() != 0)
-    return failure();
-
-  memref::StoreOp::create(builder, loc, scalar, dest, indices);
-  return success();
-}
-
-static void foldTensorPathToMemref(ModuleOp module) {
-  // Collect target ops in IR pre-order so we can process them as they
-  // appear in the instruction stream. We intentionally do not use
-  // `module.walk` inline because we mutate the IR.
-  SmallVector<Operation *> ordered;
-  module.walk<WalkOrder::PreOrder>([&](Operation *op) {
-    if (isa<tensor::ExtractOp, tensor::InsertOp,
-            bufferization::MaterializeInDestinationOp>(op))
-      ordered.push_back(op);
-  });
-
-  for (Operation *op : ordered) {
-    if (auto extract = dyn_cast<tensor::ExtractOp>(op)) {
-      OpBuilder builder(extract);
-      std::optional<TensorMemrefView> view =
-          traceTensorToBackingMemref(extract.getTensor(), builder,
-                                     extract.getLoc());
-      if (!view || !view->memref)
-        continue;
-      auto mrType = dyn_cast<MemRefType>(view->memref.getType());
-      if (!mrType)
-        continue;
-      FailureOr<SmallVector<Value>> indices =
-          buildMemrefIndices(*view, extract.getIndices(), mrType, builder,
-                             extract.getLoc());
-      if (failed(indices))
-        continue;
-      Value loaded = memref::LoadOp::create(builder, extract.getLoc(),
-                                            view->memref, *indices);
-      extract.getResult().replaceAllUsesWith(loaded);
-      extract.erase();
-    } else if (auto insert = dyn_cast<tensor::InsertOp>(op)) {
-      OpBuilder builder(insert);
-      std::optional<TensorMemrefView> view =
-          traceTensorToBackingMemref(insert.getDest(), builder,
-                                     insert.getLoc());
-      if (!view || !view->memref)
-        continue;
-      auto mrType = dyn_cast<MemRefType>(view->memref.getType());
-      if (!mrType)
-        continue;
-      FailureOr<SmallVector<Value>> indices = buildMemrefIndices(
-          *view, insert.getIndices(), mrType, builder, insert.getLoc());
-      if (failed(indices))
-        continue;
-      memref::StoreOp::create(builder, insert.getLoc(), insert.getScalar(),
-                              view->memref, *indices);
-      insert.getResult().replaceAllUsesWith(insert.getDest());
-      insert.erase();
-    } else if (auto mat =
-                   dyn_cast<bufferization::MaterializeInDestinationOp>(op)) {
-      if (auto fromElements =
-              mat.getSource().getDefiningOp<tensor::FromElementsOp>()) {
-        OpBuilder builder(mat);
-        if (succeeded(emitFromElementsStore(builder, mat.getLoc(), fromElements,
-                                            mat.getDest()))) {
-          mat.erase();
-          continue;
-        }
-      }
-
-      OpBuilder builder(mat);
-      std::optional<TensorMemrefView> source =
-          traceTensorToBackingMemref(mat.getSource(), builder, mat.getLoc());
-      if (!source || !source->memref)
-        continue;
-      Value dest = mat.getDest();
-      if (source->memref != dest) {
-        if (failed(emitMemrefCopy(builder, mat.getLoc(), source->memref, dest)))
-          continue;
-      }
-      mat.erase();
-    }
-  }
-
-  eraseDeadTensorPathCarrierOps(module);
-}
-
-static void canonicalizeTensorPathRegionResults(ModuleOp module) {
-  RewritePatternSet patterns(module.getContext());
-  scf::IfOp::getCanonicalizationPatterns(patterns, module.getContext());
-  scf::ForOp::getCanonicalizationPatterns(patterns, module.getContext());
-
-  GreedyRewriteConfig config;
-  config.setMaxIterations(4);
-  (void)applyPatternsGreedily(module, std::move(patterns), config);
-
-  eraseDeadTensorPathCarrierOps(module);
-}
-
-/// Drive the tensor-path lowerings ahead of the greedy rewriter. Order:
-///   1. `sde.cu_codelet`  ->  arts.edt (acquires + body + materialize).
+/// Drive memref MU lowerings ahead of the greedy rewriter. Order:
+///   1. `sde.cu_codelet`  ->  arts.edt (acquires + body).
 ///   2. `sde.mu_token` leftovers (orphan or producer-less) -> erase.
-///   3. `sde.mu_data`     ->  arts.db_alloc + db_ref + to_tensor chain.
-///   4. Fold tensor-path ops to memref ops.
+///   3. `sde.mu_data` / `sde.mu_alloc` -> arts.db_alloc + db_ref.
 ///
 /// Steps 1/2 before step 3 ensures that when we tear down a codelet, all of
 /// its `sde.mu_token` operands are still resolvable back to their originating
-/// `sde.mu_data` — which remains an SSA producer until step 3 replaces it
-/// with the ARTS-side chain.
-static LogicalResult lowerTensorPathOps(ModuleOp module) {
-  // Step 1: lower codelets (+ their tokens).
-  //
-  // `lowerMuData` erases its input op and RAUWs the tensor result with a
-  // `bufferization.to_tensor` over the new DB chain. When two codelets (or
-  // two tokens of the same codelet) share a single `sde.mu_data`, the first
-  // lowering erases it and subsequent `muToken.getSource()` lookups see the
-  // replacement `to_tensor` instead of the original `mu_data` — so
-  // `getDefiningOp<SdeMuDataOp>()` naturally returns null. We still guard
-  // with a seen-set to make the intent explicit and to prevent any future
-  // re-entrancy (e.g., if lookup traversal ever changes) from dereferencing
-  // an erased op.
-  DenseSet<sde::SdeMuDataOp> loweredMuData;
+/// `sde.mu_data` / `sde.mu_alloc` storage producer. Those producers are lowered
+/// first for codelet operands so `findBackingDbAlloc` sees the DB chain.
+static LogicalResult lowerMemrefMuOps(ModuleOp module) {
+  DenseSet<Operation *> loweredMuOps;
   SmallVector<sde::SdeCuCodeletOp> codelets;
   module.walk([&](sde::SdeCuCodeletOp op) { codelets.push_back(op); });
   for (sde::SdeCuCodeletOp codelet : codelets) {
-    // Lower mu_data producers feeding this codelet's tokens first so that
-    // `findBackingDbAlloc` can see the DB chain when codelet lowering runs.
     for (Value token : codelet.getTokens()) {
       auto muToken = token.getDefiningOp<sde::SdeMuTokenOp>();
       if (!muToken)
         continue;
-      auto muData = muToken.getSource().getDefiningOp<sde::SdeMuDataOp>();
-      if (!muData)
-        continue;
-      if (!loweredMuData.insert(muData).second)
-        continue;
-      if (failed(lowerMuData(muData)))
+      if (failed(lowerTokenSource(muToken.getSource(), loweredMuOps)))
         return failure();
     }
     if (failed(lowerCuCodelet(codelet)))
@@ -2307,8 +1723,8 @@ static LogicalResult lowerTensorPathOps(ModuleOp module) {
     op.erase();
   }
 
-  // Step 3: any remaining `sde.mu_data` (unused by codelets) still needs
-  // lowering so VerifySdeLowered passes.
+  // Step 3: any remaining MU storage ops still need lowering so
+  // VerifySdeLowered rejects no residual SDE storage surface.
   SmallVector<sde::SdeMuDataOp> muDatas;
   module.walk([&](sde::SdeMuDataOp op) { muDatas.push_back(op); });
   for (sde::SdeMuDataOp op : muDatas) {
@@ -2316,62 +1732,12 @@ static LogicalResult lowerTensorPathOps(ModuleOp module) {
       return failure();
   }
 
-  // Step 3b: lower sde.mu_alloc → tensor.empty,
-  //          sde.mu_memref_to_tensor → bufferization.to_tensor,
-  //          sde.mu_tensor_to_memref → bufferization.materialize_in_destination
-  {
-    SmallVector<sde::SdeMuAllocOp> muAllocs;
-    SmallVector<sde::SdeMuMemrefToTensorOp> muToTensors;
-    SmallVector<sde::SdeMuTensorToMemrefOp> muToMemrefs;
-    module.walk([&](Operation *op) {
-      if (auto a = dyn_cast<sde::SdeMuAllocOp>(op))
-        muAllocs.push_back(a);
-      else if (auto t = dyn_cast<sde::SdeMuMemrefToTensorOp>(op))
-        muToTensors.push_back(t);
-      else if (auto m = dyn_cast<sde::SdeMuTensorToMemrefOp>(op))
-        muToMemrefs.push_back(m);
-    });
-
-    for (sde::SdeMuAllocOp op : muAllocs) {
-      OpBuilder b(op);
-      auto tensorTy = cast<RankedTensorType>(op.getTensor().getType());
-      SmallVector<int64_t> staticShape(tensorTy.getShape());
-      Value empty = tensor::EmptyOp::create(b, op.getLoc(), staticShape,
-                                            tensorTy.getElementType(),
-                                            op.getDynamicSizes());
-      op.getTensor().replaceAllUsesWith(empty);
-      op.erase();
-    }
-
-    for (sde::SdeMuMemrefToTensorOp op : muToTensors) {
-      OpBuilder b(op);
-      auto tensorTy = cast<RankedTensorType>(op.getTensor().getType());
-      Value tensor = bufferization::ToTensorOp::create(b, op.getLoc(), tensorTy,
-                                                       op.getMemref());
-      op.getTensor().replaceAllUsesWith(tensor);
-      op.erase();
-    }
-
-    for (sde::SdeMuTensorToMemrefOp op : muToMemrefs) {
-      OpBuilder b(op);
-      auto matOp = bufferization::MaterializeInDestinationOp::create(
-          b, op.getLoc(), op.getSource(), op.getDest());
-      matOp.setWritable(true);
-      op.erase();
-    }
+  SmallVector<sde::SdeMuAllocOp> muAllocs;
+  module.walk([&](sde::SdeMuAllocOp op) { muAllocs.push_back(op); });
+  for (sde::SdeMuAllocOp op : muAllocs) {
+    if (failed(lowerMuAlloc(op)))
+      return failure();
   }
-
-  // Step 4: fold the tensor-op chain produced by codelet lowering down to
-  // pure memref loads/stores. ConvertArtsToLLVM does not know how to
-  // consume `bufferization.to_tensor` / `materialize_in_destination` /
-  // `tensor.insert` / `tensor.extract`, so we translate each of them to
-  // the equivalent memref.load / memref.store against the backing DB
-  // memref. The folds are only valid for the tensor-path pattern
-  // RaiseMemrefToTensor emits (to_tensor of a db_ref, scalar extract /
-  // insert, final materialize_in_destination on the same memref); other
-  // tensor IR in the module is left untouched.
-  foldTensorPathToMemref(module);
-  canonicalizeTensorPathRegionResults(module);
 
   return success();
 }
@@ -2449,10 +1815,10 @@ struct ConvertSdeToArtsPass
       return;
     }
 
-    // Tensor-path lowering must run before the greedy driver
-    // so its tensor.insert / tensor.extract body ops are cloned into EDTs
-    // before region simplification can fold them away.
-    if (failed(lowerTensorPathOps(module))) {
+    // Memref MU/codelet lowering must run before the greedy driver so SDE
+    // token/codelet storage surfaces are materialized as DB/acquire/EDT
+    // objects before generic region rewrites see them.
+    if (failed(lowerMemrefMuOps(module))) {
       signalPassFailure();
       return;
     }
@@ -2472,14 +1838,9 @@ struct ConvertSdeToArtsPass
     patterns.add<ResourceQueryToArtsPattern>(context);
     patterns.add<SdeYieldToArtsPattern>(context);
     patterns.add<MuReductionDeclToArtsPattern>(context);
-    // Tensor-path lowerings (mu_data, mu_token, cu_codelet).
-    //
-    // The codelet/mu_token/mu_data triple is handled ahead of the greedy
-    // driver by `lowerTensorPathOps()` below. Running them as plain
-    // OpRewritePatterns inside the greedy driver lets its region-
-    // simplification pass DCE the codelet bodies between matches
-    // (tensor-world ops are pure and look dead to the simplifier), which
-    // would drop the very IR we're trying to lower.
+    // MU/codelet lowerings (mu_data, mu_alloc, mu_token, cu_codelet) are
+    // handled ahead of the greedy driver by `lowerMemrefMuOps()`, because
+    // they need to materialize a coordinated DB/acquire/EDT shape.
     GreedyRewriteConfig config;
     config.setRegionSimplificationLevel(
         mlir::GreedySimplifyRegionLevel::Disabled);

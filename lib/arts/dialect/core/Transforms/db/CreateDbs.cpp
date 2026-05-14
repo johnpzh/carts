@@ -27,10 +27,9 @@
 /// - SDE chooses structured patterns, task grain, owner dimensions, physical
 ///   block shapes, and task element slices.
 /// - The target SDE path emits MU tokens/codelets that lower directly to DB ops.
-/// - Until every raw-memref path reaches that form, SDE->ARTS may emit
-///   `arts.db_control` for fallback dependencies.
-/// - CreateDbs materializes those explicit temporary contracts into Core DB ops
-///   and localizes remaining raw memref accesses to DB-relative coordinates.
+/// - CreateDbs materializes remaining raw EDT memref captures into Core DB ops
+///   and localizes raw accesses to DB-relative coordinates. It must not encode
+///   SDE dependency semantics with Core-only marker ops.
 ///
 /// CreateDbs must not rediscover tensor/linalg partition policy.  Its
 /// remaining indexers are compatibility localizers for raw memref bodies until
@@ -96,6 +95,10 @@ static llvm::Statistic numMemrefsDefaultedToInOut{
 static llvm::Statistic numDbAcquireGroupsCreated{
     "create_dbs", "NumDbAcquireGroupsCreated",
     "Number of DbAcquireOp groups created for EDT dependencies"};
+static llvm::Statistic numOutAcquiresPromotedForPartialBlocks{
+    "create_dbs", "NumOutAcquiresPromotedForPartialBlocks",
+    "Number of out acquires promoted to inout because a logical element slice "
+    "widens to partial physical DB blocks"};
 static llvm::Statistic numGlobalDbInitializations{
     "create_dbs", "NumGlobalDbInitializations",
     "Number of global datablocks initialized from memref.global contents"};
@@ -124,6 +127,71 @@ static bool isForwardingMemrefAliasOp(Operation *op, Value source) {
     return subindex.getSource() == source && op->getNumResults() == 1;
 
   return false;
+}
+
+static bool isKnownMultipleOf(Value value, Value divisor,
+                              unsigned depth = 0) {
+  if (!value || !divisor || depth > 6)
+    return false;
+
+  value = ValueAnalysis::stripNumericCasts(value);
+  divisor = ValueAnalysis::stripNumericCasts(divisor);
+  if (value == divisor)
+    return true;
+
+  std::optional<int64_t> valueConst =
+      ValueAnalysis::tryFoldConstantIndex(value);
+  std::optional<int64_t> divisorConst =
+      ValueAnalysis::tryFoldConstantIndex(divisor);
+  if (valueConst && *valueConst == 0)
+    return true;
+  if (valueConst && divisorConst && *divisorConst > 0)
+    return *valueConst % *divisorConst == 0;
+
+  Operation *def = value.getDefiningOp();
+  if (!def)
+    return false;
+
+  if (auto mul = dyn_cast<arith::MulIOp>(def)) {
+    Value lhs = ValueAnalysis::stripNumericCasts(mul.getLhs());
+    Value rhs = ValueAnalysis::stripNumericCasts(mul.getRhs());
+    return lhs == divisor || rhs == divisor ||
+           isKnownMultipleOf(lhs, divisor, depth + 1) ||
+           isKnownMultipleOf(rhs, divisor, depth + 1);
+  }
+
+  if (auto add = dyn_cast<arith::AddIOp>(def))
+    return isKnownMultipleOf(add.getLhs(), divisor, depth + 1) &&
+           isKnownMultipleOf(add.getRhs(), divisor, depth + 1);
+
+  if (auto sub = dyn_cast<arith::SubIOp>(def))
+    return isKnownMultipleOf(sub.getLhs(), divisor, depth + 1) &&
+           isKnownMultipleOf(sub.getRhs(), divisor, depth + 1);
+
+  return false;
+}
+
+static bool canProveWholePhysicalBlocks(ValueRange elementOffsets,
+                                        ValueRange elementSizes,
+                                        ValueRange blockSizes,
+                                        unsigned ownerRank) {
+  if (elementOffsets.size() < ownerRank || elementSizes.size() < ownerRank ||
+      blockSizes.size() < ownerRank)
+    return false;
+
+  for (unsigned i = 0; i < ownerRank; ++i) {
+    Value blockSize = blockSizes[i];
+    if (!blockSize)
+      return false;
+    std::optional<int64_t> folded =
+        ValueAnalysis::tryFoldConstantIndex(blockSize);
+    if (folded && *folded <= 0)
+      return false;
+    if (!isKnownMultipleOf(elementOffsets[i], blockSize) ||
+        !isKnownMultipleOf(elementSizes[i], blockSize))
+      return false;
+  }
+  return true;
 }
 
 ///===----------------------------------------------------------------------===///
@@ -237,7 +305,8 @@ private:
             }
           }
 
-          /// Track chunk dependencies from DbControlOp.offsets/sizes
+          /// Track explicit chunk dependencies carried by SDE-authored
+          /// acquire metadata.
           /// Chunk deps have: indices=[], offsets=[offset], sizes=[blockSize]
           if (!access.offsets.empty() && !access.sizes.empty()) {
             info.hasChunkDeps = true;
@@ -265,7 +334,6 @@ private:
   DenseMap<EdtOp, SetVector<Value>> edtExternalValues;
 
   void collectMemrefs();
-  void collectControlDbOps();
   void reconcileExternalDepAccessModes();
   void ensureInitializedAccessModes();
   void createDbAllocOps();
@@ -320,15 +388,11 @@ void CreateDbsPass::runOnOperation() {
   collectMemrefs();
   ARTS_DEBUG(" - Found " << memrefInfo.size() << " memrefs used in EDTs");
 
-  /// Phase 2: collect and clean up existing Control DB operations
-  ARTS_INFO("Phase 2: collect and clean up existing Control DB operations");
-  collectControlDbOps();
-
-  /// Phase 3.5: Reconcile missing DbControl hints and fallback access modes.
+  /// Phase 2: Reconcile raw external memref access modes.
   reconcileExternalDepAccessModes();
   ensureInitializedAccessModes();
 
-  /// Phase 3: Create DbAlloc operations
+  /// Phase 3: Create DbAlloc operations.
   ARTS_INFO("Phase 3: Creating DbAlloc operations for " << memrefInfo.size()
                                                         << " memrefs");
   createDbAllocOps();
@@ -345,9 +409,9 @@ void CreateDbsPass::runOnOperation() {
 }
 
 void CreateDbsPass::reconcileExternalDepAccessModes() {
-  /// For each EDT with external dependencies, ensure memrefs missing explicit
-  /// DbControl entries still get a conservative access mode inferred from
-  /// concrete memory uses.
+  /// For each EDT with external dependencies, infer conservative access modes
+  /// from concrete memory uses when no explicit SDE materialized acquire is
+  /// already present.
   for (auto &edtEntry : edtExternalValues) {
     EdtOp edt = edtEntry.first;
     SetVector<Value> &externalDeps = edtEntry.second;
@@ -361,8 +425,8 @@ void CreateDbsPass::reconcileExternalDepAccessModes() {
         continue; // already a DB
 
       MemrefInfo &info = memrefInfo[underlyingOp];
-      bool hasControlDb = !info.edtToDeps[edt].empty();
-      if (hasControlDb)
+      bool hasExplicitDep = !info.edtToDeps[edt].empty();
+      if (hasExplicitDep)
         continue;
 
       ArtsMode inferredMode =
@@ -372,7 +436,8 @@ void CreateDbsPass::reconcileExternalDepAccessModes() {
 
       ARTS_DEBUG(" - Memref "
                  << *underlyingOp
-                 << " used in EDT without DbControlOps, inferred mode="
+                 << " used in EDT without explicit SDE acquire metadata, "
+                    "inferred mode="
                  << inferredMode);
       info.accessMode = combineAccessModes(info.accessMode, inferredMode);
       ++numEdtAccessModesInferred;
@@ -390,7 +455,8 @@ void CreateDbsPass::ensureInitializedAccessModes() {
 
     ARTS_DEBUG(" - Memref "
                << *entry.first
-               << " has no DbControlOps at all, defaulting to inout mode");
+               << " has no explicit access metadata, defaulting to inout "
+                  "mode");
     info.accessMode = ArtsMode::inout;
     ++numMemrefsDefaultedToInOut;
   }
@@ -629,168 +695,6 @@ void CreateDbsPass::collectMemrefs() {
                                       << " unique memrefs");
 }
 
-///===----------------------------------------------------------------------===///
-/// Collect Control DB Operations
-///===----------------------------------------------------------------------===///
-void CreateDbsPass::collectControlDbOps() {
-  /// First, extract dependency mode and index information from all db_control
-  /// ops before erasing them
-  SmallVector<DbControlOp, 4> dbControlOps;
-  module.walk([&](DbControlOp dbControl) {
-    dbControlOps.push_back(dbControl);
-    Value ptr = dbControl.getPtr();
-    ArtsMode mode = dbControl.getMode();
-    auto indices = dbControl.getIndices();
-    auto offsets = dbControl.getOffsets();
-    auto sizes = dbControl.getSizes();
-
-    /// Get the underlying operation for this pointer
-    Operation *underlyingOp = ValueAnalysis::getUnderlyingOperation(ptr);
-    if (!underlyingOp)
-      return;
-    if (isa<DbAllocOp>(underlyingOp))
-      return; // already a DB, no DbControl conversion required
-
-    ARTS_DEBUG(" - Found DbControlOp for "
-               << *underlyingOp << " with mode: " << mode << ", "
-               << indices.size() << " indices, " << offsets.size()
-               << " offsets, " << sizes.size() << " sizes");
-
-    /// Get user EDT
-    EdtOp userEdt = dyn_cast_or_null<EdtOp>(DbAnalysis::findUserEdt(dbControl));
-
-    SmallVector<Value, 4> indexValues(indices.begin(), indices.end());
-    SmallVector<Value, 4> offsetValues(offsets.begin(), offsets.end());
-    SmallVector<Value, 4> sizeValues(sizes.begin(), sizes.end());
-
-    /// Track all operations in this EDT that use this memref AND match the
-    /// indices
-    SmallVector<Operation *, 4> opsToRewrite;
-    if (userEdt) {
-      /// Walk the user EDT and collect operations whose leading indices match
-      /// the pinned DbControl dimensions. The exact SSA prefix check
-      /// distinguishes chunks such as A[i-1], A[i], and A[i+1].
-      userEdt.walk([&](Operation *op) {
-        if (auto load = dyn_cast<memref::LoadOp>(op)) {
-          if (ValueAnalysis::getUnderlyingOperation(load.getMemref()) ==
-              underlyingOp) {
-            if (DbAnalysis::opMatchesAccessMode(op, underlyingOp, mode) &&
-                ValueAnalysis::hasValueRangePrefix(load.getIndices(),
-                                                   indexValues))
-              opsToRewrite.push_back(op);
-          }
-        } else if (auto store = dyn_cast<memref::StoreOp>(op)) {
-          if (ValueAnalysis::getUnderlyingOperation(store.getMemref()) ==
-              underlyingOp) {
-            if (DbAnalysis::opMatchesAccessMode(op, underlyingOp, mode) &&
-                ValueAnalysis::hasValueRangePrefix(store.getIndices(),
-                                                   indexValues))
-              opsToRewrite.push_back(op);
-          }
-        }
-      });
-      ARTS_DEBUG("    - Found "
-                 << opsToRewrite.size()
-                 << " operations to rewrite for this specific dependency");
-    }
-
-    memrefInfo[underlyingOp].addAccess(
-        userEdt, mode, indexValues, offsetValues, sizeValues, opsToRewrite,
-        /*preserveDepEdge=*/!isLocalityOnly(dbControl.getOperation()));
-  });
-
-  /// Now erase all db_control ops, replacing uses with pointer.
-  /// We must also update edtExternalValues: any Value that was a result of an
-  /// erased DbControlOp becomes dangling after erase().  Replace such entries
-  /// with the ptr operand that replaceAllUsesWith substitutes in the IR.
-  for (DbControlOp dbControl : dbControlOps) {
-    Value subview = dbControl.getSubview();
-    Value ptr = dbControl.getPtr();
-    /// Update edtExternalValues to replace any reference to the about-to-be-
-    /// erased subview result with the ptr it forwards to.
-    for (auto &entry : edtExternalValues) {
-      if (entry.second.contains(subview)) {
-        entry.second.remove(subview);
-        entry.second.insert(ptr);
-      }
-    }
-    subview.replaceAllUsesWith(ptr);
-    dbControl.erase();
-  }
-
-  /// Clear all existing EDT dependencies and block args that are not used
-  /// within the block.  We must also remove any about-to-be-erased block
-  /// arguments from edtExternalValues to avoid dangling Value references.
-  ///
-  /// EDTs whose dependencies are already fully wired to DbAllocOp-backed
-  /// `arts.db_acquire` ops (produced up-front by the tensor-path SDE->ARTS
-  /// lowering) are left untouched: createDbAcquireOps would not re-wire them
-  /// (they never enter `edtExternalValues` since their underlying ops are
-  /// already DbAlloc), so stripping their operands would leave the verifier
-  /// with more block arguments than dependencies.
-  module.walk([&](EdtOp edt) {
-    Block &block = edt.getBody().front();
-
-    /// If every EDT dependency comes from a DbAllocOp-backed acquire already,
-    /// skip the clear step — the acquires ARE the deps.
-    bool allDepsArePreWiredAcquires = edt.getDependencies().size() > 0;
-    for (Value dep : edt.getDependencies()) {
-      Operation *underlying = ValueAnalysis::getUnderlyingOperation(dep);
-      bool dbAllocBacked = underlying && isa<DbAllocOp>(underlying);
-      if (!dbAllocBacked) {
-        if (auto acquire = dep.getDefiningOp<DbAcquireOp>()) {
-          dbAllocBacked = true;
-          Operation *sourceUnderlying =
-              ValueAnalysis::getUnderlyingOperation(acquire.getSourcePtr());
-          if (sourceUnderlying)
-            dbAllocBacked = isa<DbAllocOp>(sourceUnderlying) || dbAllocBacked;
-        }
-      }
-      if (!dbAllocBacked) {
-        allDepsArePreWiredAcquires = false;
-        break;
-      }
-    }
-    if (allDepsArePreWiredAcquires)
-      return;
-
-    /// Collect unused block arguments so we can scrub them from
-    /// edtExternalValues BEFORE the actual erasure invalidates them.
-    SmallVector<BlockArgument> unusedArgs;
-    for (BlockArgument arg : block.getArguments()) {
-      bool isUsed = false;
-      block.walk([&](Operation *op) {
-        for (Value operand : op->getOperands()) {
-          if (operand == arg) {
-            isUsed = true;
-            return WalkResult::interrupt();
-          }
-        }
-        return WalkResult::advance();
-      });
-      if (!isUsed)
-        unusedArgs.push_back(arg);
-    }
-
-    /// Remove stale Values from edtExternalValues before erasure.
-    auto extIt = edtExternalValues.find(edt);
-    if (extIt != edtExternalValues.end()) {
-      for (BlockArgument arg : unusedArgs)
-        extIt->second.remove(arg);
-    }
-
-    /// Now erase unused block arguments.
-    block.eraseArguments(
-        [&](BlockArgument arg) { return llvm::is_contained(unusedArgs, arg); });
-
-    /// Preserve the route operand when clearing dependencies
-    SmallVector<Value> preservedOperands;
-    if (Value route = edt.getRoute())
-      preservedOperands.push_back(route);
-    edt->setOperands(preservedOperands);
-  });
-}
-
 /// Create DB Allocation Operations
 void CreateDbsPass::createDbAllocOps() {
   /// All memrefs in memrefInfo are converted to DBs
@@ -837,7 +741,7 @@ void CreateDbsPass::createDbAllocOps() {
     /// Infer allocation type based on the defining operation
     DbAllocType allocType = inferAllocType(alloc);
 
-    /// Use the dependency mode from DbControlOp
+    /// Use the combined dependency/access mode inferred for this memref.
     ArtsMode mode = info.accessMode;
     ARTS_DEBUG(" - Using access mode " << mode);
 
@@ -1274,7 +1178,8 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
     OpBuilder::InsertionGuard IG(AC->getBuilder());
     AC->setInsertionPoint(edt);
 
-    /// Create acquires based on DbControlOp dependencies
+    /// Create acquires based on explicit dependency entries when present,
+    /// otherwise fall back to the whole external memref use in this EDT.
     const auto &deps = info.edtToDeps[edt];
     const auto &plan = info.rewritePlan.value();
 
@@ -1350,8 +1255,9 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
          groupIdx < groupCount; ++groupIdx) {
       auto &depGroup = depGroups[groupIdx];
       /// Create the parent acquire over the full physical DB range selected at
-      /// allocation time. Element-space partition hints from DbControlOp remain
-      /// attached so task lowering can derive worker-local dependency windows.
+      /// allocation time. Element-space partition hints from SDE materialized
+      /// acquires remain attached so task lowering can derive worker-local
+      /// dependency windows.
       /// Keep different access modes in separate acquires so downstream
       /// rec_dep lowering preserves read vs write slots.
       const bool preserveDepEdge = depGroupPreserveDepEdges[groupIdx];
@@ -1389,8 +1295,8 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
           partSizes.push_back(v);
       }
 
-      /// If this EDT has no explicit db_control hints for the memref, infer
-      /// per-EDT access from actual loads/stores before falling back.
+      /// If this EDT has no explicit SDE acquire metadata for the memref,
+      /// infer per-EDT access from actual loads/stores before falling back.
       if (acquireMode == ArtsMode::uninitialized) {
         acquireMode = AM->getDbAnalysis().inferEdtAccessMode(underlyingOp, edt);
         if (acquireMode == ArtsMode::uninitialized) {
@@ -1406,6 +1312,7 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
 
       SmallVector<Value> groupDbOffsets(dbOffsets.begin(), dbOffsets.end());
       SmallVector<Value> groupDbSizes(dbSizes.begin(), dbSizes.end());
+      bool promoteOutToInoutForPartialPhysicalBlocks = false;
       auto materializeExplicitOwnerSlice = [&]() -> bool {
         if (!plan.usesBlockedLayout() || depGroup.size() != 1 ||
             plan.partitionedDims.empty())
@@ -1430,6 +1337,13 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
           totalBlockCounts.push_back(allocSizes[ownerSlot]);
         }
 
+        if (dep->mode == ArtsMode::out &&
+            !canProveWholePhysicalBlocks(elementOffsets, elementSizes,
+                                         blockSpans,
+                                         plan.partitionedDims.size())) {
+          promoteOutToInoutForPartialPhysicalBlocks = true;
+        }
+
         SmallVector<Value, 4> normalizedOffsets;
         SmallVector<Value, 4> normalizedSizes;
         DbUtils::convertElementSliceToBlockSlice(
@@ -1448,6 +1362,14 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
       };
 
       (void)materializeExplicitOwnerSlice();
+      if (acquireMode == ArtsMode::out &&
+          promoteOutToInoutForPartialPhysicalBlocks) {
+        ARTS_DEBUG(" - Promoting widened physical block out acquire to inout "
+                   "because the logical element slice does not prove whole "
+                   "DB-block coverage");
+        acquireMode = ArtsMode::inout;
+        ++numOutAcquiresPromotedForPartialBlocks;
+      }
 
       Value acqGuid = sourceGuid;
       Value acqPtr = sourcePtr;
@@ -1494,9 +1416,9 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
           edt.getOperation(), acquireOp.getOperation(), acquireOp.getPtr());
 
       if (!depGroup.empty()) {
-        /// Explicit DbControlOp-derived acquires always preserve their access
-        /// mode contract. Only true predecessor controls also preserve the EDT
-        /// dependency edge.
+        /// Explicit SDE-derived acquires always preserve their access mode
+        /// contract. Only true predecessor dependency contracts also preserve
+        /// the EDT dependency edge.
         acquireOp.setPreserveAccessMode();
         if (preserveDepEdge)
           acquireOp.setPreserveDepEdge();

@@ -104,8 +104,9 @@ What each layer owns:
 - DbAllocNode: aggregation across acquires for one allocation.
 - SDE `PatternAnalysis`/distribution/tiling passes: policy. They prove owner
   dims, task grain, access windows, and physical block shape before Core.
-- `CreateDbs`: bridge. It converts SDE-authored plan attrs and `DbControlOp`
-  slices into `DbPhysicalLayoutPlan`, `arts.db_alloc`, and `arts.db_acquire`.
+- `CreateDbs`: bridge. It converts SDE-authored plan attrs and remaining raw
+  external EDT memref captures into `DbPhysicalLayoutPlan`, `arts.db_alloc`,
+  and `arts.db_acquire`. It must not receive task dependency declarations.
 - Raw-memref indexers: execution. They localize legacy memref loads/stores
   using `PartitionInfo + DbPhysicalLayoutPlan`; they do not choose policy.
 
@@ -183,8 +184,8 @@ DB mode note (in/out/inout):
 - Exception: acquires marked with `preserve_access_mode` already carry an
   authoritative dependency contract. We only set this when the compiler already
   knows the exact mode and should not re-check or optimize it later
-  (currently explicit `DbControlOp`-derived acquires and worker-local partial
-  reduction acquires).
+  (currently SDE-token-derived acquires and worker-local partial reduction
+  acquires).
 
 ---
 

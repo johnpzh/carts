@@ -23,8 +23,9 @@ def ArtsSdeDialect : Dialect {
     Legion, StarPU, GPU). The primary input is OpenMP code via OMP-to-SDE
     conversion.
 
-    SDE ops are type-polymorphic: they natively accept tensor, memref, and
-    scalar types.
+    SDE state and memory movement are memref-based. Scalar SSA values may be
+    captured as task parameters, while MU dependencies and tokens name memref
+    storage slices.
   }];
 
   let useDefaultTypePrinterParser = 1;

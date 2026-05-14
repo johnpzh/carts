@@ -238,9 +238,6 @@ public:
   /// Check if a DbAcquireOp has static (constant) offset and size hints.
   static bool hasStaticHints(DbAcquireOp acqOp);
 
-  /// Find the EDT operation that uses a DbControlOp result.
-  static Operation *findUserEdt(DbControlOp dbControl);
-
   /// Check if a multi-entry acquire has a stencil access pattern.
   static bool hasMultiEntryStencilPattern(DbAcquireOp acquire,
                                           int64_t &minOffset,

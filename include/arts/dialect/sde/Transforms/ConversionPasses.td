@@ -29,21 +29,14 @@ def ConvertSdeToArts : Pass<"convert-sde-to-arts", "mlir::ModuleOp"> {
   let summary = "Convert SDE operations to ARTS operations";
   let description = [{
     Converts SDE dialect ops into ARTS dialect ops, producing the same IR
-    that ConvertOpenMPToArts currently generates. When RaiseToLinalg
-    materializes transient linalg.generic carriers, this pass derives the
-    matching ARTS contract from them, copies semantic contract attributes, and
-    erases the carriers so downstream passes continue on loop/memref IR. When
-    no transient carrier is authoritative, it prefers any explicit SDE-owned
-    semantic contract already stamped on `sde.su_iterate`, then falls
-    back to the structural SDE classification attribute.
+    that ConvertOpenMPToArts currently generates. It lowers SDE-owned memref
+    MU/token/codelet plans directly to ARTS DB/acquire/EDT operations and
+    translates explicit SDE structured-loop contracts onto Core operations.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
                            "::mlir::arts::ArtsDialect",
-                           "::mlir::bufferization::BufferizationDialect",
                            "::mlir::memref::MemRefDialect",
-                           "::mlir::arith::ArithDialect",
-                           "::mlir::linalg::LinalgDialect",
-                           "::mlir::tensor::TensorDialect"];
+                           "::mlir::arith::ArithDialect"];
   let constructor = "mlir::arts::sde::createConvertSdeToArtsPass()";
 }
 

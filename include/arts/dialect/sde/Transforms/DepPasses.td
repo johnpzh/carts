@@ -8,43 +8,38 @@ include "mlir/Pass/PassBase.td"
 
 def LoopInterchange
     : Pass<"loop-interchange", "mlir::ModuleOp"> {
-  let summary = "Cost-model-driven loop interchange using SDE linalg carriers";
+  let summary = "Cost-model-driven loop interchange using SDE memref access analysis";
   let description = [{
-    Analyzes the indexing maps and iterator types of transient linalg.generic
-    carriers to determine optimal loop ordering for cache efficiency. For
-    matmul patterns, moves the reduction dimension outermost so the parallel
-    dimension with stride-1 access on the B operand becomes innermost.
+    Analyzes SDE loop/access maps to determine optimal loop ordering for cache
+    efficiency. For matmul patterns, moves the reduction dimension outermost
+    so the parallel dimension with stride-1 access on the B operand becomes
+    innermost.
 
     This pass replaces the ARTS-level LoopReordering pass with a more general
-    solution that operates on structured SDE carriers before ARTS lowering.
+    solution that operates on structured SDE memref loops before ARTS lowering.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
-                           "::mlir::linalg::LinalgDialect",
                            "::mlir::scf::SCFDialect"];
   let constructor = "mlir::arts::sde::createLoopInterchangePass()";
 }
 
 def Tiling : Pass<"tiling", "mlir::ModuleOp"> {
-  let summary = "Apply SDE pattern-driven tiling using linalg carriers";
+  let summary = "Apply SDE pattern-driven tiling using memref loop/access facts";
   let description = [{
     Uses SDE-owned pattern/effect facts, abstract logical capacity, and the
-    transient tensor-backed linalg carriers to apply real loop tiling before
-    SDE->ARTS lowering. Symbolic capacity is represented with
+    memref loop/access facts to apply real loop tiling before SDE->ARTS
+    lowering. Symbolic capacity is represented with
     `sde.resource_query <logical_workers>` and is bound to ARTS only at
     ConvertSdeToArts.
     The current implementation focuses on the first executable subset:
     one-dimensional elementwise loops are strip-mined into logical-capacity
     tiles and the surrounding sde.su_iterate step is rewritten so the
-    transformed loop nest survives into later ARTS lowering without exposing
-    tensor IR past the SDE boundary.
+    transformed loop nest survives into later ARTS lowering.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
                            "::mlir::arith::ArithDialect",
-                           "::mlir::bufferization::BufferizationDialect",
-                           "::mlir::linalg::LinalgDialect",
                            "::mlir::memref::MemRefDialect",
-                           "::mlir::scf::SCFDialect",
-                           "::mlir::tensor::TensorDialect"];
+                           "::mlir::scf::SCFDialect"];
   let constructor = "mlir::arts::sde::createTilingPass()";
 }
 
@@ -52,11 +47,10 @@ def PatternAnalysis
     : Pass<"sde-pattern-analysis", "mlir::ModuleOp"> {
   let summary = "Analyze and stamp approved SDE structured patterns";
   let description = [{
-    Uses SDE-owned loop/access analysis together with transient tensor/linalg
-    carriers to identify approved structured pattern families on eligible
-    `sde.su_iterate` operations. This pass is the first SDE pattern
-    planning point after tensor/linalg raising: later SDE transforms consume
-    these facts instead of rediscovering pattern legality.
+    Uses SDE-owned loop/access analysis to identify approved structured pattern
+    families on eligible `sde.su_iterate` operations. This pass is the first
+    SDE pattern planning point after OpenMP-to-SDE conversion: later SDE
+    transforms consume these facts instead of rediscovering pattern legality.
 
     PatternAnalysis stamps only SDE IR facts. It does not stamp ARTS/Core
     attributes and it does not cross the dialect boundary. ConvertSdeToArts may
@@ -110,24 +104,6 @@ def IterationSpaceDecomposition
                            "::mlir::scf::SCFDialect",
                            "::mlir::memref::MemRefDialect"];
   let constructor = "mlir::arts::sde::createIterationSpaceDecompositionPass()";
-}
-
-def Vectorization
-    : Pass<"sde-vectorization", "mlir::ModuleOp"> {
-  let summary = "Vectorize static-shape linalg.generic carriers in su_iterate bodies";
-  let description = [{
-    Vectorizes carrier-authoritative `linalg.generic` ops inside `su_iterate`
-    using upstream MLIR's linalg::vectorize(). Replaces eligible carriers with
-    `vector.transfer_read/write` + arith-on-vectors. LLVM's backend decomposes
-    large vectors into hardware-sized chunks.
-
-    Only vectorizes carriers with all-parallel iterator types, static shapes on
-    all operands and loop ranges, and tensor semantics.
-  }];
-  let dependentDialects = ["::mlir::linalg::LinalgDialect",
-                           "::mlir::tensor::TensorDialect",
-                           "::mlir::vector::VectorDialect"];
-  let constructor = "mlir::arts::sde::createVectorizationPass()";
 }
 
 #endif // ARTS_DIALECT_SDE_TRANSFORMS_DEP_PASSES

@@ -94,12 +94,11 @@ These are real cases where fixes landed in the wrong layer and caused regression
 
 ### Anti-pattern 4 — rediscovering DB dependencies in Core
 
-`arts.db_control` is only a transitional marker for raw memref fallback. If a
-failure involves leaked `arts.db_control`, missing DB acquires, or a raw memref
-body that was not localized, do not add new Core rediscovery logic. The
-originating issue is that SDE did not produce canonical `mu_data`/`mu_token`/
-`cu_codelet` form, or `CreateDbs` failed to consume the temporary marker before
-runtime lowering.
+Core no longer has a dependency-marker operation. If a failure involves
+unmaterialized `sde.mu_dep`, missing DB acquires, or a raw memref body that was
+not localized, do not add new Core rediscovery logic. The originating issue is
+that SDE did not produce canonical `mu_data`/`mu_token`/`cu_codelet` form before
+the SDE/Core boundary.
 
 **Lesson:** user dependency slices are SDE MU facts. Core may bind them to DBs,
 but it should not infer them by rescanning task bodies.

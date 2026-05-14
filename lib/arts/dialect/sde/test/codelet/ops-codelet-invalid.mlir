@@ -3,10 +3,9 @@
 // the exit code so the run succeeds iff compilation fails.
 //
 // The rules exercised here are:
-//   V2  — rank mismatch between `mu_token` offsets/sizes and the source
-//         tensor rank.
+//   V2  — rank mismatch between `mu_token` offsets/sizes and the source rank.
 //   V7  — `cu_codelet` result count must equal the number of writable
-//         tokens (write / readwrite).
+//         tensor tokens (write / readwrite).
 //   V10 — a <read> token cannot have a yielded counterpart; enforced
 //         through the same V7 gate, whose diagnostic explicitly cites V10.
 //   V11 — `cu_codelet` captures must be scalar values.
@@ -16,13 +15,13 @@
 // RUN: not %carts-compile %S/Inputs/codelet-invalid-v10.mlir --arts-config %arts_config --pipeline initial-cleanup --start-from initial-cleanup 2>&1 | %FileCheck %s --check-prefix=V10
 // RUN: not %carts-compile %S/Inputs/codelet-invalid-v11.mlir --arts-config %arts_config --pipeline initial-cleanup --start-from initial-cleanup 2>&1 | %FileCheck %s --check-prefix=V11
 
-// V2: 'sde.mu_token' op expects offsets/sizes count (2) to match source tensor rank (1)
+// V2: 'sde.mu_token' op expects offsets/sizes count (2) to match source rank (1)
 
-// V7: 'sde.cu_codelet' op expects one result per writable token
+// V7: 'sde.cu_codelet' op expects one result per writable tensor token
 // V7-SAME: got 0 result(s) and 1 writable
 
-// V10: 'sde.cu_codelet' op expects one result per writable token
-// V10-SAME: {{<read> token must not have a yielded counterpart}}
+// V10: 'sde.cu_codelet' op expects one result per writable tensor token
+// V10-SAME: {{<read> token and any memref token must not have a yielded counterpart}}
 
 // V11: 'sde.cu_codelet' op capture operand #0 must be an integer, index, or float scalar
 

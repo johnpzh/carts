@@ -1,5 +1,5 @@
 // Auxiliary input for ops-codelet-invalid.mlir (V7 check).
-// V7: codelet result count must equal the number of writable tokens. Here
+// V7: codelet result count must equal the number of writable tensor tokens. Here
 //     we declare one <readwrite> token (1 writable) but request zero results.
 module {
   func.func @v7_result_count_mismatch(%t: tensor<8xi32>) -> tensor<8xi32> {

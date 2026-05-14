@@ -253,11 +253,8 @@ static const std::array<llvm::StringLiteral, 10>
                                         "CSE"};
 static const std::array<llvm::StringLiteral, 3> kInitialCleanupPasses = {
     "LowerAffine(func)", "CSE(func)", "PolygeistCanonicalizeFor(func)"};
-static const std::array<llvm::StringLiteral, 28> kOpenMPToArtsPasses = {
+static const std::array<llvm::StringLiteral, 20> kOpenMPToArtsPasses = {
     "ConvertOpenMPToSde",
-    "RaiseMemrefToTensor",
-    "RaiseToTensor",
-    "RaiseToLinalg",
     "PatternAnalysis",
     "LoopInterchange",
     "Tiling",
@@ -271,11 +268,6 @@ static const std::array<llvm::StringLiteral, 28> kOpenMPToArtsPasses = {
     "BarrierElimination",
     "CpsPlanning",
     "VerifySdeCpsPlan",
-    "Vectorization",
-    "LowerToMemref",
-    "ConvertToCodelet",
-    "TensorCleanup",
-    "TokenModeRefine",
     "ConvertSdeToArts",
     "VerifySdeLowered",
     "VerifyCoreObjectsOnly",
@@ -646,15 +638,7 @@ void buildOpenMPToArtsPipeline(PassManager &pm,
                                arts::AnalysisManager *AM = nullptr) {
   arts::sde::SDECostModel *costModel = AM ? &AM->getCostModel() : nullptr;
   pm.addPass(arts::sde::createConvertOpenMPToSdePass(costModel));
-  // Convert eligible task-depend raw memrefs into SDE MU/token/codelet form
-  // before the tensor/linalg pipeline has a chance to collapse them back to the
-  // raw CreateDbs bridge.
-  pm.addPass(arts::sde::createRaiseMemrefToTensorPass());
-  // Raise tensor FIRST (mem2reg), then classify+create linalg carriers
-  // from tensor-native form — no bufferization wrapping needed.
-  pm.addPass(arts::sde::createRaiseToTensorPass());
-  pm.addPass(arts::sde::createRaiseToLinalgPass());
-  // SDE pattern analysis first stamps approved tensor/linalg/ND facts. Dep
+  // SDE pattern analysis first stamps approved memref/ND access facts. Dep
   // transforms then consume those SDE facts before effect passes make
   // scheduling decisions.
   pm.addPass(arts::sde::createPatternAnalysisPass(costModel));
@@ -670,11 +654,6 @@ void buildOpenMPToArtsPipeline(PassManager &pm,
   pm.addPass(arts::sde::createBarrierEliminationPass(costModel));
   pm.addPass(arts::sde::createCpsPlanningPass());
   pm.addPass(arts::sde::createVerifySdeCpsPlanPass());
-  pm.addPass(arts::sde::createVectorizationPass());
-  pm.addPass(arts::sde::createLowerToMemrefPass());
-  pm.addPass(arts::sde::createConvertToCodeletPass());
-  pm.addPass(arts::sde::createTensorCleanupPass());
-  pm.addPass(arts::sde::createTokenModeRefinementPass());
   // Cleanup sub-pipeline deferred: Canonicalize+CSE+DCE here would optimize
   // codelet bodies (cu_codelet is IsolatedFromAbove) but the module-level
   // DCE+CSE after ConvertSdeToArts already covers this. Adding it here
