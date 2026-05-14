@@ -187,6 +187,31 @@ static bool attachStageCompletionToBarrier(Operation *stageContainer,
   return true;
 }
 
+static bool insertStageCompletionBarrier(Operation *firstContainer,
+                                         Operation *secondContainer) {
+  if (!firstContainer || !secondContainer)
+    return false;
+  if (firstContainer->getBlock() != secondContainer->getBlock())
+    return false;
+  if (!firstContainer->isBeforeInBlock(secondContainer))
+    return false;
+
+  MLIRContext *ctx = firstContainer->getContext();
+  OpBuilder builder(ctx);
+  builder.setInsertionPointAfter(firstContainer);
+  auto token = sde::SdeControlTokenOp::create(
+      builder, firstContainer->getLoc(), sde::CompletionType::get(ctx));
+
+  SmallVector<Value> tokens{token.getToken()};
+  builder.setInsertionPoint(secondContainer);
+  sde::SdeSuBarrierOp::create(
+      builder, secondContainer->getLoc(), tokens,
+      /*barrierEliminated=*/nullptr,
+      sde::SdeBarrierReasonAttr::get(
+          ctx, sde::SdeBarrierReason::timestep_stage_boundary));
+  return true;
+}
+
 static unsigned stampBarrierDelimitedCandidates(ModuleOp module,
                                                 int64_t &nextGroupId) {
   unsigned stamped = 0;
@@ -235,7 +260,8 @@ static unsigned stampAdjacentLoopCandidates(scf::ForOp loop,
       if (previous) {
         auto first = findSuIterate(previous);
         auto second = findSuIterate(&op);
-        if (canStampCandidatePair(first, second)) {
+        if (canStampCandidatePair(first, second) &&
+            insertStageCompletionBarrier(previous, &op)) {
           stampCandidatePair(first, second, nextGroupId);
           ++stamped;
           ++nextGroupId;

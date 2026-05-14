@@ -232,8 +232,13 @@ static void verifyCandidateBarrierControlEdges(
 
       CandidateBoundary boundary =
           findTimestepBarrierBetween(firstIt->second, secondIt->second);
-      if (!boundary.barrier)
+      if (!boundary.barrier) {
+        secondIt->second.emitError()
+            << "sde.cps candidate stage pair requires sde.control_token "
+               "boundary before successor stage";
+        hasFailure = true;
         continue;
+      }
 
       bool hasControlEdge = llvm::any_of(
           boundary.barrier.getTokens(), [&](Value token) {
