@@ -70,32 +70,23 @@ def DistributionPlanning
 
 def BarrierElimination
     : Pass<"barrier-elimination", "mlir::ModuleOp"> {
-  let summary = "Eliminate redundant SDE barriers between independent scheduling units";
+  let summary = "Plan SDE barriers and CPS timestep candidates";
   let description = [{
     Analyzes read and write sets of consecutive sde.su_iterate operations
     separated by sde.su_barrier ops. When the write-set of the predecessor
     loop is provably disjoint from the read-set of the successor loop, the
     barrier is marked for elimination. The target boundary consumes that mark
-    and omits the corresponding downstream synchronization object.
+    and omits the corresponding downstream synchronization object. Required
+    timestep barriers remain in SDE as explicit stage boundaries; this pass
+    also groups CPS candidate stages and emits SDE completion tokens for those
+    boundaries. It does not set `async_strategy = cps_chain`; that final
+    strategy remains reserved until SDE has made every scalar, data, and
+    control carry explicit.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
-                           "::mlir::memref::MemRefDialect"];
-  let constructor = "mlir::arts::sde::createBarrierEliminationPass()";
-}
-
-def CpsPlanning : Pass<"cps-planning", "mlir::ModuleOp"> {
-  let summary = "Mark SDE-owned CPS timestep candidates before Core conversion";
-  let description = [{
-    Groups timestep/wave candidates already recognized by SDE barrier analysis
-    under SDE-owned CPS candidate attributes, and emits SDE completion tokens
-    for barrier-delimited stage boundaries. The pass does not set
-    `async_strategy = cps_chain`; that final strategy remains reserved until
-    SDE has made every scalar, data, and control carry explicit. Core must only
-    materialize final CPS plans from that explicit SDE graph.
-  }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
+                           "::mlir::memref::MemRefDialect",
                            "::mlir::scf::SCFDialect"];
-  let constructor = "mlir::arts::sde::createCpsPlanningPass()";
+  let constructor = "mlir::arts::sde::createBarrierEliminationPass()";
 }
 
 #endif // ARTS_DIALECT_SDE_TRANSFORMS_EFFECT_PASSES

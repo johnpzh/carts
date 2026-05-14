@@ -84,7 +84,7 @@ or runtime APIs. It may stamp conservative plans, but it must not stamp a
 performance plan unless the SDE analysis can explain why the chosen owner
 slices are independent or why their dependency windows are complete.
 
-The latest CPS contract follows this rule. `CpsPlanning` marks full-timestep
+The latest CPS contract follows this rule. `BarrierElimination` marks full-timestep
 `advance_edt` stages as SDE CPS candidates only when SDE can provide an
 explicit control boundary. Adjacent candidates are not allowed to be attrs-only:
 SDE inserts a completion token and a token-consuming timestep barrier before it
@@ -730,7 +730,7 @@ Matmul root-cause update:
     `.carts/sessions/20260514-154408-gemm-pass-shape-audit/pass-dumps.log`
     showed that `LoopInterchange` created `j4 -> k` scalar accumulators,
     `Tiling` wrapped them as `row-tile -> row -> j-block -> j4 -> k`, and
-    `BarrierElimination`/`CpsPlanning` preserved that shape. The regression is
+    `BarrierElimination` preserved that shape. The regression is
     therefore not a CPS/barrier rewrite; it is the wrong direct-memory
     contraction shape. Without a packed B panel, `j4 -> k` makes `B[k,j]` a
     large-stride K sweep and blocks the existing vectorizable `k -> j` loop.

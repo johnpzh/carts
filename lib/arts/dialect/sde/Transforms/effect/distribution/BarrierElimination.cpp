@@ -1,10 +1,10 @@
 ///==========================================================================///
 /// File: BarrierElimination.cpp
 ///
-/// Eliminate redundant SDE barriers between independent scheduling units.
-/// When the write-set of the predecessor loop is provably disjoint from the
-/// read-set of the successor loop, the barrier is marked for elimination so
-/// boundary materialization omits the downstream synchronization object.
+/// Plan SDE barriers between scheduling units. Independent barriers are marked
+/// for elimination. Required timestep barriers are annotated as stage
+/// boundaries, and SDE-owned CPS candidates get explicit completion tokens so
+/// Core can consume the plan without re-discovering the dataflow shape.
 ///==========================================================================///
 
 #include "arts/dialect/sde/Transforms/Passes.h"
@@ -21,14 +21,29 @@ namespace mlir::arts {
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "llvm/ADT/Statistic.h"
+
+#include <cassert>
 
 #include "arts/utils/Debug.h"
 ARTS_DEBUG_SETUP(barrier_elimination);
+
+static llvm::Statistic numCpsCandidateGroups{
+    "barrier_elimination", "NumCpsCandidateGroups",
+    "Number of SDE CPS candidate groups stamped"};
 
 using namespace mlir;
 using namespace mlir::arts;
 
 namespace {
+
+constexpr llvm::StringLiteral kCpsCandidateGroupId = "cps_candidate_group_id";
+constexpr llvm::StringLiteral kCpsCandidateStageIndex =
+    "cps_candidate_stage_index";
+constexpr llvm::StringLiteral kCpsCandidateStageCount =
+    "cps_candidate_stage_count";
+constexpr llvm::StringLiteral kCpsCandidateRequiresTokenizedDataflow =
+    "cps_candidate_requires_tokenized_dataflow";
 
 /// Find the su_iterate op that an operation represents. An su_iterate can
 /// appear directly or nested inside an su_distribute wrapper.
@@ -61,10 +76,39 @@ static bool isSuContainer(Operation *op) {
   return static_cast<bool>(findSuIterate(op));
 }
 
+static bool hasCandidateAttrs(sde::SdeSuIterateOp op) {
+  return op && (op->hasAttr(kCpsCandidateGroupId) ||
+                op->hasAttr(kCpsCandidateStageIndex) ||
+                op->hasAttr(kCpsCandidateStageCount) ||
+                op->hasAttr(kCpsCandidateRequiresTokenizedDataflow));
+}
+
+static bool hasFinalCpsStageAttrs(sde::SdeSuIterateOp op) {
+  return op && (op.getCpsGroupIdAttr() || op.getCpsStageIndexAttr() ||
+                op.getCpsStageCountAttr());
+}
+
+static bool isSdeCpsCandidateStage(sde::SdeSuIterateOp op) {
+  if (!op || hasFinalCpsStageAttrs(op))
+    return false;
+  auto repetition = op.getRepetitionStructure();
+  if (!repetition || *repetition != sde::SdeRepetitionStructure::full_timestep)
+    return false;
+  auto strategy = op.getAsyncStrategy();
+  return strategy && *strategy == sde::SdeAsyncStrategy::advance_edt;
+}
+
 static void setBarrierReason(sde::SdeSuBarrierOp barrier,
                              sde::SdeBarrierReason reason) {
   barrier.setBarrierReasonAttr(
       sde::SdeBarrierReasonAttr::get(barrier.getContext(), reason));
+}
+
+static bool isTimestepBarrier(sde::SdeSuBarrierOp barrier) {
+  if (!barrier)
+    return false;
+  auto reason = barrier.getBarrierReason();
+  return reason && *reason == sde::SdeBarrierReason::timestep_stage_boundary;
 }
 
 static bool haveSameIterationShape(sde::SdeSuIterateOp lhs,
@@ -173,6 +217,123 @@ static void stampRepeatedTimestepPlan(sde::SdeSuIterateOp op) {
         op.getContext(), sde::SdeAsyncStrategy::advance_edt));
 }
 
+static Operation *findPreviousSuContainer(Operation *anchor) {
+  Block *block = anchor ? anchor->getBlock() : nullptr;
+  if (!block)
+    return nullptr;
+  for (auto it = Block::reverse_iterator(anchor->getIterator());
+       it != block->rend(); ++it) {
+    if (findSuIterate(&*it))
+      return &*it;
+    if (!isMemoryEffectFree(&*it))
+      break;
+  }
+  return nullptr;
+}
+
+static Operation *findNextSuContainer(Operation *anchor) {
+  Block *block = anchor ? anchor->getBlock() : nullptr;
+  if (!block)
+    return nullptr;
+  for (auto it = std::next(anchor->getIterator()); it != block->end(); ++it) {
+    if (findSuIterate(&*it))
+      return &*it;
+    if (!isMemoryEffectFree(&*it))
+      break;
+  }
+  return nullptr;
+}
+
+static int64_t findNextCandidateGroupId(ModuleOp module) {
+  int64_t nextId = 0;
+  module.walk([&](sde::SdeSuIterateOp op) {
+    if (auto attr = op->getAttrOfType<IntegerAttr>(kCpsCandidateGroupId))
+      nextId = std::max(nextId, attr.getInt() + 1);
+    if (auto attr = op.getCpsGroupIdAttr())
+      nextId = std::max(nextId, attr.getInt() + 1);
+  });
+  return nextId;
+}
+
+static bool canStampCandidatePair(sde::SdeSuIterateOp first,
+                                  sde::SdeSuIterateOp second) {
+  if (!isSdeCpsCandidateStage(first) || !isSdeCpsCandidateStage(second))
+    return false;
+  if (hasCandidateAttrs(first) || hasCandidateAttrs(second))
+    return false;
+  return true;
+}
+
+static void stampCandidatePair(sde::SdeSuIterateOp first,
+                               sde::SdeSuIterateOp second, int64_t groupId) {
+  assert(canStampCandidatePair(first, second) &&
+         "candidate pair preconditions must be checked before stamping");
+
+  MLIRContext *ctx = first.getContext();
+  auto setStageAttrs = [&](sde::SdeSuIterateOp op, int64_t stageIndex) {
+    op->setAttr(kCpsCandidateGroupId,
+                IntegerAttr::get(IntegerType::get(ctx, 64), groupId));
+    op->setAttr(kCpsCandidateStageIndex,
+                IntegerAttr::get(IntegerType::get(ctx, 64), stageIndex));
+    op->setAttr(kCpsCandidateStageCount,
+                IntegerAttr::get(IntegerType::get(ctx, 64), 2));
+    op->setAttr(kCpsCandidateRequiresTokenizedDataflow, UnitAttr::get(ctx));
+  };
+
+  setStageAttrs(first, 0);
+  setStageAttrs(second, 1);
+}
+
+static bool attachStageCompletionToBarrier(Operation *stageContainer,
+                                           sde::SdeSuBarrierOp barrier) {
+  if (!stageContainer || !barrier)
+    return false;
+  if (stageContainer->getBlock() != barrier->getBlock())
+    return false;
+
+  OpBuilder builder(stageContainer->getContext());
+  builder.setInsertionPointAfter(stageContainer);
+  auto token = sde::SdeControlTokenOp::create(
+      builder, stageContainer->getLoc(),
+      sde::CompletionType::get(stageContainer->getContext()));
+
+  SmallVector<Value> tokens(barrier.getTokens().begin(),
+                            barrier.getTokens().end());
+  tokens.push_back(token.getToken());
+
+  builder.setInsertionPoint(barrier);
+  sde::SdeSuBarrierOp::create(builder, barrier.getLoc(), tokens,
+                              barrier.getBarrierEliminatedAttr(),
+                              barrier.getBarrierReasonAttr());
+  barrier.erase();
+  return true;
+}
+
+static bool insertStageCompletionBarrier(Operation *firstContainer,
+                                         Operation *secondContainer) {
+  if (!firstContainer || !secondContainer)
+    return false;
+  if (firstContainer->getBlock() != secondContainer->getBlock())
+    return false;
+  if (!firstContainer->isBeforeInBlock(secondContainer))
+    return false;
+
+  MLIRContext *ctx = firstContainer->getContext();
+  OpBuilder builder(ctx);
+  builder.setInsertionPointAfter(firstContainer);
+  auto token = sde::SdeControlTokenOp::create(
+      builder, firstContainer->getLoc(), sde::CompletionType::get(ctx));
+
+  SmallVector<Value> tokens{token.getToken()};
+  builder.setInsertionPoint(secondContainer);
+  sde::SdeSuBarrierOp::create(
+      builder, secondContainer->getLoc(), tokens,
+      /*barrierEliminated=*/nullptr,
+      sde::SdeBarrierReasonAttr::get(
+          ctx, sde::SdeBarrierReason::timestep_stage_boundary));
+  return true;
+}
+
 static bool writesIntersectReads(const sde::StructuredMemoryEffectSummary &lhs,
                                  const sde::StructuredMemoryEffectSummary &rhs) {
   for (Value written : lhs.writes)
@@ -207,6 +368,21 @@ static bool haveSamePhysicalTimestepPlan(sde::SdeSuIterateOp predecessor,
                           successor.getPhysicalBlockShapeAttr());
 }
 
+static bool hasPhysicalTimestepPlan(sde::SdeSuIterateOp op) {
+  return op.getPhysicalOwnerDimsAttr() || op.getPhysicalBlockShapeAttr();
+}
+
+static bool haveCompatiblePhysicalTimestepPlan(
+    sde::SdeSuIterateOp predecessor, sde::SdeSuIterateOp successor) {
+  bool predPlanned = hasPhysicalTimestepPlan(predecessor);
+  bool succPlanned = hasPhysicalTimestepPlan(successor);
+  if (!predPlanned && !succPlanned)
+    return true;
+  if (predPlanned != succPlanned)
+    return false;
+  return haveSamePhysicalTimestepPlan(predecessor, successor);
+}
+
 static bool sameSdeIterationTopology(sde::SdeSuIterateOp lhs,
                                      sde::SdeSuIterateOp rhs) {
   auto lhsTopology = lhs.getIterationTopology();
@@ -229,6 +405,35 @@ static bool haveCompatibleTimestepIterationPlan(sde::SdeSuIterateOp lhs,
   if (haveSameIterationShape(lhs, rhs))
     return true;
   return haveSdeApprovedTiledTimestepPlan(lhs, rhs);
+}
+
+static std::optional<SmallVector<int64_t, 4>>
+getUniqueStaticWrittenShape(const sde::StructuredMemoryEffectSummary &effects) {
+  std::optional<SmallVector<int64_t, 4>> selectedShape;
+  for (Value written : effects.writes) {
+    Value root = ValueAnalysis::stripMemrefViewOps(written);
+    auto memrefType = dyn_cast<MemRefType>(root.getType());
+    if (!memrefType || !memrefType.hasStaticShape())
+      return std::nullopt;
+
+    SmallVector<int64_t, 4> shape(memrefType.getShape().begin(),
+                                  memrefType.getShape().end());
+    if (!selectedShape) {
+      selectedShape = std::move(shape);
+      continue;
+    }
+    if (*selectedShape != shape)
+      return std::nullopt;
+  }
+  return selectedShape;
+}
+
+static bool haveSameStaticWrittenShape(
+    const sde::StructuredMemoryEffectSummary &lhs,
+    const sde::StructuredMemoryEffectSummary &rhs) {
+  auto lhsShape = getUniqueStaticWrittenShape(lhs);
+  auto rhsShape = getUniqueStaticWrittenShape(rhs);
+  return lhsShape && rhsShape && *lhsShape == *rhsShape;
 }
 
 static bool isTimestepInterstitialOp(Operation *op) {
@@ -265,14 +470,16 @@ static bool stampTimestepPlanIfRecognized(
     return false;
   if (predEffects.hasUnknownEffects || succEffects.hasUnknownEffects)
     return false;
-  if (!haveCompatibleTimestepIterationPlan(predecessor, successor))
-    return false;
+
+  bool compatibleIterationPlan =
+      haveCompatibleTimestepIterationPlan(predecessor, successor);
 
   if (isUniformRepeatableStage(predecessor) &&
       isUniformRepeatableStage(successor) &&
+      compatibleIterationPlan &&
       allowUniformUniformPlan &&
       writesIntersectReads(predEffects, succEffects) &&
-      haveSamePhysicalTimestepPlan(predecessor, successor)) {
+      haveCompatiblePhysicalTimestepPlan(predecessor, successor)) {
     stampRepeatedTimestepPlan(predecessor);
     stampRepeatedTimestepPlan(successor);
     return true;
@@ -285,13 +492,16 @@ static bool stampTimestepPlanIfRecognized(
   if (!hasAlternatingBufferExchange(predEffects, succEffects))
     return false;
 
-  if (predStencil && succStencil && allowStencilStencilPlan) {
+  if (predStencil && succStencil && compatibleIterationPlan &&
+      allowStencilStencilPlan) {
     stampRepeatedTimestepPlan(predecessor);
     stampRepeatedTimestepPlan(successor);
     return true;
   }
 
-  if ((predStencil && succUniform) || (predUniform && succStencil)) {
+  if (((predStencil && succUniform) || (predUniform && succStencil)) &&
+      (compatibleIterationPlan ||
+       haveSameStaticWrittenShape(predEffects, succEffects))) {
     stampJacobiTimestepPlan(predecessor, successor, predStencil, succStencil);
     return true;
   }
@@ -338,6 +548,70 @@ static unsigned stampAdjacentTimestepPairsInLoop(scf::ForOp loop) {
   return stamped;
 }
 
+static unsigned stampBarrierDelimitedCandidates(ModuleOp module,
+                                                int64_t &nextGroupId) {
+  unsigned stamped = 0;
+  SmallVector<sde::SdeSuBarrierOp> barriers;
+  module.walk([&](sde::SdeSuBarrierOp barrier) {
+    if (isTimestepBarrier(barrier))
+      barriers.push_back(barrier);
+  });
+
+  for (sde::SdeSuBarrierOp barrier : barriers) {
+    Operation *firstContainer = findPreviousSuContainer(barrier);
+    Operation *secondContainer = findNextSuContainer(barrier);
+    auto first = findSuIterate(firstContainer);
+    auto second = findSuIterate(secondContainer);
+    if (canStampCandidatePair(first, second) &&
+        attachStageCompletionToBarrier(firstContainer, barrier)) {
+      stampCandidatePair(first, second, nextGroupId);
+      ++stamped;
+      ++nextGroupId;
+    }
+  }
+  return stamped;
+}
+
+static bool isTransparentBetweenTimestepCandidates(Operation *op) {
+  if (!op)
+    return false;
+  if (isa<sde::SdeYieldOp>(op))
+    return true;
+  if (auto barrier = dyn_cast<sde::SdeSuBarrierOp>(op))
+    return !isTimestepBarrier(barrier);
+  return isTimestepInterstitialOp(op);
+}
+
+static unsigned stampAdjacentLoopCandidates(scf::ForOp loop,
+                                            int64_t &nextGroupId) {
+  Operation *previous = nullptr;
+  unsigned stamped = 0;
+
+  for (Operation &op : loop.getBody()->without_terminator()) {
+    if (findSuIterate(&op)) {
+      if (previous) {
+        auto first = findSuIterate(previous);
+        auto second = findSuIterate(&op);
+        if (canStampCandidatePair(first, second) &&
+            insertStageCompletionBarrier(previous, &op)) {
+          stampCandidatePair(first, second, nextGroupId);
+          ++stamped;
+          ++nextGroupId;
+        }
+      }
+      previous = &op;
+      continue;
+    }
+
+    if (isTransparentBetweenTimestepCandidates(&op))
+      continue;
+
+    previous = nullptr;
+  }
+
+  return stamped;
+}
+
 struct BarrierEliminationPass
     : public arts::impl::BarrierEliminationBase<BarrierEliminationPass> {
   explicit BarrierEliminationPass(sde::SDECostModel *costModel = nullptr)
@@ -346,6 +620,7 @@ struct BarrierEliminationPass
   void runOnOperation() override {
     int eliminated = 0;
     unsigned timestepPairsStamped = 0;
+    unsigned cpsCandidateGroupsStamped = 0;
 
     getOperation().walk([&](sde::SdeSuBarrierOp barrier) {
       setBarrierReason(barrier, sde::SdeBarrierReason::unknown_required);
@@ -435,9 +710,20 @@ struct BarrierEliminationPass
       timestepPairsStamped += stampAdjacentTimestepPairsInLoop(loop);
     });
 
+    int64_t nextGroupId = findNextCandidateGroupId(getOperation());
+    cpsCandidateGroupsStamped =
+        stampBarrierDelimitedCandidates(getOperation(), nextGroupId);
+    getOperation().walk([&](scf::ForOp loop) {
+      cpsCandidateGroupsStamped +=
+          stampAdjacentLoopCandidates(loop, nextGroupId);
+    });
+
+    numCpsCandidateGroups += cpsCandidateGroupsStamped;
     ARTS_INFO("BarrierElimination: eliminated " << eliminated << " barrier(s)");
     ARTS_INFO("BarrierElimination: stamped " << timestepPairsStamped
                                              << " timestep pair(s)");
+    ARTS_INFO("BarrierElimination: stamped " << cpsCandidateGroupsStamped
+                                             << " CPS candidate group(s)");
 
   }
 

@@ -4,7 +4,7 @@
 // groups it as a candidate, emits a stage-completion token for the barrier
 // edge, and leaves asyncStrategy on advance_edt until every carry is explicit.
 
-// CHECK-LABEL: // -----// IR Dump After CpsPlanning (cps-planning) //----- //
+// CHECK-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
 // CHECK: func.func @timestep_pair
 // CHECK: sde.su_iterate
 // CHECK: } {

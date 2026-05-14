@@ -15,7 +15,8 @@ Current passes:
 - `DistributionPlanning` stamps physical owner dims, physical block shape,
   halo shape, logical worker slice, iteration topology, and distribution kind.
 - `BarrierElimination` removes barriers when structured effects prove no
-  cross-unit conflict.
+  cross-unit conflict, classifies required timestep boundaries, and stamps CPS
+  candidate groups with explicit SDE completion-token edges.
 
 Current analysis facts:
 
@@ -127,6 +128,7 @@ ReductionStrategy
 DistributionPlanning
 IterationSpaceDecomposition
 BarrierElimination
+VerifySdeCpsPlan
 ConvertSdeToArts
 ```
 

@@ -253,7 +253,7 @@ static const std::array<llvm::StringLiteral, 10>
                                         "CSE"};
 static const std::array<llvm::StringLiteral, 3> kInitialCleanupPasses = {
     "LowerAffine(func)", "CSE(func)", "PolygeistCanonicalizeFor(func)"};
-static const std::array<llvm::StringLiteral, 20> kOpenMPToArtsPasses = {
+static const std::array<llvm::StringLiteral, 19> kOpenMPToArtsPasses = {
     "ConvertOpenMPToSde",
     "PatternAnalysis",
     "LoopInterchange",
@@ -266,7 +266,6 @@ static const std::array<llvm::StringLiteral, 20> kOpenMPToArtsPasses = {
     "DistributionPlanning",
     "IterationSpaceDecomposition",
     "BarrierElimination",
-    "CpsPlanning",
     "VerifySdeCpsPlan",
     "ConvertSdeToArts",
     "VerifySdeLowered",
@@ -652,7 +651,6 @@ void buildOpenMPToArtsPipeline(PassManager &pm,
   pm.addPass(arts::sde::createDistributionPlanningPass(costModel));
   pm.addPass(arts::sde::createIterationSpaceDecompositionPass());
   pm.addPass(arts::sde::createBarrierEliminationPass(costModel));
-  pm.addPass(arts::sde::createCpsPlanningPass());
   pm.addPass(arts::sde::createVerifySdeCpsPlanPass());
   // Cleanup sub-pipeline deferred: Canonicalize+CSE+DCE here would optimize
   // codelet bodies (cu_codelet is IsolatedFromAbove) but the module-level

@@ -4,7 +4,7 @@
 // SDE inserts an explicit completion token and token-consuming timestep
 // barrier before it stamps the candidate group.
 
-// CHECK-LABEL: // -----// IR Dump After CpsPlanning (cps-planning) //----- //
+// CHECK-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
 // CHECK: func.func @adjacent_timestep_pair
 // CHECK: scf.for
 // CHECK: sde.cu_region

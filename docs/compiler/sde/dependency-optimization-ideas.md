@@ -17,7 +17,9 @@ Current pieces:
 - `BarrierElimination` compares the nearest predecessor and successor
   scheduling units around a barrier. It eliminates the barrier when root-level
   read/write conflicts are absent, otherwise it preserves or classifies the
-  barrier reason.
+  barrier reason. For repeated timestep boundaries it also stamps CPS
+  candidate groups and inserts the explicit completion-token edge that proves
+  the stage boundary to Core.
 - The boundary layer omits downstream synchronization only when SDE marked the
   barrier as eliminated.
 
@@ -105,6 +107,7 @@ ReductionStrategy
 DistributionPlanning
 IterationSpaceDecomposition
 BarrierElimination or PhaseGraphPlanning
+VerifySdeCpsPlan
 ConvertSdeToArts
 ```
 

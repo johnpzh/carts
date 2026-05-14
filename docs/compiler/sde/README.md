@@ -35,7 +35,6 @@ ReductionStrategy
 DistributionPlanning
 IterationSpaceDecomposition
 BarrierElimination
-CpsPlanning
 VerifySdeCpsPlan
 ConvertSdeToArts
 VerifySdeLowered

@@ -230,14 +230,12 @@ static bool isSafeRank2OutOfPlaceStencilPromotion(
   return !nestedLoop;
 }
 
-static void removeStaleDistributionAttrs(sde::SdeSuIterateOp op) {
+static void removeStaleShapePlanAttrs(sde::SdeSuIterateOp op) {
   op.removePhysicalOwnerDimsAttr();
   op.removePhysicalBlockShapeAttr();
   op.removeLogicalWorkerSliceAttr();
   op.removePhysicalHaloShapeAttr();
   op.removeIterationTopologyAttr();
-  op.removeRepetitionStructureAttr();
-  op.removeAsyncStrategyAttr();
   op.removeDistributionKindAttr();
 }
 
@@ -269,7 +267,7 @@ static sde::SdeSuIterateOp promoteRank2OutOfPlaceStencilOwnerLoop(
       op.getInPlaceSharedStateAttr(), op.getVectorizeWidthAttr(),
       op.getUnrollFactorAttr(), op.getInterleaveCountAttr());
   newOp->setAttrs(sde::getRewrittenAttrs(op));
-  removeStaleDistributionAttrs(newOp);
+  removeStaleShapePlanAttrs(newOp);
 
   Block &newBody = sde::ensureBlock(newOp.getBody());
   while (newBody.getNumArguments() < 2)
