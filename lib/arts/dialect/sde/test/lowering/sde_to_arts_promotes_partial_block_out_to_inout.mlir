@@ -3,10 +3,11 @@
 // RUN:   | %FileCheck %s
 
 // A raw fallback stencil may write a logical element slice that starts inside a
-// physical DB block. CreateDbs must widen the DB-space acquire to whole blocks,
-// but that physical acquire is no longer a pure overwrite: neighboring EDTs may
-// own different rows in the same DB block. The bridge therefore translates the
-// logical `out` dependency into an `inout` physical acquire.
+// physical storage block. Downstream materialization must widen the physical
+// acquire to whole blocks, but that physical acquire is no longer a pure
+// overwrite: neighboring tasks may own different rows in the same block. The
+// bridge therefore translates the logical `out` dependency into an `inout`
+// physical acquire.
 
 // CHECK-LABEL: func.func @partial_block_out_slice
 // CHECK: arts.db_alloc[<out>, <heap>, <write>, <block>]

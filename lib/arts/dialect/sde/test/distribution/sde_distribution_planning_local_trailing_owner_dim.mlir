@@ -3,7 +3,7 @@
 
 // Imperfect local stencil/update loops can be parallelized by Core even when
 // PatternAnalysis cannot classify the full nest. SDE still owns the
-// physical DB layout proof: the local owner IV maps to the trailing physical
+// physical storage layout proof: the local owner IV maps to the trailing physical
 // output dimension, and all output self-reads stay within that owner slice.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //

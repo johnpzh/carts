@@ -3,7 +3,7 @@
 // Verify that ChunkOpt synthesizes a chunk size for a dynamic
 // loop when the source omitted one. With the default test config, 128
 // iterations across 8 workers yields a balanced chunk of 16. Check the
-// SDE dump directly rather than the later ARTS lowering.
+// SDE dump directly rather than the later boundary lowering.
 
 // CHECK-LABEL: // -----// IR Dump After ChunkOpt (chunk-opt) //----- //
 // CHECK: func.func @main

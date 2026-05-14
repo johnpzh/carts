@@ -569,15 +569,14 @@ struct RaiseMemrefToTensorPass
     // of the scope block containing the last writing codelet so the scope's
     // non-raised readers observe the updated values.
     //
-    // Gap D (boundary-write race): the cu_codelet ops lower to async EDTs
-    // scheduled by the enclosing single EDT. Without synchronization, the
-    // boundary stores run on the task-creation thread BEFORE the async EDTs
-    // actually execute, so post-region memref readers observe stale data
-    // (deps.c: `A: 0, B: 0`). We close the race by emitting an
-    // `sde.su_barrier` in each block that receives boundary writes, just
-    // before the first write. At ConvertSdeToArts it lowers to `arts.barrier`
-    // which CreateEpochs groups the preceding task EDTs into an `arts.epoch`
-    // that must complete before subsequent ops (the stores) run.
+    // Gap D (boundary-write race): the cu_codelet ops materialize as
+    // asynchronous task work. Without synchronization, the boundary stores can
+    // run on the launcher path before the task work actually executes, so
+    // post-region memref readers observe stale data (deps.c: `A: 0, B: 0`).
+    // We close the race by emitting an `sde.su_barrier` in each block that
+    // receives boundary writes, just before the first write. Boundary
+    // materialization preserves this sequencing so the preceding task work
+    // completes before subsequent ops (the stores) run.
     //
     // One barrier is emitted per unique boundary block so multi-memref
     // programs don't get redundant barriers.
@@ -597,7 +596,7 @@ struct RaiseMemrefToTensorPass
 
       // Emit an sde.su_barrier once per boundary block, just before the
       // block terminator. This sequences the boundary stores after the
-      // async task EDTs the codelets lower to.
+      // asynchronous task work.
       if (boundaryBlocks.insert(block).second) {
         Operation *terminator = block->getTerminator();
         OpBuilder barrierBuilder(terminator);
@@ -621,11 +620,12 @@ struct RaiseMemrefToTensorPass
                                 ValueRange{idx});
       }
 
-      // Tag the alloca so downstream EdtStructuralOpt does not sink it into
-      // the EDT body. The boundary store above is the bridge from the raised
-      // tensor DB back to this user-visible memref; if the alloca were sunk,
-      // the sink would redirect the boundary store to a local EDT-private
-      // alloca and post-region readers would still see the initial contents.
+      // Tag the alloca so downstream structural optimization does not sink it
+      // into task-local state. The boundary store above is the bridge from the
+      // raised tensor value back to this user-visible memref; if the alloca
+      // were sunk, the sink would redirect the boundary store to a local
+      // private alloca and post-region readers would still see the initial
+      // contents.
       alloca->setAttr(AttrNames::Operation::Preserve,
                       UnitAttr::get(alloca.getContext()));
     }

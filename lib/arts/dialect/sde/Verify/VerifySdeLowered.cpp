@@ -1,9 +1,8 @@
 ///==========================================================================///
 /// File: VerifySdeLowered.cpp
 ///
-/// Verification pass that ensures no sde.* operations survive after
-/// SDE-to-ARTS conversion. Any remaining SDE op indicates a conversion
-/// failure.
+/// Verification pass that ensures no sde.* operations survive after boundary
+/// conversion. Any remaining SDE op indicates a conversion failure.
 ///==========================================================================///
 
 #include "arts/Dialect.h"
@@ -29,7 +28,7 @@ struct VerifySdeLoweredPass
     getOperation().walk([&](Operation *op) {
       if (sdeDialect && op->getDialect() == sdeDialect) {
         op->emitError() << "SDE operation '" << op->getName()
-                        << "' survived past SDE-to-ARTS conversion";
+                        << "' survived past boundary conversion";
         failed = true;
       }
     });

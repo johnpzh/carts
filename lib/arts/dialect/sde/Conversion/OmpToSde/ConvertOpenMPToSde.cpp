@@ -2,7 +2,8 @@
 /// File: ConvertOpenMPToSde.cpp
 ///
 /// This file implements a module pass that converts OpenMP ops into SDE ops,
-/// preserving information that the current OMP-to-ARTS conversion loses:
+/// preserving source semantics that direct target conversion would otherwise
+/// lose:
 /// - Reduction combiner kind + identity
 /// - Nowait semantics
 /// - Schedule + chunk size
@@ -228,7 +229,7 @@ extractDependSlice(Value depVar, OpBuilder &builder, Location loc) {
 
   // Path 3: polygeist.subindex — common for task depend(element) after C
   // lowering. Preserve the base source plus element offset so SDE can identify
-  // source task-dependency patterns before Core DB creation.
+  // source task-dependency patterns before boundary materialization.
   if (auto subIndexOp = depVar.getDefiningOp<polygeist::SubIndexOp>()) {
     OmpDependSlice slice;
     slice.source = subIndexOp.getSource();
@@ -876,7 +877,8 @@ struct ConvertOpenMPToSdePass
     ARTS_INFO_HEADER(ConvertOpenMPToSdePass);
     MLIRContext *context = &getContext();
     // Conversion stays structural today, but the pass keeps the SDE-owned
-    // model wired through so callers do not depend on ARTS analysis plumbing.
+    // model wired through so callers do not depend on downstream analysis
+    // plumbing.
     (void)costModel;
     RewritePatternSet patterns(context);
     patterns.add<OMPParallelToSdePattern>(context);
@@ -909,7 +911,7 @@ struct ConvertOpenMPToSdePass
 
 private:
   // Keep the pass wired to the SDE-owned planning model without reintroducing
-  // AnalysisManager or other ARTS-layer plumbing here.
+  // AnalysisManager or other downstream-layer plumbing here.
   sde::SDECostModel *costModel = nullptr;
 };
 } // namespace

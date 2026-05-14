@@ -3,11 +3,11 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=LOCAL
 
 // Verify that SDE authors an owner-compute distribution advisory for a
-// distributed stencil loop, and that ConvertSdeToArts materializes the
-// advisory as an ARTS distribution kind at the lowering boundary.
+// distributed stencil loop, and that boundary materialization consumes the
+// advisory at the lowering boundary.
 // In-place neighbor stencils keep the original dependency ordering and do not
-// receive a physical block DB plan because the update reads neighboring values
-// from the same backing store it writes.
+// receive a physical block storage plan because the update reads neighboring
+// values from the same backing store it writes.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main

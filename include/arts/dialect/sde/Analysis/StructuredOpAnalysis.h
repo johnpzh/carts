@@ -5,7 +5,7 @@
 ///
 /// This analysis stays on the SDE side of the pipeline so semantic pattern
 /// classification can be shared by SDE-owned distribution and tiling planning
-/// without depending on ARTS runtime IR.
+/// without depending on target runtime IR.
 ///==========================================================================///
 
 #ifndef ARTS_DIALECT_SDE_ANALYSIS_STRUCTUREDMETHODANALYSIS_H

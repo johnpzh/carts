@@ -968,7 +968,7 @@ static unsigned raiseFunctionAllocas(func::FuncOp func) {
   // Walk function body in program order.
   walkBlock(entry, currentTensor, allocas);
 
-  // Erase dead allocas and their arts.preserve tags.
+  // Erase dead allocas and their preserve tags.
   unsigned erased = 0;
   for (memref::AllocaOp alloca : allocas) {
     alloca->removeAttr(AttrNames::Operation::Preserve);

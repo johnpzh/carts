@@ -15,8 +15,9 @@ def LoopInterchange
     so the parallel dimension with stride-1 access on the B operand becomes
     innermost.
 
-    This pass replaces the ARTS-level LoopReordering pass with a more general
-    solution that operates on structured SDE memref loops before ARTS lowering.
+    This pass replaces target-level loop reordering with a more general
+    solution that operates on structured SDE memref loops before boundary
+    conversion.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
                            "::mlir::scf::SCFDialect"];
@@ -27,14 +28,13 @@ def Tiling : Pass<"tiling", "mlir::ModuleOp"> {
   let summary = "Apply SDE pattern-driven tiling using memref loop/access facts";
   let description = [{
     Uses SDE-owned pattern/effect facts, abstract logical capacity, and the
-    memref loop/access facts to apply real loop tiling before SDE->ARTS
-    lowering. Symbolic capacity is represented with
-    `sde.resource_query <logical_workers>` and is bound to ARTS only at
-    ConvertSdeToArts.
+    memref loop/access facts to apply real loop tiling before boundary
+    conversion. Symbolic capacity is represented with
+    `sde.resource_query <logical_workers>` and remains target-neutral in SDE.
     The current implementation focuses on the first executable subset:
     one-dimensional elementwise loops are strip-mined into logical-capacity
     tiles and the surrounding sde.su_iterate step is rewritten so the
-    transformed loop nest survives into later ARTS lowering.
+    transformed loop nest survives into later lowering.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
                            "::mlir::arith::ArithDialect",
@@ -52,9 +52,9 @@ def PatternAnalysis
     SDE pattern planning point after OpenMP-to-SDE conversion: later SDE
     transforms consume these facts instead of rediscovering pattern legality.
 
-    PatternAnalysis stamps only SDE IR facts. It does not stamp ARTS/Core
-    attributes and it does not cross the dialect boundary. ConvertSdeToArts may
-    later lower the final SDE plan, but raw pattern-analysis facts remain SDE
+    PatternAnalysis stamps only SDE IR facts. It does not stamp target-specific
+    attributes and it does not cross the dialect boundary. Later conversion may
+    lower the final SDE plan, but raw pattern-analysis facts remain SDE
     ownership.
 
     The current implementation stamps:
@@ -79,7 +79,7 @@ def ElementwiseFusion
     The fused scheduling unit is reclassified as
     `classification(<elementwise_pipeline>)`, keeping elementwise pipeline
     ownership on the SDE side of the boundary instead of inventing that family
-    later on ARTS IR.
+    later in target IR.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
   let constructor = "mlir::arts::sde::createElementwiseFusionPass()";

@@ -2,11 +2,11 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 
 // Verify that SDE authors a blocked distribution advisory for a local
-// elementwise loop, and that ConvertSdeToArts materializes that advisory as an
-// ARTS distribution kind without leaving `sde.su_distribute` in the IR.
-// It should also author the physical DB layout for independent output-vector
-// loops whose bodies contain loop-local scratch/reduction work and therefore
-// are not classified as pure elementwise linalg kernels.
+// elementwise loop, and that boundary materialization consumes that advisory
+// without leaving `sde.su_distribute` in the IR. It should also author the
+// physical storage layout for independent output-vector loops whose bodies
+// contain loop-local scratch/reduction work and therefore are not classified as
+// pure elementwise linalg kernels.
 
 // SDE-LABEL: // -----// IR Dump After ScopeSelection (scope-selection) //----- //
 // SDE: func.func @main

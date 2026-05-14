@@ -19,7 +19,7 @@
 // SDE-NOT: barrierEliminated
 // SDE: sde.su_iterate
 
-// After ConvertSdeToArts, arts.barrier must be present
+// After boundary materialization, downstream synchronization must be present.
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
 // ARTS: arts.barrier

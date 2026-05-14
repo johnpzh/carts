@@ -3,7 +3,7 @@
 
 // SDE owns task-dependency pattern classification. A two-dimensional task nest
 // with one element out-dependency and two element in-dependencies on the same
-// source is stamped as a wavefront before Core sees the task EDT.
+// source is stamped as a wavefront before Core sees the task materialization.
 
 // SDE-LABEL: // -----// IR Dump After ConvertOpenMPToSde (convert-openmp-to-sde) //----- //
 // SDE: func.func @task_wavefront

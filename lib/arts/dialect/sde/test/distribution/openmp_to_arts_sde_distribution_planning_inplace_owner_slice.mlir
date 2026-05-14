@@ -2,8 +2,8 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline create-dbs | %FileCheck %s --check-prefix=DB
 
 // In-place row-local kernels read and write the same root memref, but every
-// access stays within the owner row. SDE should still author a block DB layout
-// so Core does not serialize all row tasks through a single writable DB.
+// access stays within the owner row. SDE should still author a blocked storage
+// plan so Core does not serialize all row tasks through one writable object.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main

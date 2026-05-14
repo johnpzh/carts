@@ -7,7 +7,7 @@
 include "mlir/Pass/PassBase.td"
 
 def VerifySdeLowered : Pass<"verify-sde-lowered", "mlir::ModuleOp"> {
-  let summary = "Verify no SDE operations survive past SDE-to-ARTS conversion";
+  let summary = "Verify no SDE operations survive past boundary conversion";
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
   let constructor = "mlir::arts::sde::createVerifySdeLoweredPass()";
 }

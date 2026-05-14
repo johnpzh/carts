@@ -2,8 +2,8 @@
 /// File: ConvertToCodelet.cpp
 ///
 /// Converts cu_region ops that carry tensor iter_args into the canonical SDE
-/// codelet form (mu_data + mu_token + cu_codelet) that ConvertSdeToArts already
-/// knows how to lower to ARTS EDTs with DB acquire/release.
+/// codelet form (mu_data + mu_token + cu_codelet) consumed by boundary
+/// materialization.
 ///
 /// Scope (step 5): cu_region <single> with tensor iter_args only.
 ///

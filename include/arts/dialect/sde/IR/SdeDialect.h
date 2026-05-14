@@ -1,6 +1,6 @@
 ///==========================================================================///
 /// File: SdeDialect.h
-/// Defines the ARTS Structured Decomposition Environment dialect.
+/// Defines the Structured Decomposition Environment dialect.
 ///==========================================================================///
 
 #ifndef ARTS_SDE_DIALECT_H

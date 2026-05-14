@@ -4,7 +4,7 @@
 /// Eliminate redundant SDE barriers between independent scheduling units.
 /// When the write-set of the predecessor loop is provably disjoint from the
 /// read-set of the successor loop, the barrier is marked for elimination so
-/// ConvertSdeToArts skips generating arts.barrier.
+/// boundary materialization omits the downstream synchronization object.
 ///==========================================================================///
 
 #include "arts/dialect/sde/Transforms/Passes.h"

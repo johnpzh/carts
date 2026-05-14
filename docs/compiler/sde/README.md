@@ -3,20 +3,19 @@
 This directory is the compiler-facing home for SDE optimization planning. SDE is
 runtime-agnostic: it owns OpenMP semantics, structured state, dependence proofs,
 effect summaries, task shape, MU token slices, and target-neutral layout/grain
-intent before `ConvertSdeToArts`. The canonical boundary is direct:
-`sde.mu_data` becomes `arts.db_alloc`, `sde.mu_token` becomes
-`arts.db_acquire`, and `sde.cu_codelet` becomes `arts.edt`. Core remains
-ARTS-machine-aware for topology binding and for the remaining raw-memref
-compatibility bridge. RT/runtime work should wait until SDE/Core plans are
-present and traces still show launch, CPS, dependency, or runtime scheduling
-overhead.
+intent before boundary materialization. The canonical SDE boundary consumes
+`sde.mu_data`, `sde.mu_token`, and `sde.cu_codelet` as storage, access-window,
+and compute-unit requests. Core remains responsible for target binding and for
+the remaining raw-memref compatibility bridge. RT/runtime work should wait
+until SDE/Core plans are present and traces still show launch, CPS, dependency,
+or scheduling overhead.
 
 For the current dialect split, including SDE logical-worker planning after the
 removal of the Core loop carrier, see
 [`../dialect-layering-vision.md`](../dialect-layering-vision.md). SDE should
-model logical worker capacity, not ARTS nodes, routes, workers-per-node, or
-runtime API queries. When symbolic SDE arithmetic needs execution capacity, use
-`sde.resource_query <logical_workers>` and let `ConvertSdeToArts` lower it to
+model logical worker capacity, not concrete nodes, routes, workers-per-node, or
+target API queries. When symbolic SDE arithmetic needs execution capacity, use
+`sde.resource_query <logical_workers>` and let the boundary layer bind it to
 Core.
 
 ## Current SDE Spine
@@ -51,8 +50,9 @@ of truth when pass order matters.
 ## Documents
 
 - [`physical-layout-optimization-plan.md`](physical-layout-optimization-plan.md):
-  SDE-first roadmap for moving physical DB layout and access-slice authorship
-  into MU/token plans, with `CreateDbs` left only as the raw-memref bridge.
+  SDE-first roadmap for moving physical storage layout and access-slice
+  authorship into MU/token plans, with downstream materialization left only as
+  the raw-memref bridge.
 - [`state-optimization-ideas.md`](state-optimization-ideas.md): memref-level
   state, MU/token, tiling, and task-shape ideas.
 - [`dependency-optimization-ideas.md`](dependency-optimization-ideas.md):
@@ -88,16 +88,16 @@ SDE optimization work should stamp or refine SDE-owned plan facts before
 
 These facts are the SDE plan. `PatternAnalysis` and later SDE transforms may
 consume and update them; raw SDE pattern-analysis facts must not become a Core
-analysis API. At the dialect boundary, `ConvertSdeToArts` mechanically lowers
-the final SDE plan into Core `arts.plan.*`, dependency-pattern, distribution,
-DB, EDT, barrier contracts, and `arts.runtime_query` operations for SDE logical
-resource queries. For canonical MU/CU form this means direct DB/acquire/EDT
-materialization. For legacy raw-memref `su_iterate` form, Core may still
-materialize raw external memref captures using SDE physical plan attrs, but
-there is no Core dependency-marker op. Task dependency declarations that remain
-as `sde.mu_dep` at the boundary are rejected; SDE must turn those facts into
-memref-level MU tokens/codelets before Core. Core and RT may materialize or
-validate that lowered contract, but they must not invent partition policy late.
+analysis API. At the dialect boundary, `ConvertSdeToArts` mechanically consumes
+the final SDE plan and produces Core storage, access, compute, synchronization,
+distribution, dependency-pattern, and resource-query contracts. For canonical
+MU/CU form this means direct storage/access/codelet materialization. For legacy
+raw-memref `su_iterate` form, Core may still materialize raw external memref
+captures using SDE physical plan attrs, but there is no Core dependency-marker
+op. Task dependency declarations that remain as `sde.mu_dep` at the boundary
+are rejected; SDE must turn those facts into memref-level MU tokens/codelets
+before Core. Core and RT may materialize or validate that lowered contract, but
+they must not invent partition policy late.
 
 ## Heuristic Analysis Spine
 
@@ -114,8 +114,8 @@ The pass should stamp stable SDE facts that downstream SDE passes can consume:
 
 Downstream SDE passes should consume these facts in order: first classify and
 prove legality, then choose task/data shape, then rewrite CU/SU/MU together.
-Tiling only CU/SU loops without rewriting MU token slices or DB address space is
-not a valid optimized plan.
+Tiling only CU/SU loops without rewriting MU token slices and physical storage
+layout is not a valid optimized plan.
 
 ## Verification Rule
 

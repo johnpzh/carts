@@ -33,7 +33,7 @@ inline Block *getSuIterateComputeBlock(SdeSuIterateOp op) {
 
 /// Root-level memory effects for an SDE structured region. This intentionally
 /// stays in SDE because memref reads/writes are SDE scheduling facts, not Core
-/// DB graph facts.
+/// object-graph facts.
 struct StructuredMemoryEffectSummary {
   llvm::DenseSet<Value> reads;
   llvm::DenseSet<Value> writes;
@@ -67,7 +67,7 @@ struct StructuredMemoryEffectSummary {
 
 /// SDE-owned proof that a scheduling unit writes an external tensor/memref
 /// through the owner induction variable. This is a semantic distribution fact;
-/// Core may later materialize it as physical DB layout.
+/// later layers may materialize it as a physical storage layout.
 struct LoopIndexedOutputPlan {
   Value root;
   SmallVector<int64_t, 4> shape;
@@ -233,8 +233,8 @@ collectExactOwnerIndexedPhysicalDims(OperandRange indices,
 }
 
 /// Prove that all accesses to an in-place output root stay within the same
-/// owner slice of a one-dimensional scheduling unit. This permits block DB
-/// layout for row-local update kernels such as layernorm while rejecting
+/// owner slice of a one-dimensional scheduling unit. This permits blocked
+/// storage layout for row-local update kernels such as layernorm while rejecting
 /// stencil-like first-dimension offsets (`i +/- 1`) that need halo planning.
 inline bool allRootAccessesStayWithinOwnerSlice(SdeSuIterateOp op,
                                                 Value root,
@@ -348,7 +348,7 @@ findLoopIndexedOutputPlan(SdeSuIterateOp op) {
 /// maps to any physical output dimension. Unlike findLoopIndexedOutputPlan,
 /// this validates all external memref stores in the compute block and rejects
 /// mixed output shapes or mixed owner dimensions. That makes it suitable for
-/// authoring physical DB layouts from imperfect stencil/update nests.
+/// authoring physical storage layouts from imperfect stencil/update nests.
 inline std::optional<LoopIndexedOutputPlan>
 findConsistentLoopIndexedOutputPlanWithOwnerDims(SdeSuIterateOp op) {
   if (op.getBody().empty())

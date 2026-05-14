@@ -18,8 +18,8 @@ Current pieces:
   scheduling units around a barrier. It eliminates the barrier when root-level
   read/write conflicts are absent, otherwise it preserves or classifies the
   barrier reason.
-- `ConvertSdeToArts` skips `arts.barrier` only when SDE marked the barrier as
-  eliminated.
+- The boundary layer omits downstream synchronization only when SDE marked the
+  barrier as eliminated.
 
 The current model is safe, but mostly root-level and adjacent-pair based. That
 is too coarse for benchmarks with phase chains, shared arrays with disjoint
@@ -56,7 +56,7 @@ Useful proofs:
 
 When SDE proves a window, it should stamp the dependency-window intent in the
 plan so Core lowers window-local dependencies instead of global block ids over
-one coarse DB.
+one coarse storage object.
 
 ### Explicit Phase Edges
 
@@ -85,7 +85,7 @@ SDE should bundle wavefront and timestep legality with the dependency plan:
 - Seidel-style in-place loops need macro-tile wavefront tasks with diagonal
   predecessor edges.
 - `fdtd-2d`-style sequential timestep loops should lower to staged per-timestep
-  EDTs with barriers only between dependent fields.
+  tasks with barriers only between dependent fields.
 
 Persistent regions are a later option after non-persistent SDE plans are
 correct and profiling shows launch/CPS overhead dominates.
@@ -129,5 +129,5 @@ construction should run after decomposition. If decomposition moves earlier,
 - `3mm`-style phase graph tests proving independent first phases are not
   serialized.
 - Taskwait preservation tests.
-- SDE-to-Core tests proving eliminated barriers do not emit `arts.barrier`, and
-  preserved or narrowed phase edges remain visible to Core.
+- SDE-to-Core tests proving eliminated barriers do not emit downstream
+  synchronization, and preserved or narrowed phase edges remain visible to Core.

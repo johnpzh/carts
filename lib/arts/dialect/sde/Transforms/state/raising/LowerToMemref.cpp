@@ -612,8 +612,8 @@ static void stripScfForTensorArgs(ModuleOp module,
 
 /// Strip tensor iter_args from cu_region ops back to their backing memrefs.
 /// This includes <single> regions: scalar local state should stay tied to the
-/// user-visible memref instead of being copied into an isolated DB-backed
-/// codelet value that later host reads cannot observe.
+/// user-visible memref instead of being copied into isolated codelet-local
+/// state that later host reads cannot observe.
 static void stripCuRegionTensorArgs(ModuleOp module,
                                     DenseMap<Value, Value> &backingMemref) {
   SmallVector<sde::SdeCuRegionOp> cuRegions;

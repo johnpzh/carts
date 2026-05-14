@@ -207,7 +207,8 @@ def SdeResourceQueryOp : ArtsSde_Op<"resource_query", [Pure]> {
     Core lowering boundary binds it to the concrete runtime mechanism.
 
     `logical_workers` is the number of logical execution slots available to an
-    SDE scheduling unit. It is not an ARTS worker, route, node, or EDT count.
+    SDE scheduling unit. It does not name a concrete runtime worker,
+    placement, or task object.
   }];
   let arguments = (ins SdeResourceQueryKindAttr:$kind);
   let results = (outs Index:$result);
@@ -431,8 +432,8 @@ def SdeSuDistributeOp
   let summary = "Distribution advisory wrapper for SDE work";
   let description = [{
     Wraps a scheduling-unit region with a runtime-neutral distribution hint.
-    This is an SDE-level advisory carrier only; it does not encode ARTS worker,
-    route, or node identifiers.
+    This is an SDE-level advisory carrier only; it does not encode concrete
+    worker, route, or node identifiers.
   }];
 
   let arguments = (ins SdeDistributionKindAttr:$kind);
@@ -477,12 +478,12 @@ def SdeMuDepOp
 
     This is distinct from `sde.control_token`, which carries ordering or
     completion semantics, and from `sde.mu_token`, which is the canonical
-    MU/codelet memref access token that lowers directly to `arts.db_acquire`.
+    MU/codelet memref access token consumed by SDE materialization.
 
     `sde.mu_dep` is an SDE-only declaration. It must be consumed by SDE
     materialization into memref-level `mu_data`/`mu_token`/`cu_codelet` form
-    before the SDE/Core boundary; Core must see concrete DB allocation/acquire
-    requests, not dependency declarations.
+    before the dialect boundary; later layers must see concrete storage and
+    access-window requests, not dependency declarations.
   }];
 
   let arguments = (ins
@@ -508,9 +509,7 @@ def SdeMuTokenOp
     `sde.cu_codelet`, with an explicit access mode. When `offsets` / `sizes`
     are omitted the token addresses the whole storage object.
 
-    Tokens are the canonical SDE dependency surface for MU-backed work. At the
-    SDE to ARTS boundary a `mu_token` lowers 1:1 to
-    `arts.db_acquire <mode>`.
+    Tokens are the canonical SDE dependency surface for MU-backed work.
 
     Two tokens with disjoint slices of the same source expose slice
     parallelism that would be serialized if codelets took raw storage
@@ -550,9 +549,9 @@ def SdeCuCodeletOp
     values.
 
     Operand shape: token operands are `!sde.token<memref<...>>`; scalar
-    captures are ordinary SSA values that are copied into the downstream EDT
-    parameter pack. The body's block arguments first list one memref view per
-    token, typed as the token's `slice_type`, followed by one block argument per
+    captures are ordinary SSA values made available to the isolated compute
+    body. The body's block arguments first list one memref view per token,
+    typed as the token's `slice_type`, followed by one block argument per
     explicit capture.
 
     `IsolatedFromAbove` guarantees the body references no SSA value from
@@ -580,8 +579,7 @@ def SdeMuAllocOp : ArtsSde_Op<"mu_alloc", [Pure]> {
   let summary = "Allocate an SDE memref value with given shape.";
   let description = [{
     Creates a memref SSA value for an SDE memory unit. This is the SDE-level
-    declaration of storage that later lowers to an ARTS DB allocation. Supports
-    static and dynamic memref dimensions.
+    declaration of storage with static or dynamic memref dimensions.
 
     Examples:
       %arr = sde.mu_alloc : memref<100xi32>
@@ -602,8 +600,7 @@ def SdeMuDataOp : ArtsSde_Op<"mu_data", [Pure]> {
     of inheriting Polygeist `memref.alloca` for OMP-shared variables.
     Produced by `ConvertOpenMPToSde` for every variable named by an OMP
     `shared(...)` clause (or otherwise shared across tasks), consumed by SDE
-    MU/token/codelet planning, lowered by `ConvertSdeToArts` to
-    `arts.db_alloc`.
+    MU/token/codelet planning.
   }];
 
   let arguments = (ins

@@ -12,8 +12,9 @@ def ScopeSelection : Pass<"scope-selection", "mlir::ModuleOp"> {
   let description = [{
     Uses the SDE-owned cost model to choose the concurrency scope for
     sde.cu_region <parallel> operations. The current implementation maps the
-    active machine topology directly: single-node builds become `scope(<local>)`
-    and multi-node builds become `scope(<distributed>)`.
+    active logical topology directly: local-only configurations become
+    `scope(<local>)` and multi-placement configurations become
+    `scope(<distributed>)`.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
   let constructor = "mlir::arts::sde::createScopeSelectionPass()";
@@ -40,9 +41,9 @@ def ChunkOpt : Pass<"chunk-opt", "mlir::ModuleOp"> {
     Uses SDE-owned logical capacity to synthesize chunk sizes for eligible
     sde.su_iterate operations when the source program left them unspecified.
     Symbolic trip-count cases use `sde.resource_query <logical_workers>` so
-    Core, not SDE, binds the expression to the ARTS runtime query. The current
-    implementation handles one-dimensional dynamic/guided loops and preserves
-    explicit source chunk sizes.
+    the boundary layer, not SDE, binds the expression to a concrete target
+    mechanism. The current implementation handles one-dimensional
+    dynamic/guided loops and preserves explicit source chunk sizes.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
                            "::mlir::arith::ArithDialect"];
@@ -73,8 +74,8 @@ def DistributionPlanning
     an owner-compute advisory for distributed stencil loops with enough work to
     amortize distribution.
 
-    `ConvertSdeToArts` is responsible for materializing the advisory as ARTS
-    distribution attrs at the lowering boundary.
+    The target boundary is responsible for materializing this advisory into
+    downstream distribution metadata.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
   let constructor = "mlir::arts::sde::createDistributionPlanningPass()";
@@ -87,8 +88,8 @@ def BarrierElimination
     Analyzes read and write sets of consecutive sde.su_iterate operations
     separated by sde.su_barrier ops. When the write-set of the predecessor
     loop is provably disjoint from the read-set of the successor loop, the
-    barrier is marked for elimination. ConvertSdeToArts skips generating
-    arts.barrier for eliminated barriers.
+    barrier is marked for elimination. The target boundary consumes that mark
+    and omits the corresponding downstream synchronization object.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
                            "::mlir::memref::MemRefDialect"];

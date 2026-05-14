@@ -3,7 +3,7 @@
 ///
 /// Pattern-driven memref tiling in SDE. The pass rewrites SDE scheduling units
 /// and their executable memref loop bodies so CU/SU/MU tiling intent is
-/// explicit before SDE lowers to Core ARTS DB/acquire/EDT objects.
+/// explicit before boundary materialization.
 ///==========================================================================///
 
 #include "arts/dialect/sde/Transforms/Passes.h"
@@ -753,8 +753,9 @@ static void stampDirectMatmulTilePlan(sde::SdeSuIterateOp op,
   blockShape[0] = plan.rowTile;
 
   // Direct-memory matmul keeps full output rows in one owner task until SDE
-  // can also tile the input DBs. Splitting columns across owner tasks duplicates
-  // the k-sweep against coarse A/B inputs and regresses large GEMM.
+  // can also tile the input access windows. Splitting columns across owner
+  // tasks duplicates the k-sweep against coarse A/B inputs and regresses large
+  // GEMM.
   op.setPhysicalOwnerDimsAttr(
       buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{0}));
   op.setPhysicalBlockShapeAttr(buildI64ArrayAttr(op.getContext(), blockShape));

@@ -5,8 +5,8 @@
 ///
 /// If a token is declared readwrite but the codelet body only reads the
 /// corresponding block argument (no tensor.insert and no memref write), the
-/// token's mode is downgraded to read. This enables more efficient DB acquire
-/// modes downstream (read-only acquire avoids write-back).
+/// token's mode is downgraded to read. This enables more precise downstream
+/// access materialization.
 ///==========================================================================///
 
 #include "arts/dialect/sde/Transforms/Passes.h"

@@ -45,15 +45,16 @@ Make matmul-like state explicit before Core:
 
 - output tile ownership for `C`, `tmp`, `D`, `E`, `F`, `G`, and batched tensor
   outputs;
-- tile sizes based on useful work per EDT, cache footprint, reduction locality,
-  and abstract logical capacity;
+- tile sizes based on useful work per task, cache footprint, reduction
+  locality, and abstract logical capacity;
 - phase state for chained products, with only true producer-consumer edges.
   Current repeated large/64 evidence makes matrix-chain intermediates the
   priority: `gemm` is faster than OpenMP at median, while `2mm` and `3mm` still
   lack stable explicit intermediate reuse across producer and consumer
   contractions.
 
-This prevents Core from seeing one coarse output DB plus late per-task slices.
+This prevents Core from seeing one coarse output storage object plus late
+per-task slices.
 
 ### Reduction-Aware Vector State
 
@@ -77,8 +78,8 @@ Represent repeated time structure in SDE:
 
 - `repetition_structure = pair_step`, `k_step`, or `full_timestep`;
 - `iteration_topology = owner_strip`, `owner_tile`, or `wavefront`;
-- `async_strategy = advance_edt`, `cps_chain`, or deferred
-  `persistent_region`.
+- `async_strategy` values that distinguish advanceable task stages, CPS chains,
+  and deferred persistent regions.
 
 Double-buffer Jacobi can group timesteps when buffer parity and halo radius are
 proved. In-place Seidel needs wavefront or split-phase state before any physical
@@ -114,7 +115,8 @@ early advisory pass and a final physical plan pass after decomposition.
 
 ## Risks
 
-- A stale physical plan after loop decomposition can misdescribe the DB layout.
+- A stale physical plan after loop decomposition can misdescribe the physical
+  storage layout.
 - Fused elementwise pipelines currently risk inheriting one stage's plan when
   multiple outputs need distinct plans.
 - `findLoopIndexedOutputPlan` is intentionally narrow; using it for noncanonical
@@ -127,7 +129,7 @@ early advisory pass and a final physical plan pass after decomposition.
   component-stencil slab plans.
 - Negative SDE tests for unknown effects, self-read in-place writes, escaped
   roots, and noncanonical owner mappings.
-- Core tests proving `CreateDbs` creates physical DB families only from
+- Core tests proving physical storage families are created only from
   write-backed SDE plans.
 - Focused benchmark checks for `gemm`, `stream`, ML kernels, and 3D stencils at
   large size and 64 threads.

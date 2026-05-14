@@ -19,7 +19,7 @@
 // SDE: sde.su_barrier {barrierEliminated, barrierReason = #sde.barrier_reason<redundant>}
 // SDE: sde.su_iterate
 
-// After ConvertSdeToArts, the eliminated barrier is NOT lowered to arts.barrier
+// After boundary materialization, the eliminated barrier is not emitted.
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
 // ARTS: arts.edt <task>

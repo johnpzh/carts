@@ -1,8 +1,8 @@
 ///==========================================================================///
 /// File: ElementwiseFusion.cpp
 ///
-/// Fuse consecutive sibling SDE elementwise scheduling units before crossing
-/// into ARTS IR.
+/// Fuse consecutive sibling SDE elementwise scheduling units before boundary
+/// materialization.
 ///==========================================================================///
 
 #include "arts/dialect/sde/Transforms/Passes.h"

@@ -17,7 +17,7 @@
 // Verify that:
 //   1. ConvertOpenMPToSde wraps su_iterate body in cu_region <parallel>
 //   2. RaiseToTensor threads scalar alloca through cu_region <single> as tensor iter_arg
-//   3. ConvertSdeToArts produces arts.edt <single> with DB-backed memref.load/store
+//   3. Boundary materialization keeps scalar memref.load/store on preserved storage
 
 // --- After ConvertOpenMPToSde ---
 // OMP: func.func @main
@@ -52,7 +52,7 @@
 
 // --- After ConvertSdeToArts ---
 // ARTS: func.func @main
-//   Single EDT keeps scalar state on the preserved alloca:
+//   Single task keeps scalar state on the preserved alloca:
 // ARTS: arts.edt <single>
 // ARTS: memref.load %{{.*}}[] : memref<i32>
 // ARTS: arith.addi %{{.*}}, %{{.*}} : i32

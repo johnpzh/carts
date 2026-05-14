@@ -2,7 +2,7 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline create-dbs | %FileCheck %s --check-prefix=DB
 
 // SDE treats known scalar libm calls as pure elementwise compute so output-only
-// loops still receive the SDE-authored block plan before Core creates DBs.
+// loops still receive the SDE-authored block plan before Core materialization.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main

@@ -2,7 +2,8 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 
 // SDE owns the physical shape for component stencils: distribute the three
-// spatial dimensions and leave the component dimension local in the DB block.
+// spatial dimensions and leave the component dimension local in the storage
+// block.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main

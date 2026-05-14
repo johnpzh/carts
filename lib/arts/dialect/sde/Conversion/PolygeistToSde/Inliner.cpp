@@ -2,14 +2,14 @@
 ///==========================================================================///
 /// File: Inliner.cpp
 ///
-/// Specialized inliner policy for ARTS pipelines.
+/// Specialized inliner policy for structured SDE input preparation.
 ///
 /// Example:
 ///   Before:
 ///     func.func @helper(...) { ... }
 ///     func.func @kernel(...) { call @helper(...) }
 ///
-///   After (when profitable/legal under ARTS policy):
+///   After (when profitable/legal under the structured input policy):
 ///     func.func @kernel(...) {
 ///       ... inlined body of @helper ...
 ///     }
@@ -101,11 +101,11 @@ static bool hasLayoutSensitiveMemrefSignature(func::CallOp call,
   return callOrCalleeUsesType(call, callableOp, hasMemrefType);
 }
 
-/// Keep early inlining focused on helpers that materially improve ARTS
+/// Keep early inlining focused on helpers that materially improve structured
 /// analysis. Inlining large sequential loop helpers tends to rematerialize
 /// initialized arrays into downstream kernels, which hurts benchmark codegen.
 /// We still inline helpers that carry OpenMP because later passes need that
-/// structure in the caller to expose ARTS parallelism and loop fusion.
+/// structure in the caller to expose parallel structure and loop fusion.
 ///
 /// Nested-memref helpers are the exception: MemrefNormalization changes
 /// the storage layout of those values, so the helper body must be visible in
@@ -113,10 +113,10 @@ static bool hasLayoutSensitiveMemrefSignature(func::CallOp call,
 /// the stale pre-raise type/layout contract.
 ///
 /// The same reasoning applies to plain memref helper functions that survive
-/// into DB creation/partitioning. Once a caller-side allocation is promoted to
-/// block/stencil DB layout, a remaining full-view helper call would otherwise
-/// force coarse fallback because the callee still expects the original
-/// contiguous memref contract.
+/// into physical storage planning. Once a caller-side allocation is promoted to
+/// a blocked or stencil-aware layout, a remaining full-view helper call would
+/// otherwise force coarse fallback because the callee still expects the
+/// original contiguous memref contract.
 static bool shouldInlineCall(func::CallOp call,
                              CallableOpInterface callableOp) {
   auto funcOp = dyn_cast_or_null<func::FuncOp>(callableOp.getOperation());
