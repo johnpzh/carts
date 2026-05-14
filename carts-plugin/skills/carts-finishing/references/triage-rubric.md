@@ -24,7 +24,7 @@ When an error surfaces at stage N, check the listed prior stages first.
 | Stage 8 (DbPartitioning) | Stack overflow / infinite recursion in `copyArtsMetadataAttrs` | DbPartitioning metadata copy, rewriter loops | Add depth guard at `PartitioningHeuristics.cpp` near line 706 (Phase 2 work). |
 | Stage 8 (DbPartitioning) | Wrong answer; `fine_grained` silently downgraded to `coarse`, indices dropped | DbPartitioning memref-of-memref handling | Single-element wrapper DB instead of N-element data. The fix is upstream in CreateDbs (Phase 3), NOT in the partition heuristic. |
 | `post-db-refinement` | Stencil halo bounds wrong | SDE access-window plan, DB refinement contract rewrite | Confirm SDE stamped the right halo/window, then check whether DB refinement rewrote it. |
-| `pre-lowering` / `arts-to-llvm` | `arts.db_alloc` / `arts.edt` / `arts.epoch` survived to LLVM | DbLowering, EdtLowering, EpochLowering | A lowering was skipped. Look for a gating attribute (e.g., `NoOpDbRewriter`, `IsExplicitLeafContract`) that excluded this op. |
+| `pre-lowering` / `arts-to-llvm` | `arts.db_alloc` / `arts.edt` / `arts.epoch` survived to LLVM | DbLowering, EdtLowering, EpochLowering | A lowering was skipped. Check the owning lowering and any contract-validity gate that excluded this op. |
 | `pre-lowering` | `arts.db_acquire` references GUID that does not exist | DB refinement (GUID lost), SDE-to-Core materialization (dep routing), EpochLowering (CPS carry corruption) | Trace the GUID source. Did an intermediate pass erase it? |
 | Stage 14 (EpochLowering) | CPS chain: wrong iteration counter or outer epoch GUID | `EpochOpt` CPS-8 carry re-analysis, `EpochLowering` propagation | Check `CPSParamPerm` and `CPSIterCounterParamIdx` post-EpochOpt. |
 | Stage 14 | `CPS advance: rebuilt continuation pack with N schema holes` | `EpochOpt` carry analysis, intermediate EDT fusion, `EdtLowering` pack ordering | Carry arity changed between EpochOpt and EpochLowering. Zero-filled slots carry garbage. |
@@ -86,11 +86,23 @@ These are real cases where fixes landed in the wrong layer and caused regression
 
 ### Anti-pattern 3 — gating a pass on IR structure instead of contract validity
 
-`EdtLowering` inserted a pack-rewrite gate `NoOpDbRewriter` to skip lowering for allocations with explicit distributed leaf contracts. The gate checked a custom attr (`IsExplicitLeafContract`) stamped in stage 8 without proof.
+`EdtLowering` inserted a pack-rewrite gate to skip lowering for allocations with explicit distributed leaf contracts. The gate checked a custom attr (`IsExplicitLeafContract`) stamped in stage 8 without proof.
 
 **Result:** when an intermediate pass invalidated the contract by rewriting the allocation, the gate did not re-validate; EDT lowering emitted code that silently ignored the invalid contract.
 
 **Lesson:** contracts must travel with proof. If a pass stamps a contract, downstream passes either consume it immediately or store a proof token. A gate that skips re-validation is brittle; later passes must re-check.
+
+### Anti-pattern 4 — rediscovering DB dependencies in Core
+
+`arts.db_control` is only a transitional marker for raw memref fallback. If a
+failure involves leaked `arts.db_control`, missing DB acquires, or a raw memref
+body that was not localized, do not add new Core rediscovery logic. The
+originating issue is that SDE did not produce canonical `mu_data`/`mu_token`/
+`cu_codelet` form, or `CreateDbs` failed to consume the temporary marker before
+runtime lowering.
+
+**Lesson:** user dependency slices are SDE MU facts. Core may bind them to DBs,
+but it should not infer them by rescanning task bodies.
 
 ## When to delegate
 

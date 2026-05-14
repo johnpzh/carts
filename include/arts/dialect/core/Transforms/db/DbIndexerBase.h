@@ -1,10 +1,14 @@
 ///==========================================================================///
 /// File: DbIndexerBase.h
 ///
-/// Abstract base class for index localizers
+/// Abstract base class for raw-memref DB index localizers.
 ///
-/// This file defines the common interface and shared utilities for all
-/// datablock index localizers (Chunked, ElementWise, Stencil).
+/// This file defines the common interface and shared utilities for datablock
+/// index localizers used by CreateDbs while a task body still contains raw
+/// memref accesses.
+///
+/// These classes do not choose partitioning policy. They consume an explicit
+/// SDE-authored/Core-materialized DB layout and rewrite uses mechanically.
 ///
 /// The base class provides shared template-method implementations for:
 /// - transformOps(): iterates operations, delegates to virtual hooks
@@ -55,12 +59,10 @@ class ArtsCodegen;
 /// Each derived class implements mode-specific localization:
 /// - DbBlockIndexer: div/mod localization for block allocation
 /// - DbElementWiseIndexer: direct element coordinate mapping
-/// - DbStencilIndexer: halo-aware clamping and offset
 ///
 /// All indexers hold PartitionInfo as the canonical source of partition data:
 /// - DbElementWiseIndexer uses partitionInfo.indices (element COORDINATES)
 /// - DbBlockIndexer uses partitionInfo.offsets/sizes (range start/size)
-/// - DbStencilIndexer uses partitionInfo.offsets/sizes + halo info
 ///
 /// Shared template methods (transformOps, transformDbRefUsers,
 /// transformUsesInParentRegion) implement the common iteration/rewriting

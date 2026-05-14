@@ -23,23 +23,18 @@
 ///     arts.db_alloc + arts.db_acquire/arts.db_release around EDT body access
 ///     with loads/stores redirected through acquired DB views
 ///
-/// Allocation Strategy:
-/// This pass analyzes memory access patterns from task dependencies
-/// (DbControlOps) to determine the optimal datablock allocation granularity:
+/// Responsibility split:
+/// - SDE chooses structured patterns, task grain, owner dimensions, physical
+///   block shapes, and task element slices.
+/// - The target SDE path emits MU tokens/codelets that lower directly to DB ops.
+/// - Until every raw-memref path reaches that form, SDE->ARTS may emit
+///   `arts.db_control` for fallback dependencies.
+/// - CreateDbs materializes those explicit temporary contracts into Core DB ops
+///   and localizes remaining raw memref accesses to DB-relative coordinates.
 ///
-/// 1. Fine-grained allocation (preferred when possible):
-///    - Detects consistent single-dimension indexing patterns (e.g., A[i])
-///    - Verifies ALL db_acquires have indices for fine-grained access
-///    - Creates multiple datablocks: sizes=[N], elementSizes=[remaining dims]
-///
-/// 2. Coarse-grained allocation (fallback):
-///    - Used when no task dependencies are provided (no DbControlOps)
-///    - Used when access patterns are inconsistent across EDTs
-///    - Used when some db_acquires lack indices (full array access needed)
-///
-/// Access Mode Strategy:
-/// Access modes are extracted from DbControlOps (from OpenMP depend clauses).
-/// If no control DB is found, conservatively defaults to inout mode.
+/// CreateDbs must not rediscover tensor/linalg partition policy.  Its
+/// remaining indexers are compatibility localizers for raw memref bodies until
+/// the corresponding SDE regions lower through canonical MU/token/codelet form.
 ///==========================================================================///
 
 #include "arts/Dialect.h"
@@ -47,7 +42,6 @@
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "arts/dialect/core/Transforms/db/DbLayoutPlanUtils.h"
-#include "arts/dialect/core/Transforms/db/DbRewriter.h"
 #include "arts/dialect/core/Transforms/db/block/DbBlockIndexer.h"
 #include "arts/dialect/core/Transforms/db/elementwise/DbElementWiseIndexer.h"
 #include "arts/utils/ValueAnalysis.h"
@@ -163,7 +157,7 @@ private:
     DbAllocOp dbAllocOp = nullptr;
 
     /// The computed allocation strategy plan
-    std::optional<DbRewritePlan> rewritePlan;
+    std::optional<DbPhysicalLayoutPlan> rewritePlan;
 
     /// Structure to track a specific DB access (mode + indices + chunks)
     struct DbDep {
@@ -287,7 +281,7 @@ private:
                                 ArtsMode requestedMode,
                                 bool requiresIndexedAccess = false);
   void initializeGlobalDbIfNeeded(Operation *alloc, DbAllocOp dbAllocOp,
-                                  const DbRewritePlan &plan,
+                                  const DbPhysicalLayoutPlan &plan,
                                   DbAllocType allocType);
 
   DbAllocType inferAllocType(Operation *alloc);
@@ -297,12 +291,12 @@ private:
                                 SmallVector<Value> &acquireIndices,
                                 SmallVector<Value> &acquireOffsets,
                                 Value localAcquireView,
-                                const DbRewritePlan &plan);
+                                const DbPhysicalLayoutPlan &plan);
   void rewriteUsesInParentEdt(MemrefInfo &memrefInfo);
   Operation *findPhysicalLayoutPlanSource(Operation *alloc);
   void projectStructuredPlanToDbValue(Operation *sourceOp, DbAllocOp dbAlloc);
   void rewriteUsesEverywhereWithPlan(Operation *alloc, DbAllocOp dbAlloc,
-                                     const DbRewritePlan &plan);
+                                     const DbPhysicalLayoutPlan &plan);
 };
 } // namespace
 
@@ -890,7 +884,7 @@ void CreateDbsPass::createDbAllocOps() {
     /// Coarse is the conservative fallback. If SDE has already authored a
     /// physical tensor layout plan, materialize it now so CreateDbs is the
     /// point where the final DB shape first appears.
-    DbRewritePlan plan(PartitionMode::coarse);
+    DbPhysicalLayoutPlan plan(PartitionMode::coarse);
     sizes.push_back(AC->createIndexConstant(1, loc));
     elementSizes.assign(logicalElementSizes.begin(), logicalElementSizes.end());
     PartitionMode partitionMode = PartitionMode::coarse;
@@ -907,7 +901,7 @@ void CreateDbsPass::createDbAllocOps() {
       return;
     }
     if (planSource) {
-      FailureOr<DbRewritePlan> resolvedPlan = resolvePhysicalDbLayoutPlan(
+      FailureOr<DbPhysicalLayoutPlan> resolvedPlan = resolvePhysicalDbLayoutPlan(
           planSource, ValueRange(logicalElementSizes), AC->getBuilder(), loc);
       if (failed(resolvedPlan)) {
         InFlightDiagnostic diag =
@@ -1005,7 +999,7 @@ void CreateDbsPass::createDbAllocOps() {
 /// Initialize global constants for DB-backed globals.
 void CreateDbsPass::initializeGlobalDbIfNeeded(Operation *alloc,
                                                DbAllocOp dbAllocOp,
-                                               const DbRewritePlan &plan,
+                                               const DbPhysicalLayoutPlan &plan,
                                                DbAllocType allocType) {
   if (allocType != DbAllocType::global)
     return;
@@ -1630,7 +1624,7 @@ void CreateDbsPass::rewriteUsesInParentEdt(MemrefInfo &memrefInfo) {
 
   /// Coarse-grained: db_ref[0] + load/store[indices]
   /// Fine-grained: db_ref[indices] + load/store[0]
-  const DbRewritePlan &plan = memrefInfo.rewritePlan.value();
+  const DbPhysicalLayoutPlan &plan = memrefInfo.rewritePlan.value();
   unsigned innerRank = cast<MemRefType>(elementMemRefType).getRank();
 
   std::unique_ptr<DbIndexerBase> indexer;
@@ -1673,7 +1667,7 @@ void CreateDbsPass::rewriteUsesInParentEdt(MemrefInfo &memrefInfo) {
 /// with EDTs and the host needs to see the updated data.
 void CreateDbsPass::rewriteUsesEverywhereWithPlan(Operation *alloc,
                                                   DbAllocOp dbAlloc,
-                                                  const DbRewritePlan &plan) {
+                                                  const DbPhysicalLayoutPlan &plan) {
   Value originalValue = alloc->getResult(0);
   if (!originalValue)
     return;
@@ -1837,7 +1831,7 @@ void CreateDbsPass::rewriteUsesEverywhereWithPlan(Operation *alloc,
 void CreateDbsPass::rewriteOpsToUseDbAcquire(
     EdtOp edt, SmallVector<Operation *> &operations, Operation *dbOp,
     SmallVector<Value> &acquireIndices, SmallVector<Value> &acquireOffsets,
-    Value localAcquireView, const DbRewritePlan &plan) {
+    Value localAcquireView, const DbPhysicalLayoutPlan &plan) {
   ARTS_DEBUG(" - Rewriting " << operations.size() << " operations in EDT");
   numOpsRewrittenToDbViews += operations.size();
 

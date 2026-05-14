@@ -6,9 +6,9 @@ of truth when pipeline details change.
 
 ## One-Line Rule
 
-SDE describes source semantics, logical work, and the task/data shape. Core ARTS
-materializes abstract ARTS objects when SDE has not already authored them
-directly. RT maps those objects to runtime API calls.
+SDE describes source semantics, logical work, memory-unit dependencies, and the
+task/data shape. Core ARTS binds that already-authored shape to the abstract
+ARTS machine. RT maps Core objects to runtime API calls.
 
 ## SDE
 
@@ -20,8 +20,10 @@ data slices.
 SDE may contain:
 
 - `mu_data`, `mu_dep`, `mu_token`: memory-unit handles. `mu_data` names data
-  that crosses asynchronous work, and `mu_token` is the canonical SDE access
-  token that lowers almost 1:1 to a Core `arts.db_acquire`.
+  that crosses asynchronous work, `mu_dep` names a source-level memref
+  dependency slice from task depend clauses or SDE owner-slice planning, and
+  `mu_token` is the canonical access token that lowers almost 1:1 to a Core
+  `arts.db_acquire`.
 - `cu_region` and `cu_codelet`: compute-unit regions and isolated task bodies.
   A `cu_codelet` consumes only MU tokens plus explicit scalar captures.
 - `su_iterate`: scheduling-unit iteration spaces and task-shape plans.
@@ -72,7 +74,8 @@ Core may contain:
 yet been canonicalized into MU tokens. It may consume explicit SDE-authored DB
 layout and dependency-slice metadata, allocate the corresponding Core DB, and
 rewrite remaining raw memref accesses. It must not choose tensor owner dims,
-tile geometry, or dependency-window policy by inspecting task bodies.
+tile geometry, or dependency-window policy by inspecting task bodies. This is a
+temporary migration surface, not the target architecture.
 
 Core must not contain source-level parallel carriers, OpenMP semantics,
 semantic loop-family rediscovery, loop fusion policy, SDE-style distribution
@@ -109,8 +112,8 @@ The SDE/Core boundary has two paths:
 3. Canonical SDE MU/CU form lowers directly: `sde.mu_data` becomes
    `arts.db_alloc`, `sde.mu_token` becomes `arts.db_acquire`, and
    `sde.cu_codelet` becomes `arts.edt`.
-4. Legacy raw-memref `su_iterate` lowering may emit explicit Core dependency
-   controls from the SDE physical owner plan. `CreateDbs` is then a
+4. Legacy raw-memref `su_iterate`/`cu_task` lowering may emit explicit Core
+   dependency controls from the SDE physical owner plan. `CreateDbs` is then a
    compatibility bridge that creates the DB object and rewrites raw accesses; it
    must not infer tensor partition policy.
 5. `VerifySdeLowered` and `VerifyCoreObjectsOnly` enforce the boundary.
@@ -119,6 +122,94 @@ The SDE/Core boundary has two paths:
 
 Generated `scf.for` operations are implementation control flow only. They are
 not a semantic carrier.
+
+## Boundary Diagram
+
+The production target is the direct MU/token/codelet path:
+
+```text
+SDE
+  sde.mu_data        data root and layout intent
+  sde.mu_token       mode + tensor slice
+  sde.cu_codelet     isolated compute body
+        |
+        | ConvertSdeToArts
+        v
+Core
+  arts.db_alloc      created directly from mu_data
+  arts.db_acquire    created directly from mu_token
+  arts.edt           created directly from cu_codelet
+        |
+        | Core/RT lowering
+        v
+Runtime calls
+```
+
+The remaining compatibility path exists only when a `su_iterate` body has been
+lowered back to raw memref loads/stores before codelet formation:
+
+```text
+SDE raw-memref fallback
+  sde.su_iterate attrs: pattern, physicalOwnerDims, physicalBlockShape, slice
+  sde.mu_dep or SDE owner-slice dependency
+        |
+        | ConvertSdeToArts
+        v
+Core bridge marker
+  arts.db_control    memory root + mode + element-space slice
+        |
+        | create-dbs
+        v
+Core DB form
+  arts.db_alloc      physical DB layout from SDE attrs
+  arts.db_acquire    DB-space slice derived from SDE element-space slice
+  arts.db_ref        raw memref body rewritten to DB-relative indices
+```
+
+`arts.db_control` is therefore not an SDE control token. It is a temporary
+Core-side memory-slice marker used only because some SDE work still reaches the
+boundary as raw memref bodies. `sde.control_token` is an SDE
+ordering/completion edge consumed by SDE synchronization planning; it should not
+be used to describe memory roots or DB slices.
+
+## Removing `arts.db_control`
+
+The SDE replacement is not a new Core op. The SDE-level representation already
+exists conceptually:
+
+- `sde.mu_dep` carries user-provided memref dependency slices from
+  `omp.task depend(...)` and any SDE-authored owner-slice dependency that has
+  not yet become a tensor token.
+- `sde.mu_token` carries the canonical tensor/codelet dependency slice.
+- `sde.control_token` carries ordering/completion only.
+
+Deleting `arts.db_control` requires making every raw-memref path produce
+canonical SDE MU/CU form before `ConvertSdeToArts`:
+
+1. SDE must attach every shared data root to an MU root. Function arguments,
+   globals, allocas, and backed memrefs need a single `mu_data`/backing handle
+   that downstream passes can identify without scanning Core memrefs.
+2. SDE must materialize ND dependency slices as MU tokens. Offsets, sizes,
+   halo windows, pinned indices, owner dims, and physical block shape must stay
+   in SDE element space until the boundary.
+3. SDE must align CU bodies with MU layout. A tiled `su_iterate` without
+   matching MU address-space rewrite is not a real tiling transformation.
+   Loads/stores inside the codelet must already address token-local views or be
+   explicitly rewritten before Core.
+4. SDE must form isolated `cu_codelet` bodies for task and loop dispatch shapes,
+   including the current raw `su_iterate` inside `<parallel>` case and
+   `cu_task deps(...)` case.
+5. `ConvertSdeToArts` must lower that form directly: `mu_data` to `db_alloc`,
+   `mu_token` to `db_acquire`, and `cu_codelet` to `edt`, including ND token
+   offsets/sizes and release placement.
+6. Core may then run DB/EDT/epoch analyses and optimizations over concrete
+   objects, but it must not rediscover DB roots, task slices, tensor owner dims,
+   or tiling policy from raw memrefs.
+
+Only after those items cover `su_iterate`, `cu_task`, task depend slices,
+function-argument memrefs, globals, reductions, and ND/stencil windows should
+`arts.db_control`, the raw-memref portions of `CreateDbs`, and the remaining
+compatibility indexers be deleted.
 
 ## Work-Plan Contract
 

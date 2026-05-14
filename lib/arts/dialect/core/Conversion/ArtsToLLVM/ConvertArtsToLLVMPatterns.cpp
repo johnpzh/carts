@@ -1473,18 +1473,16 @@ struct DbFreePattern : public ArtsToLLVMPattern<DbFreeOp> {
   }
 };
 
-/// Pattern to convert arts.db_control operations
+/// Pattern to reject leaked arts.db_control operations.
 struct DbControlPattern : public ArtsToLLVMPattern<DbControlOp> {
   using ArtsToLLVMPattern::ArtsToLLVMPattern;
 
   LogicalResult matchAndRewrite(DbControlOp op,
                                 PatternRewriter &rewriter) const override {
-    ARTS_INFO("Lowering DbControl Op " << op);
-    ArtsCodegen::RewriterGuard RG(*AC, rewriter);
-    /// Control DBs are not supported yet
-    rewriter.eraseOp(op);
-    ++numDbOpsConverted;
-    return success();
+    return op.emitOpError()
+           << "must be consumed by create-dbs before runtime lowering; "
+              "canonical SDE mu_token/codelet paths should lower directly to "
+              "arts.db_acquire and never produce arts.db_control";
   }
 };
 

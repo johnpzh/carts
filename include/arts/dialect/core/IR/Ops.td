@@ -549,16 +549,22 @@ def DbFreeOp : Arts_Op<"db_free", []> {
 }
 
 def DbControlOp : Arts_Op<"db_control", [AttrSizedOperandSegments]> {
-  let summary = "Creates a control dependency for arts.edt";
+  let summary = "Raw-memref memory-slice dependency marker for CreateDbs";
   let description = [{
-    This operation creates a control dependency for the `arts.edt` operation.
-    It is used to ensure that the DataBlock is ready before the EDT is executed.
+    This operation is a compatibility marker emitted from SDE `mu_dep` or
+    SDE-authored owner-slice plans when a task body still uses raw memrefs.
+    `create-dbs` consumes it, creates the real `arts.db_acquire`, and erases
+    the marker before runtime lowering.
+
+    It is not equivalent to `sde.control_token`: `sde.control_token` expresses
+    completion/order edges inside SDE, while `arts.db_control` describes a
+    memory root plus an access mode and element-space slice.
+
     - mode: "in", "out", "inout"
-    - ptr: base address of the DataBlock
+    - ptr: source memref before DB materialization
     - indices: pinned indices for the subview (dimensions with size=1)
     - offsets: chunk offsets for the subview (dimensions with size>1)
     - sizes: block sizes for the subview (dimensions with size>1)
-    Note: Currently ignored for execution, but retained for future correctness enforcement.
   }];
   let arguments = (ins
     ArtsModeAttr:$mode,

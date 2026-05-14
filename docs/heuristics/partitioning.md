@@ -87,12 +87,12 @@ Partitioning is intentionally split into roles. The rule is:
 - Acquire/Alloc nodes analyze
 - Heuristics decide
 - DbPartitioning coordinates + applies
-- Rewriters/Indexers execute
+- Raw-memref indexers execute the already-chosen layout
 
 Flow of responsibility:
 
-  DbGraph/DbNode  ->  DbAnalysis  ->  DbHeuristics  ->  DbPartitioning  ->  Planner/Rewriter/Indexer
-  (canonical facts)   (facade)        (policy)               (controller)       (execution)
+  SDE plan attrs -> CreateDbs -> DbPhysicalLayoutPlan -> raw-memref indexers
+  (policy)          (bridge)     (materialized shape)    (mechanical rewrite)
 
 What each layer owns:
 
@@ -100,17 +100,12 @@ What each layer owns:
   classification, mapped partition dims, indirect/direct flags, and cached
   `DbAcquirePartitionFacts`.
 - DbAllocNode: aggregation across acquires for one allocation.
-- DbAnalysis: pass-facing facade over the graph (`getAcquirePartitionFacts`,
-  `analyzeAcquirePartition`, loop summaries, access-pattern queries).
-- DbHeuristics + H1 helpers: policy only. They consume snapshots and
-  return decisions; they do not mutate IR or walk DB graphs directly.
-- DbPartitioning: the controller. It visits allocation/acquire nodes, asks
-  DbAnalysis for facts, builds heuristic snapshots, reconciles legality, and
-  forwards the final choice to planners/rewriters.
-- DbPartitionPlanner: mode-specialized plan construction for allocation shape
-  and per-acquire rewrite payloads.
-- Rewriters/Indexers: execute the chosen layout and localize indices using
-  `PartitionInfo + DbRewritePlan`.
+- SDE `PatternAnalysis`/distribution/tiling passes: policy. They prove owner
+  dims, task grain, access windows, and physical block shape before Core.
+- `CreateDbs`: bridge. It converts SDE-authored plan attrs and `DbControlOp`
+  slices into `DbPhysicalLayoutPlan`, `arts.db_alloc`, and `arts.db_acquire`.
+- Raw-memref indexers: execution. They localize legacy memref loads/stores
+  using `PartitionInfo + DbPhysicalLayoutPlan`; they do not choose policy.
 
 Important implementation detail:
 - `DbAllocNode` stores direct child acquires in the DB graph.
@@ -218,7 +213,8 @@ The actual pass flow is:
 8. Resolve block sizes and `partitionedDims`.
 9. Force safety fallbacks for acquires whose inferred dims disagree with the
    chosen plan.
-10. Build `DbRewritePlan` and rewrite alloc + acquires.
+10. Build `DbPhysicalLayoutPlan` from SDE plan attrs and materialize alloc +
+    acquires.
 
 The important point is that the pass is already split into:
 - analysis that builds acquire facts
@@ -1053,11 +1049,15 @@ Example access A[i,j,k]:
 - Coordination + plan: DbPartitioning
 - Mode reconciliation: local controller logic in `DbPartitioning`
 - Block sizing + chosen dims: `DbBlockPlanResolver`
-- Layout rewrite: DbRewriter (Block / Fine-grained / Stencil)
-- Index localization: DbBlockIndexer / DbElementWiseIndexer / DbStencilIndexer
+- Layout materialization: `CreateDbs` from SDE-authored attrs and
+  `DbPhysicalLayoutPlan`
+- Index localization for raw memref fallback: `DbBlockIndexer` /
+  `DbElementWiseIndexer`
 - ESD runtime semantics: byte-slice deps (`artsRecordDepAt`) + pointer signaling
 
-This keeps semantics explicit: heuristics decide the layout, rewriters apply it,
-indexers localize indices, and the runtime implements the ESD transport.
+This keeps semantics explicit: SDE pattern analysis and distribution planning
+decide layout and task slices; SDE/Core materialization creates DB/acquire
+objects; the remaining raw-memref indexers only localize compatibility bodies;
+and the runtime implements the ESD transport.
 
 ---

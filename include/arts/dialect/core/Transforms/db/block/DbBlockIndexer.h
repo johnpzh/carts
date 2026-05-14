@@ -1,13 +1,11 @@
 ///==========================================================================///
 /// File: DbBlockIndexer.h
 ///
-/// Index localizer for block datablock allocation.
-/// Multiple elements are grouped into blocks for coarse-grained parallelism.
+/// Index localizer for a block datablock allocation.
 ///
-/// Partitioning policy:
-/// - Block is selected only when block hints exist and the cost model
-///   prefers blocking; otherwise we fall back to element-wise for concurrency.
-/// - Twin-diff remains enabled unless disjoint access is proven after rewrite.
+/// This class does not choose a block policy. SDE owns that decision.  The
+/// indexer only converts global element coordinates in a raw memref fallback
+/// body into DB-space block coordinates plus in-block memref coordinates.
 ///
 /// Example (A[100][50], blockSize=25, startBlock=1):
 ///   Block 1 covers rows 25..49.

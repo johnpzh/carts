@@ -7,12 +7,13 @@
 /// Mapping:
 ///   sde.cu_region parallel  ->  inline generic Core work units
 ///   sde.cu_region single    ->  arts.edt <single, intranode>
-///   sde.cu_task             ->  arts.edt <task, intranode> + arts.db_control
+///   sde.cu_task             ->  arts.edt <task, intranode>
 ///   sde.su_iterate          ->  scf.for dispatch lanes + arts.edt <task>
 ///   sde.su_barrier          ->  arts.barrier
 ///   sde.cu_atomic           ->  arts.atomic_add
 ///   sde.resource_query      ->  arts.runtime_query
-///   sde.mu_dep              ->  arts.db_control
+///   sde.mu_dep              ->  transient arts.db_control fallback
+///   sde.mu_token + codelet  ->  arts.db_alloc/acquire + arts.edt directly
 ///   sde.yield               ->  arts.yield
 ///==========================================================================///
 
@@ -1153,6 +1154,9 @@ static SmallVector<Value> materializeCuTaskDeps(sde::SdeCuTaskOp op,
       }
     }
 
+    /// Raw-memref fallback only.  Canonical SDE codelets use `sde.mu_token`,
+    /// and `lowerCuCodelet` lowers those tokens directly to `arts.db_acquire`
+    /// without routing through DbControlOp/CreateDbs.
     Value source = mapper.lookupOrDefault(muDep.getSource());
     auto dbControl = DbControlOp::create(rewriter, op.getLoc(), mode, source,
                                          pinnedIndices, chunkOffsets,
@@ -1330,7 +1334,14 @@ struct CuRegionToArtsPattern : public OpRewritePattern<sde::SdeCuRegionOp> {
   }
 };
 
-/// sde.cu_task -> arts.edt <task> with db_control deps
+/// sde.cu_task -> arts.edt <task>.
+///
+/// Current raw-memref fallback: task deps are represented as `sde.mu_dep` and
+/// temporarily materialized as `arts.db_control` so CreateDbs can allocate DBs,
+/// acquire the requested slices, and rewrite the still-raw memref body.
+/// Target path: SDE converts those deps to `mu_data`/`mu_token`/`cu_codelet`
+/// before this boundary, so this pattern can wire real `arts.db_acquire`
+/// dependencies directly and the Core bridge marker disappears.
 struct CuTaskToArtsPattern : public OpRewritePattern<sde::SdeCuTaskOp> {
   using OpRewritePattern::OpRewritePattern;
 

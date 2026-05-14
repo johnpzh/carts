@@ -469,11 +469,25 @@ def SdeSuBarrierOp
 
 def SdeMuDepOp
     : ArtsSde_Op<"mu_dep", [Pure, AttrSizedOperandSegments]> {
-  let summary = "Data dependency declaration (memref fallback)";
+  let summary = "SDE memref dependency declaration";
   let description = [{
-    Declares a data dependency with access mode and region. Used in the
-    memref fallback path. In the tensor path, `tensor.extract_slice`/
-    `tensor.insert_slice` carry the same information natively.
+    Declares a memory-unit dependency with access mode and region. This is the
+    SDE representation of source dependency slices from `omp.task depend(...)`
+    and of SDE-authored owner-slice dependencies for raw memref work that has
+    not yet been converted to token/codelet form.
+
+    This is distinct from `sde.control_token`, which carries ordering or
+    completion semantics, and from `sde.mu_token`, which is the canonical
+    tensor/codelet access token that lowers directly to `arts.db_acquire`.
+    In the tensor path, `tensor.extract_slice`/`tensor.insert_slice` and
+    `sde.mu_token` carry the same slice information natively.
+
+    Transitional note: remaining raw-memref paths currently lower `sde.mu_dep`
+    through a temporary Core `arts.db_control` marker that `create-dbs` must
+    consume. The target path is for an SDE materialization pass to turn these
+    deps into `mu_data`/`mu_token`/`cu_codelet` form before the SDE/Core
+    boundary, after which `ConvertSdeToArts` can create DBs and acquires
+    directly and `arts.db_control` can be deleted.
   }];
 
   let arguments = (ins

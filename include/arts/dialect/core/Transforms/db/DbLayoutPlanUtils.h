@@ -5,14 +5,14 @@
 ///
 /// These utilities do not choose tensor partitioning policy. SDE owns owner
 /// dimensions, physical block shape, and halo policy; this layer only converts
-/// those attrs into the physical DbRewritePlan consumed by CreateDbs and DB
-/// indexers.
+/// those attrs into the physical DbPhysicalLayoutPlan consumed by CreateDbs and
+/// DB indexers.
 ///==========================================================================///
 
 #ifndef ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
 #define ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
 
-#include "arts/dialect/core/Transforms/db/DbRewriter.h"
+#include "arts/dialect/core/Transforms/db/DbLayoutPlan.h"
 #include "arts/utils/LoweringContractUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Operation.h"
@@ -28,7 +28,7 @@ bool hasPhysicalDbLayoutPlan(Operation *op);
 
 /// Resolve structured plan attrs on `planSource` into a concrete DB rewrite
 /// plan for an allocation with the provided logical element extents.
-FailureOr<DbRewritePlan> resolvePhysicalDbLayoutPlan(Operation *planSource,
+FailureOr<DbPhysicalLayoutPlan> resolvePhysicalDbLayoutPlan(Operation *planSource,
                                                      ValueRange elementSizes,
                                                      OpBuilder &builder,
                                                      Location loc);

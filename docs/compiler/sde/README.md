@@ -97,11 +97,12 @@ analysis API. At the dialect boundary, `ConvertSdeToArts` mechanically lowers
 the final SDE plan into Core `arts.plan.*`, dependency-pattern, distribution,
 DB, EDT, barrier contracts, and `arts.runtime_query` operations for SDE logical
 resource queries. For canonical MU/CU form this means direct DB/acquire/EDT
-materialization. For legacy raw-memref `su_iterate` form, SDE must emit explicit
-dependency-slice controls from the physical owner plan so `CreateDbs` consumes a
-plan instead of deriving one from body shape. Core and RT may materialize or
-validate that lowered contract, but they must not invent tensor partition
-policy late.
+materialization. For legacy raw-memref `su_iterate` form, SDE currently emits
+explicit dependency-slice controls from the physical owner plan so `CreateDbs`
+consumes a plan instead of deriving one from body shape. The migration target is
+to turn those same SDE facts into MU tokens/codelets before Core so no
+`arts.db_control` bridge is needed. Core and RT may materialize or validate that
+lowered contract, but they must not invent tensor partition policy late.
 
 ## Heuristic Analysis Spine
 

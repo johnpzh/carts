@@ -3,7 +3,6 @@ file(GLOB CARTS_TRANSFORMS_SOURCE_FILES CONFIGURE_DEPENDS
     "db/*.cpp"
     "db/block/*.cpp"
     "db/elementwise/*.cpp"
-    "db/stencil/*.cpp"
     "db/strategy/*.cpp"
     "db/transforms/*.cpp"
     "edt/*.cpp"

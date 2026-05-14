@@ -104,7 +104,7 @@ annotation level.
 | Cannon-style shifts | Feasible but complex | Not implemented (future) |
 | SUMMA-style broadcast panels | Feasible via events/active messages | Not implemented (future) |
 | 2.5D replication | Possible but high complexity | Not implemented (future) |
-| Stencil halo | Strong | Implemented via block + halo-aware rewrite |
+| Stencil halo | Strong | SDE stamps halo/window facts; current raw-memref fallback materializes block slices without a dedicated halo rewriter |
 
 ### 2.2 Why CARTS currently prefers 2D tiling over Cannon/SUMMA
 
@@ -170,12 +170,16 @@ validate SDE contracts rather than redefine semantic pattern family.
 
 ## 5. Pipeline Architecture
 
-Distribution is planned inside `openmp-to-arts` and realized by later Core DB
-refinement stages:
+Distribution is planned inside `openmp-to-arts`. The target is for SDE/Core
+conversion to realize the MU/CU/SU plan directly as Core DB/EDT objects; the
+remaining `create-dbs` stage is a compatibility bridge for raw memref work that
+has not yet become canonical MU token/codelet form.
 
 - `openmp-to-arts`: SDE scope/distribution/reduction planning, direct
   SDE-to-Core EDT/DB/epoch materialization, and strict SDE/Core verification.
-- `create-dbs`: creates the physical DB objects from materialized Core shape.
+- `create-dbs`: transitional raw-memref bridge. It consumes SDE-authored layout
+  attrs and dependency slices, then creates DB objects and localizes raw memref
+  uses. It must not choose distribution policy.
 - `db-opt`: tightens DB access modes from real uses.
 - `post-db-refinement`: validates and refines DB/EDT contracts.
 - `late-concurrency-cleanup`: strip-mining, hoisting, and late cleanup

@@ -5,7 +5,6 @@
 #include "arts/dialect/core/Transforms/db/DbLayoutPlanUtils.h"
 
 #include "arts/utils/OperationAttributes.h"
-#include "arts/utils/StencilAttributes.h"
 #include "arts/utils/Utils.h"
 #include "arts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -37,14 +36,6 @@ materializeIndexConstants(OpBuilder &builder, Location loc,
   return result;
 }
 
-static std::optional<unsigned> findOwnerPosition(ArrayRef<int64_t> ownerDims,
-                                                 unsigned physicalDim) {
-  for (auto [idx, dim] : llvm::enumerate(ownerDims))
-    if (dim >= 0 && static_cast<unsigned>(dim) == physicalDim)
-      return static_cast<unsigned>(idx);
-  return std::nullopt;
-}
-
 static bool ownerDimsContain(ArrayRef<int64_t> ownerDims, unsigned dim) {
   for (int64_t ownerDim : ownerDims)
     if (ownerDim >= 0 && static_cast<unsigned>(ownerDim) == dim)
@@ -72,49 +63,12 @@ getBlockShapeForOwnerDim(ArrayRef<int64_t> blockShape,
   return blockShape[static_cast<size_t>(ownerDim)];
 }
 
-static Value blockSizeForPhysicalDim(const DbRewritePlan &plan,
+static Value blockSizeForPhysicalDim(const DbPhysicalLayoutPlan &plan,
                                      unsigned physicalDim) {
   for (auto [idx, dim] : llvm::enumerate(plan.partitionedDims))
     if (dim == physicalDim && idx < plan.blockSizes.size())
       return plan.blockSizes[idx];
   return Value();
-}
-
-static void deriveStencilInfo(Operation *source, DbRewritePlan &plan) {
-  if (!source || plan.partitionedDims.empty())
-    return;
-
-  unsigned primaryOwnerDim = plan.partitionedDims.front();
-  std::optional<SmallVector<int64_t, 4>> stencilOwnerDims =
-      getStencilOwnerDims(source);
-  std::optional<SmallVector<int64_t, 4>> minOffsets =
-      getStencilMinOffsets(source);
-  std::optional<SmallVector<int64_t, 4>> maxOffsets =
-      getStencilMaxOffsets(source);
-
-  if (stencilOwnerDims && minOffsets && maxOffsets) {
-    std::optional<unsigned> ownerPos =
-        findOwnerPosition(*stencilOwnerDims, primaryOwnerDim);
-    if (ownerPos && *ownerPos < minOffsets->size() &&
-        *ownerPos < maxOffsets->size()) {
-      StencilInfo info;
-      info.haloLeft = std::max<int64_t>(0, -(*minOffsets)[*ownerPos]);
-      info.haloRight = std::max<int64_t>(0, (*maxOffsets)[*ownerPos]);
-      if (info.hasHalo())
-        plan.stencilInfo = info;
-      return;
-    }
-  }
-
-  if (std::optional<SmallVector<int64_t, 4>> haloShape =
-          readI64ArrayAttr(getPlanHaloShapeAttr(source))) {
-    if (!haloShape->empty() && haloShape->front() > 0) {
-      StencilInfo info;
-      info.haloLeft = haloShape->front();
-      info.haloRight = haloShape->front();
-      plan.stencilInfo = info;
-    }
-  }
 }
 
 } // namespace
@@ -209,7 +163,7 @@ mlir::arts::getSourceOwnerBlockShape(DbAllocOp sourceAlloc,
   return blockShape;
 }
 
-FailureOr<DbRewritePlan>
+FailureOr<DbPhysicalLayoutPlan>
 mlir::arts::resolvePhysicalDbLayoutPlan(Operation *planSource,
                                         ValueRange elementSizes,
                                         OpBuilder &builder, Location loc) {
@@ -224,7 +178,7 @@ mlir::arts::resolvePhysicalDbLayoutPlan(Operation *planSource,
     return failure();
 
   const unsigned memrefRank = elementSizes.size();
-  DbRewritePlan plan(PartitionMode::block);
+  DbPhysicalLayoutPlan plan(PartitionMode::block);
 
   llvm::DenseSet<unsigned> seenDims;
   for (int64_t rawDim : *ownerDims) {
@@ -275,7 +229,6 @@ mlir::arts::resolvePhysicalDbLayoutPlan(Operation *planSource,
     plan.innerSizes.push_back(elementSizes[dim]);
   }
 
-  deriveStencilInfo(planSource, plan);
   if (!plan.isValid())
     return failure();
   return plan;
