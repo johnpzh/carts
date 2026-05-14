@@ -1,6 +1,6 @@
 # CARTS Dialect Map
 
-## SDE Dialect: `arts_sde`
+## SDE Dialect: `sde`
 
 Paths:
 

@@ -6,11 +6,11 @@
 
 // CHECK-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
 // CHECK: func.func @main
-// CHECK: arts_sde.cu_region <parallel> {
-// CHECK: arts_sde.su_iterate (%c0) to (%c128) step (%c1)
-// CHECK-SAME: reduction[#arts_sde.reduction_kind<add>](%{{.+}} : memref<?xi32>)
+// CHECK: sde.cu_region <parallel> {
+// CHECK: sde.su_iterate (%c0) to (%c128) step (%c1)
+// CHECK-SAME: reduction[#sde.reduction_kind<add>](%{{.+}} : memref<?xi32>)
 // CHECK-SAME: classification(<reduction>) {
-// CHECK: arts_sde.cu_region <parallel> {
+// CHECK: sde.cu_region <parallel> {
 // CHECK: memref.load %arg0[%{{.*}}] : memref<128xi32>
 // CHECK: memref.load %{{.*}}[%c0] : memref<?xi32>
 // CHECK: arith.addi

@@ -311,8 +311,8 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
       sde::SdeStructuredClassificationAttr::get(
           first.getContext(),
           sde::SdeStructuredClassification::elementwise_pipeline),
-      sde::SdeDepFamilyAttr::get(first.getContext(),
-                                 sde::SdeDepFamily::elementwise_pipeline),
+      sde::SdePatternAttr::get(first.getContext(),
+                                 sde::SdePattern::elementwise_pipeline),
       first.getAccessMinOffsetsAttr(), first.getAccessMaxOffsetsAttr(),
       first.getOwnerDimsAttr(), first.getSpatialDimsAttr(),
       first.getWriteFootprintAttr(), first.getPhysicalOwnerDimsAttr(),
@@ -329,8 +329,8 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
       sde::SdeStructuredClassificationAttr::get(
           first.getContext(),
           sde::SdeStructuredClassification::elementwise_pipeline));
-  fused.setDepFamilyAttr(sde::SdeDepFamilyAttr::get(
-      first.getContext(), sde::SdeDepFamily::elementwise_pipeline));
+  fused.setPatternAttr(sde::SdePatternAttr::get(
+      first.getContext(), sde::SdePattern::elementwise_pipeline));
 
   Block &dst = sde::ensureBlock(fused.getBody());
   if (dst.getNumArguments() == 0) {

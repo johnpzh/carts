@@ -60,7 +60,7 @@ struct StructuredOutputLayoutPlan {
   SmallVector<int64_t, 4> physicalDimToLoopDim;
 };
 
-/// Analyze one `arts_sde.su_iterate` nest and recover the structural facts
+/// Analyze one `sde.su_iterate` nest and recover the structural facts
 /// needed by higher SDE passes. Returns nullopt when the loop is not a
 /// supported perfectly nested memref-based structured loop.
 std::optional<StructuredLoopSummary> analyzeStructuredLoop(SdeSuIterateOp op);

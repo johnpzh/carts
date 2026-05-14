@@ -7,9 +7,9 @@
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: arts_sde.cu_region <parallel> scope(<distributed>) {
-// SDE: arts_sde.su_distribute <blocked> {
-// SDE: arts_sde.su_iterate (%c0) to (%c128) step (%{{.+}}) classification(<elementwise>) {
+// SDE: sde.cu_region <parallel> scope(<distributed>) {
+// SDE: sde.su_distribute <blocked> {
+// SDE: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) classification(<elementwise>) {
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main

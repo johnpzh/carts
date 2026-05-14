@@ -162,7 +162,7 @@ Phases are ordered to minimize attribution noise:
 
 4. **6h** — Add SDE-contract early-exit guards to the 4 ARTS PatternPipeline passes (StencilTilingND, MatmulReduction, LoopReordering, DepTransforms) so they defer when SDE has stamped a contract. Per `docs/plan.md` Phase 3A–3D.
 
-5. **12h** — Decouple semantic detection from structural rewriting in DepTransforms / KernelTransforms. Move wavefront / Jacobi family detection into SDE (extend `SdeStructuredSummaries` or new `SdeWavefrontAnalysis`). Make core passes consumers, not detectors. Enforces Invariant 5.
+5. **12h** — Decouple semantic detection from structural rewriting in DepTransforms / KernelTransforms. Move wavefront / Jacobi family detection into SDE (extend `PatternAnalysis` or add a later SDE wavefront-planning pass). Make core passes consumers, not detectors. Enforces Invariant 5.
 
 Each sub-step must pass regression-guard against ALL samples and benchmarks in single-node and multinode.
 

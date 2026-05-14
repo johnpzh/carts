@@ -3,10 +3,16 @@
 // Verify that structured analysis no longer bails out on stencil bodies that
 // guard boundary points with an scf.if in the innermost loop body.
 
-// CHECK-LABEL: // -----// IR Dump After StructuredSummaries (structured-summaries) //----- //
+// CHECK-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // CHECK: func.func @main
-// CHECK: arts_sde.su_iterate (%c1, %c0) to (%c63, %c64) step (%c1, %c1) classification(<stencil>) {
-// CHECK: } {accessMaxOffsets = [1, 1], accessMinOffsets = [-1, -1], depFamily = #arts_sde.dep_family<stencil_tiling_nd>, ownerDims = [0, 1], spatialDims = [0, 1], writeFootprint = [1, 1]}
+// CHECK: sde.su_iterate (%c1, %c0) to (%c63, %c64) step (%c1, %c1) classification(<stencil>) {
+// CHECK: } {
+// CHECK-SAME: accessMaxOffsets = [1, 1]
+// CHECK-SAME: accessMinOffsets = [-1, -1]
+// CHECK-SAME: ownerDims = [0, 1]
+// CHECK-SAME: pattern = #sde.pattern<stencil_tiling_nd>
+// CHECK-SAME: spatialDims = [0, 1]
+// CHECK-SAME: writeFootprint = [1, 1]
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<64x64xf64>, %B: memref<64x64xf64>) {

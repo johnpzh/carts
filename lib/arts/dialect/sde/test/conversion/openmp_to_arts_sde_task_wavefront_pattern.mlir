@@ -7,21 +7,21 @@
 
 // SDE-LABEL: // -----// IR Dump After ConvertOpenMPToSde (convert-openmp-to-sde) //----- //
 // SDE: func.func @task_wavefront
-// SDE: arts_sde.mu_dep <write> %arg0[
+// SDE: sde.mu_dep <write> %arg0[
 // SDE-SAME: size[
-// SDE: arts_sde.mu_dep <read> %arg0[
+// SDE: sde.mu_dep <read> %arg0[
 // SDE-SAME: size[
-// SDE: arts_sde.mu_dep <read> %arg0[
+// SDE: sde.mu_dep <read> %arg0[
 // SDE-SAME: size[
-// SDE: arts_sde.cu_task deps(
-// SDE: } {depFamily = #arts_sde.dep_family<wavefront_2d>}
+// SDE: sde.cu_task deps(
+// SDE: } {pattern = #sde.pattern<wavefront_2d>}
 
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @task_wavefront
 // ARTS: arts.edt <task> <intranode>
 // ARTS-SAME: depPattern = #arts.dep_pattern<wavefront_2d>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
-// ARTS-NOT: arts_sde.
+// ARTS-NOT: sde.
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @task_wavefront(%A: memref<?xi32>, %N: index) {

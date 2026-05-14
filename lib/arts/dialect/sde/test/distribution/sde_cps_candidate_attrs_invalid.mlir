@@ -2,19 +2,19 @@
 
 // CHECK-COUNT-2: sde.cps candidate plan requires sde.cps_candidate_group_id, sde.cps_candidate_stage_index, sde.cps_candidate_stage_count, and sde.cps_candidate_requires_tokenized_dataflow together
 // CHECK: sde.cps_candidate_requires_tokenized_dataflow must be a unit attr
-// CHECK: sde.cps candidate timestep barrier requires sde.control_token produced after the previous candidate stage
-// CHECK: sde.cps candidate stage pair requires sde.control_token boundary before successor stage
+// CHECK-DAG: sde.cps candidate timestep barrier requires sde.control_token produced after the previous candidate stage
+// CHECK-DAG: sde.cps candidate stage pair requires sde.control_token boundary before successor stage
 
 module {
   func.func @missing_cps_candidate_attrs(%A: memref<16xf64>, %B: memref<16xf64>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c16 = arith.constant 16 : index
-    arts_sde.su_iterate (%c0) to (%c16) step (%c1) {
+    sde.su_iterate (%c0) to (%c16) step (%c1) {
     ^bb0(%i: index):
       %v = memref.load %A[%i] : memref<16xf64>
       memref.store %v, %B[%i] : memref<16xf64>
-      arts_sde.yield
+      sde.yield
     } {cps_candidate_group_id = 0 : i64}
     return
   }
@@ -23,21 +23,21 @@ module {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c16 = arith.constant 16 : index
-    arts_sde.cu_region <parallel> scope(<local>) {
-      arts_sde.su_iterate (%c0) to (%c16) step (%c1) {
+    sde.cu_region <parallel> scope(<local>) {
+      sde.su_iterate (%c0) to (%c16) step (%c1) {
       ^bb0(%i: index):
         %v = memref.load %A[%i] : memref<16xf64>
         memref.store %v, %B[%i] : memref<16xf64>
-        arts_sde.yield
+        sde.yield
       } {cps_candidate_stage_index = 7 : i64}
-      arts_sde.su_barrier
-      arts_sde.su_iterate (%c0) to (%c16) step (%c1) {
+      sde.su_barrier
+      sde.su_iterate (%c0) to (%c16) step (%c1) {
       ^bb0(%i: index):
         %v = memref.load %B[%i] : memref<16xf64>
         memref.store %v, %A[%i] : memref<16xf64>
-        arts_sde.yield
+        sde.yield
       }
-      arts_sde.yield
+      sde.yield
     }
     return
   }
@@ -46,17 +46,17 @@ module {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c16 = arith.constant 16 : index
-    arts_sde.su_iterate (%c0) to (%c16) step (%c1) {
+    sde.su_iterate (%c0) to (%c16) step (%c1) {
     ^bb0(%i: index):
       %v = memref.load %A[%i] : memref<16xf64>
       memref.store %v, %B[%i] : memref<16xf64>
-      arts_sde.yield
-    } {asyncStrategy = #arts_sde.async_strategy<advance_edt>,
+      sde.yield
+    } {asyncStrategy = #sde.async_strategy<advance_edt>,
        cps_candidate_group_id = 0 : i64,
        cps_candidate_requires_tokenized_dataflow = 1 : i64,
        cps_candidate_stage_count = 1 : i64,
        cps_candidate_stage_index = 0 : i64,
-       repetitionStructure = #arts_sde.repetition_structure<full_timestep>}
+       repetitionStructure = #sde.repetition_structure<full_timestep>}
     return
   }
 
@@ -64,39 +64,39 @@ module {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c16 = arith.constant 16 : index
-    arts_sde.cu_region <parallel> scope(<local>) {
-      arts_sde.su_iterate (%c0) to (%c16) step (%c1) {
+    sde.cu_region <parallel> scope(<local>) {
+      sde.su_iterate (%c0) to (%c16) step (%c1) {
       ^bb0(%i: index):
         %v = memref.load %A[%i] : memref<16xf64>
         memref.store %v, %B[%i] : memref<16xf64>
-        arts_sde.yield
-      } {asyncStrategy = #arts_sde.async_strategy<advance_edt>,
+        sde.yield
+      } {asyncStrategy = #sde.async_strategy<advance_edt>,
          cps_candidate_group_id = 42 : i64,
          cps_candidate_requires_tokenized_dataflow,
          cps_candidate_stage_count = 2 : i64,
          cps_candidate_stage_index = 0 : i64,
-         depFamily = #arts_sde.dep_family<uniform>,
+         pattern = #sde.pattern<uniform>,
          physicalBlockShape = [16],
          physicalOwnerDims = [0],
-         repetitionStructure = #arts_sde.repetition_structure<full_timestep>,
-         structuredClassification = #arts_sde.structured_classification<elementwise>}
-      arts_sde.su_barrier
-      arts_sde.su_iterate (%c0) to (%c16) step (%c1) {
+         repetitionStructure = #sde.repetition_structure<full_timestep>,
+         structuredClassification = #sde.structured_classification<elementwise>}
+      sde.su_barrier
+      sde.su_iterate (%c0) to (%c16) step (%c1) {
       ^bb0(%i: index):
         %v = memref.load %B[%i] : memref<16xf64>
         memref.store %v, %A[%i] : memref<16xf64>
-        arts_sde.yield
-      } {asyncStrategy = #arts_sde.async_strategy<advance_edt>,
+        sde.yield
+      } {asyncStrategy = #sde.async_strategy<advance_edt>,
          cps_candidate_group_id = 42 : i64,
          cps_candidate_requires_tokenized_dataflow,
          cps_candidate_stage_count = 2 : i64,
          cps_candidate_stage_index = 1 : i64,
-         depFamily = #arts_sde.dep_family<uniform>,
+         pattern = #sde.pattern<uniform>,
          physicalBlockShape = [16],
          physicalOwnerDims = [0],
-         repetitionStructure = #arts_sde.repetition_structure<full_timestep>,
-         structuredClassification = #arts_sde.structured_classification<elementwise>}
-      arts_sde.yield
+         repetitionStructure = #sde.repetition_structure<full_timestep>,
+         structuredClassification = #sde.structured_classification<elementwise>}
+      sde.yield
     }
     return
   }
@@ -106,28 +106,28 @@ module {
     %c1 = arith.constant 1 : index
     %c15 = arith.constant 15 : index
     %c16 = arith.constant 16 : index
-    arts_sde.su_iterate (%c0) to (%c15) step (%c1) {
+    sde.su_iterate (%c0) to (%c15) step (%c1) {
     ^bb0(%i: index):
       %v = memref.load %A[%i] : memref<16xf64>
       memref.store %v, %B[%i] : memref<16xf64>
-      arts_sde.yield
-    } {asyncStrategy = #arts_sde.async_strategy<advance_edt>,
+      sde.yield
+    } {asyncStrategy = #sde.async_strategy<advance_edt>,
        cps_candidate_group_id = 43 : i64,
        cps_candidate_requires_tokenized_dataflow,
        cps_candidate_stage_count = 2 : i64,
        cps_candidate_stage_index = 0 : i64,
-       repetitionStructure = #arts_sde.repetition_structure<full_timestep>}
-    arts_sde.su_iterate (%c0) to (%c16) step (%c1) {
+       repetitionStructure = #sde.repetition_structure<full_timestep>}
+    sde.su_iterate (%c0) to (%c16) step (%c1) {
     ^bb0(%i: index):
       %v = memref.load %B[%i] : memref<16xf64>
       memref.store %v, %A[%i] : memref<16xf64>
-      arts_sde.yield
-    } {asyncStrategy = #arts_sde.async_strategy<advance_edt>,
+      sde.yield
+    } {asyncStrategy = #sde.async_strategy<advance_edt>,
        cps_candidate_group_id = 43 : i64,
        cps_candidate_requires_tokenized_dataflow,
        cps_candidate_stage_count = 2 : i64,
        cps_candidate_stage_index = 1 : i64,
-       repetitionStructure = #arts_sde.repetition_structure<full_timestep>}
+       repetitionStructure = #sde.repetition_structure<full_timestep>}
     return
   }
 }

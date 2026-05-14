@@ -151,7 +151,7 @@ validate SDE contracts rather than redefine semantic pattern family.
 
 ### 4.1 SDE-backed source of truth
 
-- SDE structured summaries classify work families, access windows, reductions,
+- SDE `PatternAnalysis` classifies work families, access windows, reductions,
   and distribution intent while source semantics are still visible.
 - `DistributionPlanning` consumes those SDE facts and stamps the contract that
   Core materialization uses.

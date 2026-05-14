@@ -1,9 +1,9 @@
 // RFC raise-memref-to-tensor step-2 lowering tests.
 //
 // ConvertSdeToArts must turn tensor-path SDE ops into ARTS core:
-//   - arts_sde.mu_data     : tensor<...>        -> arts.db_alloc
-//   - arts_sde.mu_token    <mode>                -> arts.db_acquire <mode>
-//   - arts_sde.cu_codelet (tokens...) -> (...)    -> arts.edt
+//   - sde.mu_data     : tensor<...>        -> arts.db_alloc
+//   - sde.mu_token    <mode>                -> arts.db_acquire <mode>
+//   - sde.cu_codelet (tokens...) -> (...)    -> arts.edt
 //
 // We run the full `openmp-to-arts` stage with `--mlir-print-ir-after-all`
 // and scope FileCheck to the ConvertSdeToArts dump window via `awk` so we
@@ -31,18 +31,18 @@ module {
   // CHECK: arts.edt <task> <intranode>
   // CHECK: memref.store
   func.func @codelet_write_only() -> tensor<8xi32> {
-    %d = arts_sde.mu_data shared : tensor<8xi32>
+    %d = sde.mu_data shared : tensor<8xi32>
 
-    %token = arts_sde.mu_token <write> %d
-      : tensor<8xi32> -> !arts_sde.token<tensor<8xi32>>
+    %token = sde.mu_token <write> %d
+      : tensor<8xi32> -> !sde.token<tensor<8xi32>>
 
-    %r = arts_sde.cu_codelet (%token : !arts_sde.token<tensor<8xi32>>)
+    %r = sde.cu_codelet (%token : !sde.token<tensor<8xi32>>)
         -> (tensor<8xi32>) {
     ^bb0(%arg: tensor<8xi32>):
       %c0 = arith.constant 0 : index
       %c42 = arith.constant 42 : i32
       %updated = tensor.insert %c42 into %arg[%c0] : tensor<8xi32>
-      arts_sde.yield %updated : tensor<8xi32>
+      sde.yield %updated : tensor<8xi32>
     }
 
     func.return %r : tensor<8xi32>
@@ -60,22 +60,22 @@ module {
   // CHECK: arts.edt <task> <intranode>
   // CHECK: memref.store
   func.func @codelet_read_write() -> tensor<8xi32> {
-    %src = arts_sde.mu_data shared : tensor<8xi32>
-    %dst = arts_sde.mu_data shared : tensor<8xi32>
+    %src = sde.mu_data shared : tensor<8xi32>
+    %dst = sde.mu_data shared : tensor<8xi32>
 
-    %tsrc = arts_sde.mu_token <read> %src
-      : tensor<8xi32> -> !arts_sde.token<tensor<8xi32>>
-    %tdst = arts_sde.mu_token <write> %dst
-      : tensor<8xi32> -> !arts_sde.token<tensor<8xi32>>
+    %tsrc = sde.mu_token <read> %src
+      : tensor<8xi32> -> !sde.token<tensor<8xi32>>
+    %tdst = sde.mu_token <write> %dst
+      : tensor<8xi32> -> !sde.token<tensor<8xi32>>
 
-    %r = arts_sde.cu_codelet (%tsrc, %tdst
-          : !arts_sde.token<tensor<8xi32>>,
-            !arts_sde.token<tensor<8xi32>>) -> (tensor<8xi32>) {
+    %r = sde.cu_codelet (%tsrc, %tdst
+          : !sde.token<tensor<8xi32>>,
+            !sde.token<tensor<8xi32>>) -> (tensor<8xi32>) {
     ^bb0(%ain: tensor<8xi32>, %aout: tensor<8xi32>):
       %c0 = arith.constant 0 : index
       %v = tensor.extract %ain[%c0] : tensor<8xi32>
       %updated = tensor.insert %v into %aout[%c0] : tensor<8xi32>
-      arts_sde.yield %updated : tensor<8xi32>
+      sde.yield %updated : tensor<8xi32>
     }
     func.return %r : tensor<8xi32>
   }
@@ -90,21 +90,21 @@ module {
   // CHECK: arts.db_alloc
   // CHECK: arts.db_acquire[<in>]
   // CHECK: arts.edt <task> <intranode>
-  // CHECK-NOT: arts_sde.
+  // CHECK-NOT: sde.
   func.func @codelet_read_only() {
-    %d = arts_sde.mu_data shared : tensor<8xi32>
+    %d = sde.mu_data shared : tensor<8xi32>
 
-    %t = arts_sde.mu_token <read> %d
-      : tensor<8xi32> -> !arts_sde.token<tensor<8xi32>>
+    %t = sde.mu_token <read> %d
+      : tensor<8xi32> -> !sde.token<tensor<8xi32>>
 
-    arts_sde.cu_codelet (%t : !arts_sde.token<tensor<8xi32>>) {
+    sde.cu_codelet (%t : !sde.token<tensor<8xi32>>) {
     ^bb0(%arg: tensor<8xi32>):
       // Observable use so the codelet body isn't DCE'd to empty.
       %zero = arith.constant 0 : index
       %v = tensor.extract %arg[%zero] : tensor<8xi32>
       %buf = memref.alloca() : memref<1xi32>
       memref.store %v, %buf[%zero] : memref<1xi32>
-      arts_sde.yield
+      sde.yield
     }
     func.return
   }
@@ -120,19 +120,19 @@ module {
   // CHECK: arts.edt <task> <intranode>
   // CHECK: memref.store
   func.func @codelet_readwrite() -> tensor<8xi32> {
-    %d = arts_sde.mu_data shared : tensor<8xi32>
+    %d = sde.mu_data shared : tensor<8xi32>
 
-    %t = arts_sde.mu_token <readwrite> %d
-      : tensor<8xi32> -> !arts_sde.token<tensor<8xi32>>
+    %t = sde.mu_token <readwrite> %d
+      : tensor<8xi32> -> !sde.token<tensor<8xi32>>
 
-    %r = arts_sde.cu_codelet (%t : !arts_sde.token<tensor<8xi32>>)
+    %r = sde.cu_codelet (%t : !sde.token<tensor<8xi32>>)
         -> (tensor<8xi32>) {
     ^bb0(%arg: tensor<8xi32>):
       %c0 = arith.constant 0 : index
       %v = tensor.extract %arg[%c0] : tensor<8xi32>
       %doubled = arith.addi %v, %v : i32
       %updated = tensor.insert %doubled into %arg[%c0] : tensor<8xi32>
-      arts_sde.yield %updated : tensor<8xi32>
+      sde.yield %updated : tensor<8xi32>
     }
     func.return %r : tensor<8xi32>
   }
@@ -150,19 +150,19 @@ module {
     %c0 = arith.constant 0 : index
     %c512 = arith.constant 512 : index
 
-    %d = arts_sde.mu_data shared : tensor<1024xf32>
+    %d = sde.mu_data shared : tensor<1024xf32>
 
-    %t = arts_sde.mu_token <read> %d [%c0] size [%c512]
-      : tensor<1024xf32> -> !arts_sde.token<tensor<512xf32>>
+    %t = sde.mu_token <read> %d [%c0] size [%c512]
+      : tensor<1024xf32> -> !sde.token<tensor<512xf32>>
 
-    arts_sde.cu_codelet (%t : !arts_sde.token<tensor<512xf32>>) {
+    sde.cu_codelet (%t : !sde.token<tensor<512xf32>>) {
     ^bb0(%arg: tensor<512xf32>):
       // Observable use so the codelet body isn't DCE'd to empty.
       %zero = arith.constant 0 : index
       %v = tensor.extract %arg[%zero] : tensor<512xf32>
       %buf = memref.alloca() : memref<1xf32>
       memref.store %v, %buf[%zero] : memref<1xf32>
-      arts_sde.yield
+      sde.yield
     }
     func.return
   }

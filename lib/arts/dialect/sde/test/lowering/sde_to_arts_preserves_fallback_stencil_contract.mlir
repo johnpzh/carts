@@ -42,8 +42,8 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
   func.func @main(%A: memref<16x16xf64>, %B: memref<16x16xf64>) {
     %c1 = arith.constant 1 : index
     %c15 = arith.constant 15 : index
-    arts_sde.cu_region <parallel> scope(<local>) {
-      arts_sde.su_iterate (%c1) to (%c15) step (%c1) classification(<stencil>) {
+    sde.cu_region <parallel> scope(<local>) {
+      sde.su_iterate (%c1) to (%c15) step (%c1) classification(<stencil>) {
       ^bb0(%i: index):
         scf.for %j = %c1 to %c15 step %c1 {
           %im1 = arith.subi %i, %c1 : index
@@ -61,9 +61,9 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
           %sum = arith.addf %s2, %c : f64
           memref.store %sum, %B[%i, %j] : memref<16x16xf64>
         }
-        arts_sde.yield
-      } {accessMaxOffsets = [1, 1], accessMinOffsets = [-1, -1], depFamily = #arts_sde.dep_family<stencil_tiling_nd>, iterationTopology = #arts_sde.iteration_topology<owner_strip>, ownerDims = [0, 1], physicalBlockShape = [2, 16], physicalHaloShape = [1], physicalOwnerDims = [0], spatialDims = [0, 1], writeFootprint = [1, 1]}
-      arts_sde.yield
+        sde.yield
+      } {accessMaxOffsets = [1, 1], accessMinOffsets = [-1, -1], pattern = #sde.pattern<stencil_tiling_nd>, iterationTopology = #sde.iteration_topology<owner_strip>, ownerDims = [0, 1], physicalBlockShape = [2, 16], physicalHaloShape = [1], physicalOwnerDims = [0], spatialDims = [0, 1], writeFootprint = [1, 1]}
+      sde.yield
     }
     return
   }

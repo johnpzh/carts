@@ -8,15 +8,15 @@
 
 // OPENMP-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
 // OPENMP: func.func @main
-// OPENMP: arts_sde.cu_region <parallel> scope(<local>) {
-// OPENMP: arts_sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
-// OPENMP: arts_sde.cu_region <parallel> scope(<local>) {
+// OPENMP: sde.cu_region <parallel> {
+// OPENMP: sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
+// OPENMP: sde.cu_region <parallel> {
 // Scalar body preserved (dual-rep):
 // OPENMP: scf.for %[[J:.*]] = %c1 to %c63 step %c1
 // OPENMP: memref.load %arg0[%{{.*}}, %[[J]]] : memref<64x64xf64>
 // OPENMP: memref.store %{{.*}}, %arg1[%{{.*}}, %[[J]]] : memref<64x64xf64>
 // Shifted-view carrier alongside:
-// OPENMP: arts_sde.mu_memref_to_tensor %arg0 : memref<64x64xf64>
+// OPENMP: sde.mu_memref_to_tensor %arg0 : memref<64x64xf64>
 // OPENMP: tensor.extract_slice
 // OPENMP: linalg.generic
 // OPENMP-SAME: iterator_types = ["parallel", "parallel"]
@@ -26,8 +26,8 @@
 // OPENMP: arts.epoch
 // OPENMP-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // OPENMP-SAME: planOwnerDims = [0]
-// OPENMP-SAME: planPhysicalBlockShape = [4, 64]
-// OPENMP-SAME: stencil_block_shape = [4, 64]
+// OPENMP-SAME: planPhysicalBlockShape = [8, 64]
+// OPENMP-SAME: stencil_block_shape = [8, 64]
 // OPENMP-SAME: stencil_max_offsets = [1, 1]
 // OPENMP-SAME: stencil_min_offsets = [-1, -1]
 

@@ -9,18 +9,18 @@ module {
   // CHECK-LABEL: func.func @readonly_codelet
   // CHECK-SAME: %[[T:.*]]: tensor<8xi32>
   func.func @readonly_codelet(%t: tensor<8xi32>) {
-    // CHECK: arts_sde.mu_token <read> %[[T]]
-    %token = arts_sde.mu_token <read> %t
-      : tensor<8xi32> -> !arts_sde.token<tensor<8xi32>>
+    // CHECK: sde.mu_token <read> %[[T]]
+    %token = sde.mu_token <read> %t
+      : tensor<8xi32> -> !sde.token<tensor<8xi32>>
 
-    // CHECK: arts_sde.cu_codelet
-    arts_sde.cu_codelet (%token : !arts_sde.token<tensor<8xi32>>) {
+    // CHECK: sde.cu_codelet
+    sde.cu_codelet (%token : !sde.token<tensor<8xi32>>) {
     ^bb0(%arg: tensor<8xi32>):
       %c0 = arith.constant 0 : index
       %val = tensor.extract %arg[%c0] : tensor<8xi32>
       %buf = memref.alloca() : memref<1xi32>
       memref.store %val, %buf[%c0] : memref<1xi32>
-      arts_sde.yield
+      sde.yield
     }
 
     func.return
@@ -30,12 +30,12 @@ module {
   // CHECK-LABEL: func.func @readwrite_codelet
   // CHECK-SAME: %[[T2:.*]]: tensor<8xi32>
   func.func @readwrite_codelet(%t: tensor<8xi32>) -> tensor<8xi32> {
-    // CHECK: arts_sde.mu_token <readwrite> %[[T2]]
-    %token = arts_sde.mu_token <readwrite> %t
-      : tensor<8xi32> -> !arts_sde.token<tensor<8xi32>>
+    // CHECK: sde.mu_token <readwrite> %[[T2]]
+    %token = sde.mu_token <readwrite> %t
+      : tensor<8xi32> -> !sde.token<tensor<8xi32>>
 
-    // CHECK: arts_sde.cu_codelet
-    %r = arts_sde.cu_codelet (%token : !arts_sde.token<tensor<8xi32>>)
+    // CHECK: sde.cu_codelet
+    %r = sde.cu_codelet (%token : !sde.token<tensor<8xi32>>)
         -> (tensor<8xi32>) {
     ^bb0(%arg: tensor<8xi32>):
       %c0 = arith.constant 0 : index
@@ -43,7 +43,7 @@ module {
       %c42 = arith.constant 42 : i32
       %sum = arith.addi %val, %c42 : i32
       %out = tensor.insert %sum into %arg[%c0] : tensor<8xi32>
-      arts_sde.yield %out : tensor<8xi32>
+      sde.yield %out : tensor<8xi32>
     }
 
     func.return %r : tensor<8xi32>

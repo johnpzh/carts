@@ -32,6 +32,57 @@ static SmallVector<Operation *> getBodyOps(Block &body) {
   return ops;
 }
 
+static bool isLocalScratchMemref(Value value, Block &scope) {
+  Value root = ValueAnalysis::stripMemrefViewOps(value);
+  if (!root)
+    return false;
+
+  Operation *def = root.getDefiningOp();
+  return def && def->getBlock() == &scope;
+}
+
+static bool isUsedInside(Operation *ancestor, Value value) {
+  if (!ancestor || !value)
+    return false;
+  for (OpOperand &use : value.getUses())
+    if (ancestor->isAncestor(use.getOwner()))
+      return true;
+  return false;
+}
+
+static bool isLocalScratchSideEffectUsedByLoop(Operation *op, Block &scope,
+                                               scf::ForOp loop) {
+  if (!op)
+    return false;
+
+  if (isa<memref::AllocOp, memref::AllocaOp>(op)) {
+    for (Value result : op->getResults()) {
+      if (!isLocalScratchMemref(result, scope))
+        return false;
+      if (!isUsedInside(loop.getOperation(), result))
+        return false;
+    }
+    return true;
+  }
+
+  auto isLoopScratchAccess = [&](Value memref) {
+    Value root = ValueAnalysis::stripMemrefViewOps(memref);
+    return isLocalScratchMemref(root, scope) &&
+           isUsedInside(loop.getOperation(), root);
+  };
+
+  if (auto loadOp = dyn_cast<memref::LoadOp>(op))
+    return isLoopScratchAccess(loadOp.getMemref());
+
+  if (auto storeOp = dyn_cast<memref::StoreOp>(op))
+    return isLoopScratchAccess(storeOp.getMemref());
+
+  if (auto deallocOp = dyn_cast<memref::DeallocOp>(op))
+    return isLoopScratchAccess(deallocOp.getMemref());
+
+  return false;
+}
+
 static bool collectInner(Block &body, LoopNestInfo &info) {
   SmallVector<Operation *> ops = getBodyOps(body);
 
@@ -44,7 +95,7 @@ static bool collectInner(Block &body, LoopNestInfo &info) {
 
   if (ops.size() > 1) {
     scf::ForOp innerFor = nullptr;
-    bool hasSideEffectsAroundInnerLoop = false;
+    SmallVector<Operation *> sideEffectsAroundInnerLoop;
     for (Operation *op : ops) {
       if (auto nestedFor = dyn_cast<scf::ForOp>(op)) {
         if (innerFor) {
@@ -54,12 +105,17 @@ static bool collectInner(Block &body, LoopNestInfo &info) {
         innerFor = nestedFor;
         continue;
       }
-      if (!isMemoryEffectFree(op)) {
-        hasSideEffectsAroundInnerLoop = true;
-        continue;
-      }
+      if (!isMemoryEffectFree(op))
+        sideEffectsAroundInnerLoop.push_back(op);
     }
     if (innerFor) {
+      bool hasSideEffectsAroundInnerLoop = false;
+      for (Operation *op : sideEffectsAroundInnerLoop) {
+        if (!isLocalScratchSideEffectUsedByLoop(op, body, innerFor)) {
+          hasSideEffectsAroundInnerLoop = true;
+          break;
+        }
+      }
       info.ivs.push_back(innerFor.getInductionVar());
       if (hasSideEffectsAroundInnerLoop) {
         info.innermostBody = &body;

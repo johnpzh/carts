@@ -6,12 +6,12 @@
 
 // CHECK-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
 // CHECK: func.func @main
-// CHECK: arts_sde.su_iterate (%c1) to (%c127) step (%c1) classification(<stencil>) {
+// CHECK: sde.su_iterate (%c1) to (%c127) step (%c1) classification(<stencil>) {
 // Scalar body preserved:
 // CHECK: memref.load
 // CHECK: memref.store
 // Carrier created with shifted extract_slice views:
-// CHECK: arts_sde.mu_memref_to_tensor %arg0 : memref<128xf64>
+// CHECK: sde.mu_memref_to_tensor %arg0 : memref<128xf64>
 // CHECK: tensor.extract_slice
 // CHECK: tensor.extract_slice
 // CHECK: tensor.extract_slice

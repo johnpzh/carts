@@ -6,8 +6,8 @@ module {
   func.func @missing_cps_stage_attrs() {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
-    arts_sde.su_iterate (%c0) to (%c1) step (%c1) {
-      arts_sde.yield
+    sde.su_iterate (%c0) to (%c1) step (%c1) {
+      sde.yield
     } {cps_group_id = 0 : i64}
     return
   }

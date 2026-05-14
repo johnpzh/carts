@@ -8,14 +8,14 @@ module {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c16 = arith.constant 16 : index
-    %result = arts_sde.su_iterate (%c0) to (%c16) step (%c1) iter_args(%arg0 = %A : memref<16xf64>) -> (memref<16xf64>) {
+    %result = sde.su_iterate (%c0) to (%c16) step (%c1) iter_args(%arg0 = %A : memref<16xf64>) -> (memref<16xf64>) {
     ^bb0(%i: index, %carry: memref<16xf64>):
-      arts_sde.yield %carry : memref<16xf64>
-    } {asyncStrategy = #arts_sde.async_strategy<cps_chain>,
+      sde.yield %carry : memref<16xf64>
+    } {asyncStrategy = #sde.async_strategy<cps_chain>,
        cps_group_id = 0 : i64,
        cps_stage_count = 1 : i64,
        cps_stage_index = 0 : i64,
-       repetitionStructure = #arts_sde.repetition_structure<full_timestep>}
+       repetitionStructure = #sde.repetition_structure<full_timestep>}
     return
   }
 }

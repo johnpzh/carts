@@ -17,14 +17,14 @@
 ///     }
 ///
 ///   After:
-///     arts_sde.cu_region parallel {
-///       arts_sde.su_iterate (%c0) to (%N) step (%c1)
+///     sde.cu_region parallel {
+///       sde.su_iterate (%c0) to (%N) step (%c1)
 ///           schedule(<static>, %c4)
-///           reduction [#arts_sde<reduction_kind<add>>] (%sum : f64) {
+///           reduction [#sde<reduction_kind<add>>] (%sum : f64) {
 ///         ...
-///         arts_sde.yield
+///         sde.yield
 ///       }
-///       arts_sde.yield
+///       sde.yield
 ///     }
 ///==========================================================================///
 
@@ -481,7 +481,7 @@ struct WsloopToSdePattern : public OpRewritePattern<omp::WsloopOp> {
         reductionKinds.empty() ? nullptr
                                : rewriter.getArrayAttr(reductionKinds),
         /*reductionStrategy=*/nullptr, /*structuredClassification=*/nullptr,
-        /*depFamily=*/nullptr,
+        /*pattern=*/nullptr,
         /*accessMinOffsets=*/nullptr, /*accessMaxOffsets=*/nullptr,
         /*ownerDims=*/nullptr, /*spatialDims=*/nullptr,
         /*writeFootprint=*/nullptr, /*physicalOwnerDims=*/nullptr,
@@ -602,12 +602,12 @@ struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
       }
     }
 
-    sde::SdeDepFamilyAttr depFamily;
+    sde::SdePatternAttr pattern;
     if (isWavefrontTaskDependPattern(op.getOperation(), dependSpecs))
-      depFamily =
-          sde::SdeDepFamilyAttr::get(ctx, sde::SdeDepFamily::wavefront_2d);
+      pattern =
+          sde::SdePatternAttr::get(ctx, sde::SdePattern::wavefront_2d);
 
-    auto cuTask = sde::SdeCuTaskOp::create(rewriter, loc, deps, depFamily);
+    auto cuTask = sde::SdeCuTaskOp::create(rewriter, loc, deps, pattern);
     Block &blk = sde::ensureBlock(cuTask.getBody());
 
     Block &old = op.getRegion().front();
@@ -643,7 +643,7 @@ struct TaskloopToSdePattern : public OpRewritePattern<omp::TaskloopOp> {
         /*reductionAccumulators=*/ValueRange{},
         /*reductionKinds=*/nullptr,
         /*reductionStrategy=*/nullptr, /*structuredClassification=*/nullptr,
-        /*depFamily=*/nullptr,
+        /*pattern=*/nullptr,
         /*accessMinOffsets=*/nullptr, /*accessMaxOffsets=*/nullptr,
         /*ownerDims=*/nullptr, /*spatialDims=*/nullptr,
         /*writeFootprint=*/nullptr, /*physicalOwnerDims=*/nullptr,
@@ -716,7 +716,7 @@ struct SCFParallelToSdePattern : public OpRewritePattern<scf::ParallelOp> {
         /*reductionAccumulators=*/ValueRange{},
         /*reductionKinds=*/nullptr,
         /*reductionStrategy=*/nullptr, /*structuredClassification=*/nullptr,
-        /*depFamily=*/nullptr,
+        /*pattern=*/nullptr,
         /*accessMinOffsets=*/nullptr, /*accessMaxOffsets=*/nullptr,
         /*ownerDims=*/nullptr, /*spatialDims=*/nullptr,
         /*writeFootprint=*/nullptr, /*physicalOwnerDims=*/nullptr,

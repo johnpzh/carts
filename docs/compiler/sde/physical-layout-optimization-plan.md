@@ -6,7 +6,7 @@ The large/64 benchmark sweep is correctness-clean, but most benchmarks remain
 slower than OpenMP because task shape and physical DB layout are still missing
 or too coarse when control reaches Core. The fix is to move layout, tiling,
 dependency-window, and phase-shape decisions into SDE while OpenMP semantics,
-structured summaries, tensor carriers, reductions, and barriers are still
+SDE pattern analysis, tensor carriers, reductions, and barriers are still
 available.
 
 Layer limits:
@@ -20,22 +20,26 @@ Layer limits:
 
 ## Shared Contract
 
-Every optimization should produce or refine `arts.plan.*` before
+Every optimization should produce or refine the SDE plan before
 `ConvertSdeToArts`:
 
-- `arts.plan.kernel_family`
-- `arts.plan.owner_dims`
-- `arts.plan.physical_block_shape`
-- `arts.plan.logical_worker_slice`
-- `arts.plan.halo_shape`
-- `arts.plan.iteration_topology`
-- `arts.plan.repetition_structure`
-- `arts.plan.async_strategy`
-- `arts.plan.cost.*`
+- `pattern = #sde.pattern<...>`
+- `ownerDims` and `spatialDims`
+- `physicalOwnerDims`
+- `physicalBlockShape`
+- `logicalWorkerSlice`
+- `physicalHaloShape`
+- `iterationTopology`
+- `repetitionStructure`
+- `asyncStrategy`
+- reduction and CPS plan attributes
 
-The plan belongs on the SDE scheduling unit that owns the proof. `CreateDbs`
-must create the chosen physical DB layout directly; late ARTS heuristics may
-refine mechanics but must not invent partition policy.
+The plan belongs on the SDE scheduling unit that owns the proof.
+`PatternAnalysis` and later SDE transforms consume the plan directly inside SDE.
+`ConvertSdeToArts` lowers the final plan into Core `arts.plan.*` and dependency
+contracts at the boundary; `CreateDbs` must create the chosen physical DB layout
+directly from that lowered contract. Late ARTS heuristics may refine mechanics
+but must not invent partition policy.
 
 ## Optimization Tracks
 

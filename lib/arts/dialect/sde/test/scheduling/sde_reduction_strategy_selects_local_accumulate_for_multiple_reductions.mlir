@@ -6,9 +6,9 @@
 
 // CHECK-LABEL: // -----// IR Dump After ReductionStrategy (reduction-strategy) //----- //
 // CHECK: func.func @main
-// CHECK: arts_sde.cu_region <parallel> scope(<local>) {
-// CHECK: arts_sde.su_iterate (%c0) to (%c16) step (%c1)
-// CHECK-SAME: #arts_sde.reduction_kind<add>, #arts_sde.reduction_kind<mul>
+// CHECK: sde.cu_region <parallel> scope(<local>) {
+// CHECK: sde.su_iterate (%c0) to (%c16) step (%c1)
+// CHECK-SAME: #sde.reduction_kind<add>, #sde.reduction_kind<mul>
 // CHECK-SAME: reduction_strategy(<local_accumulate>)
 // CHECK-NOT: arts.for
 // CHECK: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
@@ -27,8 +27,8 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %c1_i32 = arith.constant 1 : i32
     memref.store %c0_i32, %sum[%c0] : memref<1xi32>
     memref.store %c1_i32, %prod[%c0] : memref<1xi32>
-    arts_sde.cu_region <parallel> scope(<local>) {
-      "arts_sde.su_iterate"(%c0, %c16, %c1, %sum_cast, %prod_cast) ({
+    sde.cu_region <parallel> scope(<local>) {
+      "sde.su_iterate"(%c0, %c16, %c1, %sum_cast, %prod_cast) ({
       ^bb0(%iv: index):
         scf.for %j = %c0 to %c4 step %c1 {
           %lhs = memref.load %A[%iv, %j] : memref<16x4xi32>
@@ -40,9 +40,9 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
           %next1 = arith.muli %acc1, %rhs : i32
           memref.store %next1, %prod_cast[%c0] : memref<?xi32>
         }
-        "arts_sde.yield"() : () -> ()
-      }) {operandSegmentSizes = array<i32: 1, 1, 1, 0, 2>, reductionKinds = [#arts_sde.reduction_kind<add>, #arts_sde.reduction_kind<mul>]} : (index, index, index, memref<?xi32>, memref<?xi32>) -> ()
-      arts_sde.yield
+        "sde.yield"() : () -> ()
+      }) {operandSegmentSizes = array<i32: 1, 1, 1, 0, 2>, reductionKinds = [#sde.reduction_kind<add>, #sde.reduction_kind<mul>]} : (index, index, index, memref<?xi32>, memref<?xi32>) -> ()
+      sde.yield
     }
     return
   }

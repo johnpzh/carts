@@ -5,7 +5,7 @@
 // loops with their original iteration order must pass through unchanged.
 
 // CHECK-LABEL: // -----// IR Dump After LoopInterchange (loop-interchange) //----- //
-// CHECK: arts_sde.su_iterate
+// CHECK: sde.su_iterate
 // CHECK-SAME: classification(<stencil>)
 // The inner scf.for loop must remain in the original order:
 // CHECK: scf.for %[[J:.+]] =
@@ -18,7 +18,7 @@
 // Result-bearing stencil loops must also remain untouched. The pass cannot
 // erase and rebuild loops whose results are used by surrounding tensor state.
 // CHECK: func.func @result_bearing_stencil
-// CHECK: arts_sde.su_iterate
+// CHECK: sde.su_iterate
 // CHECK: memref.store
 // CHECK: scf.for {{.*}} iter_args
 // CHECK: scf.for {{.*}} iter_args
@@ -26,7 +26,7 @@
 // must also remain untouched because the rewrite cannot replace the outer loop
 // result.
 // CHECK: func.func @result_bearing_promoted_accumulator
-// CHECK: arts_sde.su_iterate
+// CHECK: sde.su_iterate
 // CHECK: scf.for {{.*}} iter_args
 // CHECK: scf.for {{.*}} iter_args
 
@@ -70,8 +70,8 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %zero = arith.constant 0.0 : f64
     %init = tensor.insert %zero into %empty[%c0] : tensor<2xf64>
     %init_1 = tensor.insert %zero into %init[%c1] : tensor<2xf64>
-    %result = arts_sde.cu_region <parallel> iter_args(%arg0 = %init_1 : tensor<2xf64>) -> (tensor<2xf64>) {
-      %iter = arts_sde.su_iterate (%c1) to (%c7) step (%c1) classification(<stencil>) iter_args(%arg2 = %arg0 : tensor<2xf64>) -> (tensor<2xf64>) {
+    %result = sde.cu_region <parallel> iter_args(%arg0 = %init_1 : tensor<2xf64>) -> (tensor<2xf64>) {
+      %iter = sde.su_iterate (%c1) to (%c7) step (%c1) classification(<stencil>) iter_args(%arg2 = %arg0 : tensor<2xf64>) -> (tensor<2xf64>) {
       ^bb0(%i: index, %arg3: tensor<2xf64>):
         memref.store %zero, %scratch[] : memref<f64>
         %j_result = scf.for %j = %c1 to %c7 step %c1 iter_args(%j_arg = %arg3) -> (tensor<2xf64>) {
@@ -83,9 +83,9 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
           }
           scf.yield %k_result : tensor<2xf64>
         }
-        arts_sde.yield %j_result : tensor<2xf64>
+        sde.yield %j_result : tensor<2xf64>
       } {accessMaxOffsets = [1, 2, 1], accessMinOffsets = [-1, -2, -1], ownerDims = [0, 1, 2], spatialDims = [0, 1, 2], writeFootprint = [1, 1, 1]}
-      arts_sde.yield %iter : tensor<2xf64>
+      sde.yield %iter : tensor<2xf64>
     }
     %out = tensor.extract %result[%c0] : tensor<2xf64>
     memref.store %out, %A[%c0, %c0, %c0] : memref<8x8x8xf64>
@@ -99,8 +99,8 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %zero = arith.constant 0.0 : f64
     %empty = tensor.empty() : tensor<1xf64>
     %init = tensor.insert %zero into %empty[%c0] : tensor<1xf64>
-    %result = arts_sde.cu_region <parallel> iter_args(%arg0 = %init : tensor<1xf64>) -> (tensor<1xf64>) {
-      %iter = arts_sde.su_iterate (%c0) to (%c8) step (%c1) classification(<matmul>) iter_args(%arg2 = %arg0 : tensor<1xf64>) -> (tensor<1xf64>) {
+    %result = sde.cu_region <parallel> iter_args(%arg0 = %init : tensor<1xf64>) -> (tensor<1xf64>) {
+      %iter = sde.su_iterate (%c0) to (%c8) step (%c1) classification(<matmul>) iter_args(%arg2 = %arg0 : tensor<1xf64>) -> (tensor<1xf64>) {
       ^bb0(%i: index, %arg3: tensor<1xf64>):
         %j_result = scf.for %j = %c0 to %c8 step %c1 iter_args(%j_arg = %arg3) -> (tensor<1xf64>) {
           %sum = scf.for %k = %c0 to %c8 step %c1 iter_args(%acc = %zero) -> (f64) {
@@ -114,9 +114,9 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
           memref.store %sum, %C[%i, %j] : memref<8x8xf64>
           scf.yield %next_state : tensor<1xf64>
         }
-        arts_sde.yield %j_result : tensor<1xf64>
+        sde.yield %j_result : tensor<1xf64>
       }
-      arts_sde.yield %iter : tensor<1xf64>
+      sde.yield %iter : tensor<1xf64>
     }
     %out = tensor.extract %result[%c0] : tensor<1xf64>
     memref.store %out, %C[%c0, %c0] : memref<8x8xf64>

@@ -2,15 +2,15 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_64t.cfg --start-from openmp-to-arts --pipeline create-dbs | %FileCheck %s --check-prefix=DB
 
 // Imperfect local stencil/update loops can be parallelized by Core even when
-// StructuredSummaries cannot classify the full nest. SDE still owns the
+// PatternAnalysis cannot classify the full nest. SDE still owns the
 // physical DB layout proof: the local owner IV maps to the trailing physical
 // output dimension, and all output self-reads stay within that owner slice.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: arts_sde.su_iterate (%c2) to (%c62) step (%c1) schedule(<static>) {
+// SDE: sde.su_iterate (%c2) to (%c62) step (%c1) schedule(<static>) {
 // SDE: } {
-// SDE-SAME: iterationTopology = #arts_sde.iteration_topology<owner_strip>
+// SDE-SAME: iterationTopology = #sde.iteration_topology<owner_strip>
 // SDE-SAME: logicalWorkerSlice = [16, 16, 1]
 // SDE-SAME: physicalBlockShape = [16, 16, 1]
 // SDE-SAME: physicalOwnerDims = [2]
@@ -33,8 +33,8 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %zero = arith.constant 0.000000e+00 : f64
     %A = memref.alloc() : memref<16x16x64xf64>
     %B = memref.alloc() : memref<16x16x64xf64>
-    arts_sde.cu_region <parallel> scope(<local>) {
-      arts_sde.su_iterate (%c2) to (%c62) step (%c1) schedule(<static>) {
+    sde.cu_region <parallel> scope(<local>) {
+      sde.su_iterate (%c2) to (%c62) step (%c1) schedule(<static>) {
       ^bb0(%k: index):
         %scratch = memref.alloca() : memref<f64>
         memref.store %zero, %scratch[] : memref<f64>
@@ -47,9 +47,9 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
             memref.store %next, %B[%i, %j, %k] : memref<16x16x64xf64>
           }
         }
-        arts_sde.yield
+        sde.yield
       }
-      arts_sde.yield
+      sde.yield
     }
     memref.dealloc %B : memref<16x16x64xf64>
     memref.dealloc %A : memref<16x16x64xf64>

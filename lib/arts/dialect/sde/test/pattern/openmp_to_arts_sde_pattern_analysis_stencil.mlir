@@ -1,16 +1,22 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 
-// Verify that SDE now authors a runtime-neutral neighborhood summary before
-// crossing into ARTS IR, and that ConvertSdeToArts materializes the matching
-// ARTS contract at the boundary.
+// Verify that SDE PatternAnalysis authors runtime-neutral neighborhood facts
+// before Core lowering, and that the final SDE plan is translated at the
+// dialect boundary.
 
-// SDE-LABEL: // -----// IR Dump After StructuredSummaries (structured-summaries) //----- //
+// SDE-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // SDE: func.func @main
-// SDE: arts_sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
-// SDE: } {accessMaxOffsets = [1, 1], accessMinOffsets = [-1, -1], depFamily = #arts_sde.dep_family<stencil_tiling_nd>, ownerDims = [0, 1], spatialDims = [0, 1], writeFootprint = [1, 1]}
+// SDE: sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
+// SDE: } {
+// SDE-SAME: accessMaxOffsets = [1, 1]
+// SDE-SAME: accessMinOffsets = [-1, -1]
+// SDE-SAME: ownerDims = [0, 1]
+// SDE-SAME: pattern = #sde.pattern<stencil_tiling_nd>
+// SDE-SAME: spatialDims = [0, 1]
+// SDE-SAME: writeFootprint = [1, 1]
 // SDE: func.func @in_place_neighbor_stencil
-// SDE: arts_sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
+// SDE: sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
 // SDE: } {
 // SDE-SAME: accessMaxOffsets = [1, 1]
 // SDE-SAME: inPlaceSharedState
@@ -22,9 +28,12 @@
 // ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
+// ARTS-SAME: planHaloShape = [1]
+// ARTS-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_strip>
+// ARTS-SAME: planLogicalWorkerSlice = [8, 64]
 // ARTS-SAME: planOwnerDims = [0]
-// ARTS-SAME: planPhysicalBlockShape = [4, 64]
-// ARTS-SAME: stencil_block_shape = [4, 64]
+// ARTS-SAME: planPhysicalBlockShape = [8, 64]
+// ARTS-SAME: stencil_block_shape = [8, 64]
 // ARTS-SAME: stencil_max_offsets = [1, 1]
 // ARTS-SAME: stencil_min_offsets = [-1, -1]
 // ARTS-SAME: stencil_owner_dims = [0]
@@ -35,9 +44,12 @@
 // ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
+// ARTS-SAME: planHaloShape = [1]
+// ARTS-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_strip>
+// ARTS-SAME: planLogicalWorkerSlice = [8, 64]
 // ARTS-SAME: planOwnerDims = [0]
-// ARTS-SAME: planPhysicalBlockShape = [4, 64]
-// ARTS-SAME: stencil_block_shape = [4, 64]
+// ARTS-SAME: planPhysicalBlockShape = [8, 64]
+// ARTS-SAME: stencil_block_shape = [8, 64]
 // ARTS-SAME: stencil_max_offsets = [1, 1]
 // ARTS-SAME: stencil_min_offsets = [-1, -1]
 // ARTS-SAME: stencil_owner_dims = [0]
@@ -50,7 +62,7 @@
 // ARTS-NOT: planPhysicalBlockShape
 // ARTS: arts.edt <task>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<stencil>
-// ARTS-NOT: arts_sde.
+// ARTS-NOT: sde.
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<64x64xf64>, %B: memref<64x64xf64>) {

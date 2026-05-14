@@ -10,7 +10,7 @@
 // CHECK: arts.edt <task>
 // CHECK: memref.load
 // CHECK: memref.store
-// CHECK-NOT: arts_sde.mu_memref_to_tensor
+// CHECK-NOT: sde.mu_memref_to_tensor
 // CHECK-NOT: bufferization.to_tensor
 // CHECK-NOT: tensor.empty
 // CHECK-NOT: tensor.cast
@@ -24,14 +24,14 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %c1 = arith.constant 1 : index
     %c16 = arith.constant 16 : index
     %cst = arith.constant 2.0 : f64
-    arts_sde.cu_region <parallel> scope(<local>) {
-      arts_sde.su_iterate (%c0) to (%c16) step (%c1) classification(<elementwise>) {
+    sde.cu_region <parallel> scope(<local>) {
+      sde.su_iterate (%c0) to (%c16) step (%c1) classification(<elementwise>) {
       ^bb0(%iv: index):
         %val = memref.load %A[%iv] : memref<16xf64>
         %mul = arith.mulf %val, %cst : f64
         memref.store %mul, %B[%iv] : memref<16xf64>
 
-        %input = arts_sde.mu_memref_to_tensor %A : memref<16xf64> -> tensor<16xf64>
+        %input = sde.mu_memref_to_tensor %A : memref<16xf64> -> tensor<16xf64>
         %init = tensor.empty() : tensor<16xf64>
         %generic = linalg.generic {indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>], iterator_types = ["parallel"]} ins(%input : tensor<16xf64>) outs(%init : tensor<16xf64>) {
         ^bb0(%in: f64, %out: f64):
@@ -41,9 +41,9 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
         %cast = tensor.cast %generic : tensor<16xf64> to tensor<16xf64>
         %slice = tensor.extract_slice %cast[0] [16] [1] : tensor<16xf64> to tensor<16xf64>
         %insert = tensor.insert_slice %slice into %init[0] [16] [1] : tensor<16xf64> into tensor<16xf64>
-        arts_sde.yield
+        sde.yield
       }
-      arts_sde.yield
+      sde.yield
     }
     return
   }

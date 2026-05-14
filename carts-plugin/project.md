@@ -33,7 +33,7 @@ runtime.
 
 CARTS has three project dialect layers:
 
-- SDE (`arts_sde`) - semantic decomposition, tensor/state scheduling, codelets.
+- SDE (`sde`) - semantic decomposition, tensor/state scheduling, codelets.
 - Core ARTS (`arts`) - EDT, DB, epoch, partitioning, and analysis IR.
 - Runtime (`arts_rt`) - flat runtime-facing bridge before LLVM lowering.
 

@@ -8,10 +8,10 @@
 // CHECK-LABEL: // -----// IR Dump After Tiling (tiling) //----- //
 // CHECK: func.func @main
 // The reduction su_iterate must keep its original step (NOT tiled):
-// CHECK: arts_sde.cu_region <parallel> {
-// CHECK: arts_sde.su_iterate (%c0) to (%c128) step (%c1)
+// CHECK: sde.cu_region <parallel> {
+// CHECK: sde.su_iterate (%c0) to (%c128) step (%c1)
 // CHECK-SAME: classification(<reduction>)
-// CHECK: arts_sde.cu_region <parallel> {
+// CHECK: sde.cu_region <parallel> {
 // CHECK: memref.load %arg0[%{{.*}}] : memref<128xf64>
 // CHECK: memref.load %{{.*}}[%c0] : memref<?xf64>
 // CHECK: arith.addf

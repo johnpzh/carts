@@ -7,13 +7,13 @@
 
 // CHECK-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
 // CHECK: func.func @main
-// CHECK: arts_sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
+// CHECK: sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
 // Scalar body preserved:
 // CHECK: scf.for
 // CHECK: memref.load
 // CHECK: memref.store
 // 5 shifted-view inputs (A[i-1,j], A[i+1,j], A[i,j-1], A[i,j+1], A[i,j]):
-// CHECK: arts_sde.mu_memref_to_tensor %arg0 : memref<64x64xf64>
+// CHECK: sde.mu_memref_to_tensor %arg0 : memref<64x64xf64>
 // CHECK-COUNT-5: tensor.extract_slice
 // CHECK: linalg.generic
 // CHECK-SAME: iterator_types = ["parallel", "parallel"]
@@ -30,8 +30,8 @@
 // CHECK: arts.epoch
 // CHECK-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // CHECK-SAME: planOwnerDims = [0]
-// CHECK-SAME: planPhysicalBlockShape = [4, 64]
-// CHECK-SAME: stencil_block_shape = [4, 64]
+// CHECK-SAME: planPhysicalBlockShape = [8, 64]
+// CHECK-SAME: stencil_block_shape = [8, 64]
 // CHECK-SAME: stencil_max_offsets = [1, 1]
 // CHECK-SAME: stencil_min_offsets = [-1, -1]
 

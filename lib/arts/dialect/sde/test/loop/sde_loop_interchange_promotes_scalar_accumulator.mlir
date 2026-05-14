@@ -6,7 +6,7 @@
 //
 // CHECK-LABEL: // -----// IR Dump After LoopInterchange (loop-interchange) //----- //
 // CHECK: func.func @main
-// CHECK: arts_sde.su_iterate
+// CHECK: sde.su_iterate
 // CHECK: scf.for %[[INITJ:[^ ]+]] = %c0 to %c16 step %c1 {
 // CHECK: memref.store %{{.*}}, %{{.*}}[%{{.*}}, %[[INITJ]]] : memref<16x16xf32>
 // CHECK: scf.for %[[K:[^ ]+]] = %c0 to %c16 step %c1 {

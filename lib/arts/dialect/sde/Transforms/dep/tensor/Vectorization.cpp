@@ -9,7 +9,7 @@
 /// - All-parallel iterator types (no reduction vectorization yet)
 /// - Static shapes on all operands and loop ranges
 /// - Tensor semantics (not buffer)
-/// Vector widths are stamped as SDE attrs by StructuredSummaries for later
+/// Vector widths are stamped as SDE attrs by PatternAnalysis for later
 /// Core/RT translation; this pass still vectorizes only static tensor carriers.
 ///
 /// The vector sizes passed to linalg::vectorize() must be >= the static loop

@@ -1,7 +1,7 @@
 ///==========================================================================///
-/// File: StructuredSummaries.cpp
+/// File: PatternAnalysis.cpp
 ///
-/// Stamp SDE-owned structured summaries before crossing into ARTS IR.
+/// Identify tensor/linalg-backed SDE patterns and stamp approved SDE facts.
 ///==========================================================================///
 
 #include "arts/dialect/sde/Analysis/StructuredOpAnalysis.h"
@@ -13,7 +13,7 @@
 #include "mlir/IR/IRMapping.h"
 
 namespace mlir::arts {
-#define GEN_PASS_DEF_STRUCTUREDSUMMARIES
+#define GEN_PASS_DEF_PATTERNANALYSIS
 #include "arts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::arts
 
@@ -257,7 +257,7 @@ static sde::SdeSuIterateOp promoteRank2OutOfPlaceStencilOwnerLoop(
       ValueRange(upperBounds), ValueRange(steps), op.getScheduleAttr(),
       op.getChunkSize(), op.getNowaitAttr(), op.getReductionAccumulators(),
       op.getReductionKindsAttr(), op.getReductionStrategyAttr(),
-      op.getStructuredClassificationAttr(), op.getDepFamilyAttr(),
+      op.getStructuredClassificationAttr(), op.getPatternAttr(),
       op.getAccessMinOffsetsAttr(), op.getAccessMaxOffsetsAttr(),
       op.getOwnerDimsAttr(), op.getSpatialDimsAttr(),
       op.getWriteFootprintAttr(), op.getPhysicalOwnerDimsAttr(),
@@ -325,38 +325,38 @@ static sde::SdeSuIterateOp tryPromoteRank2OutOfPlaceStencilOwnerLoop(
   return promoteRank2OutOfPlaceStencilOwnerLoop(op, innerFor);
 }
 
-static sde::SdeDepFamily
-deriveDepFamily(const sde::StructuredLoopSummary &summary,
+static sde::SdePattern
+derivePattern(const sde::StructuredLoopSummary &summary,
                 sde::SdeStructuredClassification classification,
                 std::optional<sde::StructuredNeighborhoodInfo> neighborhood) {
   switch (classification) {
   case sde::SdeStructuredClassification::elementwise:
-    return sde::SdeDepFamily::uniform;
+    return sde::SdePattern::uniform;
   case sde::SdeStructuredClassification::elementwise_pipeline:
-    return sde::SdeDepFamily::elementwise_pipeline;
+    return sde::SdePattern::elementwise_pipeline;
   case sde::SdeStructuredClassification::matmul:
-    return sde::SdeDepFamily::matmul;
+    return sde::SdePattern::matmul;
   case sde::SdeStructuredClassification::reduction:
-    return sde::SdeDepFamily::reduction;
+    return sde::SdePattern::reduction;
   case sde::SdeStructuredClassification::stencil:
     break;
   }
 
   if (!neighborhood)
-    return sde::SdeDepFamily::stencil_tiling_nd;
+    return sde::SdePattern::stencil_tiling_nd;
 
   if (isWavefront2D(summary, *neighborhood))
-    return sde::SdeDepFamily::wavefront_2d;
+    return sde::SdePattern::wavefront_2d;
   if (hasHigherOrderHalo(*neighborhood))
-    return sde::SdeDepFamily::higher_order_stencil;
+    return sde::SdePattern::higher_order_stencil;
   if (countHaloDims(*neighborhood) >= 3)
-    return sde::SdeDepFamily::cross_dim_stencil_3d;
-  return sde::SdeDepFamily::stencil_tiling_nd;
+    return sde::SdePattern::cross_dim_stencil_3d;
+  return sde::SdePattern::stencil_tiling_nd;
 }
 
-struct StructuredSummariesPass
-    : public arts::impl::StructuredSummariesBase<StructuredSummariesPass> {
-  explicit StructuredSummariesPass(sde::SDECostModel *costModel = nullptr)
+struct PatternAnalysisPass
+    : public arts::impl::PatternAnalysisBase<PatternAnalysisPass> {
+  explicit PatternAnalysisPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 
   void runOnOperation() override {
@@ -408,10 +408,10 @@ struct StructuredSummariesPass
         neighborhoodSummary = sde::extractNeighborhoodSummary(*summary);
         if (!neighborhoodSummary) {
           if (hasExplicitStencilContract) {
-            if (!op.getDepFamilyAttr())
-              op.setDepFamilyAttr(sde::SdeDepFamilyAttr::get(
-                  &getContext(), sde::SdeDepFamily::stencil_tiling_nd));
-            ARTS_DEBUG("preserved explicit SDE stencil summary on su_iterate");
+            if (!op.getPatternAttr())
+              op.setPatternAttr(sde::SdePatternAttr::get(
+                  &getContext(), sde::SdePattern::stencil_tiling_nd));
+            ARTS_DEBUG("preserved explicit SDE stencil pattern on su_iterate");
           }
           return;
         }
@@ -437,12 +437,12 @@ struct StructuredSummariesPass
           }
         }
 
-        op.setDepFamilyAttr(sde::SdeDepFamilyAttr::get(
+        op.setPatternAttr(sde::SdePatternAttr::get(
             &getContext(),
-            deriveDepFamily(*summary, classification, neighborhoodSummary)));
+            derivePattern(*summary, classification, neighborhoodSummary)));
 
         if (hasExplicitStencilContract) {
-          ARTS_DEBUG("preserved explicit SDE stencil summary on su_iterate");
+          ARTS_DEBUG("preserved explicit SDE stencil pattern on su_iterate");
           return;
         }
 
@@ -463,13 +463,13 @@ struct StructuredSummariesPass
             hasLocalParallelScope(op))
           op.setInPlaceSharedStateAttr(UnitAttr::get(op.getContext()));
 
-        ARTS_DEBUG("stamped generic SDE structured summary on su_iterate");
+        ARTS_DEBUG("stamped generic SDE pattern facts on su_iterate");
         return;
       }
 
-      op.setDepFamilyAttr(sde::SdeDepFamilyAttr::get(
+      op.setPatternAttr(sde::SdePatternAttr::get(
           &getContext(),
-          deriveDepFamily(*summary, classification, neighborhoodSummary)));
+          derivePattern(*summary, classification, neighborhoodSummary)));
 
       if (classification == sde::SdeStructuredClassification::elementwise ||
           classification ==
@@ -518,7 +518,7 @@ struct StructuredSummariesPass
       if (!memoryEffects.hasUnknownEffects && memoryEffects.allWritesAreRead())
         op.setInPlaceSafeAttr(UnitAttr::get(op.getContext()));
 
-      ARTS_DEBUG("refreshed SDE structured classification on su_iterate");
+      ARTS_DEBUG("refreshed SDE pattern classification on su_iterate");
     });
   }
 
@@ -531,8 +531,8 @@ private:
 namespace mlir::arts::sde {
 
 std::unique_ptr<Pass>
-createStructuredSummariesPass(sde::SDECostModel *costModel) {
-  return std::make_unique<StructuredSummariesPass>(costModel);
+createPatternAnalysisPass(sde::SDECostModel *costModel) {
+  return std::make_unique<PatternAnalysisPass>(costModel);
 }
 
 } // namespace mlir::arts::sde

@@ -5,12 +5,12 @@ module {
   func.func @v7_result_count_mismatch(%t: tensor<8xi32>) -> tensor<8xi32> {
     %c0 = arith.constant 0 : index
     %c4 = arith.constant 4 : index
-    %token = arts_sde.mu_token <readwrite> %t [%c0] size [%c4]
-      : tensor<8xi32> -> !arts_sde.token<tensor<4xi32>>
+    %token = sde.mu_token <readwrite> %t [%c0] size [%c4]
+      : tensor<8xi32> -> !sde.token<tensor<4xi32>>
     // Missing result; V7 requires exactly one (matching the readwrite token).
-    arts_sde.cu_codelet (%token : !arts_sde.token<tensor<4xi32>>) {
+    sde.cu_codelet (%token : !sde.token<tensor<4xi32>>) {
     ^bb0(%arg: tensor<4xi32>):
-      arts_sde.yield
+      sde.yield
     }
     func.return %t : tensor<8xi32>
   }

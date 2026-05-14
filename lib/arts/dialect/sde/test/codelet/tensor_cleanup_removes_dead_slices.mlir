@@ -8,12 +8,12 @@ module {
   // CHECK-LABEL: func.func @codelet_with_slices
   // CHECK-SAME: %[[T:.*]]: tensor<16xf64>
   func.func @codelet_with_slices(%t: tensor<16xf64>) -> tensor<16xf64> {
-    // CHECK: arts_sde.mu_token <readwrite>
-    %token = arts_sde.mu_token <readwrite> %t
-      : tensor<16xf64> -> !arts_sde.token<tensor<16xf64>>
+    // CHECK: sde.mu_token <readwrite>
+    %token = sde.mu_token <readwrite> %t
+      : tensor<16xf64> -> !sde.token<tensor<16xf64>>
 
-    // CHECK: arts_sde.cu_codelet
-    %r = arts_sde.cu_codelet (%token : !arts_sde.token<tensor<16xf64>>)
+    // CHECK: sde.cu_codelet
+    %r = sde.cu_codelet (%token : !sde.token<tensor<16xf64>>)
         -> (tensor<16xf64>) {
     ^bb0(%arg: tensor<16xf64>):
       %c0 = arith.constant 0 : index
@@ -21,7 +21,7 @@ module {
       %c1 = arith.constant 1.0 : f64
       %sum = arith.addf %val, %c1 : f64
       %out = tensor.insert %sum into %arg[%c0] : tensor<16xf64>
-      arts_sde.yield %out : tensor<16xf64>
+      sde.yield %out : tensor<16xf64>
     }
 
     func.return %r : tensor<16xf64>

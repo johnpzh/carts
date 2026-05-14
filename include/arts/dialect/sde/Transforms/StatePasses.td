@@ -138,7 +138,7 @@ def LowerToMemref : Pass<"lower-to-memref", "mlir::ModuleOp"> {
 def ConvertToCodelet : Pass<"convert-to-codelet", "mlir::ModuleOp"> {
   let summary = "Convert tensor iter_args cu_regions to mu_data/mu_token/cu_codelet";
   let description = [{
-    Converts `arts_sde.cu_region <single>` operations that carry tensor
+    Converts `sde.cu_region <single>` operations that carry tensor
     `iter_args` into the canonical SDE codelet form: `sde.mu_data` anchors,
     `sde.mu_token` access handles, and `sde.cu_codelet` compute units.
 

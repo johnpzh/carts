@@ -65,8 +65,8 @@ def DistributionPlanning
   let summary = "Derive SDE-owned distribution intent from structured SDE loops";
   let description = [{
     Uses SDE-owned structured classification, concurrency scope, and the active
-    SDE cost model to wrap eligible `arts_sde.su_iterate` operations in
-    `arts_sde.su_distribute`. The current implementation is deliberately
+    SDE cost model to wrap eligible `sde.su_iterate` operations in
+    `sde.su_distribute`. The current implementation is deliberately
     narrow: it only authors a blocked advisory for local elementwise loops and
     an owner-compute advisory for distributed stencil loops with enough work to
     amortize distribution.

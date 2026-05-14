@@ -2,9 +2,9 @@
 
 ## Current State Surface
 
-SDE state work is centered on `arts_sde.su_iterate` and the tensor/carrier
+SDE state work is centered on `sde.su_iterate` and the tensor/carrier
 pipeline before Core. The important state-bearing attributes are structured
-classification, dependency family, owner dims, spatial dims, write footprint,
+classification, approved pattern, owner dims, spatial dims, write footprint,
 physical owner dims, physical block shape, logical worker slice, physical halo
 shape, iteration topology, repetition structure, async strategy, and
 distribution kind.
@@ -13,10 +13,10 @@ Current state-related passes and utilities:
 
 - `RaiseToTensor` and `RaiseToLinalg` create the tensor/linalg form used for
   structured analysis.
-- `StructuredSummaries` classifies loops, records stencil neighborhoods,
-  recognizes wavefront and alternating-buffer families, and stamps in-place
-  safety facts.
-- `Tiling` and `LoopInterchange` reshape loops before summaries and
+- `PatternAnalysis` classifies loops, records stencil neighborhoods,
+  recognizes wavefront and alternating-buffer families, and stamps approved
+  SDE-only pattern facts for later SDE consumers.
+- `LoopInterchange` and `Tiling` consume approved SDE pattern facts before
   distribution planning.
 - `DistributionPlanning` is currently the main pass that stamps physical block
   plans.
@@ -61,7 +61,7 @@ This targets `atax`, `bicg`, `stream`, `batchnorm`, `layernorm`, and `pooling`.
 
 ### Component And Slab State
 
-Teach structured summaries to separate spatial, component, batch, and element
+Teach SDE pattern analysis to separate spatial, component, batch, and element
 dims for 3D component stencils. SDE should choose a slab owner dimension,
 preserve component-local extents inside each task, and stamp halo-aware physical
 block shapes that `CreateDbs` can materialize directly.
@@ -86,9 +86,9 @@ Keep the high-level spine:
 ```text
 RaiseToTensor
 RaiseToLinalg
+PatternAnalysis
 LoopInterchange
 Tiling
-StructuredSummaries
 ElementwiseFusion
 ScopeSelection
 ScheduleRefinement

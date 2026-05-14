@@ -6,13 +6,13 @@
 
 // CHECK-LABEL: // -----// IR Dump After ConvertOpenMPToSde (convert-openmp-to-sde) //----- //
 // CHECK: func.func @main
-// CHECK: arts_sde.cu_region <parallel> {
-// CHECK: arts_sde.su_iterate (%c0) to (%c128) step (%c1) schedule(<runtime>)
+// CHECK: sde.cu_region <parallel> {
+// CHECK: sde.su_iterate (%c0) to (%c128) step (%c1) schedule(<runtime>)
 
 // CHECK-LABEL: // -----// IR Dump After ScheduleRefinement (schedule-refinement) //----- //
 // CHECK: func.func @main
-// CHECK: arts_sde.cu_region <parallel> scope(<local>) {
-// CHECK: arts_sde.su_iterate (%c0) to (%c128) step (%{{.+}}) schedule(<static>)
+// CHECK: sde.cu_region <parallel> scope(<local>) {
+// CHECK: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) schedule(<static>)
 // CHECK-NOT: arts.for
 // CHECK: // -----// IR Dump After ChunkOpt (chunk-opt) //----- //
 

@@ -39,7 +39,7 @@ Each verification pass is a freeze point. If barrier X passes but barrier Y fail
 
 | Barrier | File | Asserts | Failure severity |
 |---|---|---|---|
-| `VerifySdeLowered` | `lib/arts/dialect/sde/Verify/VerifySdeLowered.cpp` | No `arts_sde.*` ops survive stage 3. No transient linalg/tensor carriers survive the SDE/Core boundary. | Fatal |
+| `VerifySdeLowered` | `lib/arts/dialect/sde/Verify/VerifySdeLowered.cpp` | No `sde.*` ops survive stage 3. No transient linalg/tensor carriers survive the SDE/Core boundary. | Fatal |
 | `VerifyCoreObjectsOnly` | `lib/arts/dialect/core/Transforms/verify/VerifyCoreObjectsOnly.cpp` | No Core loop carrier or semantic parallel EDT survives stage 3. Core contains runtime-shaped EDT/DB/epoch objects plus implementation `scf.for`. | Fatal |
 | `VerifyEdtCreated` | `lib/arts/dialect/core/Transforms/verify/VerifyEdtCreated.cpp` | At least one `arts.edt` exists post-OpenMP conversion. | Warning |
 | `VerifyDbLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyDbLowered.cpp` | No `arts.db_alloc` / `db_acquire` / `db_release` survive pre-lowering. | Fatal |

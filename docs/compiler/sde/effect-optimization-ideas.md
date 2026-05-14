@@ -2,9 +2,9 @@
 
 ## Current Effect Surface
 
-SDE effect optimization is where scheduling decisions become concrete
-`arts.plan.*` facts. It connects structured summaries, memory effects, fusion,
-reduction strategy, tiling, distribution, and barrier decisions before Core.
+SDE effect optimization is where scheduling decisions become concrete SDE plan
+facts. It connects SDE pattern analysis, memory effects, fusion, reduction
+strategy, tiling, distribution, and barrier decisions before Core.
 
 Current passes:
 
@@ -38,9 +38,8 @@ Tile sizes should come from structured effect facts and the cost model:
 - local reduction footprint for vector and norm kernels;
 - DB family count and dependency-window count.
 
-The selected tile should be the same shape SDE stamps as
-`arts.plan.physical_block_shape`, avoiding a mismatch between loop tiling and DB
-materialization.
+The selected tile should be the same shape SDE stamps as `physicalBlockShape`,
+avoiding a mismatch between loop tiling and DB materialization.
 
 ### Block Pipeline Fusion
 
@@ -110,10 +109,13 @@ must be separately proved and cost-justified.
 
 ## Pass Grouping Proposal
 
-Keep effect decisions after semantic summaries and before lowering:
+Keep effect decisions after SDE pattern analysis and structural tensor
+transforms, and before lowering:
 
 ```text
-StructuredSummaries
+PatternAnalysis
+LoopInterchange
+Tiling
 ElementwiseFusion
 ScopeSelection
 ScheduleRefinement

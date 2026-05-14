@@ -257,9 +257,9 @@ static const std::array<llvm::StringLiteral, 27> kOpenMPToArtsPasses = {
     "ConvertOpenMPToSde",
     "RaiseToTensor",
     "RaiseToLinalg",
+    "PatternAnalysis",
     "LoopInterchange",
     "Tiling",
-    "StructuredSummaries",
     "ElementwiseFusion",
     "ScopeSelection",
     "ScheduleRefinement",
@@ -649,11 +649,12 @@ void buildOpenMPToArtsPipeline(PassManager &pm,
   // from tensor-native form — no bufferization wrapping needed.
   pm.addPass(arts::sde::createRaiseToTensorPass());
   pm.addPass(arts::sde::createRaiseToLinalgPass());
-  // Dep passes first (structural transforms), then effect passes (scheduling
-  // decisions).
+  // SDE pattern analysis first stamps approved tensor/linalg/ND facts. Dep
+  // transforms then consume those SDE facts before effect passes make
+  // scheduling decisions.
+  pm.addPass(arts::sde::createPatternAnalysisPass(costModel));
   pm.addPass(arts::sde::createLoopInterchangePass());
   pm.addPass(arts::sde::createTilingPass(costModel));
-  pm.addPass(arts::sde::createStructuredSummariesPass(costModel));
   pm.addPass(arts::sde::createElementwiseFusionPass());
   pm.addPass(arts::sde::createScopeSelectionPass(costModel));
   pm.addPass(arts::sde::createScheduleRefinementPass(costModel));

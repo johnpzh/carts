@@ -45,30 +45,38 @@ def Tiling : Pass<"tiling", "mlir::ModuleOp"> {
   let constructor = "mlir::arts::sde::createTilingPass()";
 }
 
-def StructuredSummaries
-    : Pass<"structured-summaries", "mlir::ModuleOp"> {
-  let summary = "Stamp SDE-owned structured summaries";
+def PatternAnalysis
+    : Pass<"sde-pattern-analysis", "mlir::ModuleOp"> {
+  let summary = "Analyze and stamp approved SDE structured patterns";
   let description = [{
-    Uses the SDE structured loop/access analysis to refresh reusable,
-    runtime-neutral summaries on eligible `arts_sde.su_iterate` operations
-    before `ConvertSdeToArts`. This keeps SDE responsible for structured loop
-    semantics without stamping ARTS- or lowering-specific attributes on SDE IR.
+    Uses SDE-owned loop/access analysis together with transient tensor/linalg
+    carriers to identify approved structured pattern families on eligible
+    `sde.su_iterate` operations. This pass is the first SDE pattern
+    planning point after tensor/linalg raising: later SDE transforms consume
+    these facts instead of rediscovering pattern legality.
 
-    The current implementation refreshes:
+    PatternAnalysis stamps only SDE IR facts. It does not stamp ARTS/Core
+    attributes and it does not cross the dialect boundary. ConvertSdeToArts may
+    later lower the final SDE plan, but raw pattern-analysis facts remain SDE
+    ownership.
+
+    The current implementation stamps:
     - `classification(<...>)` from the current SDE structured analysis
-    - generic access/owner/footprint summaries for recognized neighborhood
-      loops so the SDE->ARTS boundary can materialize the runtime-specific
-      contract later
+    - approved `pattern` values for uniform, stencil, wavefront, matmul,
+      reduction, and elementwise-pipeline families
+    - generic access/owner/footprint summaries for recognized ND neighborhood
+      loops
+    - SDE execution hints for vectorization/unrolling/interleaving
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
-  let constructor = "mlir::arts::sde::createStructuredSummariesPass()";
+  let constructor = "mlir::arts::sde::createPatternAnalysisPass()";
 }
 
 def ElementwiseFusion
     : Pass<"elementwise-fusion", "mlir::ModuleOp"> {
   let summary = "Fuse consecutive SDE elementwise scheduling units";
   let description = [{
-    Fuses consecutive sibling `arts_sde.su_iterate` operations that already
+    Fuses consecutive sibling `sde.su_iterate` operations that already
     carry an SDE-owned `classification(<elementwise>)`, share the same
     iteration space and scheduling policy, and write disjoint destinations.
     The fused scheduling unit is reclassified as

@@ -9,7 +9,7 @@
 // The halo width is 3 (from [-1,1]), so the tile must be max(balanced, 3).
 // CHECK: %[[HALO:.+]] = arith.constant 3 : index
 // CHECK: arith.maxui %{{.+}}, %[[HALO]]
-// CHECK: arts_sde.su_iterate
+// CHECK: sde.su_iterate
 // The outer tile step from the su_iterate feeds an scf.for tile loop:
 // CHECK: scf.for
 // The original loop body is cloned inside:
@@ -20,8 +20,8 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
   func.func @main(%A: memref<64x64xf64>, %B: memref<64x64xf64>) {
     %c1 = arith.constant 1 : index
     %c63 = arith.constant 63 : index
-    arts_sde.cu_region <parallel> scope(<local>) {
-      arts_sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
+    sde.cu_region <parallel> scope(<local>) {
+      sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
       ^bb0(%i: index):
         scf.for %j = %c1 to %c63 step %c1 {
           %im1 = arith.subi %i, %c1 : index
@@ -39,9 +39,9 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
           %sum = arith.addf %s2, %c : f64
           memref.store %sum, %B[%i, %j] : memref<64x64xf64>
         }
-        arts_sde.yield
+        sde.yield
       } {accessMaxOffsets = [1, 1], accessMinOffsets = [-1, -1], ownerDims = [0, 1], spatialDims = [0, 1], writeFootprint = [1, 1]}
-      arts_sde.yield
+      sde.yield
     }
     return
   }

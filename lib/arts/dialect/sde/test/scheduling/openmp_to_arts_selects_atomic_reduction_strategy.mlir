@@ -6,9 +6,9 @@
 
 // CHECK-LABEL: // -----// IR Dump After ReductionStrategy (reduction-strategy) //----- //
 // CHECK: func.func @main
-// CHECK: arts_sde.cu_region <parallel> scope(<local>) {
-// CHECK: arts_sde.su_iterate (%c0) to (%c128) step (%c1)
-// CHECK-SAME: reduction{{\[}}#arts_sde.reduction_kind<add>{{\]}}
+// CHECK: sde.cu_region <parallel> scope(<local>) {
+// CHECK: sde.su_iterate (%c0) to (%c128) step (%c1)
+// CHECK-SAME: reduction{{\[}}#sde.reduction_kind<add>{{\]}}
 // CHECK-SAME: reduction_strategy(<atomic>)
 // CHECK-NOT: arts.for
 // CHECK: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //

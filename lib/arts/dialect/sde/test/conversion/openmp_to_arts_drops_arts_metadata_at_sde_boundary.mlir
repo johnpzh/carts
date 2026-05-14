@@ -6,14 +6,14 @@
 
 // CHECK-LABEL: // -----// IR Dump After ConvertOpenMPToSde (convert-openmp-to-sde) //----- //
 // CHECK: func.func @wsloop_clean
-// CHECK: arts_sde.cu_region <parallel> {
-// CHECK: arts_sde.su_iterate (%c0) to (%c8) step (%c1) {
+// CHECK: sde.cu_region <parallel> {
+// CHECK: sde.su_iterate (%c0) to (%c8) step (%c1) {
 // CHECK: func.func @taskloop_clean
-// CHECK: arts_sde.cu_region <parallel> {
-// CHECK: arts_sde.su_iterate (%c0) to (%c8) step (%c1) {
+// CHECK: sde.cu_region <parallel> {
+// CHECK: sde.su_iterate (%c0) to (%c8) step (%c1) {
 // CHECK: func.func @scf_parallel_clean
-// CHECK: arts_sde.cu_region <parallel> {
-// CHECK: arts_sde.su_iterate (%c0) to (%c8) step (%c1) {
+// CHECK: sde.cu_region <parallel> {
+// CHECK: sde.su_iterate (%c0) to (%c8) step (%c1) {
 // CHECK-NOT: 7001
 // CHECK-NOT: 7101
 // CHECK-NOT: 7002

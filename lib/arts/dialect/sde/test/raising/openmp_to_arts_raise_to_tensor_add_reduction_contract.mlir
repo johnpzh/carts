@@ -6,11 +6,11 @@
 
 // TENSOR-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
 // TENSOR: func.func @main
-// TENSOR: arts_sde.cu_region <parallel>
-// TENSOR: arts_sde.su_iterate (%c0) to (%c128) step (%c1)
-// TENSOR-SAME: reduction[#arts_sde.reduction_kind<add>](%{{.+}} : memref<?xi32>)
+// TENSOR: sde.cu_region <parallel>
+// TENSOR: sde.su_iterate (%c0) to (%c128) step (%c1)
+// TENSOR-SAME: reduction[#sde.reduction_kind<add>](%{{.+}} : memref<?xi32>)
 // TENSOR-SAME: classification(<reduction>) {
-// TENSOR: arts_sde.cu_region <parallel>
+// TENSOR: sde.cu_region <parallel>
 // TENSOR: memref.load %arg0[%{{.*}}] : memref<128xi32>
 // TENSOR: memref.load %{{.*}}[%c0] : memref<?xi32>
 // TENSOR: arith.addi

@@ -22,9 +22,9 @@ The live SDE pass order is inside `openmp-to-arts`:
 ConvertOpenMPToSde
 RaiseToTensor
 RaiseToLinalg
+PatternAnalysis
 LoopInterchange
 Tiling
-StructuredSummaries
 ElementwiseFusion
 ScopeSelection
 ScheduleRefinement
@@ -63,22 +63,32 @@ of truth when pass order matters.
 
 ## Plan Contract
 
-SDE optimization work should stamp or refine the existing `arts.plan.*`
-contract before `ConvertSdeToArts`:
+SDE optimization work should stamp or refine SDE-owned plan facts before
+`ConvertSdeToArts`:
 
-- `arts.plan.kernel_family`
-- `arts.plan.owner_dims`
-- `arts.plan.physical_block_shape`
-- `arts.plan.logical_worker_slice`
-- `arts.plan.halo_shape`
-- `arts.plan.iteration_topology`
-- `arts.plan.repetition_structure`
-- `arts.plan.async_strategy`
-- `arts.plan.cost.*`
+- `pattern = #sde.pattern<...>`
+- `structuredClassification = #sde.structured_classification<...>`
+- `ownerDims`
+- `spatialDims`
+- `writeFootprint`
+- `physicalOwnerDims`
+- `physicalBlockShape`
+- `logicalWorkerSlice`
+- `physicalHaloShape`
+- `iterationTopology`
+- `repetitionStructure`
+- `asyncStrategy`
+- `reductionStrategy`
+- CPS candidate/final-stage attributes
+- execution hints such as `vectorizeWidth`, `unrollFactor`, and
+  `interleaveCount`
 
-The plan is valid only when the SDE pass that stamps it also owns the legality
-proof. `CreateDbs` may consume the plan; Core and RT must not invent tensor
-partition policy late.
+These facts are the SDE plan. `PatternAnalysis` and later SDE transforms may
+consume and update them; raw SDE pattern-analysis facts must not become a Core
+analysis API. At the dialect boundary, `ConvertSdeToArts` mechanically lowers
+the final SDE plan into Core `arts.plan.*`, dependency-pattern, distribution,
+DB, EDT, and barrier contracts. Core and RT may materialize or validate that
+lowered contract, but they must not invent tensor partition policy late.
 
 ## Verification Rule
 

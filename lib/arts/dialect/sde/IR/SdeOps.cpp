@@ -42,7 +42,7 @@ static LogicalResult checkSdeCpsPortableCarry(Operation *op, StringRef role,
 // SdeCuRegionOp — custom assembly format + verifier
 //===----------------------------------------------------------------------===//
 
-// Print: arts_sde.cu_region <kind> [scope(<scope>)] [nowait]
+// Print: sde.cu_region <kind> [scope(<scope>)] [nowait]
 //        [iter_args(%a = %init : type) -> (type)]
 //        { body } [attr-dict]
 void SdeCuRegionOp::print(OpAsmPrinter &p) {
@@ -74,7 +74,7 @@ void SdeCuRegionOp::print(OpAsmPrinter &p) {
                           {"kind", "concurrency_scope", "nowait"});
 }
 
-// Parse: arts_sde.cu_region <kind> [scope(<scope>)] [nowait]
+// Parse: sde.cu_region <kind> [scope(<scope>)] [nowait]
 //        [iter_args(%a = %init : type) -> (type)]
 //        { body } [attr-dict]
 ParseResult SdeCuRegionOp::parse(OpAsmParser &parser, OperationState &result) {
@@ -234,7 +234,7 @@ LogicalResult SdeCuRegionOp::verify() {
 // Assembly format (preserves the shape of the previous declarative format,
 // adding optional `iter_args` / result types and always emitting sde.yield):
 //
-//   arts_sde.su_iterate (%lb) to (%ub) step (%step)
+//   sde.su_iterate (%lb) to (%ub) step (%step)
 //     [schedule(<kind> [, %chunk])]
 //     [nowait]
 //     [reduction [<kinds>] (%accs : types)]
@@ -375,7 +375,7 @@ ParseResult SdeSuIterateOp::parse(OpAsmParser &parser, OperationState &result) {
     Attribute kindsAttr;
     if (parser.parseLSquare())
       return failure();
-    // Parse the array attribute (e.g. [#arts_sde<reduction_kind<add>>])
+    // Parse the array attribute (e.g. [#sde<reduction_kind<add>>])
     if (parser.parseAttribute(kindsAttr))
       return failure();
     if (parser.parseRSquare())
@@ -912,7 +912,7 @@ LogicalResult SdeMuReductionDeclOp::verify() {
   if (!yield || yield.getValues().size() != 1 ||
       yield.getValues().front().getType() != getType())
     return emitOpError() << "expects custom combiner to terminate with "
-                            "arts_sde.yield of the reduction type";
+                            "sde.yield of the reduction type";
 
   return success();
 }

@@ -17,6 +17,7 @@ namespace mlir::arts {
 #include "arts/utils/ValueAnalysis.h"
 #include "arts/utils/costs/SDECostModel.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
@@ -76,13 +77,61 @@ static bool haveSameIterationShape(sde::SdeSuIterateOp lhs,
                                                  rhs.getSteps());
 }
 
+static bool haveSameIterationBounds(sde::SdeSuIterateOp lhs,
+                                    sde::SdeSuIterateOp rhs) {
+  return lhs.getLowerBounds().size() == rhs.getLowerBounds().size() &&
+         ValueAnalysis::areValueRangesEquivalent(lhs.getLowerBounds(),
+                                                 rhs.getLowerBounds()) &&
+         ValueAnalysis::areValueRangesEquivalent(lhs.getUpperBounds(),
+                                                 rhs.getUpperBounds());
+}
+
+static bool isTiledMultipleOfStep(Value candidate, Value baseStep) {
+  if (ValueAnalysis::areValuesEquivalent(candidate, baseStep))
+    return true;
+
+  auto mul = candidate.getDefiningOp<arith::MulIOp>();
+  if (!mul)
+    return false;
+
+  auto isPositiveMultiplier = [](Value value) {
+    if (std::optional<int64_t> folded =
+            ValueAnalysis::tryFoldConstantIndex(value))
+      return *folded >= 1;
+    return ValueAnalysis::isConstantAtLeastOne(value) ||
+           ValueAnalysis::isProvablyNonZero(value);
+  };
+
+  if (ValueAnalysis::areValuesEquivalent(mul.getLhs(), baseStep))
+    return isPositiveMultiplier(mul.getRhs());
+  if (ValueAnalysis::areValuesEquivalent(mul.getRhs(), baseStep))
+    return isPositiveMultiplier(mul.getLhs());
+  return false;
+}
+
+static bool haveEquivalentOrTiledSteps(sde::SdeSuIterateOp lhs,
+                                       sde::SdeSuIterateOp rhs) {
+  if (lhs.getSteps().size() != rhs.getSteps().size())
+    return false;
+
+  for (auto [lhsStep, rhsStep] : llvm::zip(lhs.getSteps(), rhs.getSteps())) {
+    if (ValueAnalysis::areValuesEquivalent(lhsStep, rhsStep))
+      continue;
+    if (isTiledMultipleOfStep(lhsStep, rhsStep) ||
+        isTiledMultipleOfStep(rhsStep, lhsStep))
+      continue;
+    return false;
+  }
+  return true;
+}
+
 static bool isUniformRepeatableStage(sde::SdeSuIterateOp op) {
   if (!op || !op.getReductionAccumulators().empty())
     return false;
 
-  if (auto family = op.getDepFamily()) {
-    return *family == sde::SdeDepFamily::uniform ||
-           *family == sde::SdeDepFamily::elementwise_pipeline;
+  if (auto family = op.getPattern()) {
+    return *family == sde::SdePattern::uniform ||
+           *family == sde::SdePattern::elementwise_pipeline;
   }
 
   auto classification = op.getStructuredClassification();
@@ -103,14 +152,14 @@ static bool isOutOfPlaceStencilStage(
     return false;
   if (sde::hasInPlaceSelfRead(effects))
     return false;
-  auto family = op.getDepFamily();
-  return !family || *family == sde::SdeDepFamily::stencil_tiling_nd ||
-         *family == sde::SdeDepFamily::jacobi_alternating_buffers;
+  auto family = op.getPattern();
+  return !family || *family == sde::SdePattern::stencil_tiling_nd ||
+         *family == sde::SdePattern::jacobi_alternating_buffers;
 }
 
 static bool isWavefrontFrontierStage(sde::SdeSuIterateOp op) {
-  auto family = op.getDepFamily();
-  return family && *family == sde::SdeDepFamily::wavefront_2d;
+  auto family = op.getPattern();
+  return family && *family == sde::SdePattern::wavefront_2d;
 }
 
 static void stampRepeatedTimestepPlan(sde::SdeSuIterateOp op) {
@@ -158,6 +207,30 @@ static bool haveSamePhysicalTimestepPlan(sde::SdeSuIterateOp predecessor,
                           successor.getPhysicalBlockShapeAttr());
 }
 
+static bool sameSdeIterationTopology(sde::SdeSuIterateOp lhs,
+                                     sde::SdeSuIterateOp rhs) {
+  auto lhsTopology = lhs.getIterationTopology();
+  auto rhsTopology = rhs.getIterationTopology();
+  return lhsTopology && rhsTopology && *lhsTopology == *rhsTopology;
+}
+
+static bool haveSdeApprovedTiledTimestepPlan(sde::SdeSuIterateOp lhs,
+                                             sde::SdeSuIterateOp rhs) {
+  return haveSameIterationBounds(lhs, rhs) &&
+         haveSamePhysicalTimestepPlan(lhs, rhs) &&
+         sameI64ArrayAttr(lhs.getLogicalWorkerSliceAttr(),
+                          rhs.getLogicalWorkerSliceAttr()) &&
+         sameSdeIterationTopology(lhs, rhs) &&
+         haveEquivalentOrTiledSteps(lhs, rhs);
+}
+
+static bool haveCompatibleTimestepIterationPlan(sde::SdeSuIterateOp lhs,
+                                                sde::SdeSuIterateOp rhs) {
+  if (haveSameIterationShape(lhs, rhs))
+    return true;
+  return haveSdeApprovedTiledTimestepPlan(lhs, rhs);
+}
+
 static bool isTimestepInterstitialOp(Operation *op) {
   if (!op)
     return false;
@@ -175,12 +248,12 @@ static void stampJacobiTimestepPlan(sde::SdeSuIterateOp predecessor,
   stampRepeatedTimestepPlan(predecessor);
   stampRepeatedTimestepPlan(successor);
   if (predecessorIsStencil)
-    predecessor.setDepFamilyAttr(sde::SdeDepFamilyAttr::get(
+    predecessor.setPatternAttr(sde::SdePatternAttr::get(
         predecessor.getContext(),
-        sde::SdeDepFamily::jacobi_alternating_buffers));
+        sde::SdePattern::jacobi_alternating_buffers));
   if (successorIsStencil)
-    successor.setDepFamilyAttr(sde::SdeDepFamilyAttr::get(
-        successor.getContext(), sde::SdeDepFamily::jacobi_alternating_buffers));
+    successor.setPatternAttr(sde::SdePatternAttr::get(
+        successor.getContext(), sde::SdePattern::jacobi_alternating_buffers));
 }
 
 static bool stampTimestepPlanIfRecognized(
@@ -192,7 +265,7 @@ static bool stampTimestepPlanIfRecognized(
     return false;
   if (predEffects.hasUnknownEffects || succEffects.hasUnknownEffects)
     return false;
-  if (!haveSameIterationShape(predecessor, successor))
+  if (!haveCompatibleTimestepIterationPlan(predecessor, successor))
     return false;
 
   if (isUniformRepeatableStage(predecessor) &&

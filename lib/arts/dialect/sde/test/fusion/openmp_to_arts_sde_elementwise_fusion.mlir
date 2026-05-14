@@ -6,15 +6,15 @@
 // carrier-authoritative model.
 
 // Before fusion: two separate elementwise su_iterate ops.
-// SDE-LABEL: // -----// IR Dump After StructuredSummaries (structured-summaries) //----- //
+// SDE-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // SDE: func.func @main
-// SDE: arts_sde.cu_region <parallel> {
-// SDE-COUNT-2: arts_sde.su_iterate (%c0) to (%c128) step (%{{.+}}) nowait classification(<elementwise>) {
+// SDE: sde.cu_region <parallel> {
+// SDE-COUNT-2: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) nowait classification(<elementwise>) {
 
 // After fusion: a single elementwise_pipeline su_iterate op.
 // SDE-LABEL: // -----// IR Dump After ElementwiseFusion (elementwise-fusion) //----- //
 // SDE: func.func @main
-// SDE: arts_sde.su_iterate (%c0) to (%c128) step (%{{.+}}) nowait classification(<elementwise_pipeline>) {
+// SDE: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) nowait classification(<elementwise_pipeline>) {
 // SDE-NOT: classification(<elementwise>)
 
 // After ConvertSdeToArts: single fused Core task dispatch with both computations.
@@ -30,7 +30,7 @@
 // ARTS: memref.load
 // ARTS: arith.mulf
 // ARTS: memref.store
-// ARTS-NOT: arts_sde.
+// ARTS-NOT: sde.
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f32, dense<32> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<128xf32>, %B: memref<128xf32>, %C: memref<128xf32>) {

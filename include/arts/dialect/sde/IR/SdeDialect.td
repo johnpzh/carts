@@ -9,7 +9,7 @@
 include "mlir/IR/OpBase.td"
 
 def ArtsSdeDialect : Dialect {
-  let name = "arts_sde";
+  let name = "sde";
   let cppNamespace = "::mlir::arts::sde";
 
   let summary = "Structured Decomposition Environment -- runtime-agnostic parallel IR";

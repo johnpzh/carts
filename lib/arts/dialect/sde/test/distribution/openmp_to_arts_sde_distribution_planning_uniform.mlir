@@ -3,28 +3,28 @@
 
 // Verify that SDE authors a blocked distribution advisory for a local
 // elementwise loop, and that ConvertSdeToArts materializes that advisory as an
-// ARTS distribution kind without leaving `arts_sde.su_distribute` in the IR.
+// ARTS distribution kind without leaving `sde.su_distribute` in the IR.
 // It should also author the physical DB layout for independent output-vector
 // loops whose bodies contain loop-local scratch/reduction work and therefore
 // are not classified as pure elementwise linalg kernels.
 
 // SDE-LABEL: // -----// IR Dump After ScopeSelection (scope-selection) //----- //
 // SDE: func.func @main
-// SDE: arts_sde.cu_region <parallel> scope(<local>) {
-// SDE-NOT: arts_sde.su_distribute
-// SDE: arts_sde.su_iterate (%c0) to (%c128) step (%{{.+}})
+// SDE: sde.cu_region <parallel> scope(<local>) {
+// SDE-NOT: sde.su_distribute
+// SDE: sde.su_iterate (%c0) to (%c128) step (%{{.+}})
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: arts_sde.cu_region <parallel> scope(<local>) {
-// SDE: arts_sde.su_distribute <blocked> {
-// SDE: arts_sde.su_iterate (%c0) to (%c128) step (%{{.+}}) classification(<elementwise>) {
+// SDE: sde.cu_region <parallel> scope(<local>) {
+// SDE: sde.su_distribute <blocked> {
+// SDE: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) classification(<elementwise>) {
 
 // SDE-LABEL: func.func @sample_map_with_scratch
-// SDE: arts_sde.su_distribute <blocked> {
-// SDE: arts_sde.su_iterate
+// SDE: sde.su_distribute <blocked> {
+// SDE: sde.su_iterate
 // SDE: } {
-// SDE-SAME: iterationTopology = #arts_sde.iteration_topology<owner_strip>
+// SDE-SAME: iterationTopology = #sde.iteration_topology<owner_strip>
 // SDE-SAME: physicalBlockShape = [8]
 // SDE-SAME: physicalOwnerDims = [0]
 // SDE-NOT: {{plan[A-Z]}}
@@ -37,7 +37,7 @@
 // ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<uniform>{{.*}}distribution_kind = #arts.distribution_kind<block>{{.*}}distribution_pattern = #arts.distribution_pattern<uniform>{{.*}}distribution_version = 1 : i32
 // ARTS-SAME: no_verify = #arts.no_verify
-// ARTS-NOT: arts_sde.
+// ARTS-NOT: sde.
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<128xf64>, %B: memref<128xf64>) {

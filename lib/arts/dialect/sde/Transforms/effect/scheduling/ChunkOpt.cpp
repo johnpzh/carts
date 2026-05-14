@@ -173,7 +173,7 @@ struct ChunkOptPass : public arts::impl::ChunkOptBase<ChunkOptPass> {
           rewrite.op.getReductionKindsAttr(),
           rewrite.op.getReductionStrategyAttr(),
           rewrite.op.getStructuredClassificationAttr(),
-          rewrite.op.getDepFamilyAttr(),
+          rewrite.op.getPatternAttr(),
           rewrite.op.getAccessMinOffsetsAttr(),
           rewrite.op.getAccessMaxOffsetsAttr(), rewrite.op.getOwnerDimsAttr(),
           rewrite.op.getSpatialDimsAttr(), rewrite.op.getWriteFootprintAttr(),

@@ -7,18 +7,18 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c16 = arith.constant 16 : index
-    arts_sde.cu_region <parallel> scope(<local>) {
-      arts_sde.su_iterate (%c0) to (%c16) step (%c1) {
+    sde.cu_region <parallel> scope(<local>) {
+      sde.su_iterate (%c0) to (%c16) step (%c1) {
       ^bb0(%i: index):
         %v = memref.load %A[%i] : memref<16xf64>
         memref.store %v, %B[%i] : memref<16xf64>
-        arts_sde.yield
-      } {asyncStrategy = #arts_sde.async_strategy<cps_chain>,
+        sde.yield
+      } {asyncStrategy = #sde.async_strategy<cps_chain>,
          cps_group_id = 0 : i64,
          cps_stage_count = 1 : i64,
          cps_stage_index = 0 : i64,
-         repetitionStructure = #arts_sde.repetition_structure<full_timestep>}
-      arts_sde.yield
+         repetitionStructure = #sde.repetition_structure<full_timestep>}
+      sde.yield
     }
     return
   }

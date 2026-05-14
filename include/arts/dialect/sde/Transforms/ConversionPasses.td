@@ -34,7 +34,7 @@ def ConvertSdeToArts : Pass<"convert-sde-to-arts", "mlir::ModuleOp"> {
     matching ARTS contract from them, copies semantic contract attributes, and
     erases the carriers so downstream passes continue on loop/memref IR. When
     no transient carrier is authoritative, it prefers any explicit SDE-owned
-    semantic contract already stamped on `arts_sde.su_iterate`, then falls
+    semantic contract already stamped on `sde.su_iterate`, then falls
     back to the structural SDE classification attribute.
   }];
   let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",

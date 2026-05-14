@@ -119,7 +119,8 @@ performance as noisy until repeated median runs are collected.
      structure or forcing serialized DB updates.
    - Check if temporary reductions can use local accumulation or tree reduction
      instead of high-contention DB writes.
-   - Inspect whether SDE summaries identify the true read/write footprint.
+   - Inspect whether SDE pattern/effect facts identify the true read/write
+     footprint.
 
 4. **STREAM**
 

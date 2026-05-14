@@ -6,11 +6,11 @@
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: arts_sde.su_distribute <blocked> {
-// SDE: arts_sde.su_iterate (%c0) to (%c128) step (%c1) classification(<elementwise>) {
+// SDE: sde.su_distribute <blocked> {
+// SDE: sde.su_iterate (%c0) to (%c128) step (%c1) classification(<elementwise>) {
 // SDE: func.call @tanhf
 // SDE: } {
-// SDE-SAME: iterationTopology = #arts_sde.iteration_topology<owner_strip>
+// SDE-SAME: iterationTopology = #sde.iteration_topology<owner_strip>
 // SDE-SAME: physicalBlockShape = [16]
 // SDE-SAME: physicalOwnerDims = [0]
 // SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition

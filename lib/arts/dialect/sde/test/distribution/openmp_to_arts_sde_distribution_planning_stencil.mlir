@@ -11,14 +11,15 @@
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: arts_sde.cu_region <parallel> scope(<distributed>) {
-// SDE: arts_sde.su_distribute <owner_compute> {
-// SDE: arts_sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
+// SDE: sde.cu_region <parallel> scope(<distributed>) {
+// SDE: sde.su_distribute <owner_compute> {
+// SDE: sde.su_iterate (%c1) to (%c63) step ({{.*}}) classification(<stencil>) {
 // SDE: } {accessMaxOffsets
-// SDE-SAME: depFamily = #arts_sde.dep_family<stencil_tiling_nd>
-// SDE-SAME: iterationTopology = #arts_sde.iteration_topology<owner_strip>
-// SDE-SAME: logicalWorkerSlice = [2, 64]
-// SDE-SAME: physicalBlockShape = [2, 64]
+// SDE-SAME: iterationTopology = #sde.iteration_topology<owner_strip>
+// SDE-SAME: logicalWorkerSlice = [4, 64]
+// SDE-SAME: ownerDims = [0, 1]
+// SDE-SAME: pattern = #sde.pattern<stencil_tiling_nd>
+// SDE-SAME: physicalBlockShape = [4, 64]
 // SDE-SAME: physicalHaloShape = [1]
 // SDE-SAME: physicalOwnerDims = [0]
 // SDE-NOT: {{plan[A-Z]}}
@@ -29,21 +30,21 @@
 // ARTS: arts.epoch attributes {
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
 // ARTS-SAME: {{.*}}planHaloShape = [1]
-// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [2, 64]
+// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [4, 64]
 // ARTS-SAME: {{.*}}planOwnerDims = [0]
-// ARTS-SAME: {{.*}}planPhysicalBlockShape = [2, 64]
+// ARTS-SAME: {{.*}}planPhysicalBlockShape = [4, 64]
 // ARTS: arts.edt <task>
 // ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
 // ARTS-SAME: {{.*}}planHaloShape = [1]
-// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [2, 64]
+// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [4, 64]
 // ARTS-SAME: {{.*}}planOwnerDims = [0]
-// ARTS-SAME: {{.*}}planPhysicalBlockShape = [2, 64]
-// ARTS-NOT: arts_sde.
+// ARTS-SAME: {{.*}}planPhysicalBlockShape = [4, 64]
+// ARTS-NOT: sde.
 
 // LOCAL-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // LOCAL: func.func @inplace_serial_stencil
-// LOCAL: arts_sde.su_iterate
+// LOCAL: sde.su_iterate
 // LOCAL-SAME: classification(<stencil>)
 // LOCAL: } {accessMaxOffsets
 // LOCAL-SAME: inPlaceSharedState

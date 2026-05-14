@@ -10,7 +10,7 @@
 // This minimizes total halo volume when the outer dim is distributed.
 
 // CHECK-LABEL: // -----// IR Dump After LoopInterchange (loop-interchange) //----- //
-// CHECK: arts_sde.su_iterate
+// CHECK: sde.su_iterate
 // The outer inner loop should now iterate over the narrower-halo dim (was k):
 // CHECK: scf.for %[[OUTER:.+]] = %c1 to %c31 step %c1 {
 // CHECK:   scf.for %[[INNER:.+]] = %c1 to %c31 step %c1 {
@@ -19,8 +19,8 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
   func.func @main(%A: memref<32x32x32xf64>, %B: memref<32x32x32xf64>) {
     %c1 = arith.constant 1 : index
     %c31 = arith.constant 31 : index
-    arts_sde.cu_region <parallel> scope(<local>) {
-      arts_sde.su_iterate (%c1) to (%c31) step (%c1) classification(<stencil>) {
+    sde.cu_region <parallel> scope(<local>) {
+      sde.su_iterate (%c1) to (%c31) step (%c1) classification(<stencil>) {
       ^bb0(%i: index):
         scf.for %j = %c1 to %c31 step %c1 {
           scf.for %k = %c1 to %c31 step %c1 {
@@ -51,9 +51,9 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
             memref.store %sum, %B[%i, %j, %k] : memref<32x32x32xf64>
           }
         }
-        arts_sde.yield
+        sde.yield
       } {accessMaxOffsets = [1, 2, 1], accessMinOffsets = [-1, -2, -1], ownerDims = [0, 1, 2], spatialDims = [0, 1, 2], writeFootprint = [1, 1, 1]}
-      arts_sde.yield
+      sde.yield
     }
     return
   }

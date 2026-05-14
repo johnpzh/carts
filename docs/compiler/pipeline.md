@@ -73,9 +73,9 @@ The complete SDE lifecycle lives inside this stage.
 ConvertOpenMPToSde
 RaiseToTensor
 RaiseToLinalg
+PatternAnalysis
 LoopInterchange
 Tiling
-StructuredSummaries
 ElementwiseFusion
 ScopeSelection
 ScheduleRefinement
@@ -217,7 +217,7 @@ VerifyLowered
 
 ## Ownership Notes
 
-- SDE inside `openmp-to-arts` owns semantic decomposition, structured summaries,
+- SDE inside `openmp-to-arts` owns semantic decomposition, `PatternAnalysis`,
   state planning, dependency/effect proofs, and physical DB layout policy.
 - `CreateDbs` materializes SDE-authored DB layouts. It should not invent tensor
   partition policy that was visible to SDE.

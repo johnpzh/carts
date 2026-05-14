@@ -21,14 +21,14 @@
 
 // --- After ConvertOpenMPToSde ---
 // OMP: func.func @main
-// OMP: arts_sde.cu_region <parallel>
-// OMP: arts_sde.cu_region <single> scope(<local>)
+// OMP: sde.cu_region <parallel>
+// OMP: sde.cu_region <single> scope(<local>)
 // OMP: memref.load %{{.*}}[] : memref<i32>
 // OMP: arith.addi
 // OMP: memref.store %{{.*}}, %{{.*}}[] : memref<i32>
-// OMP: arts_sde.su_barrier
-// OMP: arts_sde.su_iterate
-// OMP: arts_sde.cu_region <parallel>
+// OMP: sde.su_barrier
+// OMP: sde.su_iterate
+// OMP: sde.cu_region <parallel>
 // OMP: memref.load
 // OMP: arith.muli
 // OMP: memref.store
@@ -36,16 +36,16 @@
 // --- After RaiseToTensor ---
 // TENSOR: func.func @main
 //   cu_region <parallel> threads both arrays and the scalar as iter_args:
-// TENSOR: arts_sde.cu_region <parallel> iter_args(
+// TENSOR: sde.cu_region <parallel> iter_args(
 //   cu_region <single> threads the scalar tensor:
-// TENSOR: arts_sde.cu_region <single> scope(<local>) iter_args(%[[ARG:.+]] = %{{.*}} : tensor<i32>) -> (tensor<i32>)
+// TENSOR: sde.cu_region <single> scope(<local>) iter_args(%[[ARG:.+]] = %{{.*}} : tensor<i32>) -> (tensor<i32>)
 // TENSOR: tensor.extract %[[ARG]][] : tensor<i32>
 // TENSOR: arith.addi
 // TENSOR: tensor.insert %{{.*}} into %[[ARG]][] : tensor<i32>
 //   Barrier still present:
-// TENSOR: arts_sde.su_barrier
+// TENSOR: sde.su_barrier
 //   su_iterate body with tensor ops:
-// TENSOR: arts_sde.su_iterate
+// TENSOR: sde.su_iterate
 // TENSOR: tensor.extract
 // TENSOR: arith.muli
 // TENSOR: tensor.insert

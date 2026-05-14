@@ -98,8 +98,8 @@ def SdeStructuredClassificationAttr
     : ArtsSde_I32EnumAttr<"structured_classification",
                           SdeStructuredClassification>;
 
-def SdeDepFamily
-    : ArtsSde_I32Enum<"SdeDepFamily",
+def SdePattern
+    : ArtsSde_I32Enum<"SdePattern",
                       "SDE dependency and schedule family", [
       I32EnumAttrCase<"uniform", 0, "uniform">,
       I32EnumAttrCase<"stencil_tiling_nd", 1, "stencil_tiling_nd">,
@@ -112,8 +112,8 @@ def SdeDepFamily
       I32EnumAttrCase<"elementwise_pipeline", 7, "elementwise_pipeline">,
       I32EnumAttrCase<"reduction", 8, "reduction">
     ]>;
-def SdeDepFamilyAttr
-    : ArtsSde_I32EnumAttr<"dep_family", SdeDepFamily>;
+def SdePatternAttr
+    : ArtsSde_I32EnumAttr<"pattern", SdePattern>;
 
 def SdeScheduleKind
     : ArtsSde_I32Enum<"SdeScheduleKind", "Scheduling policy", [
@@ -239,7 +239,7 @@ def SdeCuTaskOp
 
   let arguments = (ins
     Variadic<SdeDepType>:$deps,
-    OptionalAttr<SdeDepFamilyAttr>:$depFamily
+    OptionalAttr<SdePatternAttr>:$pattern
   );
 
   let regions = (region SizedRegion<1>:$body);
@@ -357,7 +357,7 @@ def SdeSuIterateOp
     OptionalAttr<ArrayAttr>:$reductionKinds,
     OptionalAttr<SdeReductionStrategyAttr>:$reductionStrategy,
     OptionalAttr<SdeStructuredClassificationAttr>:$structuredClassification,
-    OptionalAttr<SdeDepFamilyAttr>:$depFamily,
+    OptionalAttr<SdePatternAttr>:$pattern,
     OptionalAttr<ArrayAttr>:$accessMinOffsets,
     OptionalAttr<ArrayAttr>:$accessMaxOffsets,
     OptionalAttr<ArrayAttr>:$ownerDims,

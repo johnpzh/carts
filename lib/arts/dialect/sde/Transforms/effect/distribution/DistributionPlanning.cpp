@@ -3,7 +3,7 @@
 ///
 /// Cost-model-backed SDE distribution planning. This pass keeps distribution
 /// ownership on the SDE side of the boundary by wrapping eligible
-/// `arts_sde.su_iterate` operations in `arts_sde.su_distribute`.
+/// `sde.su_iterate` operations in `sde.su_distribute`.
 ///==========================================================================///
 
 #include "arts/dialect/sde/Transforms/Passes.h"

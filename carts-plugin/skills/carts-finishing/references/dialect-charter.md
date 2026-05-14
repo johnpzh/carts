@@ -16,7 +16,7 @@ This file is a fast-lookup distillation. If it disagrees with the docs above, th
 
 ## The three charters
 
-### SDE (`arts_sde`) — Semantic planning
+### SDE (`sde`) — Semantic planning
 
 **Owns:** semantic decisions about what to do, irrespective of how the runtime realizes them.
 
@@ -86,10 +86,10 @@ These do not block correctness but should be cleaned up in Phase 9. Cite when de
 
 | # | Violation | Files | Fix |
 |---|---|---|---|
-| 1 | Wavefront family detection in core, should be SDE (Invariant 5) | `lib/arts/dialect/core/Analysis/heuristics/StructuredKernelPlanAnalysis.cpp`, `core/Transforms/dep/Seidel2DWavefrontPattern.cpp` | Move family + tile geometry into `SdeStructuredSummaries` or new `SdeWavefrontAnalysis`; refactor core realizers to consume the contract. |
+| 1 | Wavefront family detection in core, should be SDE (Invariant 5) | `lib/arts/dialect/core/Analysis/heuristics/StructuredKernelPlanAnalysis.cpp`, `core/Transforms/dep/Seidel2DWavefrontPattern.cpp` | Move family + tile geometry into `PatternAnalysis` or a later SDE wavefront-planning pass; refactor core realizers to consume the contract. |
 | 2 | KernelTransforms re-detects elementwise/stencil/matmul (Invariant 5) | `lib/arts/dialect/core/Transforms/kernel/KernelTransforms.cpp` | Delete `ElementwisePipelinePattern` (redundant); refactor `StencilTilingNDPattern` and `MatmulReductionPattern` to consume SDE contracts. |
 | 3 | `RaiseMemRefDimensionality` is a Polygeist→ARTS conversion, lives in `core/Transforms/` (Invariant 1) | `lib/arts/dialect/core/Transforms/RaiseMemRefDimensionality.cpp` | Move to `core/Conversion/PolygeistToArts/`. |
-| 4 | DepTransforms creates `EpochOp`/`EdtOp` from re-detected wavefront/Jacobi patterns (Invariants 1 & 5) | `lib/arts/dialect/core/Transforms/dep/DepTransforms.cpp`, `core/Transforms/dep/Seidel2DWavefrontPattern.cpp` | Enhance `SdeStructuredSummaries`; refactor `DepTransforms` to consume hints. |
+| 4 | DepTransforms creates `EpochOp`/`EdtOp` from re-detected wavefront/Jacobi patterns (Invariants 1 & 5) | `lib/arts/dialect/core/Transforms/dep/DepTransforms.cpp`, `core/Transforms/dep/Seidel2DWavefrontPattern.cpp` | Enhance `PatternAnalysis` and SDE dependency planning; refactor `DepTransforms` to consume lowered SDE contracts. |
 | 5 | Doc disagreement: `op-classification.md` says `arts.lowering_contract` and `arts.omp_dep` should migrate to SDE; `pass-placement.md` says the live pipeline keeps planning inside `openmp-to-arts`. | `docs/architecture/op-classification.md` vs `docs/architecture/pass-placement.md` | `pass-placement.md` is current; the migration is aspirational and tracked under violation #1. |
 
 ## Open questions (Phase 0 / task #1)
@@ -98,7 +98,7 @@ The user must decide these before further restructuring. Answers go to `docs/arc
 
 1. **DestinationStyleOpInterface on SDE ops.** Make CU/SU ops implement `ins`/`outs` for tensor composition, or keep transient `linalg.generic` carriers? Recommendation: keep transient until benchmarks are green, then upgrade. (Effort if upgrading: 8–10h.)
 
-2. **Scope of `SdeStructuredSummaries`.** Does it own ALL semantic planning (incl. wavefront/Jacobi), or split into a separate `SdeWavefrontAnalysis`? Recommendation: own all; otherwise core keeps re-deriving and Invariant 5 stays broken.
+2. **Scope of `PatternAnalysis`.** Does it own ALL semantic pattern approval (incl. wavefront/Jacobi), or split later execution planning into a separate SDE wavefront pass? Recommendation: keep pattern approval centralized; otherwise core keeps re-deriving and Invariant 5 stays broken.
 
 3. **Plug `ARTSCostModel` into all heuristics.** ~20 hardcoded thresholds remain in `PartitioningHeuristics`, `DistributionHeuristics`, `DbHeuristics`. Effort 12–16h. Recommendation: defer until phase 8 is green; cost model only matters once structural plumbing is correct.
 
@@ -110,14 +110,16 @@ The user must decide these before further restructuring. Answers go to `docs/arc
 
 | If X is… | It belongs in… |
 |---|---|
-| A loop classification (stencil, matmul, reduction, etc.) | SDE (`SdeStructuredSummaries`) |
+| A loop classification (stencil, matmul, reduction, etc.) | SDE (`PatternAnalysis`) |
 | A reduction strategy choice (atomic / tree / accumulate) | SDE (`ReductionStrategy`) |
 | A scope choice (local vs distributed) | SDE (`ScopeSelection`, `DistributionPlanning`) |
 | A schedule choice (static / dynamic / guided) | SDE (`ScheduleRefinement`) |
 | Tile / chunk / halo geometry **as a contract** | SDE (decision); core (realization) |
 | DB allocation / acquire / release / partitioning | core |
 | EDT structural rewrite, fusion, distribution | core |
-| Epoch creation, CPS scheduling | core |
+| Epoch creation | core |
+| CPS legality, candidate grouping, and dataflow/token planning | SDE |
+| CPS continuation materialization | core/RT, consuming SDE plans |
 | `arts_rt.edt_create` argument lowering | RT |
 | LLVM-near final cleanup (DataPtrHoisting, GuidRangCallOpt) | RT |
 | Polygeist→MLIR frontend bridge | core/Conversion (NOT core/Transforms) |

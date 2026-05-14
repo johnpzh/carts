@@ -76,26 +76,26 @@ mapStructuredClassificationToArtsDepPattern(
   return std::nullopt;
 }
 
-static ArtsDepPattern mapSdeDepFamilyToArtsDepPattern(
-    sde::SdeDepFamily family) {
-  switch (family) {
-  case sde::SdeDepFamily::uniform:
+static ArtsDepPattern mapSdePatternToArtsDepPattern(
+    sde::SdePattern pattern) {
+  switch (pattern) {
+  case sde::SdePattern::uniform:
     return ArtsDepPattern::uniform;
-  case sde::SdeDepFamily::stencil_tiling_nd:
+  case sde::SdePattern::stencil_tiling_nd:
     return ArtsDepPattern::stencil_tiling_nd;
-  case sde::SdeDepFamily::cross_dim_stencil_3d:
+  case sde::SdePattern::cross_dim_stencil_3d:
     return ArtsDepPattern::cross_dim_stencil_3d;
-  case sde::SdeDepFamily::higher_order_stencil:
+  case sde::SdePattern::higher_order_stencil:
     return ArtsDepPattern::higher_order_stencil;
-  case sde::SdeDepFamily::wavefront_2d:
+  case sde::SdePattern::wavefront_2d:
     return ArtsDepPattern::wavefront_2d;
-  case sde::SdeDepFamily::jacobi_alternating_buffers:
+  case sde::SdePattern::jacobi_alternating_buffers:
     return ArtsDepPattern::jacobi_alternating_buffers;
-  case sde::SdeDepFamily::matmul:
+  case sde::SdePattern::matmul:
     return ArtsDepPattern::matmul;
-  case sde::SdeDepFamily::elementwise_pipeline:
+  case sde::SdePattern::elementwise_pipeline:
     return ArtsDepPattern::elementwise_pipeline;
-  case sde::SdeDepFamily::reduction:
+  case sde::SdePattern::reduction:
     return ArtsDepPattern::uniform;
   }
   return ArtsDepPattern::unknown;
@@ -360,8 +360,8 @@ static void stampSdeContractOnCoreOp(sde::SdeSuIterateOp source,
   std::optional<StructuredNeighborhoodSummary> selectedStencilContract;
   int64_t selectedRevision = getPatternRevision(source.getOperation()).value_or(1);
 
-  if (auto depFamily = source.getDepFamilyAttr()) {
-    selectedPattern = mapSdeDepFamilyToArtsDepPattern(depFamily.getValue());
+  if (auto pattern = source.getPatternAttr()) {
+    selectedPattern = mapSdePatternToArtsDepPattern(pattern.getValue());
     if (selectedPattern && isStencilFamilyDepPattern(*selectedPattern))
       selectedStencilContract = getSdeNeighborhoodSummary(source);
   } else if (auto classAttr = source.getStructuredClassificationAttr()) {
@@ -1082,9 +1082,9 @@ static LogicalResult materializeCuTaskAsEdt(sde::SdeCuTaskOp op,
   auto edtOp = EdtOp::create(rewriter, op.getLoc(), EdtType::task,
                              EdtConcurrency::intranode, artsDeps);
   edtOp.setNoVerifyAttr(NoVerifyAttr::get(rewriter.getContext()));
-  if (auto depFamily = op.getDepFamilyAttr())
+  if (auto pattern = op.getPatternAttr())
     stampSimple(edtOp.getOperation(),
-                mapSdeDepFamilyToArtsDepPattern(depFamily.getValue()),
+                mapSdePatternToArtsDepPattern(pattern.getValue()),
                 /*rev=*/1);
 
   {
@@ -1259,9 +1259,9 @@ struct CuTaskToArtsPattern : public OpRewritePattern<sde::SdeCuTaskOp> {
     auto edtOp = EdtOp::create(rewriter, loc, EdtType::task,
                                EdtConcurrency::intranode, artsDeps);
     edtOp.setNoVerifyAttr(NoVerifyAttr::get(ctx));
-    if (auto depFamily = op.getDepFamilyAttr())
+    if (auto pattern = op.getPatternAttr())
       stampSimple(edtOp.getOperation(),
-                  mapSdeDepFamilyToArtsDepPattern(depFamily.getValue()),
+                  mapSdePatternToArtsDepPattern(pattern.getValue()),
                   /*rev=*/1);
 
     Block &old = op.getBody().front();
@@ -1274,7 +1274,7 @@ struct CuTaskToArtsPattern : public OpRewritePattern<sde::SdeCuTaskOp> {
   }
 };
 
-/// arts_sde.su_distribute -> inline wrapped body
+/// sde.su_distribute -> inline wrapped body
 struct SuDistributeToArtsPattern
     : public OpRewritePattern<sde::SdeSuDistributeOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -1384,7 +1384,7 @@ struct SdeYieldToArtsPattern : public OpRewritePattern<sde::SdeYieldOp> {
   }
 };
 
-/// arts_sde.mu_reduction_decl -> semantic declaration only
+/// sde.mu_reduction_decl -> semantic declaration only
 struct MuReductionDeclToArtsPattern
     : public OpRewritePattern<sde::SdeMuReductionDeclOp> {
   using OpRewritePattern::OpRewritePattern;

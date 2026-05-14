@@ -6,17 +6,17 @@
 // index is parallel, the inner loop is the reduction dimension, and blocked
 // distribution is safe because each task owns disjoint output elements.
 
-// SDE-LABEL: // -----// IR Dump After StructuredSummaries (structured-summaries) //----- //
+// SDE-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // SDE: func.func @main
-// SDE: arts_sde.su_iterate (%c0) to (%c128) step (%c1) classification(<reduction>)
-// SDE: depFamily = #arts_sde.dep_family<reduction>
+// SDE: sde.su_iterate (%c0) to (%c128) step (%c1) classification(<reduction>)
+// SDE: pattern = #sde.pattern<reduction>
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: arts_sde.cu_region <parallel> scope(<local>) {
-// SDE: arts_sde.su_distribute <blocked> {
-// SDE: arts_sde.su_iterate (%c0) to (%c128) step (%c1) classification(<reduction>)
-// SDE: iterationTopology = #arts_sde.iteration_topology<owner_strip>
+// SDE: sde.cu_region <parallel> scope(<local>) {
+// SDE: sde.su_distribute <blocked> {
+// SDE: sde.su_iterate (%c0) to (%c128) step (%c1) classification(<reduction>)
+// SDE: iterationTopology = #sde.iteration_topology<owner_strip>
 // SDE-SAME: physicalBlockShape = [16]
 // SDE-SAME: physicalOwnerDims = [0]
 
@@ -27,7 +27,7 @@
 // ARTS: arts.edt <task>
 // ARTS: depPattern = #arts.dep_pattern<uniform>
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
-// ARTS-NOT: arts_sde.
+// ARTS-NOT: sde.
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<128x128xf64>, %x: memref<128xf64>, %y: memref<128xf64>) {

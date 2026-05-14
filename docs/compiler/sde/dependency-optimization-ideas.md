@@ -8,7 +8,7 @@ dependency-window intent before `ConvertSdeToArts`.
 
 Current pieces:
 
-- `StructuredSummaries` stamps `dep_family`, stencil offsets, owner dims,
+- `PatternAnalysis` stamps `pattern`, stencil offsets, owner dims,
   wavefront families, Jacobi alternating-buffer facts, and in-place safety.
 - `ElementwiseFusion` fuses consecutive sibling elementwise loops only when
   iteration spaces and schedules match and write roots are disjoint.
@@ -96,9 +96,9 @@ Dependency planning should run after loop/tile shape is stable enough to reason
 about windows, and before `ConvertSdeToArts`:
 
 ```text
+PatternAnalysis
 LoopInterchange
 Tiling
-StructuredSummaries
 ElementwiseFusion
 ReductionStrategy
 DistributionPlanning
