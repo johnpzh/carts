@@ -2,26 +2,26 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=LOCAL
 
-// Verify that SDE authors an owner-compute distribution advisory for a
-// distributed stencil loop, and that boundary materialization consumes the
-// advisory at the lowering boundary.
+// Verify that SDE authors an owner-compute distribution advisory for a stencil
+// loop, and that boundary materialization consumes the advisory at the lowering
+// boundary without SDE selecting local/distributed scope.
 // In-place neighbor stencils keep the original dependency ordering and do not
 // receive a physical block storage plan because the update reads neighboring
 // values from the same backing store it writes.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: sde.cu_region <parallel> scope(<distributed>) {
+// SDE: sde.cu_region <parallel> {
 // SDE: sde.su_distribute <owner_compute> {
-// SDE: sde.su_iterate (%c1) to (%c63) step ({{.*}}) classification(<stencil>) {
+// SDE: sde.su_iterate (%c1, %c1) to (%c63, %c63) step ({{.*}}) classification(<stencil>) {
 // SDE: } {accessMaxOffsets
-// SDE-SAME: iterationTopology = #sde.iteration_topology<owner_strip>
-// SDE-SAME: logicalWorkerSlice = [4, 64]
+// SDE-SAME: iterationTopology = #sde.iteration_topology<owner_tile>
+// SDE-SAME: logicalWorkerSlice = [16, 16]
 // SDE-SAME: ownerDims = [0, 1]
 // SDE-SAME: pattern = #sde.pattern<stencil_tiling_nd>
-// SDE-SAME: physicalBlockShape = [4, 64]
-// SDE-SAME: physicalHaloShape = [1]
-// SDE-SAME: physicalOwnerDims = [0]
+// SDE-SAME: physicalBlockShape = [16, 16]
+// SDE-SAME: physicalHaloShape = [1, 1]
+// SDE-SAME: physicalOwnerDims = [0, 1]
 // SDE-NOT: {{plan[A-Z]}}
 // SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition
 
@@ -29,17 +29,17 @@
 // ARTS: func.func @main
 // ARTS: arts.epoch attributes {
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
-// ARTS-SAME: {{.*}}planHaloShape = [1]
-// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [4, 64]
-// ARTS-SAME: {{.*}}planOwnerDims = [0]
-// ARTS-SAME: {{.*}}planPhysicalBlockShape = [4, 64]
+// ARTS-SAME: {{.*}}planHaloShape = [1, 1]
+// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [16, 16]
+// ARTS-SAME: {{.*}}planOwnerDims = [0, 1]
+// ARTS-SAME: {{.*}}planPhysicalBlockShape = [16, 16]
 // ARTS: arts.edt <task>
 // ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
-// ARTS-SAME: {{.*}}planHaloShape = [1]
-// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [4, 64]
-// ARTS-SAME: {{.*}}planOwnerDims = [0]
-// ARTS-SAME: {{.*}}planPhysicalBlockShape = [4, 64]
+// ARTS-SAME: {{.*}}planHaloShape = [1, 1]
+// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [16, 16]
+// ARTS-SAME: {{.*}}planOwnerDims = [0, 1]
+// ARTS-SAME: {{.*}}planPhysicalBlockShape = [16, 16]
 // ARTS-NOT: sde.
 
 // LOCAL-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //

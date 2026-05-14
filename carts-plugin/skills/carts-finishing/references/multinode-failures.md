@@ -26,18 +26,20 @@ If the rubric here does not match, escalate to `carts-distributed-triage` with t
 - `lib/arts/dialect/core/Transforms/db/DbDistributedEligibility.cpp` (eligibility rules — too restrictive)
 - `lib/arts/dialect/core/Transforms/db/DbDistributedOwnership.cpp` (attribute stamping — never reached)
 
-### 2. Scope mismatch (local vs distributed)
+### 2. Distributed window mismatch
 
-**Surface:** SDE/Core materialization or DB refinement emits a local stencil
-window for a DB that will run distributed; remote workers cannot reach halo
-elements.
+**Surface:** Core materialization or DB refinement emits a stencil window that
+is too narrow for a DB that Core will run distributed; remote workers cannot
+reach halo elements.
 
 **Symptom:** stencil values at boundary are garbage, or out-of-bounds access.
 
-**Root cause:** SDE distribution planning or Core DB refinement applied a
-local-only halo/window rule without honoring the DB's distributed ownership.
+**Root cause:** the SDE halo/window contract is incomplete, or Core DB
+refinement applied a local-only window while marking the DB as distributed.
 
-**Fix usually belongs in:** `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp` or Core DB refinement code. Make the halo/window decision scope-aware and validate the `distributed` attr before narrowing.
+**Fix usually belongs in:** SDE distribution planning only when the source
+halo/window contract is wrong; otherwise Core DB refinement should validate the
+`distributed` attr before narrowing.
 
 ### 3. Halo / remote-data ownership gap
 

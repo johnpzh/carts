@@ -1,13 +1,13 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS --implicit-check-not=arts.atomic_add
 
-// Verify that SDE authors a blocked distribution advisory for a local
+// Verify that SDE authors a target-neutral blocked distribution advisory for a
 // reduction loop with a strategy. ConvertSdeToArts materializes that plan as
 // concrete epoch/task IR with dependency-carried partial reduction DBs.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: sde.cu_region <parallel> scope(<local>) {
+// SDE: sde.cu_region <parallel> {
 // SDE: sde.su_distribute <blocked> {
 // SDE: sde.su_iterate (%c0) to (%c128) step (%c1)
 // SDE-SAME: reduction_strategy(<atomic>)

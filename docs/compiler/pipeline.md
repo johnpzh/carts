@@ -76,7 +76,6 @@ LoopInterchange
 Tiling
 ElementwiseFusion
 Vectorization
-ScopeSelection
 ScheduleRefinement
 ChunkOpt
 ReductionStrategy

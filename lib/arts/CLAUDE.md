@@ -29,7 +29,7 @@ dialect/                 MLIR dialects (IREE-style per-dialect structure)
       state/             PatternAnalysis
       dep/loop/          LoopInterchange, Tiling, IterationSpaceDecomposition
       dep/fusion/        ElementwiseFusion
-      effect/scheduling/ ScopeSelection, ScheduleRefinement, ChunkOpt, ReductionStrategy
+      effect/scheduling/ ScheduleRefinement, ChunkOpt, ReductionStrategy
       effect/distribution/ DistributionPlanning, BarrierElimination
     Verify/              VerifySdeLowered
 codegen/                 Shared lowering infra (ArtsCodegen)

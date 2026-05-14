@@ -5,7 +5,7 @@
 
 // CHECK-LABEL: // -----// IR Dump After ReductionStrategy (reduction-strategy) //----- //
 // CHECK: func.func @main
-// CHECK: sde.cu_region <parallel> scope(<local>) {
+// CHECK: sde.cu_region <parallel> {
 // CHECK: sde.su_iterate (%c0) to (%c16) step (%c1)
 // CHECK-SAME: reduction{{\[}}#sde.reduction_kind<mul>{{\]}}
 // CHECK-SAME: reduction_strategy(<tree>)

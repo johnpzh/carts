@@ -1,10 +1,10 @@
 ///==========================================================================///
 /// File: DistributionPlanning.cpp
 ///
-/// SDE distribution planning. This pass keeps distribution ownership on the SDE
+/// SDE distribution planning. This pass keeps distribution intent on the SDE
 /// side of the boundary by wrapping eligible `sde.su_iterate` operations in
-/// `sde.su_distribute`; it uses only SDE pattern/effect facts and abstract
-/// logical-capacity estimates.
+/// `sde.su_distribute`; it uses SDE pattern/effect facts and generic logical
+/// worker capacity, not local/distributed machine scope.
 ///==========================================================================///
 
 #include "arts/dialect/sde/Transforms/Passes.h"
@@ -29,7 +29,7 @@ namespace mlir::arts {
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/MathExtras.h"
 
-#include <functional>
+#include <limits>
 
 using namespace mlir;
 using namespace mlir::arts;
@@ -427,59 +427,23 @@ static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
       op.getContext(), sde::SdeIterationTopology::owner_strip));
 }
 
-static std::optional<sde::SdeConcurrencyScope>
-getEnclosingParallelScope(sde::SdeSuIterateOp op) {
-  for (Operation *current = op->getParentOp(); current;
-       current = current->getParentOp()) {
-    auto cuRegion = dyn_cast<sde::SdeCuRegionOp>(current);
-    if (!cuRegion || cuRegion.getKind() != sde::SdeCuKind::parallel)
-      continue;
-    if (auto scope = cuRegion.getConcurrencyScope())
-      return *scope;
-    return sde::SdeConcurrencyScope::local;
-  }
-  return std::nullopt;
+static int64_t saturatingMultiplyPositive(int64_t lhs, int64_t rhs) {
+  lhs = std::max<int64_t>(1, lhs);
+  rhs = std::max<int64_t>(1, rhs);
+  if (lhs > std::numeric_limits<int64_t>::max() / rhs)
+    return std::numeric_limits<int64_t>::max();
+  return lhs * rhs;
 }
 
-static bool hasEnoughDistributedWork(sde::SdeSuIterateOp op,
-                                     sde::SDECostModel &costModel) {
+static bool hasEnoughWorkForDistribution(sde::SdeSuIterateOp op,
+                                         sde::SDECostModel &costModel) {
   std::optional<int64_t> tripCount = getStaticTripCount(op.getOperation());
   if (!tripCount)
     return true;
 
-  int64_t baseThreshold =
-      std::max<int64_t>(1, costModel.getMinIterationsPerWorker()) *
-      std::max<int64_t>(1, costModel.getLogicalNodeCapacity());
-
-  // For stencils, account for halo exchange overhead.
-  int64_t threshold = baseThreshold;
-  auto classification = op.getStructuredClassification();
-  if (classification &&
-      *classification == sde::SdeStructuredClassification::stencil) {
-    ArrayAttr minArr = op.getAccessMinOffsetsAttr();
-    ArrayAttr maxArr = op.getAccessMaxOffsetsAttr();
-    if (minArr && maxArr && minArr.size() == maxArr.size()) {
-      int64_t haloVolume = 0;
-      unsigned numDims = minArr.size();
-
-      for (unsigned d = 0; d < numDims; ++d) {
-        int64_t lo = cast<IntegerAttr>(minArr[d]).getInt();
-        int64_t hi = cast<IntegerAttr>(maxArr[d]).getInt();
-        int64_t haloWidth = hi - lo;
-        haloVolume += haloWidth;
-      }
-
-      // Scale threshold by estimated halo cost relative to compute cost.
-      double haloCost =
-          haloVolume * costModel.getHaloExchangeCostPerByte() * 8; // assume f64
-      double computeCost = costModel.getLocalDataAccessCost();
-      if (computeCost > 0) {
-        double costRatio = 1.0 + haloCost / computeCost;
-        threshold = static_cast<int64_t>(baseThreshold * costRatio);
-      }
-    }
-  }
-
+  int64_t threshold = saturatingMultiplyPositive(
+      costModel.getLogicalWorkerCapacity(),
+      costModel.getMinIterationsPerWorker());
   return *tripCount >= threshold;
 }
 
@@ -488,10 +452,6 @@ chooseDistributionKind(sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
   if (op->getParentOfType<sde::SdeSuDistributeOp>())
     return std::nullopt;
   if (costModel.getLogicalWorkerCapacity() <= 1)
-    return std::nullopt;
-
-  auto scope = getEnclosingParallelScope(op);
-  if (!scope)
     return std::nullopt;
 
   auto classificationAttr = op.getStructuredClassificationAttr();
@@ -503,10 +463,7 @@ chooseDistributionKind(sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
     auto effects = sde::collectStructuredMemoryEffects(op.getBody());
     if (effects.hasUnknownEffects || effects.reads.contains(outputPlan->root))
       return std::nullopt;
-    if (*scope == sde::SdeConcurrencyScope::local)
-      return sde::SdeDistributionKind::blocked;
-    if (*scope == sde::SdeConcurrencyScope::distributed &&
-        hasEnoughDistributedWork(op, costModel))
+    if (hasEnoughWorkForDistribution(op, costModel))
       return sde::SdeDistributionKind::blocked;
     return std::nullopt;
   }
@@ -514,33 +471,17 @@ chooseDistributionKind(sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
   switch (classificationAttr.getValue()) {
   case sde::SdeStructuredClassification::elementwise:
   case sde::SdeStructuredClassification::elementwise_pipeline:
-    if (*scope == sde::SdeConcurrencyScope::local)
-      return sde::SdeDistributionKind::blocked;
-    if (*scope == sde::SdeConcurrencyScope::distributed &&
-        hasEnoughDistributedWork(op, costModel))
-      return sde::SdeDistributionKind::blocked;
-    return std::nullopt;
+    return sde::SdeDistributionKind::blocked;
   case sde::SdeStructuredClassification::stencil:
     if (isInPlaceSelfReadStencil(op))
       return std::nullopt;
-    if (*scope == sde::SdeConcurrencyScope::distributed &&
-        hasEnoughDistributedWork(op, costModel))
+    if (hasEnoughWorkForDistribution(op, costModel))
       return sde::SdeDistributionKind::owner_compute;
     return std::nullopt;
   case sde::SdeStructuredClassification::matmul:
-    if (*scope == sde::SdeConcurrencyScope::local)
-      return sde::SdeDistributionKind::blocked;
-    if (*scope == sde::SdeConcurrencyScope::distributed &&
-        hasEnoughDistributedWork(op, costModel))
-      return sde::SdeDistributionKind::blocked;
-    return std::nullopt;
+    return sde::SdeDistributionKind::blocked;
   case sde::SdeStructuredClassification::reduction:
-    if (*scope == sde::SdeConcurrencyScope::local &&
-        (op.getReductionStrategyAttr() || op.getReductionAccumulators().empty()))
-      return sde::SdeDistributionKind::blocked;
-    if (*scope == sde::SdeConcurrencyScope::distributed &&
-        (op.getReductionStrategyAttr() || op.getReductionAccumulators().empty()) &&
-        hasEnoughDistributedWork(op, costModel))
+    if (op.getReductionStrategyAttr() || op.getReductionAccumulators().empty())
       return sde::SdeDistributionKind::blocked;
     return std::nullopt;
   }

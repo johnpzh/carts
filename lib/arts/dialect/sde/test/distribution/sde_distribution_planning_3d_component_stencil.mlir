@@ -25,7 +25,6 @@
 // ARTS: func.func @main
 // ARTS: arts.epoch attributes {
 // ARTS-SAME: depPattern = #arts.dep_pattern<cross_dim_stencil_3d>
-// ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
 // ARTS-SAME: planHaloShape = [1, 1, 1]
 // ARTS-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_tile>
 // ARTS-SAME: planLogicalWorkerSlice = [4, 8, 8, 3]

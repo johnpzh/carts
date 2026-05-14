@@ -22,7 +22,6 @@ This file is a fast-lookup distillation. If it disagrees with the docs above, th
 
 - Loop classification: elementwise / stencil / matmul / reduction / wavefront / Jacobi / mixed
 - Reduction strategy: atomic / tree / local_accumulate
-- Scope: local vs distributed
 - Schedule: static / dynamic / guided
 - Chunk size for dynamic/guided
 - Tile geometry, halo geometry (when stamped as a contract)
@@ -41,6 +40,7 @@ This file is a fast-lookup distillation. If it disagrees with the docs above, th
 
 - DBs: alloc, partition, distributed-ownership marking, mode tightening, scratch elimination
 - EDTs: structural opt, ICM, distribution contract realization, orchestration
+- Scope: local vs distributed, using abstract-machine analysis
 - Implementation loops: local `scf.for` control flow inside concrete Core objects
 - Epochs: creation, CPS scheduling, optimization
 - Contract attributes: encode SDE decisions for downstream consumption
@@ -112,7 +112,7 @@ The user must decide these before further restructuring. Answers go to `docs/arc
 |---|---|
 | A loop classification (stencil, matmul, reduction, etc.) | SDE (`PatternAnalysis`) |
 | A reduction strategy choice (atomic / tree / accumulate) | SDE (`ReductionStrategy`) |
-| A scope choice (local vs distributed) | SDE (`ScopeSelection`, `DistributionPlanning`) |
+| A scope choice (local vs distributed) | Core, using abstract-machine analysis |
 | A schedule choice (static / dynamic / guided) | SDE (`ScheduleRefinement`) |
 | Tile / chunk / halo geometry **as a contract** | SDE (decision); core (realization) |
 | DB allocation / acquire / release / partitioning | core |

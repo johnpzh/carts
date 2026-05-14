@@ -8,7 +8,6 @@ strategy, tiling, distribution, and barrier decisions before Core.
 
 Current passes:
 
-- `ScopeSelection` chooses or refines concurrency scope.
 - `ScheduleRefinement` selects static, guided, or dynamic scheduling for narrow
   loop shapes.
 - `ChunkOpt` chooses chunk size for dynamic and guided schedules.
@@ -122,7 +121,6 @@ LoopInterchange
 Tiling
 ElementwiseFusion
 Vectorization
-ScopeSelection
 ScheduleRefinement
 ChunkOpt
 ReductionStrategy

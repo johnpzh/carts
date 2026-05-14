@@ -13,7 +13,7 @@
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: sde.cu_region <parallel> scope(<local>) {
+// SDE: sde.cu_region <parallel> {
 // SDE: sde.su_distribute <blocked> {
 // SDE: sde.su_iterate (%c0) to (%c128) step (%c1) classification(<reduction>)
 // SDE: iterationTopology = #sde.iteration_topology<owner_strip>

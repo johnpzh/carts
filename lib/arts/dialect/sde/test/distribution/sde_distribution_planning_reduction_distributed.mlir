@@ -1,13 +1,13 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS --implicit-check-not=arts.atomic_add
 
-// Verify that distributed-scope reductions with an explicit strategy and
-// enough work receive blocked distribution planning and lower through
+// Verify that reductions with an explicit strategy and enough work receive
+// target-neutral blocked distribution planning and lower through
 // dependency-carried partial reduction DBs.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: sde.cu_region <parallel> scope(<distributed>) {
+// SDE: sde.cu_region <parallel> {
 // SDE: sde.su_distribute <blocked> {
 // SDE: sde.su_iterate (%c0) to (%c128) step (%c1)
 // SDE-SAME: reduction_strategy(<atomic>)

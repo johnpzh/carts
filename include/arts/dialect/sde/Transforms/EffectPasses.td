@@ -1,24 +1,11 @@
 ///==========================================================================///
-/// Effect passes — scheduling decisions (scope, schedule, chunk, reduction,
+/// Effect passes — scheduling decisions (schedule, chunk, reduction,
 ///                  distribution, barrier elimination)
 ///==========================================================================///
 #ifndef ARTS_DIALECT_SDE_TRANSFORMS_EFFECT_PASSES
 #define ARTS_DIALECT_SDE_TRANSFORMS_EFFECT_PASSES
 
 include "mlir/Pass/PassBase.td"
-
-def ScopeSelection : Pass<"scope-selection", "mlir::ModuleOp"> {
-  let summary = "Select SDE concurrency scope from the active cost model";
-  let description = [{
-    Uses the SDE-owned cost model to choose the concurrency scope for
-    sde.cu_region <parallel> operations. The current implementation maps the
-    active logical topology directly: local-only configurations become
-    `scope(<local>)` and multi-placement configurations become
-    `scope(<distributed>)`.
-  }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
-  let constructor = "mlir::arts::sde::createScopeSelectionPass()";
-}
 
 def ScheduleRefinement
     : Pass<"schedule-refinement", "mlir::ModuleOp"> {
@@ -67,12 +54,12 @@ def DistributionPlanning
     : Pass<"distribution-planning", "mlir::ModuleOp"> {
   let summary = "Derive SDE-owned distribution intent from structured SDE loops";
   let description = [{
-    Uses SDE-owned structured classification, concurrency scope, and abstract
-    logical-capacity heuristics to wrap eligible `sde.su_iterate` operations in
+    Uses SDE-owned structured classification and generic logical-capacity
+    heuristics to wrap eligible `sde.su_iterate` operations in
     `sde.su_distribute`. The current implementation is deliberately
-    narrow: it only authors a blocked advisory for local elementwise loops and
-    an owner-compute advisory for distributed stencil loops with enough work to
-    amortize distribution.
+    narrow: it authors blocked advisories for structured independent loops and
+    owner-compute advisories for stencil loops with enough work to amortize
+    coordination.
 
     The target boundary is responsible for materializing this advisory into
     downstream distribution metadata.

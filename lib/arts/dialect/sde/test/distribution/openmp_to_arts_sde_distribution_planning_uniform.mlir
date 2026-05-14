@@ -8,15 +8,9 @@
 // contain loop-local scratch/reduction work and therefore are not classified as
 // pure elementwise linalg kernels.
 
-// SDE-LABEL: // -----// IR Dump After ScopeSelection (scope-selection) //----- //
-// SDE: func.func @main
-// SDE: sde.cu_region <parallel> scope(<local>) {
-// SDE-NOT: sde.su_distribute
-// SDE: sde.su_iterate (%c0) to (%c128) step (%{{.+}})
-
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: sde.cu_region <parallel> scope(<local>) {
+// SDE: sde.cu_region <parallel> {
 // SDE: sde.su_distribute <blocked> {
 // SDE: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) classification(<elementwise>) {
 
@@ -33,9 +27,7 @@
 // ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // ARTS: func.func @main
 // ARTS: arts.epoch attributes {
-// ARTS: arts.edt <task>
-// ARTS-SAME: arts.pattern_revision = 1 : i64
-// ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<uniform>{{.*}}distribution_kind = #arts.distribution_kind<block>{{.*}}distribution_pattern = #arts.distribution_pattern<uniform>{{.*}}distribution_version = 1 : i32
+// ARTS: arts.edt <task>{{.*}}arts.pattern_revision = 1 : i64{{.*}}depPattern = #arts.dep_pattern<uniform>{{.*}}distribution_kind = #arts.distribution_kind<block>{{.*}}distribution_pattern = #arts.distribution_pattern<uniform>{{.*}}distribution_version = 1 : i32
 // ARTS-SAME: no_verify = #arts.no_verify
 // ARTS-NOT: sde.
 

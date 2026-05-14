@@ -1,13 +1,13 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 
-// Verify that distributed-scope elementwise loops with enough work now receive
-// blocked distribution planning on the SDE side and carry the advisory across
-// the ARTS boundary.
+// Verify that structured elementwise loops with enough work receive blocked
+// distribution planning on the SDE side and carry the advisory across the ARTS
+// boundary without SDE selecting local/distributed scope.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: sde.cu_region <parallel> scope(<distributed>) {
+// SDE: sde.cu_region <parallel> {
 // SDE: sde.su_distribute <blocked> {
 // SDE: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) classification(<elementwise>) {
 

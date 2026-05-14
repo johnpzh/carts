@@ -4,7 +4,7 @@ Use this when deciding where to start a bisection.
 
 | Stage | Primary Question |
 |---|---|
-| `openmp-to-arts` | Did OpenMP structure become the right SDE plan and Core EDT/DB/epoch shape? Did SDE pattern discovery (`ScopeSelection`, `DistributionPlanning`, `LoopInterchange`, ...) stamp the right contracts before `ConvertSdeToArts`? |
+| `openmp-to-arts` | Did OpenMP structure become the right SDE plan and Core EDT/DB/epoch shape? Did SDE pattern discovery (`DistributionPlanning`, `LoopInterchange`, ...) stamp the right contracts before `ConvertSdeToArts`? |
 | `edt-transforms` | Did EDT structure/invariant motion change dependencies or task boundaries? |
 | `create-dbs` | Did the right allocations become DBs with plausible initial partition hints? |
 | `db-opt` | Did load/store reality produce the correct in/out/inout modes? |

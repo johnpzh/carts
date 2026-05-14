@@ -90,13 +90,13 @@ Phases are ordered to minimize attribution noise:
 
 **Order suggestion:** simplest first (parallel, task), then elementwise, then matmul, then reduction, then stencil, then wavefront. Each "easy" green builds confidence the rubric is working before tackling harder cases.
 
-## Phase 5 — SDE distributed-scope gates (task #6)
+## Phase 5 — Core distributed ownership gates (task #6)
 
 **Type:** targeted-fix
 
 **Stop condition:** `DbDistributedOwnership` marks DBs with the `distributed` UnitAttr for elementwise, matmul, and reduction classifications when `--distributed-db` is set. The 9 originally-passing samples (now extended to all 26 if phase 4 is green) compile under `-O3 --distributed-db`.
 
-**Action:** edit `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp:74-92`. Currently only stencils gate via `hasEnoughDistributedWork()`. Add gates for the three remaining classifications. Use the existing cost-model entry points (`getLocalDataAccessCost`, `getRemoteDataAccessCost`, `getHaloExchangeCostPerByte`) — these are 5 of the 14 SDECostModel methods that have ZERO callers per `docs/plan.md`, so this also closes that gap.
+**Action:** keep SDE distribution planning target-neutral and add the distributed eligibility gate in Core ownership/refinement. Core should consume SDE classification, window, and physical layout contracts, then use abstract-machine analysis to decide whether the realized DB/EDT shape is local or distributed.
 
 **Effort:** ~2h.
 

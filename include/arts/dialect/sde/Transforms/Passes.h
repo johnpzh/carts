@@ -64,8 +64,6 @@ std::unique_ptr<Pass> createIterationSpaceDecompositionPass();
 
 // --- Effect passes (scheduling decisions) ---
 std::unique_ptr<Pass>
-createScopeSelectionPass(SDECostModel *costModel = nullptr);
-std::unique_ptr<Pass>
 createScheduleRefinementPass(SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass> createChunkOptPass(SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass>

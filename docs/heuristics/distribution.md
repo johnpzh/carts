@@ -175,7 +175,7 @@ conversion to realize the MU/CU/SU plan directly as Core DB/EDT objects; the
 remaining `create-dbs` stage is a compatibility bridge for raw memref work that
 has not yet become canonical MU token/codelet form.
 
-- `openmp-to-arts`: SDE scope/distribution/reduction planning, direct
+- `openmp-to-arts`: SDE pattern/distribution/reduction planning, direct
   SDE-to-Core EDT/DB/epoch materialization, and strict SDE/Core verification.
 - `create-dbs`: transitional raw-memref bridge. It consumes SDE-authored layout
   attrs and dependency slices, then creates DB objects and localizes raw memref

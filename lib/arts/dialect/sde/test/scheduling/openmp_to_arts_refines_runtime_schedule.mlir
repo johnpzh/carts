@@ -11,7 +11,7 @@
 
 // CHECK-LABEL: // -----// IR Dump After ScheduleRefinement (schedule-refinement) //----- //
 // CHECK: func.func @main
-// CHECK: sde.cu_region <parallel> scope(<local>) {
+// CHECK: sde.cu_region <parallel> {
 // CHECK: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) schedule(<static>)
 // CHECK-NOT: arts.for
 // CHECK: // -----// IR Dump After ChunkOpt (chunk-opt) //----- //
