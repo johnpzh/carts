@@ -11,6 +11,9 @@ namespace mlir::arts {
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Pass/Pass.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
+
+#include <iterator>
 
 using namespace mlir;
 
@@ -30,11 +33,24 @@ struct CpsGroupInfo {
   DenseMap<int64_t, arts::sde::SdeSuIterateOp> byIndex;
 };
 
+struct CandidateBoundary {
+  Operation *firstContainer = nullptr;
+  arts::sde::SdeSuBarrierOp barrier;
+};
+
 static bool hasCandidateAttr(arts::sde::SdeSuIterateOp op) {
   return op->hasAttr(kCpsCandidateGroupId) ||
          op->hasAttr(kCpsCandidateStageIndex) ||
          op->hasAttr(kCpsCandidateStageCount) ||
          op->hasAttr(kCpsCandidateRequiresTokenizedDataflow);
+}
+
+static bool isTimestepBarrier(arts::sde::SdeSuBarrierOp barrier) {
+  if (!barrier)
+    return false;
+  auto reason = barrier.getBarrierReason();
+  return reason &&
+         *reason == arts::sde::SdeBarrierReason::timestep_stage_boundary;
 }
 
 static LogicalResult verifyCandidateAttrSet(arts::sde::SdeSuIterateOp op) {
@@ -153,6 +169,88 @@ static void verifyGroupCompleteness(
   }
 }
 
+static SmallVector<Operation *, 4> collectBlockAncestors(Operation *op) {
+  SmallVector<Operation *, 4> ancestors;
+  for (Operation *current = op; current; current = current->getParentOp()) {
+    if (current->getBlock())
+      ancestors.push_back(current);
+  }
+  return ancestors;
+}
+
+static CandidateBoundary findTimestepBarrierBetween(
+    arts::sde::SdeSuIterateOp first, arts::sde::SdeSuIterateOp second) {
+  SmallVector<Operation *, 4> firstAncestors =
+      collectBlockAncestors(first.getOperation());
+  SmallVector<Operation *, 4> secondAncestors =
+      collectBlockAncestors(second.getOperation());
+
+  for (Operation *firstContainer : firstAncestors) {
+    for (Operation *secondContainer : secondAncestors) {
+      if (firstContainer->getBlock() != secondContainer->getBlock())
+        continue;
+      if (!firstContainer->isBeforeInBlock(secondContainer))
+        continue;
+
+      for (auto it = std::next(firstContainer->getIterator());
+           it != secondContainer->getIterator(); ++it) {
+        auto barrier = dyn_cast<arts::sde::SdeSuBarrierOp>(&*it);
+        if (isTimestepBarrier(barrier))
+          return {firstContainer, barrier};
+      }
+    }
+  }
+
+  return {};
+}
+
+static bool isControlTokenProducedBetween(Value token,
+                                          Operation *firstContainer,
+                                          Operation *barrier) {
+  auto producer = token.getDefiningOp<arts::sde::SdeControlTokenOp>();
+  if (!producer)
+    return false;
+  Operation *producerOp = producer.getOperation();
+  if (producerOp->getBlock() != firstContainer->getBlock())
+    return false;
+  return firstContainer->isBeforeInBlock(producerOp) &&
+         producerOp->isBeforeInBlock(barrier);
+}
+
+static void verifyCandidateBarrierControlEdges(
+    DenseMap<Operation *, DenseMap<int64_t, CpsGroupInfo>> &groupsByScope,
+    bool &hasFailure) {
+  for (auto &scopeEntry : groupsByScope) {
+    for (auto &groupEntry : scopeEntry.second) {
+      CpsGroupInfo &group = groupEntry.second;
+      if (group.expectedCount != 2)
+        continue;
+      auto firstIt = group.byIndex.find(0);
+      auto secondIt = group.byIndex.find(1);
+      if (firstIt == group.byIndex.end() || secondIt == group.byIndex.end())
+        continue;
+
+      CandidateBoundary boundary =
+          findTimestepBarrierBetween(firstIt->second, secondIt->second);
+      if (!boundary.barrier)
+        continue;
+
+      bool hasControlEdge = llvm::any_of(
+          boundary.barrier.getTokens(), [&](Value token) {
+            return isControlTokenProducedBetween(
+                token, boundary.firstContainer, boundary.barrier.getOperation());
+          });
+      if (hasControlEdge)
+        continue;
+
+      boundary.barrier.emitError()
+          << "sde.cps candidate timestep barrier requires sde.control_token "
+             "produced after the previous candidate stage";
+      hasFailure = true;
+    }
+  }
+}
+
 struct VerifySdeCpsPlanPass
     : public arts::impl::VerifySdeCpsPlanBase<VerifySdeCpsPlanPass> {
   void runOnOperation() override {
@@ -194,6 +292,7 @@ struct VerifySdeCpsPlanPass
     verifyGroupCompleteness(candidateGroupsByScope, hasFailure,
                             "sde.cps candidate",
                             "sde.cps_candidate_stage_index");
+    verifyCandidateBarrierControlEdges(candidateGroupsByScope, hasFailure);
 
     if (hasFailure)
       signalPassFailure();

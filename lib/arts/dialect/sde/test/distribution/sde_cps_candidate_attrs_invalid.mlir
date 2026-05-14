@@ -2,6 +2,7 @@
 
 // CHECK-COUNT-2: sde.cps candidate plan requires sde.cps_candidate_group_id, sde.cps_candidate_stage_index, sde.cps_candidate_stage_count, and sde.cps_candidate_requires_tokenized_dataflow together
 // CHECK: sde.cps_candidate_requires_tokenized_dataflow must be a unit attr
+// CHECK: sde.cps candidate timestep barrier requires sde.control_token produced after the previous candidate stage
 
 module {
   func.func @missing_cps_candidate_attrs(%A: memref<16xf64>, %B: memref<16xf64>) {
@@ -55,6 +56,47 @@ module {
        cps_candidate_stage_count = 1 : i64,
        cps_candidate_stage_index = 0 : i64,
        repetitionStructure = #arts_sde.repetition_structure<full_timestep>}
+    return
+  }
+
+  func.func @candidate_timestep_barrier_requires_control_token(%A: memref<16xf64>, %B: memref<16xf64>) {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c16 = arith.constant 16 : index
+    arts_sde.cu_region <parallel> scope(<local>) {
+      arts_sde.su_iterate (%c0) to (%c16) step (%c1) {
+      ^bb0(%i: index):
+        %v = memref.load %A[%i] : memref<16xf64>
+        memref.store %v, %B[%i] : memref<16xf64>
+        arts_sde.yield
+      } {asyncStrategy = #arts_sde.async_strategy<advance_edt>,
+         cps_candidate_group_id = 42 : i64,
+         cps_candidate_requires_tokenized_dataflow,
+         cps_candidate_stage_count = 2 : i64,
+         cps_candidate_stage_index = 0 : i64,
+         depFamily = #arts_sde.dep_family<uniform>,
+         physicalBlockShape = [16],
+         physicalOwnerDims = [0],
+         repetitionStructure = #arts_sde.repetition_structure<full_timestep>,
+         structuredClassification = #arts_sde.structured_classification<elementwise>}
+      arts_sde.su_barrier
+      arts_sde.su_iterate (%c0) to (%c16) step (%c1) {
+      ^bb0(%i: index):
+        %v = memref.load %B[%i] : memref<16xf64>
+        memref.store %v, %A[%i] : memref<16xf64>
+        arts_sde.yield
+      } {asyncStrategy = #arts_sde.async_strategy<advance_edt>,
+         cps_candidate_group_id = 42 : i64,
+         cps_candidate_requires_tokenized_dataflow,
+         cps_candidate_stage_count = 2 : i64,
+         cps_candidate_stage_index = 1 : i64,
+         depFamily = #arts_sde.dep_family<uniform>,
+         physicalBlockShape = [16],
+         physicalOwnerDims = [0],
+         repetitionStructure = #arts_sde.repetition_structure<full_timestep>,
+         structuredClassification = #arts_sde.structured_classification<elementwise>}
+      arts_sde.yield
+    }
     return
   }
 }
