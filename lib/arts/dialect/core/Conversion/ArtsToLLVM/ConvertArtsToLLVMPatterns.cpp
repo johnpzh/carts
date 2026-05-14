@@ -447,9 +447,10 @@ struct DbAllocPattern : public ArtsToLLVMPattern<DbAllocOp> {
       if (failed(lowerDistributedRuntimeDbAlloc(
               op, nextId, dbSizes, isSingleElement, guidMemref, dbMemref)))
         return failure();
-      if (failed(linearizeRankedHandleUses(op.getGuid(), guidMemref,
-                                           dbSizes)) ||
-          failed(linearizeRankedHandleUses(op.getPtr(), dbMemref, dbSizes)))
+      if (failed(linearizeRankedHandleUses(op.getGuid(), guidMemref, dbSizes,
+                                           rewriter)) ||
+          failed(linearizeRankedHandleUses(op.getPtr(), dbMemref, dbSizes,
+                                           rewriter)))
         return failure();
       rewriter.replaceOp(op, {guidMemref, dbMemref});
       ++numDbOpsConverted;
@@ -489,8 +490,10 @@ struct DbAllocPattern : public ArtsToLLVMPattern<DbAllocOp> {
                      /*createDb=*/true, dbMemoryPlacement);
     }
 
-    if (failed(linearizeRankedHandleUses(op.getGuid(), guidMemref, dbSizes)) ||
-        failed(linearizeRankedHandleUses(op.getPtr(), dbMemref, dbSizes)))
+    if (failed(linearizeRankedHandleUses(op.getGuid(), guidMemref, dbSizes,
+                                         rewriter)) ||
+        failed(linearizeRankedHandleUses(op.getPtr(), dbMemref, dbSizes,
+                                         rewriter)))
       return failure();
 
     rewriter.replaceOp(op, {guidMemref, dbMemref});
@@ -502,7 +505,8 @@ private:
   enum class DbMemoryPlacement { Default, Interleaved };
 
   LogicalResult linearizeRankedHandleUses(Value original, Value flatMemref,
-                                          ArrayRef<Value> dbSizes) const {
+                                          ArrayRef<Value> dbSizes,
+                                          PatternRewriter &rewriter) const {
     auto originalType = dyn_cast<MemRefType>(original.getType());
     if (!originalType || originalType.getRank() <= 1)
       return success();
@@ -527,8 +531,7 @@ private:
             AC->computeLinearIndex(dbSizes, indices, loadOp.getLoc());
         Value linearLoad = AC->create<memref::LoadOp>(
             loadOp.getLoc(), flatMemref, ValueRange{linearIndex});
-        loadOp.getResult().replaceAllUsesWith(linearLoad);
-        loadOp.erase();
+        rewriter.replaceOp(loadOp, linearLoad);
         continue;
       }
 
@@ -548,7 +551,7 @@ private:
         AC->create<memref::StoreOp>(storeOp.getLoc(),
                                     storeOp.getValueToStore(), flatMemref,
                                     ValueRange{linearIndex});
-        storeOp.erase();
+        rewriter.eraseOp(storeOp);
       }
     }
 
