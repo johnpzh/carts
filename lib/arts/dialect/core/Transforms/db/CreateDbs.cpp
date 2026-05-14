@@ -1352,7 +1352,9 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
     /// an in-scope handle instead of the outer db_alloc result.
     Value inScopeAcquireView;
 
-    for (auto [groupIdx, depGroup] : llvm::enumerate(depGroups)) {
+    for (size_t groupIdx = 0, groupCount = depGroups.size();
+         groupIdx < groupCount; ++groupIdx) {
+      auto &depGroup = depGroups[groupIdx];
       /// Create the parent acquire over the full physical DB range selected at
       /// allocation time. Element-space partition hints from DbControlOp remain
       /// attached so task lowering can derive worker-local dependency windows.
@@ -1408,6 +1410,51 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
       if (!plan.usesBlockedLayout() && !entryModes.empty())
         partMode = static_cast<PartitionMode>(entryModes[0]);
 
+      SmallVector<Value> groupDbOffsets(dbOffsets.begin(), dbOffsets.end());
+      SmallVector<Value> groupDbSizes(dbSizes.begin(), dbSizes.end());
+      auto materializeExplicitOwnerSlice = [&]() -> bool {
+        if (!plan.usesBlockedLayout() || depGroup.size() != 1 ||
+            plan.partitionedDims.empty())
+          return false;
+
+        const MemrefInfo::DbDep *dep = depGroup.front();
+        if (!dep || dep->offsets.size() < plan.partitionedDims.size() ||
+            dep->sizes.size() < plan.partitionedDims.size() ||
+            plan.blockSizes.size() < plan.partitionedDims.size() ||
+            allocSizes.size() < plan.partitionedDims.size())
+          return false;
+
+        SmallVector<Value, 4> elementOffsets;
+        SmallVector<Value, 4> elementSizes;
+        SmallVector<Value, 4> blockSpans;
+        SmallVector<Value, 4> totalBlockCounts;
+        for (unsigned ownerSlot = 0; ownerSlot < plan.partitionedDims.size();
+             ++ownerSlot) {
+          elementOffsets.push_back(dep->offsets[ownerSlot]);
+          elementSizes.push_back(dep->sizes[ownerSlot]);
+          blockSpans.push_back(plan.blockSizes[ownerSlot]);
+          totalBlockCounts.push_back(allocSizes[ownerSlot]);
+        }
+
+        SmallVector<Value, 4> normalizedOffsets;
+        SmallVector<Value, 4> normalizedSizes;
+        DbUtils::convertElementSliceToBlockSlice(
+            AC->getBuilder(), edt.getLoc(), elementOffsets, elementSizes,
+            blockSpans, totalBlockCounts, normalizedOffsets, normalizedSizes);
+
+        SmallVector<Value, 4> mergedOffsets;
+        SmallVector<Value, 4> mergedSizes;
+        DbUtils::mergeNormalizedBlockSlice(
+            AC->getBuilder(), edt.getLoc(), groupDbOffsets, groupDbSizes,
+            allocSizes, normalizedOffsets, normalizedSizes, mergedOffsets,
+            mergedSizes);
+        groupDbOffsets.assign(mergedOffsets.begin(), mergedOffsets.end());
+        groupDbSizes.assign(mergedSizes.begin(), mergedSizes.end());
+        return true;
+      };
+
+      (void)materializeExplicitOwnerSlice();
+
       Value acqGuid = sourceGuid;
       Value acqPtr = sourcePtr;
       if (!preserveDepEdge && inScopeAcquireView) {
@@ -1428,8 +1475,8 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
         if (DbUtils::getUnderlyingDbAlloc(acqPtr)) {
           return AC->create<DbAcquireOp>(
               acquireLoc, acquireMode, acqGuid, acqPtr, partMode,
-              /*indices=*/SmallVector<Value>{}, /*offsets=*/dbOffsets,
-              /*sizes=*/dbSizes,
+              /*indices=*/SmallVector<Value>{}, /*offsets=*/groupDbOffsets,
+              /*sizes=*/groupDbSizes,
               /*partition_indices=*/partIndices,
               /*partition_offsets=*/partOffsets,
               /*partition_sizes=*/partSizes);
@@ -1437,8 +1484,8 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
 
         return AC->create<DbAcquireOp>(
             acquireLoc, acquireMode, acqGuid, acqPtr, ptrType, partMode,
-            /*indices=*/SmallVector<Value>{}, /*offsets=*/dbOffsets,
-            /*sizes=*/dbSizes,
+            /*indices=*/SmallVector<Value>{}, /*offsets=*/groupDbOffsets,
+            /*sizes=*/groupDbSizes,
             /*partition_indices=*/partIndices,
             /*partition_offsets=*/partOffsets,
             /*partition_sizes=*/partSizes);
@@ -1514,7 +1561,7 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
         SmallVector<Value> dbRefIndices;
         dbRefIndices.push_back(AC->createIndexConstant(0, edt.getLoc()));
         rewriteOpsToUseDbAcquire(edt, opsToRewrite, acquireOp, dbRefIndices,
-                                 dbOffsets, localAcquireView, plan);
+                                 groupDbOffsets, localAcquireView, plan);
       }
 
       OpBuilder::InsertionGuard releaseGuard(AC->getBuilder());
@@ -1879,19 +1926,20 @@ void CreateDbsPass::rewriteOpsToUseDbAcquire(
         if (!blockSize)
           continue;
         blockSizes.push_back(blockSize);
-        Value startOffset =
+        /// DbAcquireOp offsets are already DB-space.  Partition offsets carry
+        /// element-space hints; using the acquire offset directly keeps
+        /// db_ref indices relative to narrowed dependency windows.
+        Value startBlock =
             dimIdx < acquireOffsets.size() ? acquireOffsets[dimIdx] : zero;
-        startBlocks.push_back(
-            AC->create<arith::DivUIOp>(loc, startOffset, blockSize));
+        startBlocks.push_back(startBlock);
       }
 
       if (blockSizes.empty()) {
         Value fallbackBlockSize = plan.getBlockSize(0);
         if (fallbackBlockSize) {
           blockSizes.push_back(fallbackBlockSize);
-          Value startOffset = acquireOffsets.empty() ? zero : acquireOffsets[0];
-          startBlocks.push_back(
-              AC->create<arith::DivUIOp>(loc, startOffset, fallbackBlockSize));
+          Value startBlock = acquireOffsets.empty() ? zero : acquireOffsets[0];
+          startBlocks.push_back(startBlock);
         }
       }
 

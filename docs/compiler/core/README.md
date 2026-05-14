@@ -2,8 +2,10 @@
 
 This directory is the compiler-facing home for ARTS Core optimization planning.
 Core is the ARTS-machine-aware layer after SDE and before RT-shaped lowering.
-It materializes SDE-authored plans into concrete DB, EDT, dependency, and epoch
-structure, then refines that structure with Core analyses.
+It materializes remaining SDE-authored plans into concrete DB, EDT, dependency,
+and epoch structure, then refines that structure with Core analyses. When SDE
+has already produced canonical MU/token/codelet form, the SDE-to-Core boundary
+may create DBs/acquires/EDTs directly and Core should preserve that shape.
 
 For the dialect split that removed the Core semantic loop/parallel scheduler
 carrier and related scaffolding, see
@@ -13,7 +15,8 @@ carrier and related scaffolding, see
 
 Core owns:
 
-- `CreateDbs` and direct materialization of SDE-authored physical DB layouts.
+- `CreateDbs` as the raw-memref compatibility bridge for SDE-authored physical
+  DB layouts and dependency slices that have not yet become MU tokens.
 - DB, EDT, epoch, and distributed-orchestration analyses over runtime-shaped
   Core objects.
 - DB mode tightening, DB/EDT transforms, dependency-window lowering, and
@@ -28,6 +31,13 @@ Core must not own:
 - Physical tensor partition policy that SDE could prove before
   `ConvertSdeToArts`.
 - Runtime-call ABI details that belong in RT.
+
+`CreateDbs` is not a tensor optimizer. Its allowed work is mechanical: consume
+an SDE-authored layout/slice, allocate the Core DB, turn element-space slices
+into DB-space acquires, rewrite raw memref accesses to the acquired DB view,
+and preserve the dependency contract. If a performance fix requires choosing
+owner dims, tile sizes, loop interchange, or whether a dependency window is
+legal, the missing pass belongs in SDE.
 
 ## Pipeline Spine
 
@@ -49,8 +59,9 @@ RT-shaped EDT and epoch lowering.
 
 ## Optimization Focus
 
-- Ensure `CreateDbs` consumes `arts.plan.*` without inventing late tensor
-  partition policy.
+- Prefer direct MU/token lowering. Where raw memrefs remain, ensure
+  `CreateDbs` consumes `arts.plan.*` and explicit dependency slices without
+  inventing late tensor partition policy.
 - Preserve planned DB/EDT shape through distribution, orchestration, and
   lowering.
 - Keep dependency windows local to the planned block/window geometry.

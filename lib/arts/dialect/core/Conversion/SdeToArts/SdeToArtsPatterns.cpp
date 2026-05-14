@@ -23,6 +23,7 @@ namespace mlir::arts {
 #include "arts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::arts
 #include "arts/passes/Passes.h"
+#include "arts/utils/DbUtils.h"
 #include "arts/utils/LoweringContractUtils.h"
 #include "arts/utils/OperationAttributes.h"
 #include "arts/utils/StencilAttributes.h"
@@ -430,6 +431,85 @@ static Value materializeGenericWorkerCount(OpBuilder &builder, Location loc) {
   Value workers = ValueAnalysis::castToIndex(runtimeWorkers, builder, loc);
   return arith::MaxUIOp::create(builder, loc, workers,
                                 createOneIndex(builder, loc));
+}
+
+static std::optional<ArtsMode>
+getExternalRootAccessMode(sde::SdeSuIterateOp source, Value root) {
+  if (!source || !root)
+    return std::nullopt;
+
+  sde::StructuredMemoryEffectSummary effects =
+      sde::collectStructuredMemoryEffects(source.getBody());
+  if (effects.hasUnknownEffects)
+    return std::nullopt;
+
+  bool reads = effects.reads.contains(root);
+  bool writes = effects.writes.contains(root);
+  if (!reads && !writes)
+    return std::nullopt;
+  if (reads && writes)
+    return ArtsMode::inout;
+  if (writes)
+    return ArtsMode::out;
+  return ArtsMode::in;
+}
+
+static SmallVector<Value> materializeSdeOwnerSliceTaskDependencies(
+    sde::SdeSuIterateOp source, PatternRewriter &rewriter,
+    const IRMapping &outerMapping, Value globalBase, Value iterCount,
+    ArrayRef<Value> upperBounds, ArrayRef<Value> steps) {
+  SmallVector<Value> deps;
+  if (!source || !globalBase || !iterCount || upperBounds.empty() ||
+      steps.empty())
+    return deps;
+
+  /// The generic SU materialization currently decomposes the first SDE
+  /// iteration dimension into dispatch lanes. Only create explicit MU slice
+  /// dependencies when the SDE physical plan also owns exactly that dimension.
+  auto ownerDims = readI64ArrayAttr(source.getPhysicalOwnerDimsAttr());
+  if (!ownerDims || ownerDims->size() != 1 || (*ownerDims)[0] != 0)
+    return deps;
+
+  sde::StructuredMemoryEffectSummary effects =
+      sde::collectStructuredMemoryEffects(source.getBody());
+  if (effects.hasUnknownEffects)
+    return deps;
+
+  SmallVector<Value, 4> writableRoots;
+  for (Value root : effects.writes) {
+    if (!root || sde::isDefinedInside(source.getOperation(), root))
+      continue;
+    if (!isa<MemRefType>(root.getType()))
+      continue;
+    writableRoots.push_back(root);
+  }
+  if (writableRoots.size() != 1)
+    return deps;
+
+  Value sourceRoot = writableRoots.front();
+  std::optional<ArtsMode> mode = getExternalRootAccessMode(source, sourceRoot);
+  if (!mode || !DbUtils::isWriterMode(*mode))
+    return deps;
+
+  Value root = outerMapping.lookupOrDefault(sourceRoot);
+  if (!root || !isa<MemRefType>(root.getType()))
+    return deps;
+
+  Location loc = source.getLoc();
+  Value rawSize = arith::MulIOp::create(rewriter, loc, iterCount, steps.front());
+  Value remaining = arith::SubIOp::create(rewriter, loc, upperBounds.front(),
+                                          globalBase);
+  Value sliceSize = arith::MinUIOp::create(rewriter, loc, rawSize, remaining);
+
+  /// This is the SDE-authored MU address-space slice for the task. Core will
+  /// turn it into DB-space offsets after it creates the blocked DB layout.
+  auto control = DbControlOp::create(
+      rewriter, loc, *mode, root,
+      /*indices=*/SmallVector<Value>{},
+      /*offsets=*/SmallVector<Value>{globalBase},
+      /*sizes=*/SmallVector<Value>{sliceSize});
+  deps.push_back(control.getSubview());
+  return deps;
 }
 
 struct SuReductionPlan {
@@ -957,6 +1037,12 @@ static LogicalResult materializeSuIterateAsGenericTaskDispatch(
   SmallVector<Value> taskDependencies =
       createPartialReductionTaskDependencies(rewriter, loc, partialReductions,
                                              lane);
+  SmallVector<Value> ownerSliceDependencies =
+      materializeSdeOwnerSliceTaskDependencies(source, rewriter, outerMapping,
+                                               globalBase, iterCount,
+                                               upperBounds, steps);
+  taskDependencies.append(ownerSliceDependencies.begin(),
+                          ownerSliceDependencies.end());
   auto task = EdtOp::create(rewriter, loc, EdtType::task,
                             EdtConcurrency::intranode, taskDependencies);
   task.setNoVerifyAttr(NoVerifyAttr::get(ctx));

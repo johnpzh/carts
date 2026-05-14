@@ -13,12 +13,15 @@ outputs, vector/reduction kernels, 3D component stencils, and time-stepped
 kernels. When SDE needs symbolic execution capacity, it uses
 `sde.resource_query <logical_workers>` rather than an ARTS runtime query.
 
-Core is ARTS-machine-aware. It must materialize SDE-authored plans through
-`CreateDbs`, preserve and refine the chosen DB/EDT/dependency/epoch shape, and
-use Core analyses to orchestrate work without inventing tensor partition policy
-late. Core is the boundary that binds `sde.resource_query` and SDE plan
-contracts to `arts.runtime_query`, ARTS worker counts, DB granularity, EDT
-counts, and dependency-slot mechanics.
+Core is ARTS-machine-aware. It must preserve and refine the chosen
+DB/EDT/dependency/epoch shape, and use Core analyses to orchestrate work
+without inventing tensor partition policy late. Canonical MU/token/codelet form
+may lower directly to DBs/acquires/EDTs at the SDE boundary. `CreateDbs` remains
+the raw-memref compatibility bridge: it consumes SDE-authored layouts and
+dependency slices, but it should not choose tensor owner dimensions, tile
+geometry, or dependency-window legality. Core is the boundary that binds
+`sde.resource_query` and SDE plan contracts to `arts.runtime_query`, ARTS
+worker counts, DB granularity, EDT counts, and dependency-slot mechanics.
 
 RT is the low-level runtime-call lowering layer. It should optimize launch,
 CPS/continuation, dependency-slot, packing, scalar replacement, GUID/runtime
@@ -59,6 +62,10 @@ owns:
 - target-neutral physical layout and grain intent through `physicalOwnerDims`,
   `physicalBlockShape`, `physicalHaloShape`, and `logicalWorkerSlice`; these
   are SDE plan facts, not ARTS DB objects or worker identifiers;
+- MU/CU/SU alignment: the memory-unit (`mu_data`/`mu_token`) slice plan,
+  compute-unit body, and scheduling-unit iteration topology must be rewritten
+  together. Tiling a CU/SU loop without changing the MU token or DB address
+  space is not a valid performance transformation;
 - scheduling-unit topology through `iterationTopology`,
   `repetitionStructure`, `asyncStrategy`, reduction strategy, and barrier
   reason;
@@ -99,7 +106,8 @@ policy as input, not as a place to invent tensor partitioning. Core owns:
   configuration;
 - materializing SDE CPS, barrier, async, and repeated-timestep plans into ARTS
   EDT/epoch/control structure without changing their legality policy;
-- creating the chosen physical DB layout directly in `CreateDbs`;
+- preserving direct MU/token DB materialization when present, or mechanically
+  creating the chosen physical DB layout in `CreateDbs` for raw memrefs;
 - preserving planned DB/EDT/dependency/epoch shape while splitting or refining
   ARTS mechanics;
 - validating plan consistency, owner dims, block shapes, halo bounds, and
@@ -144,9 +152,9 @@ changes are justified only when compiler output already satisfies the contract
 and traces show a runtime implementation bottleneck or a missing runtime API.
 
 The reference success path is the current convolution-2d result: SDE authors the
-physical tensor partition, Core `CreateDbs` materializes the optimal DB shape,
-RT lowering uses local dependency-window indices, and the benchmark passes
-against the OpenMP checksum.
+physical tensor partition, the boundary materializes or bridges the matching DB
+shape, RT lowering uses local dependency-window indices, and the benchmark
+passes against the OpenMP checksum.
 
 ## Performance Heuristic And Analysis Set
 
@@ -166,9 +174,9 @@ Pass responsibility rule:
 - SDE may emit `sde.resource_query <logical_workers>` when symbolic arithmetic
   needs a logical execution capacity. Core lowers that query to ARTS runtime
   machinery.
-- `ConvertSdeToArts` lowers only the final SDE plan contract. Core then
-  materializes ARTS DB/EDT/dependency shape and validates that it preserved the
-  contract.
+- `ConvertSdeToArts` lowers only the final SDE plan contract. Canonical
+  MU/token/codelet form becomes DB/acquire/EDT directly; raw-memref fallback
+  carries explicit dependency slices for `CreateDbs` to bridge mechanically.
 
 ### Required SDE analyses
 
@@ -201,7 +209,8 @@ Pass responsibility rule:
 ### Required Core analyses
 
 - **Plan-to-DB validation:** verify that every SDE physical layout becomes the
-  exact `DbAllocOp` block shape and owner-dim order in `CreateDbs`.
+  exact direct DB allocation or raw-memref bridge `DbAllocOp` block shape and
+  owner-dim order.
 - **Acquire-window validation:** check that DB acquires match the planned
   dependency window, including halo bounds, owner block range, and local index
   projection.
@@ -234,7 +243,7 @@ Pass responsibility rule:
 
 | Family | SDE policy | Core check | RT/runtime follow-up |
 |---|---|---|---|
-| Elementwise and ML vector kernels | Fuse compatible stages, choose coarse vector blocks, keep pure libm scalar calls effect-free, preserve vectorization hints. | `CreateDbs` must allocate blocked output DBs and avoid whole-DB dependency windows. | Hoist dep/db pointers, shrink pack/unpack, confirm launch overhead is not dominating. |
+| Elementwise and ML vector kernels | Fuse compatible stages, choose coarse vector blocks, keep pure libm scalar calls effect-free, preserve vectorization hints. | Direct MU/token lowering or `CreateDbs` bridge must allocate blocked output DBs and avoid whole-DB dependency windows. | Hoist dep/db pointers, shrink pack/unpack, confirm launch overhead is not dominating. |
 | Row/column reductions (`atax`, `bicg`, `layernorm`, `batchnorm`) | Distinguish per-output reductions from OpenMP scalar reductions; choose owner rows/channels and local accumulate/tree/atomic strategy. | Materialize partial/output DBs according to SDE owner dims, with no serialized global update unless SDE chose atomic. | Reduce continuation and dependency overhead after reduction DB shape is correct. |
 | Matmul and chained tensor contractions (`gemm`, `2mm`, `3mm`) | Classify contractions in SDE, preserve reduction locality, and choose physical owner dims from proven DB reuse. Direct-memory matmul keeps row-strip ownership until SDE can also tile A/B/intermediate DBs; 2D output ownership is only valid when it does not duplicate coarse input sweeps. | Intermediate/output DBs must reflect the SDE owner plan. Core must preserve row-strip or 2D tiling exactly and must not invent tensor partitioning. | Optimize launch/dep overhead only after task count and block reuse match the SDE tile plan. |
 | Stencils and timesteps (`jacobi2d`, `seidel-2d`, `fdtd-2d`, KaStORS) | Author halo/window shape, alternating-buffer or wavefront structure, barrier/timestep intent, and CPS candidate/final stage plans. | Acquires must use bounded neighbor windows and local dependency slots; CPS/barrier plans must lower from SDE-authored control edges. | Optimize ready-local create, continuation calls, and dep window indexing after halo/CPS shape is correct. |
@@ -248,8 +257,8 @@ Before a performance result is considered meaningful:
 1. The benchmark must compile and pass checksum parity against OpenMP.
 2. The SDE stage dump must show the intended semantic plan or explicitly show
    why the benchmark is blocked.
-3. The Core `create-dbs` stage must show the SDE physical layout materialized
-   directly, or the result is blocked on Core materialization.
+3. The Core dump must show the SDE physical layout materialized directly from
+   MU tokens or bridged by `CreateDbs` from explicit SDE dependency slices.
 4. Runtime traces must agree with the intended task count, DB count, dependency
    count, and epoch shape.
 5. Only then may RT/runtime overhead changes be used to improve speed.
@@ -275,7 +284,8 @@ Before a performance result is considered meaningful:
 - DB partitioning decisions are made at SDE level when tensor structure is known.
 - SDE may reshape `sde.su_iterate` loop steps, inner loops, and
   scheduling-unit topology when the legality proof lives at that level.
-- `CreateDbs` must create the chosen physical DB layout directly.
+- Direct MU/token lowering should create the chosen physical DB/acquire shape
+  when available; `CreateDbs` should do so only for remaining raw memrefs.
 - Core passes may refine ARTS DB/EDT/dependency/epoch structure, but must not
   invent tensor partition policy late.
 - RT passes may optimize runtime-call shape only after SDE/Core produce the
@@ -376,8 +386,8 @@ until they are re-enabled or removed with a documented reason.
 
 ### Core Tracks
 
-- DB materialization: keep `CreateDbs` as the point where planned physical DBs
-  are created.
+- DB materialization: prefer direct MU/token DB creation; keep `CreateDbs` as
+  the raw-memref bridge where planned physical DBs are created mechanically.
 - EDT shape: preserve planned block reads/writes through direct SDE-to-Core
   materialization and Core EDT/DB refinement.
 - Epoch structure: remove unnecessary epoch barriers and continuation overhead
@@ -527,8 +537,9 @@ Blocked owner groups:
   `seidel-2d`). `seidel-2d` timed out in ARTS.
 - SDE/Core: stencil and component-slab materialization
   (`convolution-2d`, `specfem3d/*`, `sw4lite/*`). SDE must prove the slab/halo
-  plan and Core must show `CreateDbs` materializes that plan directly before
-  RT/runtime work is considered.
+  plan and the boundary must show direct MU/token materialization or
+  `CreateDbs` consumption of explicit SDE slices before RT/runtime work is
+  considered.
 
 Implemented matmul optimization:
 
@@ -542,8 +553,8 @@ Implemented matmul optimization:
    strip-mining local inside each row-owner task. This avoids the failed 2D
    owner heuristic where output-column owners duplicated full coarse-input
    `k` sweeps.
-3. Core `CreateDbs` now materializes the SDE matmul row-strip contract for
-   `gemm` as a block DB with `sizes[64]` and `elementSizes[75, 4800]`, with
+3. The raw-memref bridge now materializes the SDE matmul row-strip contract for
+   `gemm` as a block DB with `sizes[64]` and row-strip element sizes, with
    `depPattern = <matmul>` and `planOwnerDims = [0]`.
 
 Focused post-fix evidence:
@@ -660,10 +671,10 @@ Research-backed direction:
   `phase reuse` for chained contractions. This remains SDE plan metadata.
   SDE may use `sde.resource_query <logical_workers>` to size symbolic grain,
   but it must not materialize ARTS workers or runtime calls.
-- Core should materialize the final SDE plan as DBs and task/codelet structure:
-  output tile DBs, packed-panel scratch or DBs when cross-task reuse is legal,
-  phase-local intermediate DBs for `2mm`/`3mm`, and concrete ARTS worker/query
-  binding from SDE logical-resource queries.
+- The boundary should materialize the final SDE plan as DBs and task/codelet
+  structure: output tile DBs, packed-panel scratch or DBs when cross-task reuse
+  is legal, phase-local intermediate DBs for `2mm`/`3mm`, and concrete ARTS
+  worker/query binding from SDE logical-resource queries in Core.
 - RT/codelet lowering should run generic LICM, scalar replacement, loop
   vectorization, and alias/noalias cleanup on the already-materialized codelet.
   These passes must be pattern-agnostic; matmul-specific legality stays in SDE.
@@ -678,7 +689,7 @@ Professional pass split for the contraction work:
   2D owner tiling when packed panels/intermediate reuse are not available.
 - `DistributionPlanning`: convert the chosen tile plan into SDE distribution
   intent and logical grain. It should not rederive matmul legality.
-- `ConvertSdeToArts` and Core `CreateDbs`: bind the SDE plan to ARTS DBs,
+- `ConvertSdeToArts` and the raw-memref bridge: bind the SDE plan to ARTS DBs,
   EDTs, dependency windows, and runtime resource queries.
 - RT/codelet passes: generic loop/codelet cleanup only after the Core shape is
   correct.

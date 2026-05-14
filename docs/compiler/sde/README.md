@@ -2,12 +2,14 @@
 
 This directory is the compiler-facing home for SDE optimization planning. SDE is
 runtime-agnostic: it owns OpenMP semantics, structured state, dependence proofs,
-effect summaries, task shape, and target-neutral layout/grain intent before
-`ConvertSdeToArts`. Core is ARTS-machine-aware and materializes those plans in
-`CreateDbs`, preserving DB/EDT/epoch orchestration and binding SDE logical
-resource queries to ARTS runtime queries. RT/runtime work should wait until
-SDE/Core plans are present and traces still show launch, CPS, dependency, or
-runtime scheduling overhead.
+effect summaries, task shape, MU token slices, and target-neutral layout/grain
+intent before `ConvertSdeToArts`. The canonical boundary is direct:
+`sde.mu_data` becomes `arts.db_alloc`, `sde.mu_token` becomes
+`arts.db_acquire`, and `sde.cu_codelet` becomes `arts.edt`. Core remains
+ARTS-machine-aware for topology binding and for the remaining raw-memref
+compatibility bridge. RT/runtime work should wait until SDE/Core plans are
+present and traces still show launch, CPS, dependency, or runtime scheduling
+overhead.
 
 For the current dialect split, including SDE logical-worker planning after the
 removal of the Core loop carrier, see
@@ -54,8 +56,8 @@ of truth when pass order matters.
 ## Documents
 
 - [`physical-layout-optimization-plan.md`](physical-layout-optimization-plan.md):
-  SDE-first roadmap for making `CreateDbs` materialize planned physical DB
-  layouts directly.
+  SDE-first roadmap for moving physical DB layout and access-slice authorship
+  into MU/token plans, with `CreateDbs` left only as the raw-memref bridge.
 - [`state-optimization-ideas.md`](state-optimization-ideas.md): state, tensor,
   carrier, tiling, and task-shape ideas.
 - [`dependency-optimization-ideas.md`](dependency-optimization-ideas.md):
@@ -78,6 +80,8 @@ SDE optimization work should stamp or refine SDE-owned plan facts before
 - `physicalBlockShape`
 - `logicalWorkerSlice`
 - `physicalHaloShape`
+- MU facts: `mu_data` roots, `mu_token` access mode, token offsets, token sizes,
+  and codelet token/capture boundaries
 - `sde.resource_query <logical_workers>` for symbolic grain arithmetic
 - `iterationTopology`
 - `repetitionStructure`
@@ -92,16 +96,38 @@ consume and update them; raw SDE pattern-analysis facts must not become a Core
 analysis API. At the dialect boundary, `ConvertSdeToArts` mechanically lowers
 the final SDE plan into Core `arts.plan.*`, dependency-pattern, distribution,
 DB, EDT, barrier contracts, and `arts.runtime_query` operations for SDE logical
-resource queries. Core and RT may materialize or validate that lowered
-contract, but they must not invent tensor partition policy late.
+resource queries. For canonical MU/CU form this means direct DB/acquire/EDT
+materialization. For legacy raw-memref `su_iterate` form, SDE must emit explicit
+dependency-slice controls from the physical owner plan so `CreateDbs` consumes a
+plan instead of deriving one from body shape. Core and RT may materialize or
+validate that lowered contract, but they must not invent tensor partition
+policy late.
+
+## Heuristic Analysis Spine
+
+Use `PatternAnalysis` as the name for the shared SDE fact pass. It is not a
+Core input object and it should not be renamed to vague "structured summaries".
+The pass should stamp stable SDE facts that downstream SDE passes can consume:
+
+- tensor/linalg family and rank;
+- read/write roots, access modes, and self-read status;
+- owner, spatial, component, batch, and reduction dimensions;
+- affine or structured index maps when available;
+- legal interchange, tile, fusion, vectorization, and CPS candidates;
+- physical owner slices and MU token slices approved by SDE.
+
+Downstream SDE passes should consume these facts in order: first classify and
+prove legality, then choose task/data shape, then rewrite CU/SU/MU together.
+Tiling only CU/SU loops without rewriting MU token slices or DB address space is
+not a valid optimized plan.
 
 ## Verification Rule
 
 Every new optimization needs:
 
 - SDE lit coverage for positive planning and negative fallback.
-- Core coverage proving `CreateDbs` consumes SDE-authored physical layouts
-  without creating late policy.
+- Core coverage proving direct MU/token lowering or `CreateDbs` consumption of
+  SDE-authored physical layouts without creating late policy.
 - Focused large/64 benchmark evidence for the affected family.
 - `dekk carts test`, plus e2e or benchmark sweeps when shared lowering,
   analysis, or runtime shape changes.
