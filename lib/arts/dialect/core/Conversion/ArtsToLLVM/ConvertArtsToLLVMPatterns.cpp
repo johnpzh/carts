@@ -447,6 +447,10 @@ struct DbAllocPattern : public ArtsToLLVMPattern<DbAllocOp> {
       if (failed(lowerDistributedRuntimeDbAlloc(
               op, nextId, dbSizes, isSingleElement, guidMemref, dbMemref)))
         return failure();
+      if (failed(linearizeRankedHandleUses(op.getGuid(), guidMemref,
+                                           dbSizes)) ||
+          failed(linearizeRankedHandleUses(op.getPtr(), dbMemref, dbSizes)))
+        return failure();
       rewriter.replaceOp(op, {guidMemref, dbMemref});
       ++numDbOpsConverted;
       return success();
@@ -485,6 +489,10 @@ struct DbAllocPattern : public ArtsToLLVMPattern<DbAllocOp> {
                      /*createDb=*/true, dbMemoryPlacement);
     }
 
+    if (failed(linearizeRankedHandleUses(op.getGuid(), guidMemref, dbSizes)) ||
+        failed(linearizeRankedHandleUses(op.getPtr(), dbMemref, dbSizes)))
+      return failure();
+
     rewriter.replaceOp(op, {guidMemref, dbMemref});
     ++numDbOpsConverted;
     return success();
@@ -492,6 +500,60 @@ struct DbAllocPattern : public ArtsToLLVMPattern<DbAllocOp> {
 
 private:
   enum class DbMemoryPlacement { Default, Interleaved };
+
+  LogicalResult linearizeRankedHandleUses(Value original, Value flatMemref,
+                                          ArrayRef<Value> dbSizes) const {
+    auto originalType = dyn_cast<MemRefType>(original.getType());
+    if (!originalType || originalType.getRank() <= 1)
+      return success();
+    if (dbSizes.size() != static_cast<size_t>(originalType.getRank()))
+      return failure();
+
+    for (OpOperand &use : llvm::make_early_inc_range(original.getUses())) {
+      Operation *user = use.getOwner();
+
+      if (auto loadOp = dyn_cast<memref::LoadOp>(user)) {
+        if (loadOp.getMemref() != original)
+          continue;
+        if (loadOp.getIndices().size() <= 1)
+          continue;
+        if (loadOp.getIndices().size() != dbSizes.size())
+          return loadOp.emitOpError(
+              "cannot linearize DB handle load with rank/shape mismatch");
+        AC->setInsertionPoint(loadOp);
+        SmallVector<Value> indices(loadOp.getIndices().begin(),
+                                   loadOp.getIndices().end());
+        Value linearIndex =
+            AC->computeLinearIndex(dbSizes, indices, loadOp.getLoc());
+        Value linearLoad = AC->create<memref::LoadOp>(
+            loadOp.getLoc(), flatMemref, ValueRange{linearIndex});
+        loadOp.getResult().replaceAllUsesWith(linearLoad);
+        loadOp.erase();
+        continue;
+      }
+
+      if (auto storeOp = dyn_cast<memref::StoreOp>(user)) {
+        if (storeOp.getMemref() != original)
+          continue;
+        if (storeOp.getIndices().size() <= 1)
+          continue;
+        if (storeOp.getIndices().size() != dbSizes.size())
+          return storeOp.emitOpError(
+              "cannot linearize DB handle store with rank/shape mismatch");
+        AC->setInsertionPoint(storeOp);
+        SmallVector<Value> indices(storeOp.getIndices().begin(),
+                                   storeOp.getIndices().end());
+        Value linearIndex =
+            AC->computeLinearIndex(dbSizes, indices, storeOp.getLoc());
+        AC->create<memref::StoreOp>(storeOp.getLoc(),
+                                    storeOp.getValueToStore(), flatMemref,
+                                    ValueRange{linearIndex});
+        storeOp.erase();
+      }
+    }
+
+    return success();
+  }
 
   memref::GlobalOp getOrCreateMemrefGlobal(StringRef symbolName,
                                            MemRefType type,
@@ -1104,9 +1166,9 @@ private:
 /// Pattern to convert residual arts.db_ref operations.
 ///
 /// Most db_ref operations inside EDT bodies are consumed while lowering the EDT
-/// region. The single-worker/CPS relaunch path can leave db_ref operations in
-/// already-outlined functions, where they must be lowered before their
-/// DbAcquireOp source is rewritten to raw dependency storage.
+/// region. Single-worker and already-outlined functions can leave db_ref
+/// operations behind, where they must be lowered before their DbAcquireOp
+/// source is rewritten to raw dependency storage.
 struct DbRefPattern : public ArtsToLLVMPattern<DbRefOp> {
   using ArtsToLLVMPattern::ArtsToLLVMPattern;
 

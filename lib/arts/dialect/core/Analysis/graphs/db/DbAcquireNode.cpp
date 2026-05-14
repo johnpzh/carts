@@ -401,9 +401,8 @@ AccessPattern DbAcquireNode::getAccessPattern() const {
   /// Check for explicit fine-grained (element-wise) partition hints FIRST.
   /// These come from OMP task deps and should NOT trigger stencil/ESD mode.
   /// Criteria: partition_indices non-empty AND mode is fine_grained (not
-  /// block). Hints from for_lowering might have indices but suggest block
-  /// partitioning, while hints from OMP task deps are marked as element-wise
-  /// (fine_grained).
+  /// block). Block-partition hints may also carry indices, while hints from
+  /// OMP task deps are marked as element-wise (fine_grained).
   if (!acqOp.getPartitionIndices().empty()) {
     /// Check if this is truly fine-grained (from task deps) vs block hints
     auto mode = acqOp.getPartitionMode();

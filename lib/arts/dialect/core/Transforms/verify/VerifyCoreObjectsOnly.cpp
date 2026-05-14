@@ -9,6 +9,7 @@
 #define GEN_PASS_DEF_VERIFYCOREOBJECTSONLY
 #include "arts/passes/Passes.h"
 #include "arts/passes/Passes.h.inc"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/Pass.h"
 
 using namespace mlir;
@@ -32,6 +33,18 @@ struct VerifyCoreObjectsOnlyPass
         found = true;
       }
 
+      if (op->getDialect() && op->getDialect()->getNamespace() == "omp") {
+        op->emitError() << "OpenMP operation '" << op->getName()
+                        << "' remains after the SDE/Core boundary";
+        found = true;
+      }
+
+      if (isa<scf::ParallelOp>(op)) {
+        op->emitError()
+            << "scf.parallel remains after the SDE/Core boundary; "
+               "parallel work must be materialized as Core objects";
+        found = true;
+      }
     });
 
     if (found)

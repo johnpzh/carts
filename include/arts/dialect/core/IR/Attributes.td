@@ -112,8 +112,7 @@ def ArtsPlanAsyncStrategy
     : Arts_I32Enum<"ArtsPlanAsyncStrategy",
                    "Core ARTS async-loop strategy", [
       I32EnumAttrCase<"blocking", 0, "blocking">,
-      I32EnumAttrCase<"advance_edt", 1, "advance_edt">,
-      I32EnumAttrCase<"cps_chain", 2, "cps_chain">
+      I32EnumAttrCase<"advance_edt", 1, "advance_edt">
     ]>;
 def ArtsPlanAsyncStrategyAttr
     : Arts_I32EnumAttr<"plan_async_strategy", ArtsPlanAsyncStrategy>;
@@ -225,19 +224,6 @@ def ArtsDepPattern
     ]>;
 def ArtsDepPatternAttr
     : Arts_I32EnumAttr<"dep_pattern", ArtsDepPattern>;
-
-/// Integer attribute for storing number of workers for EDT operations
-def WorkersAttr : AttrDef<ArtsDialect, "workers"> {
-  let summary = "Number of parallel workers for EDT operations";
-  let description = [{
-    Specifies the number of parallel workers to use for executing an EDT.
-    This attribute is set by the concurrency pass based on the abstract machine
-    configuration and determines how many task instances to create.
-  }];
-  let parameters = (ins "int32_t" : $value);
-  let mnemonic = "workers";
-  let assemblyFormat = "`<` $value `>`";
-}
 
 /// Unit attribute to skip EDT verification during intermediate passes
 def NoVerifyAttr : AttrDef<ArtsDialect, "NoVerify"> {

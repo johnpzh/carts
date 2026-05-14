@@ -96,6 +96,7 @@ def EdtParamPackOp : ArtsRt_Op<"edt_param_pack", [MemoryEffects<[MemWrite]>]> {
   }];
   let arguments = (ins Variadic<AnyType>:$params);
   let results = (outs AnyMemRef:$memref);
+  let hasVerifier = 1;
   let assemblyFormat =
       "`(` $params `)` attr-dict `:` type($params) `:` type($memref)";
 }
@@ -107,6 +108,7 @@ def EdtParamUnpackOp : ArtsRt_Op<"edt_param_unpack", [Pure]> {
   }];
   let arguments = (ins AnyMemRef:$memref);
   let results = (outs Variadic<AnyType>:$unpacked);
+  let hasVerifier = 1;
   let assemblyFormat =
       "$memref `:` type($memref) attr-dict `:` `(` type($unpacked) `)`";
 }
@@ -235,7 +237,7 @@ def DepBindOp : ArtsRt_Op<"dep_bind", [MemoryEffects<[MemWrite]>]> {
 }
 
 def DepForwardOp : ArtsRt_Op<"dep_forward", [Pure]> {
-  let summary = "Forward a dependency slot across CPS relaunch";
+  let summary = "Forward a dependency slot";
   let arguments = (ins I64:$slot);
   let results = (outs I64:$forwarded);
   let assemblyFormat = "$slot attr-dict";

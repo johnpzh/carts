@@ -359,11 +359,6 @@ void DbLoweringPass::updateAllocUsers(DbAllocOp oldAllocOp,
       continue;
     }
 
-    if (isa<CPSAdvanceOp>(userOp)) {
-      use.set(newPtr);
-      continue;
-    }
-
     if (auto freeOp = dyn_cast<DbFreeOp>(userOp)) {
       auto newFree = AC->create<DbFreeOp>(freeOp.getLoc(), newPtr);
       freeOp->replaceAllUsesWith(newFree);
@@ -403,8 +398,8 @@ void DbLoweringPass::updateAcquireUsers(DbAcquireOp acquireOp, Value newGuid,
   /// tracing back through block arguments to an old (pre-lowered) DbAllocOp
   /// that still carries the original typed memref (e.g.
   /// memref<?xmemref<?xf64>>) instead of the lowered opaque pointer type
-  /// (memref<?x!llvm.ptr>). This matters for nested acquires inside CPS
-  /// continuation EDT bodies where the source pointer is a block argument —
+  /// (memref<?x!llvm.ptr>). This matters for nested acquires inside outlined
+  /// EDT bodies where the source pointer is a block argument:
   /// getUnderlyingDbAlloc would reach the old alloc (scheduled for removal but
   /// not yet erased) and read its stale type.
   Type ptrType = sourcePtr.getType();

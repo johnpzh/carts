@@ -90,9 +90,6 @@ using namespace mlir::func;
 using namespace mlir::arts;
 using AttrNames::Operation::ContinuationForEpoch;
 using AttrNames::Operation::ControlDep;
-using AttrNames::Operation::CPSChainId;
-using AttrNames::Operation::CPSForwardDeps;
-using AttrNames::Operation::CPSParamPerm;
 using namespace mlir::arts::rt;
 
 using namespace mlir::arts::edt_lowering;
@@ -183,8 +180,12 @@ static bool hasTrustedPartitionedWriteContract(DbAcquireOp acquire) {
   auto mode = acquire.getPartitionMode().value_or(PartitionMode::coarse);
   if (!usesBlockLayout(mode))
     return false;
-  if (acquire.getPartitionOffsets().empty() ||
-      acquire.getPartitionSizes().empty())
+
+  bool hasPartitionWindow =
+      (!acquire.getPartitionOffsets().empty() &&
+       !acquire.getPartitionSizes().empty()) ||
+      (!acquire.getOffsets().empty() && !acquire.getSizes().empty());
+  if (!hasPartitionWindow)
     return false;
 
   if (auto contract = resolveAcquireContract(acquire))
@@ -242,9 +243,9 @@ private:
   func::FuncOp createOutlinedFunction(EdtOp edtOp, EdtEnvManager &envManager);
 
   /// Parameter handling
-  Value packParams(Location loc, EdtEnvManager &envManager,
-                   SmallVector<Type> &packTypes,
-                   SmallVectorImpl<Value> *packedValues = nullptr);
+  FailureOr<Value> packParams(Location loc, EdtEnvManager &envManager,
+                              SmallVector<Type> &packTypes,
+                              SmallVectorImpl<Value> *packedValues = nullptr);
 
   /// Region outlining
   LogicalResult
@@ -392,7 +393,11 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
     return edtOp.emitError("Failed to create outlined function");
 
   /// Pack parameters
-  Value paramPack = packParams(loc, envManager, packTypes, &packedValues);
+  FailureOr<Value> maybeParamPack =
+      packParams(loc, envManager, packTypes, &packedValues);
+  if (failed(maybeParamPack))
+    return failure();
+  Value paramPack = *maybeParamPack;
 
   /// Outline region to function and replace EDT
   SmallVector<unsigned> livePackIndices;
@@ -495,30 +500,12 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
     outlineOp->setAttr(ContinuationForEpoch, AC->getBuilder().getUnitAttr());
   if (edtOp->hasAttr(ControlDep))
     outlineOp->setAttr(ControlDep, edtOp->getAttr(ControlDep));
-  if (edtOp->hasAttr(CPSForwardDeps))
-    outlineOp->setAttr(CPSForwardDeps, AC->getBuilder().getUnitAttr());
-  /// Record the pre-CPS param-pack schema on continuation EDTs so
-  /// EpochLowering can rebuild loop-back continuation packs to the exact
-  /// outlined ABI instead of compacting them to the current carry subset.
-  if (edtOp->hasAttr(ContinuationForEpoch) &&
-      !outlineOp->hasAttr(CPSParamPerm)) {
-    SmallVector<int64_t> identityPerm;
-    identityPerm.reserve(packTypes.size());
-    for (int64_t i = 0, e = packTypes.size(); i < e; ++i)
-      identityPerm.push_back(i);
-    outlineOp->setAttr(CPSParamPerm,
-                       AC->getBuilder().getDenseI64ArrayAttr(identityPerm));
-  }
-  if (auto chainId = edtOp->getAttrOfType<StringAttr>(CPSChainId))
-    outlineOp->setAttr(CPSChainId, chainId);
   if (edtOp->hasAttr(AttrNames::Operation::ReadyLocalLaunch))
     outlineOp->setAttr(AttrNames::Operation::ReadyLocalLaunch,
                        AC->getBuilder().getUnitAttr());
 
-  /// CPS-chain continuations stamp launch schemas at the high-level EDT once
-  /// EpochOpt has proven the carry/dependency ABI. Preserve that contract on
-  /// the lowered create op so EpochLowering can rebuild relaunch slots without
-  /// falling back to positional inference.
+  /// Preserve structured launch schemas on the lowered create op for consumers
+  /// that need the explicit state/dependency ABI.
   if (auto stateSchema = edtOp->getAttrOfType<DenseI64ArrayAttr>(
           AttrNames::Operation::LaunchState::StateSchema))
     outlineOp->setAttr(AttrNames::Operation::LaunchState::StateSchema,
@@ -617,12 +604,13 @@ EdtLoweringPass::createOutlinedFunction(EdtOp edtOp,
 ///===----------------------------------------------------------------------===///
 /// Pack EDT parameters and dependency metadata
 ///
-/// Creates a parameter pack containing user-defined parameters, constants,
-/// and metadata for datablock dependencies (indices, offsets, sizes).
+/// Creates a parameter pack containing scalar user parameters and metadata for
+/// datablock dependencies (indices, offsets, sizes).
 ///===----------------------------------------------------------------------===///
-Value EdtLoweringPass::packParams(Location loc, EdtEnvManager &envManager,
-                                  SmallVector<Type> &packTypes,
-                                  SmallVectorImpl<Value> *packedValues) {
+FailureOr<Value>
+EdtLoweringPass::packParams(Location loc, EdtEnvManager &envManager,
+                            SmallVector<Type> &packTypes,
+                            SmallVectorImpl<Value> *packedValues) {
   const auto &parameters = envManager.getParameters();
   const auto &deps = envManager.getDependencies();
   const auto &dbHandles = envManager.getDbHandles();
@@ -630,33 +618,31 @@ Value EdtLoweringPass::packParams(Location loc, EdtEnvManager &envManager,
   SmallVector<Value> packValues;
   auto &valueToPackIndex = envManager.getValueToPackIndex();
 
+  auto appendPackValue = [&](Value value) -> LogicalResult {
+    if (!value.getType().isIntOrIndexOrFloat())
+      return emitError(loc, "EDT parameter pack accepts only scalar values, got ")
+             << value.getType();
+    packTypes.push_back(value.getType());
+    packValues.push_back(value);
+    return success();
+  };
+
   /// Pack user parameters first
   for (Value v : parameters) {
     /// Skip undef-like values - they can be recreated in the outlined body.
     if (isUndefLikeOp(v.getDefiningOp()))
       continue;
     valueToPackIndex.try_emplace(v, packValues.size());
-    packTypes.push_back(v.getType());
-    packValues.push_back(v);
+    if (failed(appendPackValue(v)))
+      return failure();
   }
 
-  /// Pack DB handle values as opaque i64 parameters. DbAllocOp results
-  /// (memref<Nxi64> GUIDs, memref<Nxmemref<...>> ptrs) must never be cloned —
-  /// cloning creates new datablocks. Convert to raw i64 for transport.
-  for (Value dbHandle : dbHandles) {
-    Value scalar;
-    /// Both GUID handles (memref<?xi64>) and ptr handles are passed as
-    /// raw pointers (memref → ptr → i64). This preserves the full array
-    /// so that CPS chain continuations can access all block partitions,
-    /// not just element[0].
-    {
-      Value rawPtr = AC->create<polygeist::Memref2PointerOp>(
-          loc, LLVM::LLVMPointerType::get(AC->getContext()), dbHandle);
-      scalar = AC->create<LLVM::PtrToIntOp>(loc, AC->Int64, rawPtr);
-    }
-    valueToPackIndex.try_emplace(dbHandle, packValues.size());
-    packTypes.push_back(AC->Int64);
-    packValues.push_back(scalar);
+  if (!dbHandles.empty()) {
+    InFlightDiagnostic diag =
+        emitError(loc, "EDT captures pointer-bearing value that must be "
+                       "passed as a dependency/datablock, not as a parameter");
+    diag << ": " << dbHandles.front();
+    return failure();
   }
 
   /// Insert indices/offsets/sizes for deps into packValues if not already
@@ -666,31 +652,38 @@ Value EdtLoweringPass::packParams(Location loc, EdtEnvManager &envManager,
     if (!dbAcquireOp)
       continue;
 
-    auto appendIfMissing = [&](Value val) {
+    auto appendIfMissing = [&](Value val) -> LogicalResult {
       if (!val)
-        return;
+        return success();
       /// Skip constants; they will be recreated in outlined function
       if (val.getDefiningOp<arith::ConstantOp>())
-        return;
+        return success();
       if (valueToPackIndex.count(val) == 0) {
         valueToPackIndex[val] = packValues.size();
-        packTypes.push_back(val.getType());
-        packValues.push_back(val);
+        if (failed(appendPackValue(val)))
+          return failure();
       }
+      return success();
     };
 
     for (Value idx : dbAcquireOp.getIndices())
-      appendIfMissing(idx);
+      if (failed(appendIfMissing(idx)))
+        return failure();
     for (Value off : dbAcquireOp.getOffsets())
-      appendIfMissing(off);
+      if (failed(appendIfMissing(off)))
+        return failure();
     for (Value sz : dbAcquireOp.getSizes())
-      appendIfMissing(sz);
+      if (failed(appendIfMissing(sz)))
+        return failure();
     for (Value partIdx : dbAcquireOp.getPartitionIndices())
-      appendIfMissing(partIdx);
+      if (failed(appendIfMissing(partIdx)))
+        return failure();
     for (Value partOff : dbAcquireOp.getPartitionOffsets())
-      appendIfMissing(partOff);
+      if (failed(appendIfMissing(partOff)))
+        return failure();
     for (Value partSize : dbAcquireOp.getPartitionSizes())
-      appendIfMissing(partSize);
+      if (failed(appendIfMissing(partSize)))
+        return failure();
 
     /// Also pack element sizes from the underlying DbAllocOp. These are needed
     /// inside the outlined function to create DynLoadOp/DynStoreOp for
@@ -699,7 +692,8 @@ Value EdtLoweringPass::packParams(Location loc, EdtEnvManager &envManager,
             DbUtils::getUnderlyingDbAlloc(dbAcquireOp.getSourcePtr())) {
       if (auto alloc = dyn_cast<DbAllocOp>(rawAlloc)) {
         for (Value elemSz : alloc.getElementSizes())
-          appendIfMissing(elemSz);
+          if (failed(appendIfMissing(elemSz)))
+            return failure();
       }
     }
   }
@@ -709,7 +703,8 @@ Value EdtLoweringPass::packParams(Location loc, EdtEnvManager &envManager,
       packedValues->clear();
     ARTS_INFO("No parameters to pack, creating empty EdtParamPackOp");
     auto emptyType = MemRefType::get({0}, AC->Int64);
-    return AC->create<EdtParamPackOp>(loc, TypeRange{emptyType}, ValueRange{});
+    return AC->create<EdtParamPackOp>(loc, TypeRange{emptyType}, ValueRange{})
+        .getResult();
   }
 
   if (packedValues)
@@ -725,7 +720,7 @@ Value EdtLoweringPass::packParams(Location loc, EdtEnvManager &envManager,
   auto packOp = AC->create<EdtParamPackOp>(loc, TypeRange{memrefType},
                                            ValueRange(packValues));
   ++numParamPacksCreated;
-  return packOp;
+  return packOp.getResult();
 }
 
 ///===----------------------------------------------------------------------===///
@@ -813,29 +808,6 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
     }
     if (unpackedIndex < unpackedParams.size())
       valueMapping.map(param, unpackedParams[unpackedIndex++]);
-  }
-
-  /// Reconstruct DB handles from unpacked i64 values. Each DbAllocOp result
-  /// was packed as a scalar i64; here we recreate the original memref types.
-  for (Value dbHandle : envManager.getDbHandles()) {
-    auto it = envManager.getValueToPackIndex().find(dbHandle);
-    if (it == envManager.getValueToPackIndex().end() ||
-        it->second >= allParams.size())
-      continue;
-    Value packedI64 = allParams[it->second];
-    auto memrefTy = cast<MemRefType>(dbHandle.getType());
-    /// Both GUID and ptr handles were packed as raw pointers (i64).
-    /// Reconstruct memref from the raw pointer.
-    {
-      Value rawPtr = AC->create<LLVM::IntToPtrOp>(loc, AC->llvmPtr, packedI64);
-      Value memrefVal =
-          AC->create<polygeist::Pointer2MemrefOp>(loc, memrefTy, rawPtr);
-      /// Preserve compile-time outer layout on rehydrated handles so
-      /// downstream DB lowering can still recover source strides.
-      if (auto staticShape = DbUtils::getStaticDbOuterShape(dbHandle))
-        setDbStaticOuterShape(memrefVal.getDefiningOp(), *staticShape);
-      valueMapping.map(dbHandle, memrefVal);
-    }
   }
 
   /// Clone remaining captured values that are pure and regionless (e.g.,
@@ -1393,8 +1365,8 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
         allocElementSizes.assign(alloc.getElementSizes().begin(),
                                  alloc.getElementSizes().end());
     }
-    /// Fallback for CPS continuations where the DB trace is broken:
-    /// scan the module for a DbAllocOp with matching inner memref element type.
+    /// Fallback for broken DB traces: scan the module for a DbAllocOp with
+    /// matching inner memref element type.
     if (allocElementSizes.empty()) {
       auto depType = dyn_cast<MemRefType>(placeholder.getType());
       if (depType) {
@@ -1509,11 +1481,10 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
         if (dbAcquireUsesCurrentDepWindow(dbAcquire)) {
           dbAcquireUsers.push_back(use.getOwner());
         } else if (dbAcquire.getSourcePtr() == placeholder) {
-          /// CPS continuations rebuild full GUID tables from a carried table
-          /// DB, then acquire child windows using those local tables and a
-          /// parent payload pointer as the source pointer.  Forwarding that
-          /// acquire through this dependency's depv would collapse the child
-          /// window back to the continuation's compact depv slots.
+          /// Nested acquire source-pointer uses may intentionally derive child
+          /// windows from local tables and a parent payload pointer. Forwarding
+          /// that acquire through this dependency's depv would collapse the
+          /// child window back to this EDT's dependency slots.
           preservedDbAcquirePtrUses.push_back(&use);
         } else {
           users.push_back(use.getOwner());
@@ -1522,8 +1493,8 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
         recordDepUses.push_back(&use);
       else if (auto edt = dyn_cast<arts::EdtOp>(use.getOwner())) {
         /// Nested EDT dependency operands must stay on the depv-backed path.
-        /// Leaving them as captured memrefs makes the child EDT re-pack the
-        /// routed DB through paramv, which later breaks RecordDep lowering.
+        /// Leaving them as captured memrefs violates dependency/datablock
+        /// routing and breaks RecordDep lowering.
         if (edt.getRoute() != placeholder)
           nestedEdtDepUses.push_back(&use);
         else

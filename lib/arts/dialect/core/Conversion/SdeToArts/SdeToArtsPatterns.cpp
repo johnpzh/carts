@@ -269,16 +269,11 @@ convertSdeRepetitionStructure(MLIRContext *ctx,
 
 static ArtsPlanAsyncStrategyAttr
 convertSdeAsyncStrategy(MLIRContext *ctx, sde::SdeAsyncStrategy strategy) {
-  switch (strategy) {
-  case sde::SdeAsyncStrategy::blocking:
+  if (strategy == sde::SdeAsyncStrategy::blocking)
     return ArtsPlanAsyncStrategyAttr::get(ctx, ArtsPlanAsyncStrategy::blocking);
-  case sde::SdeAsyncStrategy::advance_edt:
+  if (strategy == sde::SdeAsyncStrategy::advance_edt)
     return ArtsPlanAsyncStrategyAttr::get(ctx,
                                           ArtsPlanAsyncStrategy::advance_edt);
-  case sde::SdeAsyncStrategy::cps_chain:
-    return ArtsPlanAsyncStrategyAttr::get(ctx,
-                                          ArtsPlanAsyncStrategy::cps_chain);
-  }
   return nullptr;
 }
 
@@ -335,8 +330,8 @@ static void translateSdePhysicalPlanToCoreOp(sde::SdeSuIterateOp source,
     setPlanRepetitionStructureAttr(
         target, convertSdeRepetitionStructure(ctx, repetition.getValue()));
   if (auto strategy = source.getAsyncStrategyAttr())
-    setPlanAsyncStrategyAttr(target,
-                             convertSdeAsyncStrategy(ctx, strategy.getValue()));
+    if (auto converted = convertSdeAsyncStrategy(ctx, strategy.getValue()))
+      setPlanAsyncStrategyAttr(target, converted);
 }
 
 static void translateSdeExecutionHintsToCoreEdt(sde::SdeSuIterateOp source,
@@ -1369,6 +1364,12 @@ struct SuIterateToArtsPattern : public OpRewritePattern<sde::SdeSuIterateOp> {
 
   LogicalResult matchAndRewrite(sde::SdeSuIterateOp op,
                                 PatternRewriter &rewriter) const override {
+    if (auto strategy = op.getAsyncStrategy();
+        strategy && *strategy == sde::SdeAsyncStrategy::cps_chain)
+      return op.emitOpError()
+             << "sde.async_strategy cps_chain requires SDE CPS dataflow "
+                "transformation before Core materialization";
+
     if (failed(materializeSuIterateAsGenericTaskDispatch(op, rewriter)))
       return failure();
     ++numSuIterateConverted;
@@ -1417,32 +1418,6 @@ struct SdeYieldToArtsPattern : public OpRewritePattern<sde::SdeYieldOp> {
                                 PatternRewriter &rewriter) const override {
     YieldOp::create(rewriter, op.getLoc());
     rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-/// sde.mu_dep (standalone) -> arts.omp_dep
-/// These are mu_deps not consumed by a cu_task — recreate as OmpDepOp
-/// for downstream passes (CreateDbs, etc.) to consume.
-struct MuDepToArtsPattern : public OpRewritePattern<sde::SdeMuDepOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(sde::SdeMuDepOp op,
-                                PatternRewriter &rewriter) const override {
-    // Only convert standalone mu_deps (those consumed by cu_task are
-    // handled by CuTaskToArtsPattern)
-    for (Operation *user : op.getDep().getUsers()) {
-      if (isa<sde::SdeCuTaskOp>(user))
-        return failure(); // Let CuTaskToArtsPattern handle this
-    }
-
-    ArtsMode mode = convertAccessMode(op.getMode());
-    SmallVector<Value> offsets(op.getOffsets().begin(), op.getOffsets().end());
-    SmallVector<Value> sizes(op.getSizes().begin(), op.getSizes().end());
-
-    auto ompDep = OmpDepOp::create(rewriter, op.getLoc(), mode, op.getSource(),
-                                   offsets, sizes);
-    rewriter.replaceOp(op, ompDep.getResult());
     return success();
   }
 };
@@ -2026,6 +2001,27 @@ buildMemrefIndices(const TensorMemrefView &view, ValueRange tensorIndices,
   return indices;
 }
 
+static void eraseDeadTensorPathCarrierOps(ModuleOp module) {
+  // Iteratively erase dead tensor-path carriers. These ops are transient
+  // SDE/Core glue; after scalar tensor ops are folded to memref operations,
+  // any remaining dead carrier must be removed before VerifySdeLowered runs.
+  for (;;) {
+    SmallVector<Operation *> dead;
+    module.walk([&](Operation *op) {
+      if (isa<bufferization::ToTensorOp, tensor::CastOp,
+              tensor::ExtractSliceOp, tensor::InsertSliceOp, tensor::EmptyOp,
+              tensor::FromElementsOp>(op) &&
+          op->use_empty()) {
+        dead.push_back(op);
+      }
+    });
+    if (dead.empty())
+      return;
+    for (Operation *op : llvm::reverse(dead))
+      op->erase();
+  }
+}
+
 static LogicalResult emitMemrefCopy(OpBuilder &builder, Location loc,
                                     Value source, Value dest) {
   auto sourceType = dyn_cast<MemRefType>(source.getType());
@@ -2166,28 +2162,19 @@ static void foldTensorPathToMemref(ModuleOp module) {
     }
   }
 
-  // Dead cleanup for view / cast / slice / extract_slice ops left over.
-  SmallVector<Operation *> pending;
-  module.walk([&](Operation *op) {
-    if (isa<bufferization::ToTensorOp, tensor::CastOp, tensor::ExtractSliceOp,
-            tensor::InsertSliceOp, tensor::EmptyOp, tensor::FromElementsOp>(op))
-      pending.push_back(op);
-  });
-  // Iterate a couple of times to propagate dead-ness up a chain.
-  for (int i = 0; i < 4; ++i) {
-    bool anyErased = false;
-    for (Operation *&op : pending) {
-      if (!op)
-        continue;
-      if (op->use_empty()) {
-        op->erase();
-        op = nullptr;
-        anyErased = true;
-      }
-    }
-    if (!anyErased)
-      break;
-  }
+  eraseDeadTensorPathCarrierOps(module);
+}
+
+static void canonicalizeTensorPathRegionResults(ModuleOp module) {
+  RewritePatternSet patterns(module.getContext());
+  scf::IfOp::getCanonicalizationPatterns(patterns, module.getContext());
+  scf::ForOp::getCanonicalizationPatterns(patterns, module.getContext());
+
+  GreedyRewriteConfig config;
+  config.setMaxIterations(4);
+  (void)applyPatternsGreedily(module, std::move(patterns), config);
+
+  eraseDeadTensorPathCarrierOps(module);
 }
 
 /// Drive the tensor-path lowerings ahead of the greedy rewriter. Order:
@@ -2309,6 +2296,7 @@ static LogicalResult lowerTensorPathOps(ModuleOp module) {
   // insert, final materialize_in_destination on the same memref); other
   // tensor IR in the module is left untouched.
   foldTensorPathToMemref(module);
+  canonicalizeTensorPathRegionResults(module);
 
   return success();
 }
@@ -2332,6 +2320,20 @@ struct CuReduceToArtsPattern : public OpRewritePattern<sde::SdeCuReduceOp> {
   }
 };
 
+static LogicalResult rejectUnmaterializedCpsChain(ModuleOp module) {
+  WalkResult result = module.walk([&](sde::SdeSuIterateOp op) {
+    auto strategy = op.getAsyncStrategy();
+    if (!strategy || *strategy != sde::SdeAsyncStrategy::cps_chain)
+      return WalkResult::advance();
+
+    op.emitOpError()
+        << "sde.async_strategy cps_chain requires SDE CPS dataflow "
+           "transformation before Core materialization";
+    return WalkResult::interrupt();
+  });
+  return failure(result.wasInterrupted());
+}
+
 //===----------------------------------------------------------------------===//
 // Pass Implementation
 //===----------------------------------------------------------------------===//
@@ -2344,6 +2346,11 @@ struct ConvertSdeToArtsPass
     ModuleOp module = getOperation();
     ARTS_INFO_HEADER(ConvertSdeToArtsPass);
     MLIRContext *context = &getContext();
+
+    if (failed(rejectUnmaterializedCpsChain(module))) {
+      signalPassFailure();
+      return;
+    }
 
     // Tensor-path lowering must run before the greedy driver
     // so its tensor.insert / tensor.extract body ops are cloned into EDTs
@@ -2364,7 +2371,6 @@ struct ConvertSdeToArtsPass
     patterns.add<CuAtomicToArtsPattern>(context);
     patterns.add<CuReduceToArtsPattern>(context);
     patterns.add<SdeYieldToArtsPattern>(context);
-    patterns.add<MuDepToArtsPattern>(context);
     patterns.add<MuReductionDeclToArtsPattern>(context);
     // Tensor-path lowerings (mu_data, mu_token, cu_codelet).
     //

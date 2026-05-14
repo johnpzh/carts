@@ -29,7 +29,6 @@ mlir::arts::computeOwnershipProof(LoweringContractOp contractOp) {
 
   auto ownerDims = contractOp.getOwnerDims();
   auto depPattern = contractOp.getDepPattern();
-  auto blockShape = contractOp.getBlockShape();
   bool supportedBlockHalo = contractOp.getSupportedBlockHalo().value_or(false);
   bool narrowableDep = contractOp.getNarrowableDep().value_or(false);
 
@@ -92,34 +91,7 @@ mlir::arts::computeOwnershipProof(LoweringContractOp contractOp) {
     }
   }
 
-  /// 5. relaunchStateSoundness: check CPS chain attrs are consistent (if
-  /// present)
-  ///    If no CPS attrs, relaunch is trivially sound.
-  Operation *parentOp = contractOp->getParentOp();
-  if (!parentOp) {
-    proof.relaunchStateSoundness = true;
-  } else {
-    /// Walk up to find the enclosing EdtOp
-    Operation *enclosingEdt = contractOp->getParentOfType<EdtOp>();
-    if (!enclosingEdt) {
-      /// No EDT context means no relaunch concern
-      proof.relaunchStateSoundness = true;
-    } else {
-      bool hasCpsChain =
-          enclosingEdt->hasAttr(AttrNames::Operation::CPSChainId);
-      if (!hasCpsChain) {
-        /// No CPS chain, relaunch is trivially sound
-        proof.relaunchStateSoundness = true;
-      } else {
-        /// CPS chain present: check routing is defined
-        bool hasDepRouting =
-            enclosingEdt->hasAttr(AttrNames::Operation::CPSDepRouting);
-        bool hasParamPerm =
-            enclosingEdt->hasAttr(AttrNames::Operation::CPSParamPerm);
-        proof.relaunchStateSoundness = hasDepRouting && hasParamPerm;
-      }
-    }
-  }
+  proof.relaunchStateSoundness = true;
 
   return proof;
 }

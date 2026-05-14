@@ -264,6 +264,8 @@ static sde::SdeSuIterateOp promoteRank2OutOfPlaceStencilOwnerLoop(
       op.getPhysicalBlockShapeAttr(), op.getLogicalWorkerSliceAttr(),
       op.getPhysicalHaloShapeAttr(), op.getIterationTopologyAttr(),
       op.getRepetitionStructureAttr(), op.getAsyncStrategyAttr(),
+      op.getCpsGroupIdAttr(), op.getCpsStageIndexAttr(),
+      op.getCpsStageCountAttr(),
       op.getDistributionKindAttr(), op.getInPlaceSafeAttr(),
       op.getInPlaceSharedStateAttr(), op.getVectorizeWidthAttr(),
       op.getUnrollFactorAttr(), op.getInterleaveCountAttr());

@@ -199,7 +199,7 @@ def lit(
       carts lit
       carts lit lib/arts/dialect/sde/test/openmp_to_arts_preserves_schedule_chunk.mlir
       carts lit -v lib/arts/dialect/core/test
-      carts lit -- --filter=for_lowering lib/arts/dialect/core/test
+      carts lit -- --filter=db_lowering lib/arts/dialect/core/test
     """
     config = get_config()
     raw_args = list(ctx.args)

@@ -355,6 +355,9 @@ def SdeSuIterateOp
     OptionalAttr<SdeIterationTopologyAttr>:$iterationTopology,
     OptionalAttr<SdeRepetitionStructureAttr>:$repetitionStructure,
     OptionalAttr<SdeAsyncStrategyAttr>:$asyncStrategy,
+    OptionalAttr<I64Attr>:$cps_group_id,
+    OptionalAttr<I64Attr>:$cps_stage_index,
+    OptionalAttr<I64Attr>:$cps_stage_count,
     OptionalAttr<SdeDistributionKindAttr>:$distributionKind,
     UnitAttr:$inPlaceSafe,
     UnitAttr:$inPlaceSharedState,
@@ -499,8 +502,8 @@ def SdeCuCodeletOp
 
     `IsolatedFromAbove` guarantees the body references no SSA value from
     outside its block arguments. Dependencies are SSA-visible via the token
-    operand list; firstprivate-style values and shared memref handles are
-    SSA-visible via the capture operand list.
+    operand list; firstprivate-style scalar values are SSA-visible via the
+    capture operand list.
   }];
 
   let arguments = (ins

@@ -1,8 +1,9 @@
 ///===----------------------------------------------------------------------===///
 /// File: HandleDeps.cpp
 ///
-/// This pass converts residual OMP task dependencies to arts.omp_dep
-/// operations. It handles dependencies not covered by MemrefNormalization
+/// This pass normalizes residual OMP task dependencies to memref values that
+/// ConvertOpenMPToSde can turn into sde.mu_dep operations. It handles
+/// dependencies not covered by MemrefNormalization
 /// (e.g., static arrays, token containers, direct memref allocations, block
 /// arguments).
 ///===----------------------------------------------------------------------===///
@@ -35,7 +36,6 @@ namespace {
 struct DepInfo {
   Value source;
   SmallVector<Value> indices, sizes;
-  ArtsMode mode;
   omp::TaskOp taskOp;
   unsigned depVarIndex;
   SmallVector<Operation *> opsToRemove;
@@ -68,9 +68,46 @@ struct HandleDepsPass : public impl::HandleDepsBase<HandleDepsPass> {
 private:
   std::optional<DepInfo> extractDepInfo(Value depVar, omp::TaskOp taskOp,
                                         unsigned depIdx,
-                                        omp::ClauseTaskDepend depMode,
+                                        omp::ClauseTaskDepend,
                                         OpBuilder &builder);
 };
+
+static Value materializeDependView(OpBuilder &builder, Location loc,
+                                   Value source, ArrayRef<Value> indices,
+                                   ArrayRef<Value> sizes) {
+  if (indices.empty() && sizes.empty())
+    return source;
+
+  auto sourceType = dyn_cast<MemRefType>(source.getType());
+  if (!sourceType)
+    return source;
+
+  unsigned rank = sourceType.getRank();
+  SmallVector<OpFoldResult> offsets;
+  SmallVector<OpFoldResult> viewSizes;
+  SmallVector<OpFoldResult> strides;
+  offsets.reserve(rank);
+  viewSizes.reserve(rank);
+  strides.reserve(rank);
+
+  for (unsigned dim = 0; dim < rank; ++dim) {
+    offsets.push_back(dim < indices.size() ? OpFoldResult(indices[dim])
+                                           : builder.getIndexAttr(0));
+    if (dim < sizes.size()) {
+      viewSizes.push_back(sizes[dim]);
+    } else if (!sourceType.isDynamicDim(dim)) {
+      viewSizes.push_back(builder.getIndexAttr(sourceType.getDimSize(dim)));
+    } else {
+      viewSizes.push_back(memref::DimOp::create(builder, loc, source, dim)
+                              .getResult());
+    }
+    strides.push_back(builder.getIndexAttr(1));
+  }
+
+  return memref::SubViewOp::create(builder, loc, source, offsets, viewSizes,
+                                   strides)
+      .getResult();
+}
 
 ///===----------------------------------------------------------------------===///
 /// extractDepInfo
@@ -78,17 +115,12 @@ private:
 
 std::optional<DepInfo>
 HandleDepsPass::extractDepInfo(Value depVar, omp::TaskOp taskOp,
-                               unsigned depIdx, omp::ClauseTaskDepend depMode,
+                               unsigned depIdx, omp::ClauseTaskDepend,
                                OpBuilder &builder) {
-
-  /// Skip if already arts.omp_dep
-  if (depVar.getDefiningOp<arts::OmpDepOp>())
-    return std::nullopt;
 
   DepInfo info;
   info.taskOp = taskOp;
   info.depVarIndex = depIdx;
-  info.mode = arts::convertOmpMode(depMode);
   Location loc = taskOp.getLoc();
 
   Operation *defOp = depVar.getDefiningOp();
@@ -194,10 +226,6 @@ void HandleDepsPass::runOnOperation() {
     for (unsigned i = 0; i < dependVars.size(); ++i) {
       Value depVar = dependVars[i];
 
-      /// Skip already processed (arts.omp_dep)
-      if (depVar.getDefiningOp<arts::OmpDepOp>())
-        continue;
-
       /// Set insertion point before task - needed for creating constants in
       /// extractDepInfo
       builder.setInsertionPoint(task);
@@ -208,17 +236,12 @@ void HandleDepsPass::runOnOperation() {
       if (!depInfo)
         continue;
 
-      /// Create arts.omp_dep using DepInfo fields (insertion point already set)
-      auto ompDepOp =
-          arts::OmpDepOp::create(builder, task.getLoc(),
-                                 depInfo->source.getType(), /// result type
-                                 depInfo->mode,             /// ArtsMode
-                                 depInfo->source,           /// db
-                                 depInfo->indices,          /// offset
-                                 depInfo->sizes);           /// size
+      Value depValue =
+          materializeDependView(builder, task.getLoc(), depInfo->source,
+                                depInfo->indices, depInfo->sizes);
 
-      task.getDependVarsMutable()[i].set(ompDepOp.getResult());
-      ARTS_DEBUG("  Created arts.omp_dep for task dep "
+      task.getDependVarsMutable()[i].set(depValue);
+      ARTS_DEBUG("  Normalized OMP task dep "
                  << i << " with " << depInfo->indices.size() << " indices");
     }
   });

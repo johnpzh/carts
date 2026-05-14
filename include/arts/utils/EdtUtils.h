@@ -120,14 +120,14 @@ public:
   /// or pure regionless operand chains whose inputs can be captured by the EDT.
   static bool canCloneAllocaInitStore(memref::StoreOp store, Value memref);
 
-  /// Trace an externally captured DB/heap view back to the handle that EDT
-  /// lowering can pack through paramv and rematerialize in the outlined body.
-  /// This intentionally follows only view-like operations; it returns null
-  /// when the value is not rooted in a packable handle.
+  /// Trace an externally captured DB/heap view back to its pointer-bearing
+  /// handle. This intentionally follows only view-like operations; it returns
+  /// null when the value is not rooted in a DB or heap handle.
   static Value traceCapturedDbHandle(Value value);
 
   /// Classify an explicit ordered list of EDT user values using the same
-  /// parameter/constant/DB-handle contract as EDT lowering.
+  /// scalar parameter, constant, and pointer-bearing handle contract as EDT
+  /// lowering.
   static void classifyUserValues(ArrayRef<Value> userValues,
                                  llvm::SetVector<Value> &parameters,
                                  llvm::SetVector<Value> &constants,
@@ -141,11 +141,9 @@ public:
                                     llvm::SetVector<Value> &constants,
                                     llvm::SetVector<Value> &dbHandles);
 
-  /// Collect values in the same logical order EdtLowering packs them into
-  /// `arts.edt_param_pack`: user params, DB handles, then dep-derived scalars
-  /// (indices/offsets/sizes/partition slices/element sizes). DB handles are
-  /// returned in their original SSA form; lowering is responsible for casting
-  /// them to raw i64 payloads.
+  /// Collect scalar values in the same logical order EdtLowering packs them
+  /// into `arts.edt_param_pack`: user params, then dep-derived scalars
+  /// (indices/offsets/sizes/partition slices/element sizes).
   static SmallVector<Value> collectPackedValues(EdtOp edt);
 };
 
@@ -154,9 +152,9 @@ public:
 ///===----------------------------------------------------------------------===//
 
 /// Manages EDT environment classification: captured values are partitioned
-/// into parameters, constants, DB handles, and dependencies. This is the
-/// canonical helper for any pass that needs to reason about what an EDT
-/// captures from its enclosing scope (EdtLowering, EpochOptCpsChain, etc.).
+/// into scalar parameters, constants, pointer-bearing DB handles, and
+/// dependencies. This is the canonical helper for passes that reason about
+/// what an EDT captures from its enclosing scope.
 class EdtEnvManager {
 public:
   EdtEnvManager(EdtOp edtOp) : edtOp(edtOp) { analyze(); }

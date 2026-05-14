@@ -1,9 +1,9 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Same-shape out-of-place stencil stages that exchange A/B buffers are a
-// timestep pair even when both stages are classified as stencils. They keep
-// the regular stencil_tiling_nd dependency pattern; the Jacobi-specific
-// dep-family is reserved for mixed stencil/uniform pairs.
+// timestep candidate even when both stages are classified as stencils. They
+// keep the regular stencil_tiling_nd dependency pattern and remain advance_edt
+// until SDE rewrites the pair into explicit CPS dataflow tokens.
 
 // CHECK-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
 // CHECK: func.func @jacobi_stencil_pair

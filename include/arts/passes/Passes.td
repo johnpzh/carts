@@ -23,26 +23,30 @@ def MemrefNormalization : Pass<"memref-normalization", "mlir::ModuleOp"> {
   let description = [{
     This pass raises nested array-of-pointer allocations to multi-dimensional memrefs
     and rewrites pointer-based accesses to direct memref indexed accesses. It also
-    converts OpenMP task dependencies into arts.omp_dep operations.
+    normalizes OpenMP task dependencies into memref values consumed by
+    ConvertOpenMPToSde.
   }];
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
+    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect",
+    "::mlir::polygeist::PolygeistDialect"
   ];
   let constructor = "mlir::arts::createMemrefNormalizationPass()";
 }
 
 def HandleDeps : Pass<"handle-deps", "mlir::ModuleOp"> {
-  let summary = "Convert residual OMP dependencies to arts.omp_dep";
+  let summary = "Normalize residual OMP dependency operands";
   let description = [{
     Converts remaining OpenMP task dependency variables that were not handled
-    by MemrefNormalization into arts.omp_dep operations. Handles static
+    by MemrefNormalization into memref values that ConvertOpenMPToSde can
+    turn into sde.mu_dep operations. Handles static
     arrays, token containers, subview chunks, direct allocations, and block
     arguments.
   }];
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
+    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect",
+    "::mlir::polygeist::PolygeistDialect"
   ];
   let constructor = "mlir::arts::createHandleDepsPass()";
 }
@@ -236,36 +240,24 @@ def EpochOpt : Pass<"arts-epoch-opt", "mlir::ModuleOp"> {
         2. Epoch fusion -
             merge independent consecutive epochs when their DB accesses
                 are independent (no shared writes)
-        3. Worker loop fusion -
-            merge compatible worker loops within epochs when they have identical
-                bounds and no loop-carried values
 
     Scheduling optimizations (gated by --arts-epoch-finish-continuation):
-        4. Repetition amortization -
+        3. Repetition amortization -
             amortize epoch create/wait overhead for repeated epoch loops by
             wrapping EDT bodies with repeat loops
-        5. Finish-EDT continuation -
+        4. Finish-EDT continuation -
             outline epoch tail code into continuation EDTs that fire via
             ARTS-native finish-EDT signaling instead of blocking waits
-        6. CPS loop driver -
-            wrap time-step loops containing epochs in a single outer
-            epoch+driver EDT, eliminating repeated main-thread blocking
   }];
   let options = [
     Option<"enableEpochNarrowing", "epoch-narrowing", "bool", "true",
            "Enable epoch scope narrowing">,
     Option<"enableEpochFusion", "epoch-fusion", "bool", "true",
            "Enable epoch fusion">,
-    Option<"enableLoopFusion", "loop-fusion", "bool", "true",
-           "Enable worker loop fusion">,
     Option<"enableAmortization", "amortization", "bool", "false",
            "Enable repetition amortization for repeated epoch loops">,
     Option<"enableContinuation", "continuation", "bool", "false",
-           "Enable finish-EDT continuation scheduling">,
-    Option<"enableCPSDriver", "cps-driver", "bool", "false",
-           "Enable CPS loop driver transform">,
-    Option<"enableCPSChain", "cps-chain", "bool", "false",
-           "Enable CPS continuation chain transform">
+           "Enable finish-EDT continuation scheduling">
   ];
   let dependentDialects =
       ["::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect", "::mlir::scf::SCFDialect",
@@ -331,7 +323,7 @@ def ContractValidation : Pass<"contract-validation", "mlir::ModuleOp"> {
     Option<"failOnError", "fail-on-error", "bool", "false",
            "Fail compilation if any contract validation errors are found">,
     Option<"warnOnProofGaps", "warn-on-proof-gaps", "bool", "false",
-           "Emit advisory warnings for ownership proof gaps and CPS pack-schema gaps">
+           "Emit advisory warnings for ownership proof gaps">
   ];
   let constructor = "mlir::arts::createContractValidationPass()";
 }

@@ -162,17 +162,17 @@ struct TaskDependSpec {
   OmpDependSlice slice;
 };
 
-/// OpenMP task-depend lowering ingests either the legacy arts.omp_dep carrier
-/// or direct memref values (e.g. memref.subview from Polygeist).
+/// OpenMP task-depend lowering ingests normalized memref values and may reuse
+/// already-materialized SDE dependency carriers in SDE-native tests.
 static std::optional<OmpDependSlice>
 extractDependSlice(Value depVar, OpBuilder &builder, Location loc) {
-  // Path 1: legacy arts.omp_dep carrier
-  if (auto ompDepOp = depVar.getDefiningOp<OmpDepOp>()) {
+  // Path 1: SDE dependency carrier.
+  if (auto muDepOp = depVar.getDefiningOp<sde::SdeMuDepOp>()) {
     OmpDependSlice slice;
-    slice.source = ompDepOp.getSource();
-    slice.offsets.assign(ompDepOp.getIndices().begin(),
-                         ompDepOp.getIndices().end());
-    slice.sizes.assign(ompDepOp.getSizes().begin(), ompDepOp.getSizes().end());
+    slice.source = muDepOp.getSource();
+    slice.offsets.assign(muDepOp.getOffsets().begin(),
+                         muDepOp.getOffsets().end());
+    slice.sizes.assign(muDepOp.getSizes().begin(), muDepOp.getSizes().end());
     return slice;
   }
 
@@ -451,6 +451,8 @@ struct WsloopToSdePattern : public OpRewritePattern<omp::WsloopOp> {
         /*physicalBlockShape=*/nullptr, /*logicalWorkerSlice=*/nullptr,
         /*physicalHaloShape=*/nullptr, /*iterationTopology=*/nullptr,
         /*repetitionStructure=*/nullptr, /*asyncStrategy=*/nullptr,
+        /*cps_group_id=*/nullptr, /*cps_stage_index=*/nullptr,
+        /*cps_stage_count=*/nullptr,
         /*distributionKind=*/nullptr, /*inPlaceSafe=*/nullptr,
         /*inPlaceSharedState=*/nullptr, /*vectorizeWidth=*/nullptr,
         /*unrollFactor=*/nullptr, /*interleaveCount=*/nullptr);
@@ -544,13 +546,21 @@ struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
         if (!sdeMode)
           return failure();
 
-        // Create sde.mu_dep
-        rewriter.setInsertionPoint(op);
-        auto muDep = sde::SdeMuDepOp::create(
-            rewriter, loc, sde::DepType::get(ctx),
-            sde::SdeAccessModeAttr::get(ctx, *sdeMode), depSlice->source,
-            depSlice->offsets, depSlice->sizes);
-        deps.push_back(muDep.getDep());
+        if (auto existingMuDep =
+                op.getDependVars()[i].getDefiningOp<sde::SdeMuDepOp>()) {
+          if (existingMuDep.getMode() != *sdeMode)
+            return op.emitOpError()
+                   << "SDE dependency carrier mode disagrees with omp.task "
+                      "depend clause";
+          deps.push_back(op.getDependVars()[i]);
+        } else {
+          rewriter.setInsertionPoint(op);
+          auto muDep = sde::SdeMuDepOp::create(
+              rewriter, loc, sde::DepType::get(ctx),
+              sde::SdeAccessModeAttr::get(ctx, *sdeMode), depSlice->source,
+              depSlice->offsets, depSlice->sizes);
+          deps.push_back(muDep.getDep());
+        }
         dependSpecs.push_back(TaskDependSpec{*sdeMode, std::move(*depSlice)});
       }
     }
@@ -600,6 +610,8 @@ struct TaskloopToSdePattern : public OpRewritePattern<omp::TaskloopOp> {
         /*physicalBlockShape=*/nullptr, /*logicalWorkerSlice=*/nullptr,
         /*physicalHaloShape=*/nullptr, /*iterationTopology=*/nullptr,
         /*repetitionStructure=*/nullptr, /*asyncStrategy=*/nullptr,
+        /*cps_group_id=*/nullptr, /*cps_stage_index=*/nullptr,
+        /*cps_stage_count=*/nullptr,
         /*distributionKind=*/nullptr, /*inPlaceSafe=*/nullptr,
         /*inPlaceSharedState=*/nullptr, /*vectorizeWidth=*/nullptr,
         /*unrollFactor=*/nullptr, /*interleaveCount=*/nullptr);
@@ -671,6 +683,8 @@ struct SCFParallelToSdePattern : public OpRewritePattern<scf::ParallelOp> {
         /*physicalBlockShape=*/nullptr, /*logicalWorkerSlice=*/nullptr,
         /*physicalHaloShape=*/nullptr, /*iterationTopology=*/nullptr,
         /*repetitionStructure=*/nullptr, /*asyncStrategy=*/nullptr,
+        /*cps_group_id=*/nullptr, /*cps_stage_index=*/nullptr,
+        /*cps_stage_count=*/nullptr,
         /*distributionKind=*/nullptr, /*inPlaceSafe=*/nullptr,
         /*inPlaceSharedState=*/nullptr, /*vectorizeWidth=*/nullptr,
         /*unrollFactor=*/nullptr, /*interleaveCount=*/nullptr);

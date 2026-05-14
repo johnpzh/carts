@@ -852,6 +852,8 @@ static void stripSuIterateTensorArgs(ModuleOp module,
         suIter.getPhysicalBlockShapeAttr(), suIter.getLogicalWorkerSliceAttr(),
         suIter.getPhysicalHaloShapeAttr(), suIter.getIterationTopologyAttr(),
         suIter.getRepetitionStructureAttr(), suIter.getAsyncStrategyAttr(),
+        suIter.getCpsGroupIdAttr(), suIter.getCpsStageIndexAttr(),
+        suIter.getCpsStageCountAttr(),
         suIter.getDistributionKindAttr(), suIter.getInPlaceSafeAttr(),
         suIter.getInPlaceSharedStateAttr(), suIter.getVectorizeWidthAttr(),
         suIter.getUnrollFactorAttr(), suIter.getInterleaveCountAttr());

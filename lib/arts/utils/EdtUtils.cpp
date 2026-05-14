@@ -255,8 +255,7 @@ void EdtUtils::analyzeCapturedValues(
   getUsedValuesDefinedAbove(edt.getRegion(), capturedValues);
   /// RegionUtils also reports values defined in the EDT body when they are
   /// referenced from nested regions inside the EDT. Those are not true
-  /// captures for outlining: they must remain local to the outlined function
-  /// instead of being re-packed through paramv.
+  /// captures for outlining: they must remain local to the outlined function.
   auto isDefinedInsideEdt = [&](Value value) {
     if (Operation *defOp = value.getDefiningOp())
       return edt.getOperation()->isAncestor(defOp);
@@ -284,7 +283,7 @@ SmallVector<Value> EdtUtils::collectPackedValues(EdtOp edt) {
                                   dbHandles);
 
   SmallVector<Value> packedValues;
-  packedValues.reserve(parameters.size() + dbHandles.size());
+  packedValues.reserve(parameters.size());
   DenseMap<Value, unsigned> valueToPackIndex;
 
   for (Value parameter : parameters) {
@@ -293,11 +292,6 @@ SmallVector<Value> EdtUtils::collectPackedValues(EdtOp edt) {
         continue;
     valueToPackIndex.try_emplace(parameter, packedValues.size());
     packedValues.push_back(parameter);
-  }
-
-  for (Value dbHandle : dbHandles) {
-    valueToPackIndex.try_emplace(dbHandle, packedValues.size());
-    packedValues.push_back(dbHandle);
   }
 
   auto appendIfMissing = [&](Value val) {

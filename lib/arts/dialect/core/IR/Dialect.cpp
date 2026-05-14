@@ -258,40 +258,33 @@ LogicalResult EdtOp::verify() {
       if (getBody().isAncestor(definingOp->getParentRegion()))
         continue;
 
-      /// Allow external memref allocations. Stack allocas are sunk into EDTs
-      /// later to keep task-local buffers private; heap memrefs are captured
-      /// by EdtEnvManager and packed through paramv.
-      if (operand.getDefiningOp<memref::AllocaOp>() ||
-          operand.getDefiningOp<memref::AllocOp>())
-        continue;
-
-      /// Allow external DbAllocOp results; EdtEnvManager already captures
-      /// these as dbHandles and packs them through paramv.
-      if (operand.getDefiningOp<DbAllocOp>())
-        continue;
-
-      /// Allow external DB/heap view chains rooted in an allocation handle.
-      /// EdtEnvManager packs the root handle through paramv and EdtLowering
-      /// rematerializes the view chain inside the outlined EDT function.
-      /// Do not permit DbAcquire roots here: acquired pointers must still be
-      /// modeled as explicit EDT dependencies and used through block args.
-      if (Value handle = EdtUtils::traceCapturedDbHandle(operand))
-        if (!handle.getDefiningOp<DbAcquireOp>())
-          continue;
-
-      /// DbAcquire source handles may intentionally reference outer-scope
-      /// datablock handles to derive nested views inside EDTs.
+      /// DbAcquire source handles may reference outer-scope datablock handles
+      /// to derive nested views inside EDTs.
       if (auto dbAcquire = dyn_cast<DbAcquireOp>(op)) {
         if (operand == dbAcquire.getSourceGuid() ||
             operand == dbAcquire.getSourcePtr())
           continue;
       }
 
-      /// CPS chain continuations clone epoch bodies from the original loop,
-      /// which may reference external values (memref.alloc, pointer2memref,
-      /// etc.). These are captured by EdtEnvManager during EdtLowering.
-      if ((*this)->hasAttr(AttrNames::Operation::CPSChainId))
+      auto rejectPointerCapture = [&]() {
+        op->emitOpError("EDT region captures pointer-bearing value '")
+            << operand
+            << "'; pass DB/memref state as an EDT dependency/datablock";
+        return WalkResult::interrupt();
+      };
+
+      /// Stack allocas are sunk into EDTs later to keep task-local buffers
+      /// private.
+      if (operand.getDefiningOp<memref::AllocaOp>())
         continue;
+
+      if (operand.getDefiningOp<memref::AllocOp>() ||
+          operand.getDefiningOp<DbAllocOp>())
+        return rejectPointerCapture();
+
+      if (Value handle = EdtUtils::traceCapturedDbHandle(operand))
+        if (!handle.getDefiningOp<DbAcquireOp>())
+          return rejectPointerCapture();
 
       if (externalValues.contains(operand)) {
         op->emitOpError("EDT region uses external DbAcquire value '")
@@ -1388,18 +1381,4 @@ struct FoldDbNumElementsSingleSize : public OpRewritePattern<DbNumElementsOp> {
 void DbNumElementsOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                                   MLIRContext *context) {
   results.add<FoldDbNumElementsSingleSize>(context);
-}
-
-void OmpDepOp::build(OpBuilder &builder, OperationState &state, ArtsMode mode,
-                     Value source, SmallVector<Value> indices,
-                     SmallVector<Value> sizes) {
-  state.addTypes(source.getType());
-  state.addAttribute("mode", ArtsModeAttr::get(builder.getContext(), mode));
-  state.addOperands(source);
-  state.addOperands(indices);
-  state.addOperands(sizes);
-  state.addAttribute(
-      OmpDepOp::getOperandSegmentSizesAttrName(state.name),
-      builder.getDenseI32ArrayAttr({1, static_cast<int32_t>(indices.size()),
-                                    static_cast<int32_t>(sizes.size())}));
 }

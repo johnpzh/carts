@@ -501,6 +501,42 @@ LogicalResult SdeSuIterateOp::verify() {
                            << ")";
   }
 
+  bool hasCpsGroup = static_cast<bool>(getCpsGroupIdAttr());
+  bool hasCpsStageIndex = static_cast<bool>(getCpsStageIndexAttr());
+  bool hasCpsStageCount = static_cast<bool>(getCpsStageCountAttr());
+  if (hasCpsGroup || hasCpsStageIndex || hasCpsStageCount) {
+    if (!hasCpsGroup || !hasCpsStageIndex || !hasCpsStageCount)
+      return emitOpError()
+             << "sde.cps stage plan requires sde.cps_group_id, "
+                "sde.cps_stage_index, and sde.cps_stage_count together";
+    if (auto strategy = getAsyncStrategy();
+        !strategy || *strategy != SdeAsyncStrategy::cps_chain)
+      return emitOpError()
+             << "sde.cps stage plan requires sde.async_strategy cps_chain";
+    if (auto repetition = getRepetitionStructure();
+        !repetition ||
+        *repetition != SdeRepetitionStructure::full_timestep)
+      return emitOpError()
+             << "sde.cps stage plan requires sde.repetition_structure "
+                "full_timestep";
+
+    int64_t groupId = getCpsGroupIdAttr().getInt();
+    int64_t stageIndex = getCpsStageIndexAttr().getInt();
+    int64_t stageCount = getCpsStageCountAttr().getInt();
+    if (groupId < 0)
+      return emitOpError() << "sde.cps_group_id must be non-negative";
+    if (stageCount <= 0)
+      return emitOpError() << "sde.cps_stage_count must be positive";
+    if (stageIndex < 0 || stageIndex >= stageCount)
+      return emitOpError()
+             << "sde.cps_stage_index must be in [0, sde.cps_stage_count)";
+  }
+
+  if (auto strategy = getAsyncStrategy();
+      strategy && *strategy == SdeAsyncStrategy::cps_chain && !hasCpsGroup)
+    return emitOpError()
+           << "sde.async_strategy cps_chain requires a sde.cps stage plan";
+
   return success();
 }
 
@@ -616,6 +652,10 @@ LogicalResult SdeCuCodeletOp::verify() {
   auto tokens = getTokens();
   auto captures = getCaptures();
 
+  auto isScalarCaptureType = [](Type type) {
+    return type.isIntOrIndexOrFloat();
+  };
+
   // Every token operand must be `!sde.token<Ti>` for ranked Ti.
   SmallVector<TokenType> tokenTypes;
   tokenTypes.reserve(tokens.size());
@@ -648,6 +688,12 @@ LogicalResult SdeCuCodeletOp::verify() {
     }
   }
   for (auto [idx, capture] : llvm::enumerate(captures)) {
+    if (!isScalarCaptureType(capture.getType()))
+      return emitOpError()
+             << "capture operand #" << idx
+             << " must be an integer, index, or float scalar; got "
+             << capture.getType();
+
     unsigned argIdx = tokens.size() + idx;
     Type argTy = entry.getArgument(argIdx).getType();
     if (argTy != capture.getType()) {

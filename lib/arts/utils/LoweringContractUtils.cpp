@@ -54,6 +54,22 @@ readConstantIndexValues(ValueRange values) {
   return result;
 }
 
+static void mergePlanSpatialAttrs(Operation *op, LoweringContractInfo &info) {
+  if (!op || !info.hasDistributionContract())
+    return;
+
+  if (info.spatial.ownerDims.empty())
+    if (auto ownerDims = readI64ArrayAttr(getPlanOwnerDimsAttr(op)))
+      info.spatial.ownerDims.assign(ownerDims->begin(), ownerDims->end());
+
+  if (info.spatial.staticBlockShape.empty() &&
+      info.spatial.blockShape.empty()) {
+    if (auto blockShape = readI64ArrayAttr(getPlanPhysicalBlockShapeAttr(op)))
+      info.spatial.staticBlockShape.assign(blockShape->begin(),
+                                           blockShape->end());
+  }
+}
+
 static bool valueDominatesInsertion(Value value, OpBuilder &builder) {
   if (!value)
     return false;
@@ -421,6 +437,7 @@ mlir::arts::getSemanticContract(Operation *op) {
   if (auto contractKind = op->getAttrOfType<IntegerAttr>(
           AttrNames::Operation::Contract::ContractKindKey))
     info.pattern.kind = static_cast<ContractKind>(contractKind.getInt());
+  mergePlanSpatialAttrs(op, info);
   if (info.empty())
     return std::nullopt;
   return info;

@@ -367,6 +367,8 @@ ArtsMode convertOmpMode(omp::ClauseTaskDepend mode) {
   case omp::ClauseTaskDepend::taskdependout:
     return ArtsMode::out;
   case omp::ClauseTaskDepend::taskdependinout:
+  case omp::ClauseTaskDepend::taskdependmutexinoutset:
+  case omp::ClauseTaskDepend::taskdependinoutset:
     return ArtsMode::inout;
   }
   llvm_unreachable("Unknown OMP depend mode");

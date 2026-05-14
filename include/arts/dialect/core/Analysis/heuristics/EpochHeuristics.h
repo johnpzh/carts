@@ -71,44 +71,6 @@ struct EpochFusionDecision {
   std::string rationale;
 };
 
-struct EpochLoopDriverDecision {
-  bool eligible = false;
-  std::string rationale;
-};
-
-enum class EpochAsyncLoopStrategy : uint8_t {
-  None = 0,
-  AdvanceEdt = 1,
-  CpsChain = 2
-};
-
-struct EpochSlot {
-  EpochOp epoch;
-  scf::IfOp wrappingIf;
-};
-
-struct EpochChainDecision {
-  bool eligible = false;
-  llvm::SmallVector<EpochSlot> slots;
-  llvm::SmallVector<Operation *> sequentialOps;
-  std::string rationale;
-};
-
-struct EpochAsyncLoopDecision {
-  EpochAsyncLoopStrategy strategy = EpochAsyncLoopStrategy::None;
-  bool eligible = false;
-  bool bodyIsEpochOnly = false;
-  bool hasSequentialSidecars = false;
-  bool hasInterEpochSidecars = false;
-  bool hasTailSidecars = false;
-  bool hasCallSidecars = false;
-  bool hasUnsupportedSideEffects = false;
-  bool hasIvConditionedEpochSlots = false;
-  llvm::SmallVector<EpochSlot> slots;
-  llvm::SmallVector<Operation *> sequentialOps;
-  std::string rationale;
-};
-
 class EpochHeuristics {
 public:
   /// Summarize the effective alloc-level accesses inside one epoch. Unused
@@ -129,20 +91,6 @@ public:
                        bool continuationEnabled = true,
                        const EpochAccessSummary *previousSummary = nullptr,
                        const EpochAccessSummary *epochSummary = nullptr);
-
-  /// Decide whether a loop is eligible for the CPS loop-driver transform.
-  static EpochLoopDriverDecision evaluateCPSLoopDriver(scf::ForOp forOp);
-
-  /// Decide whether a loop is eligible for the CPS chain transform.
-  static EpochChainDecision evaluateCPSChain(scf::ForOp forOp);
-
-  /// Decide which async loop strategy best matches the runtime-first contract.
-  ///
-  /// `AdvanceEdt` is the preferred shape for epoch-only time-step loops whose
-  /// cross-iteration handoff is just "this iteration finished, launch the
-  /// next one". `CpsChain` is reserved for loops that need an inner
-  /// continuation stage to publish sequential state between iterations.
-  static EpochAsyncLoopDecision evaluateAsyncLoopStrategy(scf::ForOp forOp);
 };
 
 } // namespace arts

@@ -91,6 +91,7 @@ createConvertOpenMPToSdePass(SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass> createConvertSdeToArtsPass();
 
 // --- Verification ---
+std::unique_ptr<Pass> createVerifySdeCpsPlanPass();
 std::unique_ptr<Pass> createVerifySdeLoweredPass();
 
 } // namespace mlir::arts::sde

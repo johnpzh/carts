@@ -353,6 +353,8 @@ Operation *DbUtils::getUnderlyingDb(Value v, unsigned depth) {
   /// Case 1: Direct DbAllocOp result (either guid or ptr).
   if (auto acq = v.getDefiningOp<DbAcquireOp>())
     return acq.getOperation();
+  if (auto depAcq = v.getDefiningOp<DepDbAcquireOp>())
+    return depAcq.getOperation();
   if (auto alloc = v.getDefiningOp<DbAllocOp>())
     return alloc.getOperation();
   /// Case 2: DbAcquireOp — trace through sourceGuid or sourcePtr.
@@ -394,7 +396,7 @@ Operation *DbUtils::getUnderlyingDb(Value v, unsigned depth) {
     return rootAlloc;
 
   if (Operation *root = ValueAnalysis::getUnderlyingOperation(v))
-    if (isa<DbAcquireOp, DbAllocOp>(root))
+    if (isa<DbAcquireOp, DepDbAcquireOp, DbAllocOp>(root))
       return root;
 
   return nullptr;

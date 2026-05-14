@@ -28,17 +28,3 @@ EpochContinuationDecision EpochAnalysis::evaluateContinuation(
   return EpochHeuristics::evaluateContinuation(
       epoch, previousEpoch, continuationEnabled, previousSummary, epochSummary);
 }
-
-EpochLoopDriverDecision
-EpochAnalysis::evaluateCPSLoopDriver(scf::ForOp forOp) const {
-  return EpochHeuristics::evaluateCPSLoopDriver(forOp);
-}
-
-EpochAsyncLoopDecision
-EpochAnalysis::evaluateAsyncLoopStrategy(scf::ForOp forOp) const {
-  return EpochHeuristics::evaluateAsyncLoopStrategy(forOp);
-}
-
-EpochChainDecision EpochAnalysis::evaluateCPSChain(scf::ForOp forOp) const {
-  return EpochHeuristics::evaluateCPSChain(forOp);
-}

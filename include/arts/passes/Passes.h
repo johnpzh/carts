@@ -31,7 +31,7 @@ class RuntimeConfig;
 std::unique_ptr<Pass> createArtsInlinerPass();
 /// Raise nested pointer allocations to N-dimensional memrefs.
 std::unique_ptr<Pass> createMemrefNormalizationPass();
-/// Convert residual OMP task dependencies to arts.omp_dep.
+/// Normalize residual OMP task dependency operands before SDE conversion.
 std::unique_ptr<Pass> createHandleDepsPass();
 /// Eliminate dead ARTS operations and dead helper IR.
 std::unique_ptr<Pass> createDCEPass();
@@ -71,18 +71,14 @@ std::unique_ptr<Pass> createLoweringContractCleanupPass();
 std::unique_ptr<Pass> createEpochOptPass();
 std::unique_ptr<Pass> createEpochOptPass(AnalysisManager *AM);
 /// Create EpochOpt with explicit scheduling flags.
-/// Structural opts (narrowing/fusion/loop-fusion) are always enabled.
+/// Structural opts (narrowing/fusion) are always enabled.
 std::unique_ptr<Pass> createEpochOptPass(AnalysisManager *AM,
                                          bool enableAmortization,
-                                         bool enableContinuation,
-                                         bool enableCPSDriver,
-                                         bool enableCPSChain = false);
+                                         bool enableContinuation);
 /// Create EpochOpt with scheduling-only flags (structural opts disabled).
 std::unique_ptr<Pass> createEpochOptSchedulingPass(AnalysisManager *AM,
                                                    bool enableAmortization,
-                                                   bool enableContinuation,
-                                                   bool enableCPSDriver,
-                                                   bool enableCPSChain = false);
+                                                   bool enableContinuation);
 std::unique_ptr<Pass> createHoistingPass();
 std::unique_ptr<Pass> createBlockLoopStripMiningPass();
 

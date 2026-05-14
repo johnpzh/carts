@@ -1,8 +1,7 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Verify the before/after for SDE boundary ownership:
-// ConvertOpenMPToSde may still bridge task slices from legacy arts.omp_dep
-// carriers, but it must not copy generic ARTS bookkeeping metadata onto new
+// ConvertOpenMPToSde must not copy generic ARTS bookkeeping metadata onto new
 // SDE loop ops.
 
 // CHECK-LABEL: // -----// IR Dump After ConvertOpenMPToSde (convert-openmp-to-sde) //----- //

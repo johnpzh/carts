@@ -56,50 +56,16 @@ constexpr StringLiteral DepPatternAttr = "depPattern";
 constexpr StringLiteral DistributionVersion = "distribution_version";
 constexpr StringLiteral PatternRevision = "arts.pattern_revision";
 
-/// Epoch without caller-active count (CPS continuation-path inner epochs)
+/// Epoch without caller-active count.
 constexpr StringLiteral NoStartEpoch = "arts.no_start_epoch";
-
-/// Marks the outer epoch of a CPS chain (the one main waits on)
-constexpr StringLiteral CPSOuterEpoch = "arts.cps_outer_epoch";
 
 /// DB storage-type inference annotations (set by DbModeTighteningPass)
 constexpr StringLiteral LocalOnly = "arts.local_only";
 constexpr StringLiteral ReadOnlyAfterInit = "arts.read_only_after_init";
 
-/// CPS chain / epoch continuation attributes
-/// NOTE: The CPS positional pack attrs below (cps_param_perm, cps_dep_routing,
-/// cps_forward_deps, cps_preserve_carry_abi) are DEPRECATED in favor of the
-/// explicit state/deps schema from split launch state IR (Phase 2/3).
-/// New code should use arts.launch.state_schema / arts.launch.dep_schema.
-/// Legacy attrs are still consumed by EpochLowering as a fallback when split
-/// ops are absent. They will be removed once all CPS paths emit split ops.
+/// Finish-EDT continuation attributes.
 constexpr StringLiteral ControlDep = "arts.has_control_dep";
 constexpr StringLiteral ContinuationForEpoch = "arts.continuation_for_epoch";
-constexpr StringLiteral CPSChainId = "arts.cps_chain_id";
-constexpr StringLiteral CPSOuterEpochParamIdx =
-    "arts.cps_outer_epoch_param_idx";
-constexpr StringLiteral CPSIterCounterParamIdx =
-    "arts.cps_iter_counter_param_idx";
-constexpr StringLiteral CPSParamPerm = "arts.cps_param_perm";
-constexpr StringLiteral CPSInitIter = "arts.cps_init_iter";
-constexpr StringLiteral CPSAdditiveParams = "arts.cps_additive_params";
-constexpr StringLiteral CPSNumCarry = "arts.cps_num_carry";
-constexpr StringLiteral CPSLoopContinuation = "arts.cps_loop_continuation";
-constexpr StringLiteral CPSAdvanceHasIvArg = "arts.cps_advance_has_iv_arg";
-constexpr StringLiteral CPSDirectRecreate = "arts.cps_direct_recreate";
-/// Marks async-loop kickoff/relaunch EDTs whose explicit dependency slots form
-/// part of the loop-carried state ABI and must be forwarded on relaunch.
-constexpr StringLiteral CPSForwardDeps = "arts.cps_forward_deps";
-/// Preserve the full carry-slot prefix for direct-recreate continuations even
-/// when some slots are locally dead; the relaunch path must reproduce the
-/// kickoff ABI exactly.
-constexpr StringLiteral CPSPreserveCarryAbi = "arts.cps_preserve_carry_abi";
-/// CPS dep routing: DenseI64ArrayAttr [numTimingDbs, hasScratch].
-/// Tells EpochLowering how many dep GUIDs are in loopBackParams and their
-/// layout: last (numTimingDbs + hasScratch) carry params are dep GUIDs,
-/// ordered as [scratchGuid?, timingGuid_0, ..., timingGuid_{T-1}].
-/// Dep slots: timing DBs occupy slots 0..T-1, scratch occupies slot T.
-constexpr StringLiteral CPSDepRouting = "arts.cps_dep_routing";
 
 /// Preserves compile-time DB outer extents on rehydrated handle values when
 /// outlining breaks the original DbAllocOp def-use chain.
@@ -860,8 +826,6 @@ inline void setDistributedDbAllocation(Operation *op, bool enabled) {
 inline std::optional<int64_t> getWorkers(Operation *op) {
   if (!op)
     return std::nullopt;
-  if (auto attr = op->getAttrOfType<workersAttr>(AttrNames::Operation::Workers))
-    return static_cast<int64_t>(attr.getValue());
   if (auto attr = op->getAttrOfType<IntegerAttr>(AttrNames::Operation::Workers))
     return attr.getInt();
   return std::nullopt;
@@ -878,7 +842,7 @@ inline void setWorkers(Operation *op, int64_t workers) {
       std::min<int64_t>(workers, std::numeric_limits<int32_t>::max());
   op->setAttr(
       AttrNames::Operation::Workers,
-      workersAttr::get(op->getContext(), static_cast<int32_t>(clamped)));
+      IntegerAttr::get(IntegerType::get(op->getContext(), 32), clamped));
 }
 
 inline std::optional<int64_t> getWorkersPerNode(Operation *op) {

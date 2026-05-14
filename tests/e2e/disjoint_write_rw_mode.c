@@ -1,6 +1,6 @@
 // RUN: rm -rf %t.pipes
 // RUN: %carts compile %s --all-pipelines -O3 --arts-config %arts_config -o %t.pipes
-// RUN: %FileCheck %s --input-file=%t.pipes/4_rt/stages/14_pre-lowering.mlir
+// RUN: %FileCheck %s --input-file=%t.pipes/4_rt/stages/10_pre-lowering.mlir
 
 // CHECK: arts_rt.rec_dep
 // CHECK-SAME: acquire_modes = array<i32: 3>

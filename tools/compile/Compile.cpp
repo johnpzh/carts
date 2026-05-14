@@ -253,7 +253,7 @@ static const std::array<llvm::StringLiteral, 10>
                                         "CSE"};
 static const std::array<llvm::StringLiteral, 3> kInitialCleanupPasses = {
     "LowerAffine(func)", "CSE(func)", "PolygeistCanonicalizeFor(func)"};
-static const std::array<llvm::StringLiteral, 25> kOpenMPToArtsPasses = {
+static const std::array<llvm::StringLiteral, 26> kOpenMPToArtsPasses = {
     "ConvertOpenMPToSde",
     "RaiseToTensor",
     "RaiseToLinalg",
@@ -268,6 +268,7 @@ static const std::array<llvm::StringLiteral, 25> kOpenMPToArtsPasses = {
     "DistributionPlanning",
     "IterationSpaceDecomposition",
     "BarrierElimination",
+    "VerifySdeCpsPlan",
     "Vectorization",
     "LowerToMemref",
     "ConvertToCodelet",
@@ -660,6 +661,7 @@ void buildOpenMPToArtsPipeline(PassManager &pm,
   pm.addPass(arts::sde::createDistributionPlanningPass(costModel));
   pm.addPass(arts::sde::createIterationSpaceDecompositionPass());
   pm.addPass(arts::sde::createBarrierEliminationPass(costModel));
+  pm.addPass(arts::sde::createVerifySdeCpsPlanPass());
   pm.addPass(arts::sde::createVectorizationPass());
   pm.addPass(arts::sde::createLowerToMemrefPass());
   pm.addPass(arts::sde::createConvertToCodeletPass());
@@ -737,12 +739,10 @@ void buildEpochsPipeline(PassManager &pm, arts::AnalysisManager *AM,
   pm.addPass(arts::createCreateEpochsPass());
   pm.addPass(arts::createVerifyEpochCreatedPass());
   /// Run EpochOpt with structural + scheduling optimizations on newly created
-  /// epochs. Amortization is always enabled; continuation/CPS opts are gated.
+  /// epochs. Amortization is always enabled; continuation is gated.
   pm.addPass(arts::createEpochOptPass(AM,
                                       /*amortization=*/true,
-                                      /*continuation=*/enableContinuation,
-                                      /*cpsDriver=*/enableContinuation,
-                                      /*cpsChain=*/enableContinuation));
+                                      /*continuation=*/enableContinuation));
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
 }
 

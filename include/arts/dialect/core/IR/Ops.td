@@ -605,59 +605,6 @@ def DbNumElementsOp : Arts_Op<"db_num_elements", [Pure]> {
   ];
 }
 
-def OmpDepOp : Arts_Op<"omp_dep", [Pure, AttrSizedOperandSegments]> {
-  let summary =
-      "OpenMP dependency descriptor for chunk-based task dependencies";
-  let description = [{
-    Captures dependency information from OpenMP task depend clauses during
-    CanonicalizeMemrefs pass. This operation simplifies the conversion pipeline
-    by avoiding complex subview/collapse operations that only exist to satisfy
-    OpenMP's memref requirement. Instead, it directly captures:
-    - Base array (canonicalized N-D array)
-    - Access mode (in/out/inout)
-    - Starting indices for each dimension
-    - Block size for each dimension
-
-    This operation is created in CanonicalizeMemrefs when transforming nested
-    arrays to N-D arrays, and is consumed in ConvertOpenMPToArts to create
-    DbControlOp operations with proper chunk support.
-
-    Examples:
-      /// Point dependency: depend(in: A[i][j])
-      %dep = arts.omp_dep <in> %A_2D[%i, %j] size [%c1, %c1] : memref<?x?xf64>
-
-      /// Chunk dependency: depend(out: A[i:BLOCK_SIZE][j:BLOCK_SIZE])
-      %dep = arts.omp_dep <out> %A_2D[%i, %j] size [%bs, %bs] : memref<?x?xf64>
-
-      /// Mixed: depend(in: A[i][j:COLS])
-      %dep = arts.omp_dep <in> %A_2D[%i, %j] size [%c1, %cols] : memref<?x?xf64>
-
-      /// Full array: depend(in: B[0:N][0:N])
-      %dep = arts.omp_dep <in> %B[%c0, %c0] size [%N, %N] : memref<?x?xf64>
-  }];
-
-  let arguments = (ins
-    ArtsModeAttr:$mode,   
-    AnyMemRef:$source,    
-    Variadic<Index>:$indices,        
-    Variadic<Index>:$sizes           
-  );
-
-  let results = (outs AnyMemRef : $result);
-
-  let assemblyFormat = [{
-    `<` $mode `>` $source `[` $indices `]` `size` `[` $sizes `]`
-    attr-dict `:` type($source) `->` type($result)
-  }];
-
-  let builders = [
-    OpBuilder<(ins "ArtsMode":$mode,
-                   "Value":$source,
-                   CArg<"SmallVector<Value>", "{}">:$indices,
-                   CArg<"SmallVector<Value>", "{}">:$sizes)>
-  ];
-}
-
 ///===----------------------------------------------------------------------===///
 /// arts.edt
 ///===----------------------------------------------------------------------===///
@@ -685,7 +632,7 @@ def EdtOp : Arts_Op<"edt", [
     operand list:
 
     ```
-    arts.edt parallel intranode route(%r) (%acq0, %acq1 : memref<...>, memref<...>) {
+    arts.edt task intranode route(%r) (%acq0, %acq1 : memref<...>, memref<...>) {
     ^bb0(%arg0: memref<...>, %arg1: memref<...>):
       // %arg0 corresponds to %acq0, %arg1 corresponds to %acq1
       ...
@@ -722,7 +669,6 @@ def EdtOp : Arts_Op<"edt", [
       - `task`: general task.
     - `concurrency`: execution scope (`intranode` or `internode`).
     - `route`: routing value (I32) for task placement.
-    - `workers` (optional): number of parallel workers to use.
     - `nowait` (optional): indicates the EDT does not require an epoch
       wrapper (typically used when the EDT is already inside an epoch).
     - `no_verify` (optional): disables verifier checks for intermediate
@@ -732,7 +678,6 @@ def EdtOp : Arts_Op<"edt", [
     EdtTypeAttr:$type,
     EdtConcurrencyAttr:$concurrency,
     I32:$route,
-    OptionalAttr<WorkersAttr>:$workers,
     OptionalAttr<NoVerifyAttr>:$no_verify,
     OptionalAttr<UnitAttr>:$nowait,
     UnitAttr:$inPlaceSafe,
@@ -828,54 +773,17 @@ def EpochOp
   ];
 }
 
-///===----------------------------------------------------------------------===///
-/// arts.cps_advance
-///===----------------------------------------------------------------------===///
-def CPSAdvanceOp : Arts_Op<"cps_advance", [
-  SingleBlockImplicitTerminator<"arts::YieldOp">
-]> {
-  let summary = "CPS loop advance placeholder — resolved after EDT outlining";
-  let description = [{
-    Placeholder operation emitted by the CPS chain transform in EpochOpt.
-    Represents the "advance to next iteration" step in a CPS continuation
-    chain. Contains the epoch body (worker spawning code) to be cloned for
-    the next iteration.
-
-    After EdtLowering outlines continuation EDTs, EpochLowering resolves
-    each `arts.cps_advance` by:
-    1. Finding the matching runtime EDT creation op by `cps_chain_id`
-    2. Reading its `outlined_func` attribute
-    3. Creating a new runtime EDT creation op with updated params
-    4. Creating a runtime epoch creation op with finish target pointing to it
-    5. Moving worker ops from the epochBody region
-    6. Erasing the cps_advance op
-
-    The `targetChainId` identifies which continuation in the chain to
-    re-create. The `nextIterParams` carry updated loop counter and bounds.
-  }];
-  let arguments = (ins
-    Variadic<AnyType>:$nextIterParams,
-    StrAttr:$targetChainId
-  );
-  let regions = (region SizedRegion<1>:$epochBody);
-  let assemblyFormat = [{
-    `(` $nextIterParams `)` `target` $targetChainId $epochBody attr-dict (`:` type($nextIterParams)^)?
-  }];
-}
-
-///===----------------------------------------------------------------------===///
 /// arts.yield
 ///===----------------------------------------------------------------------===///
 def YieldOp : Arts_Op<"yield", [
-  Pure, ReturnLike, Terminator, ParentOneOf<["EdtOp", "EpochOp", "CPSAdvanceOp"]>
+  Pure, ReturnLike, Terminator, ParentOneOf<["EdtOp", "EpochOp"]>
 ]> {
 
   let summary = "ARTS dialect yield terminator";
   let description = [{
     The `arts.yield` operation serves as a terminator for various 
-    ARTS operations, such as `arts.epoch`, `arts.parallel`, `arts.single`, 
-    and `arts.edt`. It ensures proper control flow within the ARTS dialect 
-    by marking the end of a region.
+    ARTS operations, such as `arts.epoch` and `arts.edt`. It ensures proper
+    control flow within the ARTS dialect by marking the end of a region.
   }];
   let assemblyFormat = [{attr-dict-with-keyword}];
 }
@@ -947,8 +855,7 @@ def GetEdtEpochGuidOp : Arts_Op<"get_edt_epoch_guid", [Pure]> {
   let description = [{
     Returns the epoch_guid field from the current EDT structure. This is
     the epoch that this EDT was enrolled in at creation time, NOT the
-    current epoch from the epoch stack. Used by CPS chain to propagate
-    the outer epoch enrollment through continuation chains.
+    current epoch from the epoch stack.
   }];
   let results = (outs I64 : $epochGuid);
   let assemblyFormat = "attr-dict";

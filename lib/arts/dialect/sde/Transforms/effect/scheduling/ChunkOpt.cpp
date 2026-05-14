@@ -184,6 +184,8 @@ struct ChunkOptPass : public arts::impl::ChunkOptBase<ChunkOptPass> {
           rewrite.op.getIterationTopologyAttr(),
           rewrite.op.getRepetitionStructureAttr(),
           rewrite.op.getAsyncStrategyAttr(),
+          rewrite.op.getCpsGroupIdAttr(), rewrite.op.getCpsStageIndexAttr(),
+          rewrite.op.getCpsStageCountAttr(),
           rewrite.op.getDistributionKindAttr(),
           rewrite.op.getInPlaceSafeAttr(),
           rewrite.op.getInPlaceSharedStateAttr(),

@@ -1593,7 +1593,7 @@ struct DepDbAcquireOpPattern : public ArtsToLLVMPattern<DepDbAcquireOp> {
     ///   pointer. Loading the dep entry here for those cases turns data bytes
     ///   into fake pointers at runtime.
     ///
-    /// The CPS chain path may produce memref<?xmemref<...>> types (the
+    /// Some outlined paths may preserve memref<?xmemref<...>> types (the
     /// original pre-DbAlloc types) instead of memref<?x!llvm.ptr>. Both
     /// represent block-partitioned pointer tables and need dataPtrAddr.
     Value ptrBase = payloadPtr;
@@ -1840,7 +1840,7 @@ struct DepBindPattern : public ArtsToLLVMPattern<DepBindOp> {
 };
 
 /// Pattern to lower arts.dep_forward to identity (pass-through).
-/// At runtime level the slot value is unchanged across relaunch.
+/// At runtime level the forwarded dependency slot value is unchanged.
 struct DepForwardPattern : public ArtsToLLVMPattern<DepForwardOp> {
   using ArtsToLLVMPattern::ArtsToLLVMPattern;
 

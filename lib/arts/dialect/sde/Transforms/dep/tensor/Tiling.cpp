@@ -1027,7 +1027,9 @@ struct TilingPass : public arts::impl::TilingBase<TilingPass> {
           op.getPhysicalOwnerDimsAttr(), op.getPhysicalBlockShapeAttr(),
           op.getLogicalWorkerSliceAttr(), op.getPhysicalHaloShapeAttr(),
           op.getIterationTopologyAttr(), op.getRepetitionStructureAttr(),
-          op.getAsyncStrategyAttr(), op.getDistributionKindAttr(),
+          op.getAsyncStrategyAttr(), op.getCpsGroupIdAttr(),
+          op.getCpsStageIndexAttr(), op.getCpsStageCountAttr(),
+          op.getDistributionKindAttr(),
           op.getInPlaceSafeAttr(), op.getInPlaceSharedStateAttr(),
           op.getVectorizeWidthAttr(), op.getUnrollFactorAttr(),
           op.getInterleaveCountAttr());

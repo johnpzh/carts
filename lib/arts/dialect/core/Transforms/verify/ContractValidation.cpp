@@ -164,12 +164,12 @@ struct ContractValidationPass
     ARTS_DEBUG("  Proof inconsistencies: " << proofInconsistencies);
 
     /// ---------------------------------------------------------------
-    /// Phase 4: Advisory proof-gap and CPS pack-schema warnings
+    /// Phase 4: Advisory proof-gap warnings
     /// ---------------------------------------------------------------
     unsigned proofGapWarnings = 0;
 
     if (warnOnProofGaps) {
-      /// Phase 4a: Ownership proof gap checks on LoweringContractOps
+      /// Ownership proof gap checks on LoweringContractOps
       module.walk([&](LoweringContractOp contract) {
         Value target = contract.getTarget();
         if (!target || !isa<MemRefType>(target.getType()))
@@ -216,55 +216,6 @@ struct ContractValidationPass
         /// block_shape without owner_dims
         if (!blockShape.empty() && (!ownerDims || ownerDims->empty())) {
           contract.emitWarning("proof gap: block_shape without owner_dims");
-          ++proofGapWarnings;
-        }
-      });
-
-      /// Phase 4b: CPS pack-schema gap checks on EdtOps
-      module.walk([&](EdtOp edt) {
-        /// cps_chain_id without cps_dep_routing
-        if (edt->hasAttr(AttrNames::Operation::CPSChainId) &&
-            !edt->hasAttr(AttrNames::Operation::CPSDepRouting)) {
-          edt.emitWarning(
-              "CPS schema gap: cps_chain_id without cps_dep_routing");
-          ++proofGapWarnings;
-        }
-
-        /// cps_forward_deps without cps_dep_routing
-        if (auto fwdDeps = edt->getAttrOfType<DenseI64ArrayAttr>(
-                AttrNames::Operation::CPSForwardDeps)) {
-          if (fwdDeps.size() > 0 &&
-              !edt->hasAttr(AttrNames::Operation::CPSDepRouting)) {
-            edt.emitWarning(
-                "CPS schema gap: cps_forward_deps without cps_dep_routing");
-            ++proofGapWarnings;
-          }
-        }
-
-        /// cps_param_perm with negative slot
-        if (auto paramPerm = edt->getAttrOfType<DenseI64ArrayAttr>(
-                AttrNames::Operation::CPSParamPerm)) {
-          for (int64_t slot : paramPerm.asArrayRef()) {
-            if (slot < 0) {
-              edt.emitWarning(
-                  "CPS schema gap: cps_param_perm has negative slot");
-              ++proofGapWarnings;
-              break;
-            }
-          }
-        }
-
-        /// Mixed schema warning: both legacy CPS attrs and new split
-        /// launch state schema present on the same EDT.
-        bool hasLegacyCps = edt->hasAttr(AttrNames::Operation::CPSParamPerm) ||
-                            edt->hasAttr(AttrNames::Operation::CPSDepRouting);
-        bool hasNewSchema =
-            edt->hasAttr(AttrNames::Operation::LaunchState::StateSchema) ||
-            edt->hasAttr(AttrNames::Operation::LaunchState::DepSchema);
-        if (hasLegacyCps && hasNewSchema) {
-          edt.emitWarning("mixed CPS schema: EDT has both legacy "
-                          "cps_param_perm/cps_dep_routing and new "
-                          "launch.state_schema/dep_schema");
           ++proofGapWarnings;
         }
       });

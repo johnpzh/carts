@@ -133,30 +133,6 @@ void fuseEpochs(EpochOp first, EpochOp second) {
   second.erase();
 }
 
-bool isFusableWorkerLoop(scf::ForOp a, scf::ForOp b) {
-  if (!isWorkerLoop(a) || !isWorkerLoop(b))
-    return false;
-  if (!a.getInitArgs().empty() || !b.getInitArgs().empty())
-    return false;
-  if (a.getNumResults() != 0 || b.getNumResults() != 0)
-    return false;
-  if (a.getInductionVar().getType() != b.getInductionVar().getType())
-    return false;
-  return haveCompatibleBounds(a, b);
-}
-
-void fuseLoops(scf::ForOp first, scf::ForOp second) {
-  Block &firstBody = first.getRegion().front();
-  Block &secondBody = second.getRegion().front();
-  EdtUtils::spliceBodyBeforeTerminator(secondBody, firstBody);
-
-  Value oldIv = secondBody.getArgument(0);
-  Value newIv = firstBody.getArgument(0);
-  oldIv.replaceAllUsesWith(newIv);
-
-  second.erase();
-}
-
 bool isKernelTimerTailOp(Operation *op) {
   auto callOp = dyn_cast<func::CallOp>(op);
   if (!callOp)
@@ -413,22 +389,6 @@ unsigned processRegionForEpochFusion(Region &region,
                                                   continuationEnabled);
     }
   }
-  return fusedPairs;
-}
-
-unsigned fuseWorkerLoopsInEpoch(EpochOp epoch) {
-  Block &body = epoch.getBody().front();
-  unsigned fusedPairs = 0;
-  (void)EdtUtils::fuseConsecutivePairs<scf::ForOp>(
-      body,
-      [](scf::ForOp a, scf::ForOp b) {
-        return isFusableWorkerLoop(a, b) && !DbAnalysis::hasDbConflict(a, b);
-      },
-      [&](scf::ForOp a, scf::ForOp b) {
-        ARTS_DEBUG("Fusing consecutive worker loops in epoch");
-        ++fusedPairs;
-        fuseLoops(a, b);
-      });
   return fusedPairs;
 }
 

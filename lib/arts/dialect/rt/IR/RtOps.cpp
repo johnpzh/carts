@@ -5,6 +5,8 @@
 
 #include "arts/dialect/rt/IR/RtDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/Types.h"
 
 using namespace mlir;
 using namespace mlir::arts::rt;
@@ -16,6 +18,18 @@ namespace {
 Value createZeroI32(OpBuilder &builder, Location loc) {
   return arith::ConstantIntOp::create(builder, loc, 0, 32);
 }
+
+static LogicalResult verifyParamvScalarTypes(Operation *op, TypeRange types,
+                                             StringRef role) {
+  for (auto [index, type] : llvm::enumerate(types)) {
+    if (type.isIntOrIndexOrFloat())
+      continue;
+    return op->emitOpError(role)
+           << " must be scalar int/index/float values; entry #" << index
+           << " has type " << type;
+  }
+  return success();
+}
 } // namespace
 
 LogicalResult CreateEpochOp::verify() {
@@ -25,6 +39,16 @@ LogicalResult CreateEpochOp::verify() {
     return emitOpError("finishEdtGuid and finishSlot must both be present or "
                        "both be absent");
   return success();
+}
+
+LogicalResult EdtParamPackOp::verify() {
+  return verifyParamvScalarTypes(getOperation(), getParams().getTypes(),
+                                 "operands");
+}
+
+LogicalResult EdtParamUnpackOp::verify() {
+  return verifyParamvScalarTypes(getOperation(), getUnpacked().getTypes(),
+                                 "results");
 }
 
 void EdtCreateOp::build(OpBuilder &builder, OperationState &state,

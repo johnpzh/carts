@@ -2,7 +2,8 @@
 /// File: MemrefNormalization.cpp
 ///
 /// This pass raises nested pointer allocations to N-dimensional memrefs and
-/// converts OpenMP task dependencies into arts.omp_dep operations.
+/// normalizes OpenMP task dependencies to memref values that
+/// ConvertOpenMPToSde can turn into sde.mu_dep operations.
 /// It uses a two-phase approach: complete analysis first, then transformation.
 ///
 /// Key features:
@@ -10,7 +11,7 @@
 /// 2. Collects ALL element accesses before any transformation
 /// 3. Collects ALL OMP dependencies before any transformation
 /// 4. Transforms in a single pass: element accesses + OMP deps
-/// 5. Creates arts.omp_dep with proper indices and sizes
+/// 5. Creates memref dependency views with proper indices and sizes
 ///===----------------------------------------------------------------------===///
 
 #include "arts/Dialect.h"
@@ -200,7 +201,6 @@ struct TraceResult {
 struct DepInfo {
   Value source;
   SmallVector<Value> indices, sizes;
-  ArtsMode mode;
   omp::TaskOp taskOp;
   unsigned depVarIndex;
   SmallVector<Operation *> opsToRemove;
@@ -212,6 +212,43 @@ struct TaskDepRef {
   unsigned depIdx;
   omp::ClauseTaskDepend depMode;
 };
+
+static Value materializeDependView(OpBuilder &builder, Location loc,
+                                   Value source, ArrayRef<Value> indices,
+                                   ArrayRef<Value> sizes) {
+  if (indices.empty() && sizes.empty())
+    return source;
+
+  auto sourceType = dyn_cast<MemRefType>(source.getType());
+  if (!sourceType)
+    return source;
+
+  unsigned rank = sourceType.getRank();
+  SmallVector<OpFoldResult> offsets;
+  SmallVector<OpFoldResult> viewSizes;
+  SmallVector<OpFoldResult> strides;
+  offsets.reserve(rank);
+  viewSizes.reserve(rank);
+  strides.reserve(rank);
+
+  for (unsigned dim = 0; dim < rank; ++dim) {
+    offsets.push_back(dim < indices.size() ? OpFoldResult(indices[dim])
+                                           : builder.getIndexAttr(0));
+    if (dim < sizes.size()) {
+      viewSizes.push_back(sizes[dim]);
+    } else if (!sourceType.isDynamicDim(dim)) {
+      viewSizes.push_back(builder.getIndexAttr(sourceType.getDimSize(dim)));
+    } else {
+      viewSizes.push_back(memref::DimOp::create(builder, loc, source, dim)
+                              .getResult());
+    }
+    strides.push_back(builder.getIndexAttr(1));
+  }
+
+  return memref::SubViewOp::create(builder, loc, source, offsets, viewSizes,
+                                   strides)
+      .getResult();
+}
 
 /// Pattern for a nested allocation structure
 struct AllocPattern {
@@ -330,7 +367,7 @@ private:
       const DenseMap<Value, SmallVector<TaskDepRef>> &taskDepsByValue);
   std::optional<DepInfo> analyzeDepVar(Value depVar, AllocPattern &pattern,
                                        omp::TaskOp taskOp, unsigned depIdx,
-                                       omp::ClauseTaskDepend depMode);
+                                       omp::ClauseTaskDepend);
 
   /// Helper: Trace a value back to the pattern
   std::optional<TraceResult> traceToPattern(Value val, AllocPattern &pattern);
@@ -1041,11 +1078,10 @@ void MemrefNormalizationPass::collectOmpDependencies(
 std::optional<DepInfo>
 MemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
                                        omp::TaskOp taskOp, unsigned depIdx,
-                                       omp::ClauseTaskDepend depMode) {
+                                       omp::ClauseTaskDepend) {
   DepInfo info;
   info.taskOp = taskOp;
   info.depVarIndex = depIdx;
-  info.mode = arts::convertOmpMode(depMode);
 
   Operation *defOp = depVar.getDefiningOp();
   /// Block arg - skip
@@ -1694,16 +1730,13 @@ LogicalResult MemrefNormalizationPass::transformPattern(AllocPattern &pattern,
   for (auto &dep : pattern.dependencies) {
     builder.setInsertionPoint(dep.taskOp);
 
-    /// Create arts.omp_dep with proper indices and sizes
-    auto ompDepOp =
-        arts::OmpDepOp::create(builder, dep.taskOp.getLoc(), ndAlloc.getType(),
-                               dep.mode, ndAlloc, dep.indices, dep.sizes);
+    Value depValue = materializeDependView(builder, dep.taskOp.getLoc(),
+                                           ndAlloc, dep.indices, dep.sizes);
 
     /// Update the task's depend_vars
-    dep.taskOp.getDependVarsMutable()[dep.depVarIndex].set(
-        ompDepOp.getResult());
+    dep.taskOp.getDependVarsMutable()[dep.depVarIndex].set(depValue);
 
-    ARTS_DEBUG("  Created OmpDepOp for task at "
+    ARTS_DEBUG("  Created memref dependency view for task at "
                << dep.taskOp.getLoc() << " with " << dep.indices.size()
                << " indices and " << dep.sizes.size() << " sizes");
 
@@ -1926,19 +1959,19 @@ MemrefNormalizationPass::transformSimpleWrapper(AllocPattern &pattern,
   ARTS_DEBUG("  Replaced " << replacedCount << "/" << wrapperLoads.size()
                            << " wrapper loads with actual alloc");
 
-  /// 4. Transform OMP dependencies - create arts.omp_dep
+  /// 4. Transform OMP dependencies into memref dependency views.
   /// Now that wrapper loads are replaced, dependencies reference actualAlloc
   for (auto &dep : pattern.dependencies) {
     builder.setInsertionPoint(dep.taskOp);
 
-    auto ompDepOp = arts::OmpDepOp::create(builder, dep.taskOp.getLoc(),
-                                           actualAlloc.getType(), dep.mode,
-                                           actualAlloc, dep.indices, dep.sizes);
+    Value depValue =
+        materializeDependView(builder, dep.taskOp.getLoc(), actualAlloc,
+                              dep.indices, dep.sizes);
 
-    dep.taskOp.getDependVarsMutable()[dep.depVarIndex].set(
-        ompDepOp.getResult());
+    dep.taskOp.getDependVarsMutable()[dep.depVarIndex].set(depValue);
 
-    ARTS_DEBUG("  Created OmpDepOp with " << dep.indices.size() << " indices");
+    ARTS_DEBUG("  Created memref dependency view with " << dep.indices.size()
+                                                       << " indices");
 
     /// Mark ops for removal
     for (auto *op : dep.opsToRemove)

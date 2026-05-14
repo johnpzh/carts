@@ -49,63 +49,17 @@ struct EpochNarrowingCounts {
   unsigned newEpochsCreated = 0;
 };
 
-llvm::StringRef asyncLoopStrategyToString(EpochAsyncLoopStrategy strategy);
-ArtsPlanAsyncStrategy
-asyncLoopStrategyToPlanAsyncStrategy(EpochAsyncLoopStrategy strategy);
-bool loopContainsCpsChainExcludedDepPattern(scf::ForOp forOp);
-bool loopContainsCpsDriverExcludedDepPattern(scf::ForOp forOp);
-std::string makeAsyncLoopChainId(Operation *op);
-std::string makeContinuationChainId(Operation *ownerOp, unsigned chainIdx);
-
 using AttrNames::Operation::ContinuationForEpoch;
 using AttrNames::Operation::ControlDep;
-using AttrNames::Operation::CPSAdditiveParams;
-using AttrNames::Operation::CPSAdvanceHasIvArg;
-using AttrNames::Operation::CPSChainId;
-using AttrNames::Operation::CPSDepRouting;
-using AttrNames::Operation::CPSDirectRecreate;
-using AttrNames::Operation::CPSForwardDeps;
-using AttrNames::Operation::CPSInitIter;
-using AttrNames::Operation::CPSIterCounterParamIdx;
-using AttrNames::Operation::CPSLoopContinuation;
-using AttrNames::Operation::CPSNumCarry;
-
-bool isSlotOp(Operation *op, ArrayRef<EpochSlot> slots);
-void ensureYieldTerminator(Block &block, Location loc);
-void markClonedSlotEpochs(OpBuilder &attrBuilder, scf::IfOp ifOp);
-Operation *cloneEpochSlot(OpBuilder &slotBuilder, EpochSlot slot,
-                          IRMapping &mapping);
-void cloneNonSlotArith(OpBuilder &builder, Block &body,
-                       MutableArrayRef<EpochSlot> slots, IRMapping &mapping,
-                       ArrayRef<Operation *> sequentialOps = {},
-                       ArrayRef<Operation *> eagerSequentialOps = {},
-                       bool restrictEagerSequentialOps = false);
-Operation *getLastNonTerminatorOp(Block &block);
-void emitAdvanceLogic(OpBuilder &builder, Location loc, Value iv,
-                      Value tCurrent, Value ub, Value step, Block &body,
-                      MutableArrayRef<EpochSlot> slots, StringRef targetChainId,
-                      ArrayRef<Operation *> prefixSequentialOps = {},
-                      ArrayRef<Operation *> allSequentialOps = {},
-                      ArrayRef<Value> loopBackParams = {},
-                      const IRMapping *seedMapping = nullptr);
-void markAsContinuation(EdtOp edt, OpBuilder &builder, Operation *ownerOp,
-                        unsigned chainIdx);
-void normalizeAsyncLoopPlanAttrs(scf::ForOp forOp,
-                                 EpochAsyncLoopStrategy strategy);
-void copyNormalizedPlanAttrs(Operation *source, Operation *dest,
-                             EpochAsyncLoopStrategy strategy);
 
 EpochNarrowingCounts narrowEpochScopes(ModuleOp module);
 unsigned processRegionForEpochFusion(Region &region,
                                      const EpochAnalysis &epochAnalysis,
                                      bool continuationEnabled);
-unsigned fuseWorkerLoopsInEpoch(EpochOp epoch);
 bool tryAmortizeRepeatedEpochLoop(EpochOp epochOp);
 LogicalResult
 transformToContinuation(EpochOp epochOp,
                         const EpochContinuationDecision &decision);
-bool tryCPSLoopTransform(scf::ForOp forOp, const EpochAnalysis &epochAnalysis);
-bool tryCPSChainTransform(scf::ForOp forOp, const EpochAnalysis &epochAnalysis);
 
 } // namespace mlir::arts::epoch_opt
 

@@ -11,7 +11,7 @@ namespace mlir::arts::sde {
 namespace {
 
 static bool isDirectCaptureType(Type type) {
-  return type.isIntOrIndexOrFloat() || isa<BaseMemRefType>(type);
+  return type.isIntOrIndexOrFloat();
 }
 
 static bool isInsideMovedOps(Operation *op,

@@ -319,6 +319,8 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
       first.getPhysicalBlockShapeAttr(), first.getLogicalWorkerSliceAttr(),
       first.getPhysicalHaloShapeAttr(), first.getIterationTopologyAttr(),
       first.getRepetitionStructureAttr(), first.getAsyncStrategyAttr(),
+      first.getCpsGroupIdAttr(), first.getCpsStageIndexAttr(),
+      first.getCpsStageCountAttr(),
       first.getDistributionKindAttr(), first.getInPlaceSafeAttr(),
       first.getInPlaceSharedStateAttr(), first.getVectorizeWidthAttr(),
       first.getUnrollFactorAttr(), first.getInterleaveCountAttr());

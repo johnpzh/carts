@@ -1,7 +1,8 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
-// SDE recognizes same-shape dependent elementwise stages as timestep waves
-// before ConvertSdeToArts. Core only receives translated plan attrs.
+// SDE recognizes same-shape dependent elementwise stages as timestep waves.
+// Barrier analysis keeps them on advance_edt until the SDE CPS dataflow rewrite
+// can make token/control carries explicit.
 
 // CHECK-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
 // CHECK: func.func @timestep_pair
