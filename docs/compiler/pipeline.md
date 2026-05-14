@@ -71,6 +71,7 @@ The complete SDE lifecycle lives inside this stage.
 
 ```text
 ConvertOpenMPToSde
+RaiseMemrefToTensor
 RaiseToTensor
 RaiseToLinalg
 PatternAnalysis
@@ -84,6 +85,8 @@ ReductionStrategy
 DistributionPlanning
 IterationSpaceDecomposition
 BarrierElimination
+CpsPlanning
+VerifySdeCpsPlan
 Vectorization
 LowerToMemref
 ConvertToCodelet

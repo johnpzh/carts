@@ -22,9 +22,9 @@ and destroyed.
 
 | Dialect | Namespace | Stages | Purpose |
 |---------|-----------|--------|---------|
-| SDE | `sde::` | 3 (inside openmp-to-arts) | Semantic contracts, pattern classification |
-| ARTS Core | `arts::` | 3-15 | Structural transforms, partitioning, distribution |
-| ARTS RT | `arts_rt::` / `rt::` | 15-16 | 1:1 runtime call mapping |
+| SDE | `sde::` | 3 (inside openmp-to-arts) | Semantic contracts, pattern classification, MU/CU/SU planning |
+| ARTS Core | `arts::` | 3-10 | DB/EDT/epoch orchestration and analysis |
+| ARTS RT | `arts_rt::` / `rt::` | 10-11 | 1:1 runtime call mapping |
 
 ## Dialect Boundaries
 
@@ -55,8 +55,8 @@ C/OMP source
 | Op | Created | Lowered | Stages Active |
 |----|---------|---------|---------------|
 | `arts.edt` | openmp-to-arts (3) | pre-lowering (10) | 3-10 |
-| `arts.db_alloc` | create-dbs (5) | pre-lowering (10) | 5-10 |
-| `arts.db_acquire` | create-dbs (5) | pre-lowering (10) | 5-10 |
+| `arts.db_alloc` | openmp-to-arts direct MU path (3) or create-dbs fallback (5) | pre-lowering (10) | 3/5-10 |
+| `arts.db_acquire` | openmp-to-arts direct MU path (3) or create-dbs fallback (5) | pre-lowering (10) | 3/5-10 |
 | `arts.db_ref` | create-dbs (5) | pre-lowering (10) | 5-10 |
 | `arts.epoch` | openmp-to-arts (3) or epochs (9) | pre-lowering (10) | 3-10 |
 | `arts.barrier` | openmp-to-arts (3) | epochs (9) | 3-9 |

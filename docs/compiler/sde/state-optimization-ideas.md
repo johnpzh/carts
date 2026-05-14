@@ -11,6 +11,8 @@ distribution kind.
 
 Current state-related passes and utilities:
 
+- `RaiseMemrefToTensor` converts eligible task-depend raw memrefs into canonical
+  SDE MU/token/codelet form before the raw-memref compatibility bridge.
 - `RaiseToTensor` and `RaiseToLinalg` create the tensor/linalg form used for
   structured analysis.
 - `PatternAnalysis` classifies loops, records stencil neighborhoods,
@@ -47,6 +49,10 @@ Make matmul-like state explicit before Core:
 - tile sizes based on useful work per EDT, cache footprint, reduction locality,
   and abstract logical capacity;
 - phase state for chained products, with only true producer-consumer edges.
+  Current repeated large/64 evidence makes matrix-chain intermediates the
+  priority: `gemm` is faster than OpenMP at median, while `2mm` and `3mm` still
+  lack stable explicit intermediate reuse across producer and consumer
+  contractions.
 
 This prevents Core from seeing one coarse output DB plus late per-task slices.
 
@@ -84,6 +90,7 @@ block plan is safe.
 Keep the high-level spine:
 
 ```text
+RaiseMemrefToTensor
 RaiseToTensor
 RaiseToLinalg
 PatternAnalysis
@@ -97,6 +104,8 @@ ReductionStrategy
 DistributionPlanning
 IterationSpaceDecomposition
 BarrierElimination
+CpsPlanning
+VerifySdeCpsPlan
 Vectorization
 LowerToMemref
 ConvertToCodelet

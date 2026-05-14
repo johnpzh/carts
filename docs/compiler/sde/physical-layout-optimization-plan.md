@@ -66,8 +66,10 @@ tile sizes from tensor shape, cache/reuse facts, and abstract logical capacity,
 and preserve real phase edges for chained products. Direct-memory output
 ownership must stay row-strip until SDE can also prove packed A/B panel or
 intermediate-tile reuse. `3mm` first-phase products should remain independent
-when their roots are disjoint; `2mm` intermediates should become physical DB
-blocks before the consumer phase.
+when their roots are disjoint. Current repeated large/64 evidence has `gemm`
+faster than OpenMP at median, while `2mm` and `3mm` are blocked or unstable, so
+prioritize phase-local physical DBs for `tmp`, `E`, and `F` with explicit
+producer/consumer reuse before adding new tile-size heuristics.
 
 ### Vector, Reduction, And Elementwise Fusion
 

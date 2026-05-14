@@ -100,7 +100,7 @@ annotation level.
 | Block | Strong | Implemented baseline |
 | Two-level block (internode) | Strong | Implemented default internode path |
 | Block-cyclic | Good | Implemented task-loop lowering path |
-| 2D block tiling (matmul-oriented) | Good | Implemented strategy + contiguous column slices + owner hints |
+| 2D block tiling (matmul-oriented) | Good when input/intermediate reuse is also planned | Strategy exists, but direct-memory 2D output ownership is rejected for current one-node GEMM-family paths unless SDE also proves matching panel/intermediate reuse |
 | Cannon-style shifts | Feasible but complex | Not implemented (future) |
 | SUMMA-style broadcast panels | Feasible via events/active messages | Not implemented (future) |
 | 2.5D replication | Possible but high complexity | Not implemented (future) |

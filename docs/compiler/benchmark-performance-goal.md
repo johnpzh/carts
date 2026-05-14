@@ -495,7 +495,7 @@ Rejected evidence:
   whose stale CMake cache still had counters/metrics enabled with
   `profile-overhead.cfg`, causing systemic overhead.
 
-Current performance-credible sweep:
+Last full-suite large/64 sweep:
 
 - Results:
   `.carts/outputs/benchmarks-large-64-release-fresh/20260514_132616`
@@ -508,8 +508,11 @@ Current performance-credible sweep:
 - Counts: 23 runnable, 22 passed, 1 failed, 0 skipped, 1 timeout
   (`polybench/seidel-2d`), 0 runner-reported checksum failures.
 - Geometric mean kernel speedup: `0.32x`.
+- Use this sweep for the non-matrix rows until the next full-suite run. The
+  matrix-family rows are superseded by the current focused evidence below because
+  later SDE/Core changes materially changed `gemm`, `2mm`, and `3mm`.
 
-Performance classes:
+Full-suite classes from that sweep, before the later matrix-family fixes:
 
 - `fast`: `kastors-jacobi/jacobi-for`,
   `kastors-jacobi/poisson-for`, `ml-kernels/pooling`,
@@ -523,13 +526,43 @@ Performance classes:
   `polybench/seidel-2d`, `specfem3d/stress`, `specfem3d/velocity`, `stream`,
   `sw4lite/rhs4sg-base`, `sw4lite/vel4sg-base`.
 
+Current focused matrix-family evidence:
+
+- Results:
+  `.carts/outputs/benchmarks-gemm-family-large-64-current-20260514/20260514_181913`
+- Command:
+  `dekk carts benchmarks run polybench/gemm polybench/2mm polybench/3mm --size large --timeout 120 --threads 64 --nodes 1 --trace --results-dir .carts/outputs/benchmarks-gemm-family-large-64-current-20260514`
+- All three benchmarks passed checksum verification.
+
+| Benchmark | ARTS kernel | OpenMP kernel | Speedup | Current class |
+|---|---:|---:|---:|---|
+| `polybench/gemm` | `0.589857s` | `6.223452s` | `10.55x` | `fast` |
+| `polybench/2mm` | `7.890815s` | `5.584529s` | `0.708x` | `blocked`: chained-contraction/intermediate reuse |
+| `polybench/3mm` | `0.712718s` | `4.861729s` | `6.82x` | `fast` |
+
+Latest 3-run confirmation:
+
+- Results:
+  `.carts/outputs/benchmarks-gemm-family-large-64-confirm-20260514/20260514_183324`
+- Command:
+  `dekk carts benchmarks run polybench/gemm polybench/2mm polybench/3mm --size large --timeout 120 --threads 64 --nodes 1 --trace --runs 3 --results-dir .carts/outputs/benchmarks-gemm-family-large-64-confirm-20260514`
+- All 9 benchmark executions passed checksum verification. The runner reported
+  median-of-3 kernel speedups and a geometric mean speedup of `0.80x` in the
+  terminal summary; the JSON summary reports `1.187x`, so use the per-benchmark
+  medians below as the source of truth until the reporting mismatch is fixed.
+
+| Benchmark | Median ARTS kernel | Median OpenMP kernel | Median speedup | Current class |
+|---|---:|---:|---:|---|
+| `polybench/gemm` | `4.979935s` | `6.159705s` | `1.237x` | `fast`, but noisy (`0.395402s`, `4.979935s`, `5.192507s`) |
+| `polybench/2mm` | `7.846973s` | `5.618096s` | `0.716x` | `blocked`: chained-contraction/intermediate reuse |
+| `polybench/3mm` | `8.897152s` | `4.957845s` | `0.557x` | `blocked`: repeat-run matrix-chain instability/phase reuse |
+
 Blocked owner groups:
 
-- SDE: dense matmul/tensor-contraction planning
-  (`gemm`, `2mm`, `3mm`). The clean sweep showed `gemm` was unclassified and
-  fell to a uniform row owner plan, while `2mm`/`3mm` were classified as matmul
-  but overpartitioned direct-memory output columns without matching A/B or
-  intermediate DB tiling.
+- SDE: dense chained-contraction planning (`2mm`, `3mm`). Latest repeated
+  evidence shows `gemm` is faster than OpenMP at median but noisy, while `2mm`
+  and `3mm` are blocked. Their intermediate/output DB reuse across producer and
+  consumer phases is still not represented as a complete SDE contraction plan.
 - SDE: vector/reduction work aggregation (`activations`, `batchnorm`,
   `layernorm`, `stream`). These need SDE vector/reduction block planning and
   fusion before RT launch overhead is meaningful.
@@ -559,18 +592,19 @@ Implemented matmul optimization:
 
 Focused post-fix evidence:
 
-- Rejected heuristic run:
+- Rejected 2D owner heuristic run:
   `.carts/outputs/benchmarks-gemm-large-64-sde-matmul-fix/20260514_134730`.
   SDE stamped `owner_tile_2d` for `gemm`, Core created a `64 x 8` output DB
   grid, and performance regressed to `0.10x` (`62.90s` ARTS kernel vs `6.23s`
   OpenMP). This proves 2D direct-memory output ownership is not valid without
   matching input DB tiling/reuse.
-- Accepted row-strip run:
+- Historical row-strip recovery run:
   `.carts/outputs/benchmarks-gemm-large-64-sde-matmul-rowstrip/20260514_135116`.
   `gemm` passes verification with `16.35s` ARTS kernel vs `6.20s` OpenMP,
-  `0.38x`. This restores the clean-sweep performance while keeping the SDE
-  matmul classification and Core matmul contract.
-- Accepted row-strip chained-contraction run:
+  `0.38x`. This restored the clean-sweep performance while keeping the SDE
+  matmul classification and Core matmul contract, but it is no longer the latest
+  matrix-family baseline.
+- Historical row-strip chained-contraction run:
   `.carts/outputs/benchmarks-matmul-chain-large-64-sde-matmul-rowstrip/20260514_135154`.
   `2mm` improves from `0.096x` to `0.194x`
   (`58.01s -> 28.89s` ARTS kernel against a `5.6s` OpenMP baseline), and `3mm`
@@ -603,14 +637,56 @@ Focused post-fix evidence:
   | `polybench/gemm` | `16.39s` | `6.38s` | `0.39x` | Resource-query refactor preserved the accepted row-strip shape; no 25% GEMM performance gain. |
   | `polybench/2mm` | `28.52s` | `5.59s` | `0.20x` | Slightly better than the previous accepted row-strip focused run, still blocked on input/intermediate reuse. |
   | `polybench/3mm` | `27.97s` | `4.96s` | `0.18x` | Slower than the previous accepted focused run; still blocked on phase-aware contraction planning. |
+- Current single-run matrix-family evidence:
+  `.carts/outputs/benchmarks-gemm-family-large-64-current-20260514/20260514_181913`.
+  This run showed `gemm` and `3mm` can be fast on the current checkout, but it is
+  superseded for classification by the 3-run confirmation below because matrix
+  timings are noisy.
+
+  | Benchmark | ARTS kernel | OpenMP kernel | Speedup | Current reading |
+  |---|---:|---:|---:|---|
+  | `polybench/gemm` | `0.589857s` | `6.223452s` | `10.55x` | Fast single run; later median remains fast but much slower. |
+  | `polybench/2mm` | `7.890815s` | `5.584529s` | `0.708x` | Slower than OpenMP; focus on phase/intermediate reuse rather than hardcoded column constants. |
+  | `polybench/3mm` | `0.712718s` | `4.861729s` | `6.82x` | Fast single run; not stable in the 3-run confirmation. |
+- Current 3-run matrix-family confirmation:
+  `.carts/outputs/benchmarks-gemm-family-large-64-confirm-20260514/20260514_183324`.
+  All 9 executions passed checksum verification. Median results are:
+
+  | Benchmark | Median ARTS kernel | Median OpenMP kernel | Median speedup | Current reading |
+  |---|---:|---:|---:|---|
+  | `polybench/gemm` | `4.979935s` | `6.159705s` | `1.237x` | Fast at median, but one run was `0.395402s` and two were near `5s`; benchmark noise must be investigated before claiming larger gains. |
+  | `polybench/2mm` | `7.846973s` | `5.618096s` | `0.716x` | Still slower than OpenMP; chained intermediate reuse remains the optimization target. |
+  | `polybench/3mm` | `8.897152s` | `4.957845s` | `0.557x` | Blocked under repeated runs despite the earlier fast single run; inspect phase shape and runtime variance together. |
+- Rejected hardcoded column-workers cap:
+  `.carts/outputs/benchmarks-gemm-family-large-64-coltile4-20260514/20260514_182316`.
+  Clamping the column-worker split to a fixed value made `2mm` fast
+  (`7.06x`) but regressed `gemm` to `1.57x` and `3mm` to `0.617x`. It is not an
+  acceptable production heuristic because it is benchmark-shaped and not derived
+  from SDE legality/reuse facts.
+- Rejected cache-derived column-tile experiment:
+  `.carts/outputs/benchmarks-gemm-family-large-64-cachetile-repeat-20260514/20260514_182827`.
+  It regressed the family balance (`gemm` `1.51x`, `2mm` `0.789x`, `3mm`
+  `0.653x`) and was removed from the working tree. Any future cache-aware tiling
+  must be expressed as an SDE contraction/reuse plan, not as an isolated column
+  tile cap in the raw direct-memory path.
 
 Matmul root-cause update:
 
-- CARTS is not slow because GEMM is unrecognized anymore. The accepted SDE
-  row-strip run proves `gemm`, `2mm`, and `3mm` are classified and scheduled
-  with the correct SDE/Core ownership contract. The remaining slowdown is that
-  the generated codelet is still a scalar row task, not a BLAS-style packed
-  macro/micro-kernel.
+- CARTS is not slow because GEMM is unrecognized anymore. The latest repeated
+  large/64 evidence shows `gemm` is faster than OpenMP at median, but it also
+  shows high run-to-run variance. Treat stale "GEMM is unclassified" notes as
+  superseded, but do not claim a double-digit `gemm` speedup without repeated
+  evidence.
+- The remaining matrix-chain problem is phase/intermediate reuse and stability.
+  SDE needs to model `2mm` (`tmp = A * B`, then
+  `D = tmp * C + beta * D`) and `3mm` (`E = A * B`, `F = C * D`, then
+  `G = E * F`) as connected contraction phases with explicit intermediate DB
+  ownership, reuse windows, and task grain. Hardcoded column caps can make one
+  phase look fast while breaking another benchmark, so they are rejected.
+- A future general contraction optimizer should still avoid scalar row tasks
+  when the SDE plan proves packed-panel reuse is legal. Without a full
+  contraction plan, the generated direct-memory codelet can degrade into a scalar
+  row task instead of a BLAS-style packed macro/micro-kernel.
 - Current large `gemm` codelet shape is effectively:
   `row-tile -> row -> j-block -> k -> scalar accumulate/store` or, after the
   earlier `k-j` interchange path, `row -> k -> j-block -> load/store C`.
@@ -661,6 +737,11 @@ Matmul root-cause update:
 
 Research-backed direction:
 
+- External references used for this direction:
+  [MLIR Linalg dialect transformations](https://mlir.llvm.org/docs/Dialects/Linalg/),
+  [MLIR Transform dialect tutorial](https://mlir.llvm.org/docs/Tutorials/transform/),
+  and the BLIS paper
+  [Anatomy of High-Performance Many-Threaded Matrix Multiplication](https://www.cs.utexas.edu/~flame/pubs/blis3_ipdps14.pdf).
 - Follow the GotoBLAS/BLIS decomposition, not isolated loop interchange:
   choose cache/TLB-aware `MC`, `NC`, and `KC` macro tiles, pack reused panels,
   and generate a small `MR x NR` microkernel that holds C in registers across
@@ -696,16 +777,19 @@ Professional pass split for the contraction work:
 
 Next optimization task:
 
-1. Replace the scalar direct-memory matmul rewrite with an SDE contraction plan
-   that lowers to macro tiles plus an `MR x NR` microkernel shape. Start with
-   one-node local `gemm` and preserve row-strip external ownership until packed
-   A/B panel reuse is proven.
-2. Add a generic codelet/RT invariant-hoist check, but do not make it matmul
+1. Diagnose `2mm` and `3mm` as multi-phase contractions: confirm whether
+   intermediates (`tmp`, `E`, `F`) are physically owned and reused between
+   producer/consumer phases, and add SDE phase-plan facts before changing tile
+   constants.
+2. Stabilize matrix benchmark evidence with repeated runs because current
+   single-run `gemm` timings show high variance despite checksum parity.
+3. Replace any remaining scalar direct-memory contraction rewrite with an SDE
+   contraction plan that can lower to macro tiles plus an `MR x NR` microkernel
+   shape only after packed A/B or intermediate-panel reuse is proven.
+4. Add a generic codelet/RT invariant-hoist check, but do not make it matmul
    aware. Its lit coverage should show a loop-invariant load moving out of an
    inner codelet loop after DB/memref materialization.
-3. Extend the same SDE contraction plan to `2mm`/`3mm` by making intermediate
-   tile reuse explicit across producer/consumer phases.
-4. Move to the vector/reduction group (`batchnorm`, `layernorm`, `stream`) if
+5. Move to the vector/reduction group (`batchnorm`, `layernorm`, `stream`) if
    packed contraction planning requires a larger Core DB contract change.
 
 ## Done Definition

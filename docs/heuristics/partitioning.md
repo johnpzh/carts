@@ -84,9 +84,11 @@ each shaped DB entry*.
 
 Partitioning is intentionally split into roles. The rule is:
 
-- Acquire/Alloc nodes analyze
-- Heuristics decide
-- DbPartitioning coordinates + applies
+- SDE `PatternAnalysis`, tiling, and distribution planning decide policy while
+  source/tensor facts are visible.
+- Core acquire/alloc analyses validate and refine the already-authored DB shape.
+- `CreateDbs` bridges raw memrefs by materializing SDE-authored layout and slice
+  facts.
 - Raw-memref indexers execute the already-chosen layout
 
 Flow of responsibility:
@@ -96,7 +98,7 @@ Flow of responsibility:
 
 What each layer owns:
 
-- DbGraph / DbAcquireNode: canonical per-acquire facts, including access
+- DbGraph / DbAcquireNode: canonical per-acquire validation facts, including access
   classification, mapped partition dims, indirect/direct flags, and cached
   `DbAcquirePartitionFacts`.
 - DbAllocNode: aggregation across acquires for one allocation.
@@ -233,7 +235,8 @@ This is the current intent (see
 - H1.1b: Read-only + single-node + all block-capable acquires are full-range -> Coarse
 - H1.2: Direct writes + indirect reads -> Block (indirect uses full-range)
 - H1.2b: Direct + indirect writes -> Block (indirect uses full-range)
-- H1.3: Stencil patterns -> Stencil (ESD) when block-capable, else fallback
+- H1.3: legacy Core stencil fallback may preserve ESD-style block/window
+  contracts when SDE already stamped halo facts, else fallback
   - Special-case: read-only stencil on single-node -> Coarse (avoid halo overhead)
 - H1.3b: Double-buffer stencil (jacobi-style) -> Block when all writes are uniform
   - Detects: stencil reads + uniform writes (no cross-element write dependencies)

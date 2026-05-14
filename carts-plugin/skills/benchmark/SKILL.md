@@ -26,7 +26,10 @@ Run `dekk carts benchmarks --help` for the latest options. Common:
 4. Compare against known baselines (check memory notes)
 
 ### Known Baselines
-- **gemm**: 23.6x speedup
+- Use `docs/compiler/benchmark-performance-goal.md` as the current benchmark
+  memory. Recent repeated large/64 focused evidence has `polybench/gemm` faster
+  than OpenMP at median but noisy, with `polybench/2mm` and `polybench/3mm`
+  blocked on matrix-chain/intermediate reuse and stability.
 - **specfem3d**: 126x slower (triple-indirected arrays, known root cause)
 
 ### Known Issues

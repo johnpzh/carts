@@ -25,6 +25,7 @@ The live SDE pass order is inside `openmp-to-arts`:
 
 ```text
 ConvertOpenMPToSde
+RaiseMemrefToTensor
 RaiseToTensor
 RaiseToLinalg
 PatternAnalysis
@@ -38,6 +39,8 @@ ReductionStrategy
 DistributionPlanning
 IterationSpaceDecomposition
 BarrierElimination
+CpsPlanning
+VerifySdeCpsPlan
 Vectorization
 LowerToMemref
 ConvertToCodelet
