@@ -1,4 +1,4 @@
-add_mlir_dialect_library(MLIRArtsRt
+add_mlir_dialect_library(MLIRCartsArtsRt
   RtDialect.cpp
   RtOps.cpp
 

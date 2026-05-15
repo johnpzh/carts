@@ -17,7 +17,7 @@ add_mlir_dialect_library(MLIRCartsCodirConversion
 
   LINK_LIBS PUBLIC
     MLIRArithDialect
-    MLIRArts
+    MLIRCartsArts
     MLIRCartsSde
     MLIRCartsCodir
     MLIRCartsCodirUtils

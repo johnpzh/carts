@@ -1,4 +1,4 @@
-add_mlir_dialect_library(MLIRArts
+add_mlir_dialect_library(MLIRCartsArts
   dialect/arts/IR/Dialect.cpp
 
   ADDITIONAL_HEADER_DIRS

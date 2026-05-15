@@ -1,4 +1,4 @@
-add_mlir_dialect_library(MLIRArtsTransforms
+add_mlir_dialect_library(MLIRCartsTransforms
   ${CARTS_SDE_ANALYSIS_SOURCE_FILES}
   ${CARTS_SDE_CONVERSION_SOURCE_FILES}
   ${CARTS_SDE_TRANSFORMS_SOURCE_FILES}
@@ -14,8 +14,8 @@ add_mlir_dialect_library(MLIRArtsTransforms
 
 DEPENDS
   MLIROpsIncGen
-  MLIRArtsPassIncGen
-  MLIRArtsRtPassIncGen
+  MLIRCartsArtsPassIncGen
+  MLIRCartsArtsRtPassIncGen
   MLIRCartsSdePassIncGen
   MLIRRtOpsIncGen
   MLIRSdeOpsIncGen
@@ -36,8 +36,8 @@ LINK_LIBS PUBLIC
   MLIRMemRefDialect
   MLIRNVVMDialect
   MLIRPass
-  MLIRArts
-  MLIRArtsRt
+  MLIRCartsArts
+  MLIRCartsArtsRt
   MLIRCartsSde
   MLIRSideEffectInterfaces
   MLIRSCFToControlFlow
@@ -53,20 +53,20 @@ LINK_LIBS PUBLIC
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
   if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
-    target_link_libraries(MLIRArtsTransforms PUBLIC stdc++fs)
+    target_link_libraries(MLIRCartsTransforms PUBLIC stdc++fs)
   endif()
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
-    target_link_libraries(MLIRArtsTransforms PUBLIC c++experimental)
+    target_link_libraries(MLIRCartsTransforms PUBLIC c++experimental)
   elseif(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
-    target_link_libraries(MLIRArtsTransforms PUBLIC c++fs)
+    target_link_libraries(MLIRCartsTransforms PUBLIC c++fs)
   endif()
 endif()
 
 # Find Polygeist lib
-target_link_libraries(MLIRArtsTransforms PRIVATE ${MLIR_POLYGEIST_LIB})
+target_link_libraries(MLIRCartsTransforms PRIVATE ${MLIR_POLYGEIST_LIB})
 
-target_compile_definitions(obj.MLIRArtsTransforms
+target_compile_definitions(obj.MLIRCartsTransforms
   PRIVATE
   CARTS_PGO_DEFAULT_DATA_DIR="${CARTS_PGO_DEFAULT_DATA_DIR}"
   CARTS_PGO_ALTERNATIVE_ENV_VAR="${CARTS_PGO_ALTERNATIVE_ENV_VAR}"

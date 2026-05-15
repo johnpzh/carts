@@ -38,10 +38,10 @@ set(LIBS
   ${dialect_libs}
   ${conversion_libs}
   MLIROptLib
-  MLIRArts
-  MLIRArtsRt
+  MLIRCartsArts
+  MLIRCartsArtsRt
   MLIRCartsSde
-  MLIRArtsTransforms
+  MLIRCartsTransforms
   MLIRCartsCodir
   MLIRCartsCodirConversion
   MLIRCartsCodirTransforms
@@ -91,7 +91,7 @@ set(LIBS
 
 target_link_libraries(carts-compile PRIVATE ${LIBS})
 add_dependencies(carts-compile MLIROpsIncGen MLIRRtOpsIncGen
-                 MLIRSdeOpsIncGen MLIRCodirOpsIncGen MLIRArtsPassIncGen
+                 MLIRSdeOpsIncGen MLIRCodirOpsIncGen MLIRCartsArtsPassIncGen
                  MLIRCartsCodirConversionPassIncGen
                  MLIRCartsCodirPassIncGen)
 
