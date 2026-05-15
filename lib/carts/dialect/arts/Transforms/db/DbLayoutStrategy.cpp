@@ -16,7 +16,7 @@
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
-#include "carts/utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/DbUtils.h"
 #include "mlir/IR/Operation.h"
 
 using namespace mlir;

@@ -30,7 +30,7 @@
 #define GEN_PASS_DEF_CREATEEPOCHS
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
-#include "carts/utils/EdtUtils.h"
+#include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Pass/Pass.h"
 /// Other

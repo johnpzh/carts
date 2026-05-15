@@ -13,7 +13,7 @@ namespace mlir::arts {
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::arts
 
-#include "carts/utils/costs/SDECostModel.h"
+#include "carts/dialect/sde/Utils/SDECostModel.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"

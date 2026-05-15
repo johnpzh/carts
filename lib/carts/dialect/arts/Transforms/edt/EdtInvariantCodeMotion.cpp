@@ -25,7 +25,7 @@
 /// Arts
 #include "carts/Dialect.h"
 #include "carts/dialect/arts/Transforms/edt/EdtICM.h"
-#include "carts/utils/LoopInvarianceUtils.h"
+#include "carts/dialect/arts-rt/Utils/LoopInvarianceUtils.h"
 
 /// Others
 #include "mlir/IR/OpDefinition.h"

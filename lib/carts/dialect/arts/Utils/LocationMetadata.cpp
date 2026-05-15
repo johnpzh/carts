@@ -2,7 +2,7 @@
 /// LocationMetadata.cpp - Source Location Metadata Implementation
 ///===----------------------------------------------------------------------===///
 
-#include "carts/utils/LocationMetadata.h"
+#include "carts/dialect/arts/Utils/LocationMetadata.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/SmallVector.h"

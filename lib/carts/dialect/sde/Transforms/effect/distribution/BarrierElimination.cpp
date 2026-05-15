@@ -15,7 +15,7 @@ namespace mlir::arts {
 
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/utils/ValueAnalysis.h"
-#include "carts/utils/costs/SDECostModel.h"
+#include "carts/dialect/sde/Utils/SDECostModel.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinOps.h"

@@ -51,7 +51,7 @@ ARTS_DEBUG_SETUP(convert_openmp_to_sde);
 
 #include <optional>
 
-#include "carts/utils/costs/SDECostModel.h"
+#include "carts/dialect/sde/Utils/SDECostModel.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/Statistic.h"
 static llvm::Statistic numParallelConverted{

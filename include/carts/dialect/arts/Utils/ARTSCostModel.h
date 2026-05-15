@@ -13,8 +13,8 @@
 #ifndef ARTS_UTILS_COSTS_ARTSCOSTMODEL_H
 #define ARTS_UTILS_COSTS_ARTSCOSTMODEL_H
 
-#include "carts/utils/costs/SDECostModel.h"
-#include "carts/utils/machine/RuntimeConfig.h"
+#include "carts/dialect/sde/Utils/SDECostModel.h"
+#include "carts/dialect/arts/Utils/RuntimeConfig.h"
 
 namespace mlir::arts {
 

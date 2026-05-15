@@ -9,7 +9,7 @@
 #include "carts/utils/Debug.h"
 ARTS_DEBUG_SETUP(runtime_config);
 
-#include "carts/utils/machine/RuntimeConfig.h"
+#include "carts/dialect/arts/Utils/RuntimeConfig.h"
 #include <algorithm>
 #include <cassert>
 #include <cctype>

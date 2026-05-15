@@ -3,10 +3,10 @@
 ///
 /// Implementation of unified ID registry.
 ///==========================================================================///
-#include "carts/utils/IdRegistry.h"
+#include "carts/dialect/arts/Utils/IdRegistry.h"
 #include "carts/utils/Debug.h"
-#include "carts/utils/LocationMetadata.h"
-#include "carts/utils/MetadataAttrNames.h"
+#include "carts/dialect/arts/Utils/LocationMetadata.h"
+#include "carts/dialect/arts/Utils/MetadataAttrNames.h"
 
 #include "mlir/IR/Builders.h"
 #include "llvm/Support/JSON.h"

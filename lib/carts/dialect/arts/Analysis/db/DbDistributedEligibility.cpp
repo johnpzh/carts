@@ -8,7 +8,7 @@
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbGraph.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
-#include "carts/utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"

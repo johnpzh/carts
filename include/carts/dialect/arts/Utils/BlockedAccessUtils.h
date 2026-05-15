@@ -9,7 +9,7 @@
 #ifndef ARTS_UTILS_BLOCKEDACCESSUTILS_H
 #define ARTS_UTILS_BLOCKEDACCESSUTILS_H
 
-#include "carts/utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"

@@ -12,10 +12,10 @@
 #define GEN_PASS_DEF_DBSCRATCHELIMINATION
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
-#include "carts/utils/DbUtils.h"
-#include "carts/utils/EdtUtils.h"
+#include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/utils/OperationAttributes.h"
-#include "carts/utils/PartitionPredicates.h"
+#include "carts/dialect/arts/Utils/PartitionPredicates.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Dominance.h"

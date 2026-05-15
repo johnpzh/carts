@@ -40,8 +40,8 @@
 #include "carts/dialect/arts/Analysis/graphs/base/NodeBase.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtGraph.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtNode.h"
-#include "carts/utils/DbUtils.h"
-#include "carts/utils/LoweringContractUtils.h"
+#include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/RemovalUtils.h"
 /// Statistics

@@ -10,7 +10,7 @@
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtNode.h"
 #include "carts/dialect/arts/Analysis/loop/LoopNode.h"
 #include "carts/utils/OperationAttributes.h"
-#include "carts/utils/costs/ARTSCostModel.h"
+#include "carts/dialect/arts/Utils/ARTSCostModel.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/DenseMap.h"

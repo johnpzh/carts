@@ -7,9 +7,9 @@
 /// specific semantics from scattered attrs.
 ///==========================================================================///
 
-#include "carts/utils/LoweringContractUtils.h"
+#include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
-#include "carts/utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/StencilAttributes.h"
 #include "carts/utils/Utils.h"

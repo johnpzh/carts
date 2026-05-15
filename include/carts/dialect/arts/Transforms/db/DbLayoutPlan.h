@@ -13,7 +13,7 @@
 #define ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLAN_H
 
 #include "carts/Dialect.h"
-#include "carts/utils/PartitionPredicates.h"
+#include "carts/dialect/arts/Utils/PartitionPredicates.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/SmallVector.h"

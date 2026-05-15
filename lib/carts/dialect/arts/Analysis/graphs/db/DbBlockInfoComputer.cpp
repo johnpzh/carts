@@ -14,7 +14,7 @@
 #include "carts/dialect/arts/Analysis/graphs/db/MemoryAccessClassifier.h"
 #include "carts/dialect/arts/Analysis/graphs/db/PartitionBoundsAnalyzer.h"
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
-#include "carts/utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"

@@ -10,7 +10,7 @@
 #include "carts/Dialect.h"
 #include "carts/dialect/arts/Analysis/graphs/base/NodeBase.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbAccessPattern.h"
-#include "carts/utils/MetadataEnums.h"
+#include "carts/dialect/arts/Utils/MetadataEnums.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <functional>

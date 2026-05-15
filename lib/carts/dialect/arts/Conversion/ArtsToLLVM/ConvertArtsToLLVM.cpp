@@ -23,7 +23,7 @@
 #define GEN_PASS_DEF_CONVERTARTSTOLLVM
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
-#include "carts/utils/machine/RuntimeConfig.h"
+#include "carts/dialect/arts/Utils/RuntimeConfig.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"

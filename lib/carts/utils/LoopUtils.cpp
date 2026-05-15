@@ -6,7 +6,7 @@
 
 #include "carts/utils/LoopUtils.h"
 #include "carts/dialect/arts/Analysis/loop/LoopNode.h"
-#include "carts/utils/BlockedAccessUtils.h"
+#include "carts/dialect/arts/Utils/BlockedAccessUtils.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"

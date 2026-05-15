@@ -13,7 +13,7 @@
 #define ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
 
 #include "carts/dialect/arts/Transforms/db/DbLayoutPlan.h"
-#include "carts/utils/LoweringContractUtils.h"
+#include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Operation.h"

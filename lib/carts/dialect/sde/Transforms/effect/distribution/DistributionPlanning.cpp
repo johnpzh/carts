@@ -19,7 +19,7 @@ namespace mlir::arts {
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/StencilAttributes.h"
 #include "carts/utils/ValueAnalysis.h"
-#include "carts/utils/costs/SDECostModel.h"
+#include "carts/dialect/sde/Utils/SDECostModel.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"

@@ -15,8 +15,8 @@
 #include "carts/dialect/arts/Analysis/heuristics/DbHeuristics.h"
 #include "carts/dialect/arts/Analysis/heuristics/EdtHeuristics.h"
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
-#include "carts/utils/costs/SDECostModel.h"
-#include "carts/utils/machine/RuntimeConfig.h"
+#include "carts/dialect/sde/Utils/SDECostModel.h"
+#include "carts/dialect/arts/Utils/RuntimeConfig.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include <memory>

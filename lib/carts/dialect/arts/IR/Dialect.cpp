@@ -18,8 +18,8 @@
 
 #include "carts/Dialect.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
-#include "carts/utils/DbUtils.h"
-#include "carts/utils/EdtUtils.h"
+#include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/utils/StencilAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"

@@ -14,7 +14,7 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_HEURISTICS_DBHEURISTICS_H
 #define ARTS_DIALECT_CORE_ANALYSIS_HEURISTICS_DBHEURISTICS_H
 
-#include "carts/utils/machine/RuntimeConfig.h"
+#include "carts/dialect/arts/Utils/RuntimeConfig.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"

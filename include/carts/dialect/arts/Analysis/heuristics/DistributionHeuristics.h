@@ -110,7 +110,7 @@
 #define ARTS_DIALECT_CORE_ANALYSIS_HEURISTICS_DISTRIBUTIONHEURISTICS_H
 
 #include "carts/Dialect.h"
-#include "carts/utils/machine/RuntimeConfig.h"
+#include "carts/dialect/arts/Utils/RuntimeConfig.h"
 #include <optional>
 
 namespace mlir {

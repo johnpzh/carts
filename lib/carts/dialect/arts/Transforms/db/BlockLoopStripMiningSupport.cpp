@@ -5,7 +5,7 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/Transforms/BlockLoopStripMiningInternal.h"
-#include "carts/utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/utils/OperationAttributes.h"
 
 ARTS_DEBUG_SETUP(block_loop_strip_mining);

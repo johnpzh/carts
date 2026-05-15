@@ -10,10 +10,10 @@
 
 #include "carts/dialect/arts/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
-#include "carts/utils/DbUtils.h"
-#include "carts/utils/LoweringContractUtils.h"
+#include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/utils/OperationAttributes.h"
-#include "carts/utils/PartitionPredicates.h"
+#include "carts/dialect/arts/Utils/PartitionPredicates.h"
 #include "carts/utils/StencilAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"

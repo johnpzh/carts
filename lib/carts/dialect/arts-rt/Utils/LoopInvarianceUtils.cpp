@@ -6,7 +6,7 @@
 /// and ScalarReplacement.cpp.
 ///==========================================================================///
 
-#include "carts/utils/LoopInvarianceUtils.h"
+#include "carts/dialect/arts-rt/Utils/LoopInvarianceUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 

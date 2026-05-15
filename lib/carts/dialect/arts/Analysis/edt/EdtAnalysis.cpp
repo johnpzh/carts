@@ -9,7 +9,7 @@
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtGraph.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtNode.h"
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
-#include "carts/utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"

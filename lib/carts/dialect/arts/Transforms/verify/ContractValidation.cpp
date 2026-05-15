@@ -21,7 +21,7 @@
 #include "carts/dialect/arts/Analysis/db/OwnershipProof.h"
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
-#include "carts/utils/LoweringContractUtils.h"
+#include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/StencilAttributes.h"
 #include "mlir/Pass/Pass.h"

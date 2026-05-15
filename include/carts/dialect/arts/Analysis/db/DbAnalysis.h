@@ -21,7 +21,7 @@
 #include "carts/dialect/arts/Analysis/Analysis.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbAccessPattern.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
-#include "carts/utils/LoweringContractUtils.h"
+#include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "mlir/Analysis/DataFlowFramework.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"

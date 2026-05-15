@@ -3,7 +3,7 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/Transforms/edt/EdtTaskBodyCloning.h"
-#include "carts/utils/EdtUtils.h"
+#include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
