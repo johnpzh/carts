@@ -17,10 +17,10 @@
 
 #include "carts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_RAISETOLINALG
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -39,7 +39,7 @@ namespace mlir::arts {
 ARTS_DEBUG_SETUP(raise_to_linalg);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -89,7 +89,7 @@ static std::optional<unsigned> findOperandIndex(ArrayRef<OutputOperand> outputs,
 
 static bool isConstantIndex(Value value, int64_t expected) {
   int64_t actual = 0;
-  return arts::ValueAnalysis::getConstantIndex(value, actual) && actual == expected;
+  return ::mlir::carts::arts::ValueAnalysis::getConstantIndex(value, actual) && actual == expected;
 }
 
 static bool hasZeroLowerUnitStep(sde::SdeSuIterateOp iterOp,

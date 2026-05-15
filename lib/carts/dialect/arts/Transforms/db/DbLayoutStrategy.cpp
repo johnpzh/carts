@@ -20,10 +20,11 @@
 #include "mlir/IR/Operation.h"
 
 using namespace mlir;
-using namespace mlir::arts;
-using namespace mlir::arts::rt;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
+using namespace mlir::carts::arts_rt;
 
-LayoutInfo mlir::arts::buildLayoutInfo(Value source) {
+LayoutInfo mlir::carts::arts::buildLayoutInfo(Value source) {
   LayoutInfo info;
 
   if (!source)
@@ -49,7 +50,7 @@ LayoutInfo mlir::arts::buildLayoutInfo(Value source) {
   return info;
 }
 
-Value mlir::arts::computeDbElementPointer(ArtsCodegen &AC, Location loc,
+Value mlir::carts::arts::computeDbElementPointer(ArtsCodegen &AC, Location loc,
                                           Value base, ArrayRef<Value> indices,
                                           const LayoutInfo &layout) {
   if (indices.empty())

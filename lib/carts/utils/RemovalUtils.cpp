@@ -11,7 +11,7 @@
 ARTS_DEBUG_SETUP(removal_utils);
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 ///===----------------------------------------------------------------------===///
 /// RemovalUtils Implementation
@@ -234,5 +234,5 @@ void RemovalUtils::replaceWithUndef(Operation *op, OpBuilder &builder) {
   }
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

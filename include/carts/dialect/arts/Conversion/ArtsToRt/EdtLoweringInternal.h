@@ -26,7 +26,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace mlir::arts::edt_lowering {
+namespace mlir::carts::arts::edt_lowering {
 
 ///===----------------------------------------------------------------------===//
 /// Constants
@@ -70,6 +70,6 @@ DepSourceInfo resolveDepSource(Value dep);
 
 Operation *getCanonicalDependencySource(Value dep);
 
-} // namespace mlir::arts::edt_lowering
+} // namespace mlir::carts::arts::edt_lowering
 
 #endif // ARTS_DIALECT_RT_CONVERSION_ARTSTORT_EDTLOWERINGINTERNAL_H

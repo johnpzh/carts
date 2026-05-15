@@ -46,7 +46,8 @@
 #include <utility>
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 #include "carts/utils/Debug.h"
 ARTS_DEBUG_SETUP(db_acquire_node);
 

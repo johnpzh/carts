@@ -16,7 +16,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 namespace detail {
 
@@ -467,7 +467,7 @@ inline bool isLoopIvBoundedBy(Value idx, Value blockSize) {
   return isValueBoundedByBlockSpan(ub, bs);
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_UTILS_BLOCKEDACCESSUTILS_H

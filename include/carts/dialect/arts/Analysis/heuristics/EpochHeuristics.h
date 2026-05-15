@@ -11,7 +11,7 @@
 #include <string>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Effective epoch-local memory use after ignoring structural acquires that are
 /// never consumed by loads/stores or equivalent side-effecting users.
@@ -93,7 +93,7 @@ public:
                        const EpochAccessSummary *epochSummary = nullptr);
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_HEURISTICS_EPOCHHEURISTICS_H

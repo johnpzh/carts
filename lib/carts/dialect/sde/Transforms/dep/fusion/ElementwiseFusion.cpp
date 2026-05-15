@@ -6,10 +6,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_ELEMENTWISEFUSION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -24,7 +24,7 @@ namespace mlir::arts {
 #include "llvm/ADT/DenseSet.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -137,15 +137,15 @@ static bool haveSameIterationSpace(sde::SdeSuIterateOp lhs,
     return false;
 
   for (auto [a, b] : llvm::zip(lhs.getLowerBounds(), rhs.getLowerBounds())) {
-    if (!arts::ValueAnalysis::areValuesEquivalent(a, b))
+    if (!::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(a, b))
       return false;
   }
   for (auto [a, b] : llvm::zip(lhs.getUpperBounds(), rhs.getUpperBounds())) {
-    if (!arts::ValueAnalysis::areValuesEquivalent(a, b))
+    if (!::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(a, b))
       return false;
   }
   for (auto [a, b] : llvm::zip(lhs.getSteps(), rhs.getSteps())) {
-    if (!arts::ValueAnalysis::areValuesEquivalent(a, b))
+    if (!::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(a, b))
       return false;
   }
   return true;
@@ -162,11 +162,11 @@ static bool haveCompatibleSchedule(sde::SdeSuIterateOp lhs,
   Value rhsChunk = rhs.getChunkSize();
   if (!lhsChunk || !rhsChunk)
     return lhsChunk == rhsChunk;
-  return arts::ValueAnalysis::areValuesEquivalent(lhsChunk, rhsChunk);
+  return ::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(lhsChunk, rhsChunk);
 }
 
 static Value getWriteRoot(Value value) {
-  return arts::ValueAnalysis::stripMemrefViewOps(value);
+  return ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(value);
 }
 
 static bool hasDisjointWrites(ArrayRef<ElementwiseStage> stages) {
@@ -204,17 +204,17 @@ static bool areStageValuesEquivalent(Value lhs, sde::SdeSuIterateOp lhsStage,
                                      unsigned depth) {
   if (!lhs || !rhs || depth > 8)
     return false;
-  lhs = arts::ValueAnalysis::stripNumericCasts(lhs);
-  rhs = arts::ValueAnalysis::stripNumericCasts(rhs);
-  if (arts::ValueAnalysis::sameValue(lhs, rhs))
+  lhs = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(lhs);
+  rhs = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(rhs);
+  if (::mlir::carts::arts::ValueAnalysis::sameValue(lhs, rhs))
     return true;
   if (isCorrespondingStageArg(lhs, lhsStage, rhs, rhsStage))
     return true;
   if (isCorrespondingStageLocalForIv(lhs, lhsStage, rhs, rhsStage, depth))
     return true;
 
-  auto lhsConst = arts::ValueAnalysis::tryFoldConstantIndex(lhs);
-  auto rhsConst = arts::ValueAnalysis::tryFoldConstantIndex(rhs);
+  auto lhsConst = ::mlir::carts::arts::ValueAnalysis::tryFoldConstantIndex(lhs);
+  auto rhsConst = ::mlir::carts::arts::ValueAnalysis::tryFoldConstantIndex(rhs);
   if (lhsConst || rhsConst)
     return lhsConst && rhsConst && *lhsConst == *rhsConst;
 

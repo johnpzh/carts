@@ -20,15 +20,15 @@
 
 /// Forward declarations for helper classes
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 class PartitionBoundsAnalyzer;
 class MemoryAccessClassifier;
 class DbBlockInfoComputer;
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Forward declarations
 class DbAnalysis;
@@ -421,7 +421,7 @@ public:
   DenseMap<DbAcquireOp, DbAcquireNode *> childMap;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_DB_DBNODE_H

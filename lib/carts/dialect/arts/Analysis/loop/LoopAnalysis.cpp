@@ -17,7 +17,8 @@
 ARTS_DEBUG_SETUP(loop_analysis);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 LoopAnalysis::LoopAnalysis(AnalysisManager &analysisManager)
     : ArtsAnalysis(analysisManager), module(analysisManager.getModule()) {}

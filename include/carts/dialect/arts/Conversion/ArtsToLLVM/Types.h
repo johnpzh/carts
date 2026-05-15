@@ -19,7 +19,7 @@
 #include "carts/Dialect.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Forward declarations
 class DbAllocOp;
@@ -91,21 +91,21 @@ inline bool isRuntimeTopologyQuery(RuntimeFunction fn) {
 
 /// Specialization of DenseMapInfo for RuntimeFunction enum.
 namespace llvm {
-template <> struct DenseMapInfo<mlir::arts::types::RuntimeFunction> {
-  static mlir::arts::types::RuntimeFunction getEmptyKey() {
-    return static_cast<mlir::arts::types::RuntimeFunction>(~0U);
+template <> struct DenseMapInfo<mlir::carts::arts::types::RuntimeFunction> {
+  static mlir::carts::arts::types::RuntimeFunction getEmptyKey() {
+    return static_cast<mlir::carts::arts::types::RuntimeFunction>(~0U);
   }
 
-  static mlir::arts::types::RuntimeFunction getTombstoneKey() {
-    return static_cast<mlir::arts::types::RuntimeFunction>(~0U - 1);
+  static mlir::carts::arts::types::RuntimeFunction getTombstoneKey() {
+    return static_cast<mlir::carts::arts::types::RuntimeFunction>(~0U - 1);
   }
 
-  static unsigned getHashValue(mlir::arts::types::RuntimeFunction val) {
+  static unsigned getHashValue(mlir::carts::arts::types::RuntimeFunction val) {
     return static_cast<unsigned>(val);
   }
 
-  static bool isEqual(mlir::arts::types::RuntimeFunction lhs,
-                      mlir::arts::types::RuntimeFunction rhs) {
+  static bool isEqual(mlir::carts::arts::types::RuntimeFunction lhs,
+                      mlir::carts::arts::types::RuntimeFunction rhs) {
     return lhs == rhs;
   }
 };

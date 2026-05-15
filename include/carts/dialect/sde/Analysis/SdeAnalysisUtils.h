@@ -144,13 +144,13 @@ inline void collectStructuredMemoryEffects(
   region.walk([&](Operation *op) {
     if (auto loadOp = dyn_cast<memref::LoadOp>(op)) {
       summary.reads.insert(
-          arts::ValueAnalysis::stripMemrefViewOps(loadOp.getMemref()));
+          ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(loadOp.getMemref()));
       return;
     }
 
     if (auto storeOp = dyn_cast<memref::StoreOp>(op)) {
       summary.writes.insert(
-          arts::ValueAnalysis::stripMemrefViewOps(storeOp.getMemref()));
+          ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(storeOp.getMemref()));
       return;
     }
 
@@ -187,7 +187,7 @@ inline SmallVector<Value, 4> collectOwnerIndexValues(SdeSuIterateOp op) {
       for (auto [idx, iterArg] : llvm::enumerate(cuRegion.getIterArgs())) {
         if (idx >= computeBlock->getNumArguments())
           break;
-        if (iterArg == loopIv || arts::ValueAnalysis::dependsOn(iterArg, loopIv))
+        if (iterArg == loopIv || ::mlir::carts::arts::ValueAnalysis::dependsOn(iterArg, loopIv))
           ownerIndexValues.push_back(computeBlock->getArgument(idx));
       }
     }
@@ -198,14 +198,14 @@ inline SmallVector<Value, 4> collectOwnerIndexValues(SdeSuIterateOp op) {
 
 inline bool isExactOwnerIndex(Value index, ArrayRef<Value> ownerIndexValues) {
   int64_t constantOffset = 0;
-  Value base = arts::ValueAnalysis::stripConstantOffset(
-      arts::ValueAnalysis::stripNumericCasts(index), &constantOffset);
+  Value base = ::mlir::carts::arts::ValueAnalysis::stripConstantOffset(
+      ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(index), &constantOffset);
   if (constantOffset != 0)
     return false;
 
-  base = arts::ValueAnalysis::stripNumericCasts(base);
+  base = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(base);
   for (Value ownerIndex : ownerIndexValues)
-    if (arts::ValueAnalysis::sameValue(base, ownerIndex))
+    if (::mlir::carts::arts::ValueAnalysis::sameValue(base, ownerIndex))
       return true;
   return false;
 }
@@ -215,9 +215,9 @@ inline bool isOwnerDependentIndex(Value index,
   if (isExactOwnerIndex(index, ownerIndexValues))
     return true;
 
-  Value normalized = arts::ValueAnalysis::stripNumericCasts(index);
+  Value normalized = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(index);
   for (Value ownerIndex : ownerIndexValues)
-    if (arts::ValueAnalysis::dependsOn(normalized, ownerIndex))
+    if (::mlir::carts::arts::ValueAnalysis::dependsOn(normalized, ownerIndex))
       return true;
   return false;
 }
@@ -250,7 +250,7 @@ inline bool allRootAccessesStayWithinOwnerSlice(SdeSuIterateOp op,
 
   bool sawRootAccess = false;
   auto checkIndices = [&](Value memref, OperandRange indices) {
-    Value base = arts::ValueAnalysis::stripMemrefViewOps(memref);
+    Value base = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(memref);
     if (base != root)
       return WalkResult::advance();
 
@@ -304,7 +304,7 @@ findLoopIndexedOutputPlan(SdeSuIterateOp op) {
   std::optional<LoopIndexedOutputPlan> selectedPlan;
   auto visitStore = [&](memref::StoreOp storeOp) {
     Value memref = storeOp.getMemref();
-    Value base = arts::ValueAnalysis::stripMemrefViewOps(memref);
+    Value base = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(memref);
     if (isDefinedInside(op.getOperation(), base))
       return WalkResult::advance();
 
@@ -315,7 +315,7 @@ findLoopIndexedOutputPlan(SdeSuIterateOp op) {
     bool indexedByOwner = false;
     for (Value ownerIndex : ownerIndexValues)
       if (isExactOwnerIndex(storeOp.getIndices().front(), ownerIndexValues) ||
-          arts::ValueAnalysis::dependsOn(storeOp.getIndices().front(), ownerIndex)) {
+          ::mlir::carts::arts::ValueAnalysis::dependsOn(storeOp.getIndices().front(), ownerIndex)) {
         indexedByOwner = true;
         break;
       }
@@ -365,7 +365,7 @@ findConsistentLoopIndexedOutputPlanWithOwnerDims(SdeSuIterateOp op) {
   bool rejected = false;
   std::optional<LoopIndexedOutputPlan> selectedPlan;
   auto visitStore = [&](memref::StoreOp storeOp) {
-    Value base = arts::ValueAnalysis::stripMemrefViewOps(storeOp.getMemref());
+    Value base = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(storeOp.getMemref());
     if (isDefinedInside(op.getOperation(), base))
       return WalkResult::advance();
 

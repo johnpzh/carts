@@ -23,10 +23,10 @@
 
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
 
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_SCALARREPLACEMENT
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/utils/Debug.h"
 #include "carts/dialect/arts-rt/Utils/LoopInvarianceUtils.h"
@@ -41,7 +41,8 @@ namespace mlir::arts {
 ARTS_DEBUG_SETUP(scalar_replacement);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 
@@ -457,11 +458,11 @@ struct ScalarReplacementPass
 /// Pass creation and registration
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 std::unique_ptr<Pass> createScalarReplacementPass() {
   return std::make_unique<ScalarReplacementPass>();
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

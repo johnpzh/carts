@@ -42,7 +42,8 @@
 
 using namespace mlir;
 using namespace mlir::func;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 #define GEN_PASS_DEF_DBMODETIGHTENING
 #include "carts/passes/Passes.h.inc"
@@ -384,7 +385,7 @@ static bool isInsideRepeatableControl(Operation *op) {
 namespace {
 struct DbModeTighteningPass
     : public ::impl::DbModeTighteningBase<DbModeTighteningPass> {
-  DbModeTighteningPass(mlir::arts::AnalysisManager *AM, bool forceInout)
+  DbModeTighteningPass(mlir::carts::arts::AnalysisManager *AM, bool forceInout)
       : AM(AM) {
     assert(AM && "AnalysisManager must be provided externally");
     this->forceInout = forceInout;
@@ -403,7 +404,7 @@ struct DbModeTighteningPass
 
 private:
   ModuleOp module;
-  mlir::arts::AnalysisManager *AM = nullptr;
+  mlir::carts::arts::AnalysisManager *AM = nullptr;
 };
 } // namespace
 
@@ -701,10 +702,10 @@ void DbModeTighteningPass::invalidateAndRebuildGraph() {
 /// Pass creation
 ////===----------------------------------------------------------------------===////
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 std::unique_ptr<Pass>
-createDbModeTighteningPass(mlir::arts::AnalysisManager *AM, bool forceInout) {
+createDbModeTighteningPass(mlir::carts::arts::AnalysisManager *AM, bool forceInout) {
   return std::make_unique<DbModeTighteningPass>(AM, forceInout);
 }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

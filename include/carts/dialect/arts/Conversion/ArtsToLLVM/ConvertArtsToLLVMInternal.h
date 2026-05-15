@@ -16,7 +16,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "polygeist/Ops.h"
 
-namespace mlir::arts::convert_arts_to_llvm {
+namespace mlir::carts::arts::convert_arts_to_llvm {
 
 ///===----------------------------------------------------------------------===///
 /// ArtsToLLVMPattern base class
@@ -90,6 +90,6 @@ void populateRtToLLVMPatterns(RewritePatternSet &patterns, ArtsCodegen *AC);
 void populateDbPatterns(RewritePatternSet &patterns, ArtsCodegen *AC);
 void populateOtherPatterns(RewritePatternSet &patterns, ArtsCodegen *AC);
 
-} // namespace mlir::arts::convert_arts_to_llvm
+} // namespace mlir::carts::arts::convert_arts_to_llvm
 
 #endif // ARTS_DIALECT_CORE_CONVERSION_ARTSTOLLVM_CONVERTARTSTOLLVMINTERNAL_H

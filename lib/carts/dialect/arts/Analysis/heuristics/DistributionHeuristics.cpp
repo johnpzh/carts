@@ -10,7 +10,8 @@
 #include <algorithm>
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 ParallelismDecision DistributionHeuristics::resolveParallelismFromMachine(
     const RuntimeConfig *machine) {

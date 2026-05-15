@@ -14,7 +14,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Pass-local per-acquire partition summary used by DbPartitioning.
 ///
@@ -38,7 +38,7 @@ struct AcquirePartitionInfo {
   bool needsFullRange = false;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_TRANSFORMS_DB_DBPARTITIONTYPES_H

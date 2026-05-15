@@ -52,7 +52,8 @@
 ARTS_DEBUG_SETUP(guid_range_detection);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 /// Attribute names stamped by this transform (centralized in
 /// OperationAttributes.h).
@@ -84,7 +85,7 @@ static unsigned collectDirectDbAllocs(scf::ForOp forOp, DbAllocOp &candidate) {
 
 } // namespace
 
-bool mlir::arts::detectGUIDRangeCandidates(ModuleOp module) {
+bool mlir::carts::arts::detectGUIDRangeCandidates(ModuleOp module) {
   ARTS_DEBUG_HEADER(GUIDRangeDetection);
 
   bool foundAny = false;

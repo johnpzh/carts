@@ -12,7 +12,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class EdgeBase;
 
@@ -48,7 +48,7 @@ protected:
   DenseSet<EdgeBase *> inEdges, outEdges;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_BASE_NODEBASE_H

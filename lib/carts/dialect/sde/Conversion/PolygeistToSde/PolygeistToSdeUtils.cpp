@@ -6,7 +6,7 @@
 
 #include "PolygeistToSdeUtils.h"
 
-namespace mlir::arts {
+namespace mlir::carts::arts {
 
 Value materializeDependView(OpBuilder &builder, Location loc, Value source,
                             ArrayRef<Value> indices, ArrayRef<Value> sizes) {
@@ -44,4 +44,4 @@ Value materializeDependView(OpBuilder &builder, Location loc, Value source,
       .getResult();
 }
 
-} // namespace mlir::arts
+} // namespace mlir::carts::arts

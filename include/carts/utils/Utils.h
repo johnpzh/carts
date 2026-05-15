@@ -22,7 +22,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// IR Simplification Utilities
 bool simplifyIR(ModuleOp module, DominanceInfo &domInfo);
@@ -135,7 +135,7 @@ void sortStoresInProgramOrder(MutableArrayRef<memref::StoreOp> stores);
 /// polygeist.undef, or arts.undef).
 bool isUndefLikeOp(Operation *op);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // CARTS_UTILS_ARTSUTILS_H

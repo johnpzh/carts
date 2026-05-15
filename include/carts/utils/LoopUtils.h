@@ -18,7 +18,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class LoopNode;
 
@@ -27,7 +27,7 @@ class LoopNode;
 /// Used by epoch-level passes to identify task-spawning loops.
 inline bool isWorkerLoop(scf::ForOp loop) {
   bool hasEdt = false;
-  loop.walk([&](EdtOp) {
+  loop.walk([&](arts::EdtOp) {
     hasEdt = true;
     return WalkResult::interrupt();
   });
@@ -82,7 +82,7 @@ unsigned getLoopDepth(Operation *op);
 
 /// Returns true if the EDT's body contains any loop operations
 /// (scf::ForOp, scf::ParallelOp, affine::AffineForOp).
-bool containsLoop(EdtOp edt);
+bool containsLoop(arts::EdtOp edt);
 
 /// Return the nearest enclosing loop-like op that contains the given operation.
 /// Searches for loop-like operations and omp.wsloop.
@@ -121,7 +121,7 @@ bool hasFloatingPointType(Type type);
 /// type.
 bool operationTouchesFloatingPoint(Operation *op);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_UTILS_LOOPUTILS_H

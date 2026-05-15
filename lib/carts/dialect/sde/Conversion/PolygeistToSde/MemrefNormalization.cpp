@@ -45,7 +45,7 @@
 #include <optional>
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 using namespace mlir::omp;
 
@@ -100,7 +100,7 @@ static bool isMemrefContainerValue(Value value) {
 static bool isSameUnderlyingValue(Value value, Value expected) {
   if (value == expected)
     return true;
-  Value underlying = arts::ValueAnalysis::getUnderlyingValue(value);
+  Value underlying = ::mlir::carts::arts::ValueAnalysis::getUnderlyingValue(value);
   return underlying && underlying == expected;
 }
 
@@ -223,13 +223,13 @@ struct TaskDepRef {
 
 static bool isWholeFlatDep(const DepInfo &dep, Value totalElements) {
   return dep.indices.size() == 1 && dep.sizes.size() == 1 &&
-         arts::ValueAnalysis::isZeroConstant(dep.indices.front()) &&
-         arts::ValueAnalysis::sameValue(dep.sizes.front(), totalElements);
+         ::mlir::carts::arts::ValueAnalysis::isZeroConstant(dep.indices.front()) &&
+         ::mlir::carts::arts::ValueAnalysis::sameValue(dep.sizes.front(), totalElements);
 }
 
 static bool isUnitFlatDep(const DepInfo &dep) {
   return dep.indices.size() == 1 && dep.sizes.size() == 1 &&
-         arts::ValueAnalysis::isOneConstant(dep.sizes.front());
+         ::mlir::carts::arts::ValueAnalysis::isOneConstant(dep.sizes.front());
 }
 
 /// Pattern for a nested allocation structure
@@ -285,7 +285,7 @@ static Value traceWrapperLoadToAlloc(Value val) {
         if (storeOp.getMemref() == wrapper) {
           Value storedVal = storeOp.getValue();
           /// Check if direct allocation (through casts)
-          Value underlying = arts::ValueAnalysis::getUnderlyingValue(storedVal);
+          Value underlying = ::mlir::carts::arts::ValueAnalysis::getUnderlyingValue(storedVal);
           if (underlying && underlying.getDefiningOp<memref::AllocOp>())
             return underlying;
           /// Otherwise continue tracing through nested loads
@@ -652,7 +652,7 @@ MemrefNormalizationPass::detectPattern(Value alloc) {
           ///   %alloc = memref.alloc() : memref<10xf64>
           ///   %cast = memref.cast %alloc : memref<10xf64> to memref<?xf64>
           ///   memref.store %cast, %wrapper[]
-          Value underlying = arts::ValueAnalysis::getUnderlyingValue(storedVal);
+          Value underlying = ::mlir::carts::arts::ValueAnalysis::getUnderlyingValue(storedVal);
           if (underlying && underlying.getDefiningOp<memref::AllocOp>()) {
             pattern.wrapperAlloca = alloc;
             pattern.rootAlloc = storedVal; /// Keep cast result for SROA
@@ -710,7 +710,7 @@ MemrefNormalizationPass::detectPattern(Value alloc) {
           for (int64_t d = 0; d < memType.getRank(); ++d) {
             if (memType.isDynamicDim(d)) {
               dynSizes.push_back(
-                  arts::createZeroIndex(cleanupBuilder, loadOp.getLoc()));
+                  ::mlir::carts::arts::createZeroIndex(cleanupBuilder, loadOp.getLoc()));
             }
           }
           Value repl = memref::AllocOp::create(cleanupBuilder, loadOp.getLoc(),
@@ -724,7 +724,7 @@ MemrefNormalizationPass::detectPattern(Value alloc) {
           for (int64_t d = 0; d < memType.getRank(); ++d) {
             if (memType.isDynamicDim(d)) {
               dynSizes.push_back(
-                  arts::createZeroIndex(cleanupBuilder, affineLoad.getLoc()));
+                  ::mlir::carts::arts::createZeroIndex(cleanupBuilder, affineLoad.getLoc()));
             }
           }
           Value repl = memref::AllocOp::create(
@@ -781,7 +781,7 @@ MemrefNormalizationPass::detectPattern(Value alloc) {
 
     if (allocType.getRank() >= 1) {
       /// Get underlying allocation (traces through casts)
-      Value underlying = arts::ValueAnalysis::getUnderlyingValue(pattern.rootAlloc);
+      Value underlying = ::mlir::carts::arts::ValueAnalysis::getUnderlyingValue(pattern.rootAlloc);
       auto underlyingAlloc =
           underlying ? underlying.getDefiningOp<memref::AllocOp>() : nullptr;
       auto underlyingType =
@@ -795,7 +795,7 @@ MemrefNormalizationPass::detectPattern(Value alloc) {
         /// Case 2: rootAlloc is cast from static alloc (e.g., memref<10xf64>)
         else if (underlyingType.hasStaticShape()) {
           pattern.dimensions.push_back(
-              arts::createConstantIndex(b, loc, underlyingType.getDimSize(0)));
+              ::mlir::carts::arts::createConstantIndex(b, loc, underlyingType.getDimSize(0)));
         } else {
           ARTS_DEBUG("  Cannot get dimension from allocation");
           return std::nullopt;
@@ -803,7 +803,7 @@ MemrefNormalizationPass::detectPattern(Value alloc) {
       } else {
         /// Static dimension in allocType
         pattern.dimensions.push_back(
-            arts::createConstantIndex(b, loc, allocType.getDimSize(0)));
+            ::mlir::carts::arts::createConstantIndex(b, loc, allocType.getDimSize(0)));
       }
     }
 
@@ -835,7 +835,7 @@ MemrefNormalizationPass::detectPattern(Value alloc) {
       return std::nullopt;
     }
   } else {
-    outerSize = arts::createConstantIndex(b, pattern.rootAlloc.getLoc(),
+    outerSize = ::mlir::carts::arts::createConstantIndex(b, pattern.rootAlloc.getLoc(),
                                           allocType.getDimSize(0));
   }
   pattern.dimensions.push_back(outerSize);
@@ -1109,7 +1109,7 @@ MemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
       else {
         auto attr = cast<IntegerAttr>(cast<Attribute>(offset));
         info.indices.push_back(
-            arts::createConstantIndex(builder, loc, attr.getInt()));
+            ::mlir::carts::arts::createConstantIndex(builder, loc, attr.getInt()));
       }
     }
 
@@ -1120,7 +1120,7 @@ MemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
       else {
         auto attr = cast<IntegerAttr>(cast<Attribute>(size));
         info.sizes.push_back(
-            arts::createConstantIndex(builder, loc, attr.getInt()));
+            ::mlir::carts::arts::createConstantIndex(builder, loc, attr.getInt()));
       }
     }
 
@@ -1152,7 +1152,7 @@ MemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
               /// Element-level dependency, sizes = [1, 1, ...]
               for (size_t d = 0; d < info.indices.size(); ++d)
                 info.sizes.push_back(
-                    arts::createConstantIndex(builder, loc, 1));
+                    ::mlir::carts::arts::createConstantIndex(builder, loc, 1));
               info.indices = arts::clampDepIndices(
                   info.source, info.indices, builder, loc, pattern.dimensions);
 
@@ -1181,7 +1181,7 @@ MemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
 
     /// Element-level sizes
     for (size_t d = 0; d < info.indices.size(); ++d)
-      info.sizes.push_back(arts::createConstantIndex(builder, loc, 1));
+      info.sizes.push_back(::mlir::carts::arts::createConstantIndex(builder, loc, 1));
     info.indices = arts::clampDepIndices(info.source, info.indices, builder,
                                          loc, pattern.dimensions);
 
@@ -1204,7 +1204,7 @@ MemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
 
     /// Element-level sizes
     for (size_t d = 0; d < info.indices.size(); ++d)
-      info.sizes.push_back(arts::createConstantIndex(builder, loc, 1));
+      info.sizes.push_back(::mlir::carts::arts::createConstantIndex(builder, loc, 1));
     info.indices = arts::clampDepIndices(info.source, info.indices, builder,
                                          loc, pattern.dimensions);
 
@@ -1221,7 +1221,7 @@ MemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
 
     /// Whole array: indices = [0, 0], sizes = [dim0, dim1]
     for (Value dim : pattern.dimensions) {
-      info.indices.push_back(arts::createConstantIndex(builder, loc, 0));
+      info.indices.push_back(::mlir::carts::arts::createConstantIndex(builder, loc, 0));
       info.sizes.push_back(dim);
     }
     return info;
@@ -1593,8 +1593,8 @@ MemrefNormalizationPass::inferFlatStridedPlan(AllocPattern &pattern) {
     OpBuilder builder(dep.taskOp.getContext());
     builder.setInsertionPoint(dep.taskOp);
     if (isWholeFlatDep(dep, totalElements)) {
-      dep.indices = {arts::createConstantIndex(builder, dep.taskOp.getLoc(), 0),
-                     arts::createConstantIndex(builder, dep.taskOp.getLoc(), 0)};
+      dep.indices = {::mlir::carts::arts::createConstantIndex(builder, dep.taskOp.getLoc(), 0),
+                     ::mlir::carts::arts::createConstantIndex(builder, dep.taskOp.getLoc(), 0)};
       dep.sizes = {plan.dimensions[0], plan.dimensions[1]};
       continue;
     }
@@ -1605,8 +1605,8 @@ MemrefNormalizationPass::inferFlatStridedPlan(AllocPattern &pattern) {
       if (!linear)
         return std::nullopt;
       dep.indices = {linear->outer, linear->inner};
-      dep.sizes = {arts::createConstantIndex(builder, dep.taskOp.getLoc(), 1),
-                   arts::createConstantIndex(builder, dep.taskOp.getLoc(), 1)};
+      dep.sizes = {::mlir::carts::arts::createConstantIndex(builder, dep.taskOp.getLoc(), 1),
+                   ::mlir::carts::arts::createConstantIndex(builder, dep.taskOp.getLoc(), 1)};
       continue;
     }
 
@@ -1686,7 +1686,7 @@ LogicalResult MemrefNormalizationPass::transformPattern(AllocPattern &pattern,
     bool hoistOk = true;
 
     for (Value dim : pattern.dimensions) {
-      Value hoisted = arts::ValueAnalysis::traceValueToDominating(
+      Value hoisted = ::mlir::carts::arts::ValueAnalysis::traceValueToDominating(
           dim, candidate, builder, localDomInfo, pattern.rootAlloc.getLoc());
       if (!hoisted) {
         hoistOk = false;
@@ -1988,7 +1988,7 @@ MemrefNormalizationPass::transformSimpleWrapper(AllocPattern &pattern,
   pattern.hoistedDimensions.clear();
 
   for (Value dim : pattern.dimensions) {
-    Value hoisted = arts::ValueAnalysis::traceValueToDominating(
+    Value hoisted = ::mlir::carts::arts::ValueAnalysis::traceValueToDominating(
         dim, insertPoint, builder, localDomInfo, pattern.rootAlloc.getLoc());
     if (!hoisted) {
       ARTS_DEBUG("  FAILED: Cannot hoist dimension " << dim);
@@ -2091,7 +2091,7 @@ Value MemrefNormalizationPass::createCanonicalAllocation(
   dynamicDims.reserve(dimSizes.size());
 
   for (Value dim : dimSizes) {
-    if (auto folded = arts::ValueAnalysis::tryFoldConstantIndex(dim)) {
+    if (auto folded = ::mlir::carts::arts::ValueAnalysis::tryFoldConstantIndex(dim)) {
       shape.push_back(*folded);
       continue;
     }
@@ -2469,7 +2469,7 @@ bool MemrefNormalizationPass::extractNestedAllocations(Value storedVal,
   }
 
   /// Trace through casts to find the underlying allocation
-  Value underlying = arts::ValueAnalysis::getUnderlyingValue(storedVal);
+  Value underlying = ::mlir::carts::arts::ValueAnalysis::getUnderlyingValue(storedVal);
   auto innerAlloc = underlying ? underlying.getDefiningOp<memref::AllocOp>()
                                : storedVal.getDefiningOp<memref::AllocOp>();
   if (!innerAlloc) {
@@ -2494,7 +2494,7 @@ bool MemrefNormalizationPass::extractNestedAllocations(Value storedVal,
     innerSize = innerAlloc.getDynamicSizes()[0];
   } else {
     OpBuilder innerB(loopOp);
-    innerSize = arts::createConstantIndex(innerB, innerAlloc.getLoc(),
+    innerSize = ::mlir::carts::arts::createConstantIndex(innerB, innerAlloc.getLoc(),
                                           innerType.getDimSize(0));
   }
   pattern.dimensions.push_back(innerSize);
@@ -2587,9 +2587,9 @@ bool MemrefNormalizationPass::tracesToRootAlloc(Value val,
 ///===----------------------------------------------------------------------===///
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 std::unique_ptr<Pass> createMemrefNormalizationPass() {
   return std::make_unique<MemrefNormalizationPass>();
 }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

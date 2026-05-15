@@ -13,7 +13,8 @@
 #include <algorithm>
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 
@@ -73,13 +74,13 @@ static Value blockSizeForPhysicalDim(const DbPhysicalLayoutPlan &plan,
 
 } // namespace
 
-bool mlir::arts::hasPhysicalDbLayoutPlan(Operation *op) {
+bool mlir::carts::arts::hasPhysicalDbLayoutPlan(Operation *op) {
   if (!op)
     return false;
   return getPlanOwnerDimsAttr(op) && getPlanPhysicalBlockShapeAttr(op);
 }
 
-bool mlir::arts::hasReadOnlySourceLayoutMismatch(
+bool mlir::carts::arts::hasReadOnlySourceLayoutMismatch(
     DbAllocOp sourceAlloc, Operation *taskPlanSource,
     const LoweringContractInfo &contract) {
   if (!sourceAlloc || contract.spatial.ownerDims.empty())
@@ -131,7 +132,7 @@ bool mlir::arts::hasReadOnlySourceLayoutMismatch(
 }
 
 std::optional<SmallVector<int64_t, 4>>
-mlir::arts::getSourceOwnerBlockShape(DbAllocOp sourceAlloc,
+mlir::carts::arts::getSourceOwnerBlockShape(DbAllocOp sourceAlloc,
                                      const LoweringContractInfo &contract) {
   if (!sourceAlloc || contract.spatial.ownerDims.empty())
     return std::nullopt;
@@ -164,7 +165,7 @@ mlir::arts::getSourceOwnerBlockShape(DbAllocOp sourceAlloc,
 }
 
 FailureOr<DbPhysicalLayoutPlan>
-mlir::arts::resolvePhysicalDbLayoutPlan(Operation *planSource,
+mlir::carts::arts::resolvePhysicalDbLayoutPlan(Operation *planSource,
                                         ValueRange elementSizes,
                                         OpBuilder &builder, Location loc) {
   if (!hasPhysicalDbLayoutPlan(planSource) || elementSizes.empty())
@@ -176,7 +177,7 @@ mlir::arts::resolvePhysicalDbLayoutPlan(Operation *planSource,
 }
 
 FailureOr<DbPhysicalLayoutPlan>
-mlir::arts::resolvePhysicalDbLayoutPlan(ArrayAttr ownerDimsAttr,
+mlir::carts::arts::resolvePhysicalDbLayoutPlan(ArrayAttr ownerDimsAttr,
                                         ArrayAttr blockShapeAttr,
                                         ValueRange elementSizes,
                                         OpBuilder &builder, Location loc) {

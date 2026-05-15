@@ -10,7 +10,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class NodeBase;
 
@@ -36,7 +36,7 @@ public:
   virtual void print(llvm::raw_ostream &os) const = 0;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_BASE_EDGEBASE_H

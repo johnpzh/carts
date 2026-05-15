@@ -30,10 +30,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_CONVERTOPENMPTOSDE
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -68,7 +68,7 @@ static llvm::Statistic numAtomicsConverted{
     "Number of omp.atomic.update converted to sde.cu_atomic"};
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 //===----------------------------------------------------------------------===//
@@ -235,7 +235,7 @@ extractDependSlice(Value depVar, OpBuilder &builder, Location loc) {
     OmpDependSlice slice;
     slice.source = subIndexOp.getSource();
     slice.offsets.push_back(ensureIndex(builder, loc, subIndexOp.getIndex()));
-    slice.sizes.push_back(arts::createOneIndex(builder, loc));
+    slice.sizes.push_back(::mlir::carts::arts::createOneIndex(builder, loc));
     return slice;
   }
 
@@ -261,14 +261,14 @@ static SmallVector<Value> collectEnclosingScfLoopIvs(Operation *op) {
 
 static bool dependsOnAny(Value value, ArrayRef<Value> roots) {
   for (Value root : roots)
-    if (arts::ValueAnalysis::dependsOn(value, root))
+    if (::mlir::carts::arts::ValueAnalysis::dependsOn(value, root))
       return true;
   return false;
 }
 
 static bool sameDependSource(Value lhs, Value rhs) {
-  return arts::ValueAnalysis::sameValue(arts::ValueAnalysis::stripMemrefViewOps(lhs),
-                                  arts::ValueAnalysis::stripMemrefViewOps(rhs));
+  return ::mlir::carts::arts::ValueAnalysis::sameValue(::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(lhs),
+                                  ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(rhs));
 }
 
 static bool isElementDependSlice(const OmpDependSlice &slice) {
@@ -277,7 +277,7 @@ static bool isElementDependSlice(const OmpDependSlice &slice) {
   if (slice.sizes.empty())
     return true;
   return slice.sizes.size() == 1 &&
-         arts::ValueAnalysis::isOneConstant(slice.sizes.front());
+         ::mlir::carts::arts::ValueAnalysis::isOneConstant(slice.sizes.front());
 }
 
 static bool isWavefrontTaskDependPattern(Operation *taskOp,
@@ -314,7 +314,7 @@ static bool isWavefrontTaskDependPattern(Operation *taskOp,
   for (const TaskDependSpec *read : reads) {
     if (!sameDependSource(read->slice.source, write->slice.source))
       return false;
-    if (arts::ValueAnalysis::sameValue(read->slice.offsets.front(),
+    if (::mlir::carts::arts::ValueAnalysis::sameValue(read->slice.offsets.front(),
                                  write->slice.offsets.front()))
       return false;
   }

@@ -12,7 +12,7 @@
 #include <cstdint>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Per-acquire data access pattern classification.
 ///
@@ -75,7 +75,7 @@ struct AcquirePatternSummary {
   }
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_DB_DBACCESSPATTERN_H

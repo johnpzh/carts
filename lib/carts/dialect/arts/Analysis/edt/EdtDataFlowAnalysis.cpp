@@ -15,7 +15,8 @@
 ARTS_DEBUG_SETUP(edt_data_flow_analysis);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 struct IndentScope {

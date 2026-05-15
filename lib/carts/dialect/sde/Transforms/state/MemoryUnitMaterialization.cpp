@@ -6,10 +6,10 @@
 
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_MEMORYUNITMATERIALIZATION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/utils/ValueAnalysis.h"
 
@@ -19,7 +19,7 @@ namespace mlir::arts {
 #include "llvm/ADT/SetVector.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -100,7 +100,7 @@ static void collectSchedulingUnitMemrefRoots(sde::SdeSuIterateOp op,
       return;
     }
 
-    Value root = arts::ValueAnalysis::stripMemrefViewOps(memref);
+    Value root = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(memref);
     if (!root || sde::isDefinedInside(op.getOperation(), root))
       return;
     if (isMuMaterializableAllocation(root))

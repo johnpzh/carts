@@ -28,7 +28,7 @@
 
 #include <optional>
 
-namespace mlir::arts::data_ptr_hoisting {
+namespace mlir::carts::arts::data_ptr_hoisting {
 
 //===----------------------------------------------------------------------===//
 // Struct / enum definitions
@@ -218,6 +218,6 @@ scf::ForOp findInvariantOpHoistTarget(Operation *op, DominanceInfo &domInfo);
 /// Hoist a load and its address computation (GEP) out of loops.
 bool hoistLoadOutOfLoop(LLVM::LoadOp loadOp, scf::ForOp targetLoop);
 
-} // namespace mlir::arts::data_ptr_hoisting
+} // namespace mlir::carts::arts::data_ptr_hoisting
 
 #endif // ARTS_DIALECT_RT_TRANSFORMS_DATAPTRHOISTINGINTERNAL_H

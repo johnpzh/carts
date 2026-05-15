@@ -19,7 +19,8 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 static Value getWhileInductionVar(scf::WhileOp whileOp) {
   if (!whileOp)

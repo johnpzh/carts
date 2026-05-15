@@ -12,7 +12,8 @@
 #include <vector>
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 void CartsPassInstrumentation::runBeforePass(Pass *pass, Operation *op) {
   currentPassStart = std::chrono::steady_clock::now();

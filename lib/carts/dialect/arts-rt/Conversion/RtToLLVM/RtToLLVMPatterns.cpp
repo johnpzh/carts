@@ -50,9 +50,10 @@ static llvm::Statistic numMiscOpsConverted{
     "Number of miscellaneous ARTS operations converted"};
 
 using namespace mlir;
-using namespace mlir::arts;
-using namespace mlir::arts::convert_arts_to_llvm;
-using namespace mlir::arts::rt;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
+using namespace mlir::carts::arts::convert_arts_to_llvm;
+using namespace mlir::carts::arts_rt;
 
 ///===----------------------------------------------------------------------===///
 /// Epoch Patterns
@@ -1870,7 +1871,7 @@ struct DepForwardPattern : public ArtsToLLVMPattern<DepForwardOp> {
 /// Pattern Population
 ///===----------------------------------------------------------------------===///
 
-namespace mlir::arts::convert_arts_to_llvm {
+namespace mlir::carts::arts::convert_arts_to_llvm {
 
 void populateRtToLLVMPatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
   MLIRContext *context = patterns.getContext();
@@ -1893,4 +1894,4 @@ void populateRtToLLVMPatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
   patterns.add<DepBindPattern, DepForwardPattern>(context, AC);
 }
 
-} // namespace mlir::arts::convert_arts_to_llvm
+} // namespace mlir::carts::arts::convert_arts_to_llvm

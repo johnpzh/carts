@@ -16,7 +16,8 @@
 ARTS_DEBUG_SETUP(lowering_contract_cleanup);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 
@@ -38,6 +39,6 @@ struct LoweringContractCleanupPass
 
 } // namespace
 
-std::unique_ptr<Pass> mlir::arts::createLoweringContractCleanupPass() {
+std::unique_ptr<Pass> mlir::carts::arts::createLoweringContractCleanupPass() {
   return std::make_unique<LoweringContractCleanupPass>();
 }

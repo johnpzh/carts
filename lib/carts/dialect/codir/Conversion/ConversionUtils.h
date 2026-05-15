@@ -29,7 +29,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include <functional>
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 using namespace mlir::carts::codir;
 
@@ -407,17 +407,17 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
     task->setAttr("planHaloShape", haloShape);
   if (auto minOffsets = codelet.getAccessMinOffsetsAttr())
     task->setAttr(
-        arts::AttrNames::Operation::Stencil::FootprintMinOffsets, minOffsets);
+        ::mlir::carts::arts::AttrNames::Operation::Stencil::FootprintMinOffsets, minOffsets);
   if (auto maxOffsets = codelet.getAccessMaxOffsetsAttr())
     task->setAttr(
-        arts::AttrNames::Operation::Stencil::FootprintMaxOffsets, maxOffsets);
+        ::mlir::carts::arts::AttrNames::Operation::Stencil::FootprintMaxOffsets, maxOffsets);
   if (auto ownerDims = codelet.getPlanOwnerDimsAttr())
-    task->setAttr(arts::AttrNames::Operation::Stencil::OwnerDims, ownerDims);
+    task->setAttr(::mlir::carts::arts::AttrNames::Operation::Stencil::OwnerDims, ownerDims);
   if (auto spatialDims = codelet.getSpatialDimsAttr())
-    task->setAttr(arts::AttrNames::Operation::Stencil::SpatialDims,
+    task->setAttr(::mlir::carts::arts::AttrNames::Operation::Stencil::SpatialDims,
                   spatialDims);
   if (auto writeFootprint = codelet.getWriteFootprintAttr())
-    task->setAttr(arts::AttrNames::Operation::Stencil::WriteFootprint,
+    task->setAttr(::mlir::carts::arts::AttrNames::Operation::Stencil::WriteFootprint,
                   writeFootprint);
   if (codelet.getInPlaceSafeAttr())
     task->setAttr("inPlaceSafe", UnitAttr::get(ctx));
@@ -432,7 +432,7 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
             codir::CodirPattern::jacobi_alternating_buffers) {
       if (codelet.getAccessMinOffsetsAttr() && codelet.getAccessMaxOffsetsAttr())
         task->setAttr(
-            arts::AttrNames::Operation::Stencil::SupportedBlockHalo,
+            ::mlir::carts::arts::AttrNames::Operation::Stencil::SupportedBlockHalo,
             UnitAttr::get(ctx));
     }
   }
@@ -588,7 +588,7 @@ static inline bool isAtomicAddAddressable(
 static inline bool sameMemrefAccess(Value lhsMemref, ValueRange lhsIndices,
                                     Value rhsMemref, ValueRange rhsIndices) {
   return lhsMemref == rhsMemref &&
-         arts::ValueAnalysis::areValueRangesIdentical(lhsIndices, rhsIndices);
+         ::mlir::carts::arts::ValueAnalysis::areValueRangesIdentical(lhsIndices, rhsIndices);
 }
 
 static inline unsigned lowerIntegerAddReductionsToAtomics(
@@ -689,7 +689,7 @@ static inline bool canUseOwnerSliceBoundaryPlan(sde::SdeSuIterateOp source) {
 }
 
 static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
-  if (arts::ValueAnalysis::dependsOn(index, ownerIv))
+  if (::mlir::carts::arts::ValueAnalysis::dependsOn(index, ownerIv))
     return true;
 
   auto blockArg = dyn_cast<BlockArgument>(index);
@@ -700,8 +700,8 @@ static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
   if (!loop || loop.getInductionVar() != index)
     return false;
 
-  return arts::ValueAnalysis::dependsOn(loop.getLowerBound(), ownerIv) ||
-         arts::ValueAnalysis::dependsOn(loop.getUpperBound(), ownerIv);
+  return ::mlir::carts::arts::ValueAnalysis::dependsOn(loop.getLowerBound(), ownerIv) ||
+         ::mlir::carts::arts::ValueAnalysis::dependsOn(loop.getUpperBound(), ownerIv);
 }
 
 static inline bool allRootAccessesUseOwnerFirstDim(sde::SdeSuIterateOp source,
@@ -721,7 +721,7 @@ static inline bool allRootAccessesUseOwnerFirstDim(sde::SdeSuIterateOp source,
   bool sawRootAccess = false;
   bool rejected = false;
   auto checkAccess = [&](Value memref, OperandRange indices) {
-    if (arts::ValueAnalysis::stripMemrefViewOps(memref) != root)
+    if (::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(memref) != root)
       return;
     sawRootAccess = true;
     if (indices.empty() || !indexSelectsOwnerSlice(indices.front(), ownerIv))
@@ -831,7 +831,7 @@ selectMuAllocWritePlan(sde::SdeMuAllocOp op) {
 
   sde::SdeSuIterateOp selected;
   WalkResult result = module.walk([&](memref::StoreOp store) {
-    if (arts::ValueAnalysis::stripMemrefViewOps(store.getMemref()) != root)
+    if (::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(store.getMemref()) != root)
       return WalkResult::advance();
 
     sde::SdeSuIterateOp source = getEnclosingSuIterate(store);
@@ -863,7 +863,7 @@ selectMuAllocWritePlan(sde::SdeMuAllocOp op) {
     auto access = arts::DbUtils::getMemoryAccessInfo(nested);
     if (!access)
       return WalkResult::advance();
-    if (arts::ValueAnalysis::stripMemrefViewOps(access->memref) != root)
+    if (::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(access->memref) != root)
       return WalkResult::advance();
 
     sde::SdeSuIterateOp source = getEnclosingSuIterate(nested);
@@ -885,7 +885,7 @@ selectMuAllocWritePlan(sde::SdeMuAllocOp op) {
 
 static inline bool isSdeMuAllocMaterializedWithPlan(Value dep,
                                                     sde::SdeSuIterateOp source) {
-  Value root = arts::ValueAnalysis::stripMemrefViewOps(dep);
+  Value root = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(dep);
   auto muAlloc = root ? root.getDefiningOp<sde::SdeMuAllocOp>() : nullptr;
   if (!muAlloc)
     return true;
@@ -1188,7 +1188,7 @@ static inline bool isCodeletParamDerivedIndex(Value index, codir::CodeletOp code
       continue;
     BlockArgument arg = body.getArgument(argIdx);
     if (isa<IndexType>(arg.getType()) &&
-        arts::ValueAnalysis::dependsOn(index, arg))
+        ::mlir::carts::arts::ValueAnalysis::dependsOn(index, arg))
       return true;
 
     auto indexArg = dyn_cast<BlockArgument>(index);
@@ -1198,9 +1198,9 @@ static inline bool isCodeletParamDerivedIndex(Value index, codir::CodeletOp code
         indexArg.getOwner()->getParentOp());
     if (!loop || loop.getInductionVar() != index)
       continue;
-    if (arts::ValueAnalysis::dependsOn(loop.getLowerBound(), arg) ||
-        arts::ValueAnalysis::dependsOn(loop.getUpperBound(), arg) ||
-        arts::ValueAnalysis::dependsOn(loop.getStep(), arg))
+    if (::mlir::carts::arts::ValueAnalysis::dependsOn(loop.getLowerBound(), arg) ||
+        ::mlir::carts::arts::ValueAnalysis::dependsOn(loop.getUpperBound(), arg) ||
+        ::mlir::carts::arts::ValueAnalysis::dependsOn(loop.getStep(), arg))
       return true;
   }
   return false;
@@ -1251,7 +1251,7 @@ rewriteTokenLocalAccesses(codir::CodeletOp codelet,
       return createConstantIndex(builder, op->getLoc(),
                                  *indexConstant - *offsetConstant);
 
-    if (arts::ValueAnalysis::sameValue(index, offset))
+    if (::mlir::carts::arts::ValueAnalysis::sameValue(index, offset))
       return createZeroIndex(builder, op->getLoc());
 
     if (!isCodeletParamDerivedIndex(index, codelet, ignoredParams))

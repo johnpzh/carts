@@ -8,7 +8,8 @@
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 const RuntimeConfig &EdtHeuristics::getRuntimeConfig() const {
   return getAnalysisManager().getRuntimeConfig();

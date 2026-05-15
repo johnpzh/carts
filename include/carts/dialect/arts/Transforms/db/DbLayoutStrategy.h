@@ -14,7 +14,7 @@
 #include "llvm/ADT/SmallVector.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class ArtsCodegen;
 
@@ -37,7 +37,7 @@ Value computeDbElementPointer(ArtsCodegen &AC, Location loc, Value base,
                               ArrayRef<Value> indices,
                               const LayoutInfo &layout);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif /// ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTSTRATEGY_H

@@ -8,6 +8,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
+using namespace mlir::carts;
 using namespace mlir::carts::sde;
 
 void CartsSdeDialect::initialize() {

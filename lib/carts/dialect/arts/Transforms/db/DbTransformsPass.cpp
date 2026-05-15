@@ -61,18 +61,19 @@ static llvm::Statistic numDeadDbRootsEliminated{
 
 using namespace mlir;
 using namespace mlir::func;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 struct DbTransformsPass : public impl::DbTransformsBase<DbTransformsPass> {
-  DbTransformsPass(mlir::arts::AnalysisManager *AM) : AM(AM) {
+  DbTransformsPass(mlir::carts::arts::AnalysisManager *AM) : AM(AM) {
     assert(AM && "AnalysisManager must be provided externally");
   }
 
   void runOnOperation() override;
 
 private:
-  mlir::arts::AnalysisManager *AM = nullptr;
+  mlir::carts::arts::AnalysisManager *AM = nullptr;
 
   /// DT-1: Contract persistence
   unsigned persistContracts();
@@ -451,9 +452,9 @@ unsigned DbTransformsPass::eliminateDeadDbs() {
 /// Pass creation
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace arts {
-std::unique_ptr<Pass> createDbTransformsPass(mlir::arts::AnalysisManager *AM) {
+namespace carts::arts {
+std::unique_ptr<Pass> createDbTransformsPass(mlir::carts::arts::AnalysisManager *AM) {
   return std::make_unique<DbTransformsPass>(AM);
 }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

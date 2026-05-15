@@ -44,7 +44,8 @@
 ARTS_DEBUG_SETUP(hoisting);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 ///===----------------------------------------------------------------------===///
 /// Shared Utilities
@@ -532,9 +533,9 @@ struct ArtsHoistingPass : public impl::HoistingBase<ArtsHoistingPass> {
 } // namespace
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 std::unique_ptr<Pass> createHoistingPass() {
   return std::make_unique<ArtsHoistingPass>();
 }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

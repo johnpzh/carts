@@ -44,10 +44,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_RAISEMEMREFTOTENSOR
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
@@ -66,7 +66,7 @@ namespace mlir::arts {
 #include "llvm/ADT/SmallVector.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -614,7 +614,7 @@ struct RaiseMemrefToTensorPass
       auto mrType = cast<MemRefType>(memref.getType());
       int64_t numElements = mrType.getNumElements();
       for (int64_t e = 0; e < numElements; ++e) {
-        Value idx = arts::createConstantIndex(boundaryBuilder, loc, e);
+        Value idx = ::mlir::carts::arts::createConstantIndex(boundaryBuilder, loc, e);
         Value extracted =
             tensor::ExtractOp::create(boundaryBuilder, loc, finalTensor, idx);
         memref::StoreOp::create(boundaryBuilder, loc, extracted, memref,
@@ -848,10 +848,10 @@ struct RaiseMemrefToTensorPass
       for (Value idx : indices) {
         auto c = matchConstantIndex(idx);
         assert(c && "gather phase should have checked constant indices");
-        idxVals.push_back(arts::createConstantIndex(bodyBuilder, loc, *c));
+        idxVals.push_back(::mlir::carts::arts::createConstantIndex(bodyBuilder, loc, *c));
       }
       if (idxVals.empty())
-        idxVals.push_back(arts::createZeroIndex(bodyBuilder, loc));
+        idxVals.push_back(::mlir::carts::arts::createZeroIndex(bodyBuilder, loc));
       Value tensorVal = it->second;
       if (!isStore) {
         Value extracted =
@@ -874,7 +874,7 @@ struct RaiseMemrefToTensorPass
                               /*isStore=*/true, &op);
     if (auto ld = dyn_cast<affine::AffineLoadOp>(&op)) {
       // Rank-1 / constant-symbol affine.load folds to index 0.
-      Value zero = arts::createZeroIndex(bodyBuilder, op.getLoc());
+      Value zero = ::mlir::carts::arts::createZeroIndex(bodyBuilder, op.getLoc());
       Value canonical = canonicalMemref.lookup(ld.getMemref());
       if (!canonical)
         canonical = ld.getMemref();
@@ -893,7 +893,7 @@ struct RaiseMemrefToTensorPass
       auto it = liveTensor.find(canonical);
       if (it == liveTensor.end())
         return false;
-      Value zero = arts::createZeroIndex(bodyBuilder, op.getLoc());
+      Value zero = ::mlir::carts::arts::createZeroIndex(bodyBuilder, op.getLoc());
       Value mappedVal = mapping.lookupOrDefault(st.getValue());
       Value updated = tensor::InsertOp::create(
           bodyBuilder, op.getLoc(), mappedVal, it->second, ValueRange{zero});

@@ -51,14 +51,15 @@ static llvm::Statistic numMiscOpsConverted{
     "Number of miscellaneous ARTS operations converted"};
 
 using namespace mlir;
-using namespace mlir::arts;
-using namespace mlir::arts::convert_arts_to_llvm;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
+using namespace mlir::carts::arts::convert_arts_to_llvm;
 
 ///===----------------------------------------------------------------------===///
 /// Helper Functions
 ///===----------------------------------------------------------------------===///
 
-namespace mlir::arts::convert_arts_to_llvm {
+namespace mlir::carts::arts::convert_arts_to_llvm {
 
 SmallVector<Value, 4>
 materializeStaticDbOuterShape(Value handle, ArtsCodegen *AC, Location loc) {
@@ -242,7 +243,7 @@ Value buildArtsHintMemref(ArtsCodegen *AC, Value route, Value artsId,
                                                  hintAlloc);
 }
 
-} // namespace mlir::arts::convert_arts_to_llvm
+} // namespace mlir::carts::arts::convert_arts_to_llvm
 
 ///===----------------------------------------------------------------------===///
 /// Conversion Patterns
@@ -1582,7 +1583,7 @@ struct UndefPattern : public ArtsToLLVMPattern<UndefOp> {
 /// Pattern Population
 ///===----------------------------------------------------------------------===///
 
-namespace mlir::arts::convert_arts_to_llvm {
+namespace mlir::carts::arts::convert_arts_to_llvm {
 
 void populateRuntimePatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
   MLIRContext *context = patterns.getContext();
@@ -1614,4 +1615,4 @@ void populateOtherPatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
   patterns.add<YieldPattern, UndefPattern>(context, AC);
 }
 
-} // namespace mlir::arts::convert_arts_to_llvm
+} // namespace mlir::carts::arts::convert_arts_to_llvm

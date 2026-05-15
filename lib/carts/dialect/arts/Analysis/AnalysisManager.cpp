@@ -19,7 +19,7 @@
 #include <memory>
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 AnalysisManager::AnalysisManager(ModuleOp module, const std::string &configFile,

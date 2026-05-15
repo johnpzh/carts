@@ -32,7 +32,7 @@ def ConvertCodirToArts : Pass<"convert-codir-to-arts", "mlir::ModuleOp"> {
   }];
   let dependentDialects = [
     "::mlir::carts::codir::CartsCodirDialect",
-    "::mlir::arts::ArtsDialect",
+    "::mlir::carts::arts::ArtsDialect",
     "::mlir::memref::MemRefDialect",
     "::mlir::arith::ArithDialect"
   ];

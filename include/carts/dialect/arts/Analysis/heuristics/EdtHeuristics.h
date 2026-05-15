@@ -18,7 +18,7 @@
 #include <string>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class EdtHeuristics : public ArtsAnalysis {
 public:
@@ -36,7 +36,7 @@ private:
   const RuntimeConfig &getRuntimeConfig() const;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_HEURISTICS_EDTHEURISTICS_H

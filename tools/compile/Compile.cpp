@@ -68,7 +68,7 @@
 using namespace llvm;
 using namespace mlir;
 using namespace mlir::carts;
-using mlir::arts::debugStream;
+using mlir::carts::arts::debugStream;
 
 ARTS_DEBUG_SETUP(compile)
 

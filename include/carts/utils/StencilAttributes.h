@@ -17,7 +17,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 namespace AttrNames {
 namespace Operation {
 namespace Stencil {
@@ -301,7 +301,7 @@ inline void inheritStencilContractAttrs(Operation *source, Operation *dest) {
   }
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // CARTS_UTILS_STENCILATTRIBUTES_H

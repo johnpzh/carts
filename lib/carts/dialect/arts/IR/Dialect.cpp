@@ -25,7 +25,8 @@
 #include "carts/utils/ValueAnalysis.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 void ArtsDialect::initialize() {
   addOperations<
@@ -179,12 +180,12 @@ void UndefOp::getCanonicalizationPatterns(RewritePatternSet &results,
   results.insert<UndefToLLVM>(context);
 }
 
-SmallVector<Value> mlir::arts::EdtOp::getDependenciesAsVector() {
+SmallVector<Value> mlir::carts::arts::EdtOp::getDependenciesAsVector() {
   SmallVector<Value> deps(getDependencies().begin(), getDependencies().end());
   return deps;
 }
 
-void mlir::arts::EdtOp::setDependencies(ValueRange newDeps) {
+void mlir::carts::arts::EdtOp::setDependencies(ValueRange newDeps) {
   Operation *op = getOperation();
   SmallVector<Value> operands;
   SmallVector<Value> params(getParams().begin(), getParams().end());
@@ -201,7 +202,7 @@ void mlir::arts::EdtOp::setDependencies(ValueRange newDeps) {
                                  static_cast<int32_t>(params.size())}));
 }
 
-void mlir::arts::EdtOp::appendDependency(Value dep) {
+void mlir::carts::arts::EdtOp::appendDependency(Value dep) {
   SmallVector<Value> deps(getDependencies().begin(), getDependencies().end());
   deps.push_back(dep);
   setDependencies(deps);
@@ -402,7 +403,7 @@ void DbReleaseOp::build(OpBuilder &builder, OperationState &state,
 void DbDimOp::build(OpBuilder &builder, OperationState &state, Value source,
                     int64_t dim) {
   state.addOperands(source);
-  Value c = arts::createConstantIndex(builder, state.location, dim);
+  Value c = ::mlir::carts::arts::createConstantIndex(builder, state.location, dim);
   state.addOperands(c);
   state.addTypes(builder.getIndexType());
 }
@@ -493,10 +494,10 @@ static void buildDbAllocOpCommon(OpBuilder &builder, OperationState &state,
   Type guidType = computeGuidType(builder, info.sizes);
 
   if (info.sizes.empty())
-    info.sizes.push_back(arts::createOneIndex(builder, state.location));
+    info.sizes.push_back(::mlir::carts::arts::createOneIndex(builder, state.location));
 
   if (info.elementSizes.empty())
-    info.elementSizes.push_back(arts::createOneIndex(builder, state.location));
+    info.elementSizes.push_back(::mlir::carts::arts::createOneIndex(builder, state.location));
 
   Type ptrType;
   if (info.pointerType) {
@@ -883,12 +884,12 @@ void DbAcquireOp::build(OpBuilder &builder, OperationState &state,
     if (sizes.empty()) {
       sizes.reserve(remainingRank);
       for (uint64_t d = 0; d < remainingRank; ++d)
-        sizes.push_back(arts::createOneIndex(builder, state.location));
+        sizes.push_back(::mlir::carts::arts::createOneIndex(builder, state.location));
     }
     if (offsets.empty()) {
       offsets.reserve(remainingRank);
       for (uint64_t d = 0; d < remainingRank; ++d)
-        offsets.push_back(arts::createZeroIndex(builder, state.location));
+        offsets.push_back(::mlir::carts::arts::createZeroIndex(builder, state.location));
     }
   }
 
@@ -913,10 +914,10 @@ void DbAcquireOp::build(
   /// Auto-fill sizes/offsets when indices are provided
   if (!indices.empty()) {
     if (sizes.empty())
-      sizes.push_back(arts::createOneIndex(builder, state.location));
+      sizes.push_back(::mlir::carts::arts::createOneIndex(builder, state.location));
     if (offsets.empty()) {
       for (size_t i = 0; i < sizes.size(); ++i)
-        offsets.push_back(arts::createZeroIndex(builder, state.location));
+        offsets.push_back(::mlir::carts::arts::createZeroIndex(builder, state.location));
     }
   }
 

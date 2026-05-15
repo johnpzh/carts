@@ -78,7 +78,8 @@
 #include "carts/utils/Debug.h"
 ARTS_DEBUG_SETUP(create_dbs);
 
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 static llvm::Statistic numDbAllocsCreated{
     "create_dbs", "NumDbAllocsCreated",
@@ -224,7 +225,7 @@ static LogicalResult rewriteCoarseRawAccess(Operation *op, Value expectedRoot,
 ///===----------------------------------------------------------------------===///
 
 struct CreateDbsPass : public impl::CreateDbsBase<CreateDbsPass> {
-  CreateDbsPass(mlir::arts::AnalysisManager *AM) : AM(AM) {
+  CreateDbsPass(mlir::carts::arts::AnalysisManager *AM) : AM(AM) {
     assert(AM && "AnalysisManager must be provided externally");
   }
 
@@ -232,7 +233,7 @@ struct CreateDbsPass : public impl::CreateDbsBase<CreateDbsPass> {
 
 private:
   ModuleOp module;
-  mlir::arts::AnalysisManager *AM = nullptr;
+  mlir::carts::arts::AnalysisManager *AM = nullptr;
   ArtsCodegen *AC = nullptr;
   DenseMap<Operation *, Operation *> dbPtrToOriginalAlloc;
   SetVector<Operation *> opsToRemove;
@@ -1373,9 +1374,9 @@ void CreateDbsPass::rewriteOpsToUseDbAcquire(
 /// Pass creation
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace arts {
-std::unique_ptr<Pass> createCreateDbsPass(mlir::arts::AnalysisManager *AM) {
+namespace carts::arts {
+std::unique_ptr<Pass> createCreateDbsPass(mlir::carts::arts::AnalysisManager *AM) {
   return std::make_unique<CreateDbsPass>(AM);
 }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

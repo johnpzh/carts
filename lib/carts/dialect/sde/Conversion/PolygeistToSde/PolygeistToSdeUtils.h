@@ -11,7 +11,7 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Value.h"
 
-namespace mlir::arts {
+namespace mlir::carts::arts {
 
 /// Build a memref subview of `source` covering the region described by
 /// `indices` (offsets) and `sizes`. Missing trailing dims default to offset 0
@@ -20,6 +20,6 @@ namespace mlir::arts {
 Value materializeDependView(OpBuilder &builder, Location loc, Value source,
                             ArrayRef<Value> indices, ArrayRef<Value> sizes);
 
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #endif // CARTS_DIALECT_SDE_CONVERSION_POLYGEISTTOSDE_UTILS_H

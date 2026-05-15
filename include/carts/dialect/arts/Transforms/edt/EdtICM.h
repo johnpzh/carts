@@ -51,7 +51,7 @@ class Value;
 } // namespace mlir
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 class EdtOp;
 
 /// Checks whether the given op can be hoisted by checking that
@@ -63,7 +63,7 @@ bool canBeHoistedFromEdt(Region &edtRegion, Operation *op);
 /// Move side-effect free EDT invariant code out of an EDT op.
 /// Returns the number of operations moved.
 uint64_t moveEdtInvariantCode(EdtOp edtOp);
-} // namespace arts
+} // namespace carts::arts
 } // end namespace mlir
 
 #endif // ARTS_DIALECT_CORE_TRANSFORMS_EDT_EDTICM_H

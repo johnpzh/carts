@@ -11,7 +11,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class DbAnalysis;
 
@@ -41,7 +41,7 @@ const char *toString(DistributedDbEligibilityRejectReason reason);
 DistributedDbEligibilityResult
 evaluateDistributedDbEligibility(DbAllocOp alloc, DbAnalysis &dbAnalysis);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_DB_DBDISTRIBUTEDELIGIBILITY_H

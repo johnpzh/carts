@@ -17,9 +17,10 @@
 ARTS_DEBUG_SETUP(edt_task_body_cloning);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
-void mlir::arts::collectExternalValues(
+void mlir::carts::arts::collectExternalValues(
     Block &sourceBlock, Region *boundaryRegion,
     llvm::SetVector<Value> &externalValues,
     const llvm::DenseSet<Operation *> &opsToSkip) {
@@ -49,7 +50,7 @@ void mlir::arts::collectExternalValues(
   }
 }
 
-void mlir::arts::cloneExternalAllocasIntoEdt(Region *taskEdtRegion,
+void mlir::carts::arts::cloneExternalAllocasIntoEdt(Region *taskEdtRegion,
                                              Block &taskBlock,
                                              IRMapping &mapper,
                                              OpBuilder &builder) {

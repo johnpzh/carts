@@ -13,10 +13,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_RAISETOTENSOR
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
@@ -37,7 +37,7 @@ ARTS_DEBUG_SETUP(raise_to_tensor);
 #include "llvm/ADT/SmallVector.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {

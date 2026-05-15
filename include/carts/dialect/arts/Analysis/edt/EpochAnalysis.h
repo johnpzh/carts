@@ -11,7 +11,7 @@
 #include "carts/dialect/arts/Analysis/heuristics/EpochHeuristics.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class EpochAnalysis : public ArtsAnalysis {
 public:
@@ -32,7 +32,7 @@ public:
                        const EpochAccessSummary *epochSummary = nullptr) const;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_EDT_EPOCHANALYSIS_H

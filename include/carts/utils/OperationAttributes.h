@@ -13,7 +13,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 namespace AttrNames {
 
 /// Module-level attributes used across ARTS passes/codegen.
@@ -1351,7 +1351,7 @@ inline void setPartitioningHint(Operation *op, const PartitioningHint &hint) {
               hint.toAttribute(op->getContext()));
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif /// CARTS_UTILS_OPERATIONATTRIBUTES_H

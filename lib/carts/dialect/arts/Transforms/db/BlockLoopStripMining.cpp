@@ -22,8 +22,9 @@
 ARTS_DEBUG_SETUP(block_loop_strip_mining);
 
 using namespace mlir;
-using namespace mlir::arts;
-using namespace mlir::arts::block_loop_strip_mining;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
+using namespace mlir::carts::arts::block_loop_strip_mining;
 
 namespace {
 
@@ -84,12 +85,12 @@ struct BlockLoopStripMiningPass
 } // namespace
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 /// Create the block loop strip-mining pass used to reduce per-iteration
 /// div/rem + db_ref overhead for block-partitioned access patterns.
 std::unique_ptr<Pass> createBlockLoopStripMiningPass() {
   return std::make_unique<BlockLoopStripMiningPass>();
 }
 /// End block loop strip-mining pass creation.
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

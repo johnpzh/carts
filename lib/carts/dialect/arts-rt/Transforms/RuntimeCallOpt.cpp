@@ -14,10 +14,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_RUNTIMECALLOPT
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 #include "carts/dialect/arts/Conversion/ArtsToLLVM/Types.h"
 #include "carts/passes/Passes.h"
 #include "carts/utils/Debug.h"
@@ -30,7 +30,8 @@ namespace mlir::arts {
 ARTS_DEBUG_SETUP(runtime_call_opt);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 
@@ -122,11 +123,11 @@ struct RuntimeCallOptPass
 } // namespace
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 std::unique_ptr<Pass> createRuntimeCallOptPass() {
   return std::make_unique<RuntimeCallOptPass>();
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

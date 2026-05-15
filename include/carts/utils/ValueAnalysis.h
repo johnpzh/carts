@@ -19,7 +19,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Static analysis utilities for MLIR Values, constants, and casts.
 class ValueAnalysis {
@@ -204,7 +204,7 @@ public:
       llvm::function_ref<bool(Operation *)> extraAllowed = {});
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // CARTS_UTILS_VALUEANALYSIS_H

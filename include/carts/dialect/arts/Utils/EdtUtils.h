@@ -25,7 +25,7 @@ class BlockArgument;
 }
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Forward declarations
 class EdtOp;
@@ -190,7 +190,7 @@ private:
   DenseMap<Value, unsigned> valueToPackIndex;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // CARTS_UTILS_EDTUTILS_H

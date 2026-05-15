@@ -10,7 +10,7 @@
 #define ARTS_UTILS_METADATA_METADATAENUMS_H
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 ///===----------------------------------------------------------------------===///
 /// Memory Analysis Enums
@@ -41,7 +41,7 @@ enum class DimAccessPatternType {
   NonAffine = 4
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_UTILS_METADATA_METADATAENUMS_H

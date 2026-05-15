@@ -14,7 +14,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Captures one memory access index chain and db_ref prefix rank information.
 ///
@@ -63,7 +63,7 @@ AccessBoundsResult analyzeAccessBoundsFromIndices(
     llvm::ArrayRef<AccessIndexInfo> accesses, Value loopIV, Value blockBase,
     std::optional<unsigned> partitionDim = std::nullopt);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_ACCESSPATTERNANALYSIS_H

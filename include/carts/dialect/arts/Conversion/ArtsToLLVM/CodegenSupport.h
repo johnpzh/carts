@@ -21,7 +21,7 @@
 #include "llvm/ADT/SmallVector.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 using namespace types;
 class RuntimeConfig;
 
@@ -237,7 +237,7 @@ private:
                                       RuntimeFunction fnID);
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // CARTS_CODEGEN_ARTSCODEGEN_H

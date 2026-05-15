@@ -114,7 +114,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class AnalysisManager;
 class LoopAnalysis;
@@ -177,7 +177,7 @@ public:
 
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_HEURISTICS_DISTRIBUTIONHEURISTICS_H

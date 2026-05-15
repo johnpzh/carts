@@ -28,7 +28,7 @@ ARTS_DEBUG_SETUP(utils);
 [[maybe_unused]] static const auto *kArtsUtilsDebugType = ARTS_DEBUG_TYPE_STR;
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 ///===----------------------------------------------------------------------===///
 /// Dominance Utilities
@@ -525,5 +525,5 @@ bool isUndefLikeOp(Operation *op) {
          name == "arts.undef";
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

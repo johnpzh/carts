@@ -12,6 +12,7 @@
 #include "mlir/Pass/Pass.h"
 
 using namespace mlir;
+using namespace mlir::carts;
 
 namespace {
 struct VerifyEpochLoweredPass
@@ -28,6 +29,6 @@ struct VerifyEpochLoweredPass
 };
 } // namespace
 
-std::unique_ptr<Pass> mlir::arts::createVerifyEpochLoweredPass() {
+std::unique_ptr<Pass> mlir::carts::arts::createVerifyEpochLoweredPass() {
   return std::make_unique<VerifyEpochLoweredPass>();
 }

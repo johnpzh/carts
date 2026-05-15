@@ -40,7 +40,7 @@ bool isArtsOp(mlir::Operation *op);
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 struct LoweringContractInfo;
 
@@ -67,7 +67,7 @@ struct PartitionInfo {
   bool isCoarse() const { return mode == PartitionMode::coarse; }
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 /// Arts Dialect Attributes
@@ -79,7 +79,9 @@ struct PartitionInfo {
 #include "carts/dialect/arts/IR/Ops.h.inc"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
+namespace rt = ::mlir::carts::arts_rt;
+
 using rt::CreateEpochOp;
 using rt::DbGepOp;
 using rt::DepAccessMode;
@@ -96,7 +98,7 @@ using rt::RecordDepOp;
 using rt::StatePackOp;
 using rt::StateUnpackOp;
 using rt::WaitOnEpochOp;
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // CARTS_DIALECT_H

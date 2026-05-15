@@ -10,9 +10,10 @@
 ARTS_DEBUG_SETUP(epoch_opt);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
-namespace mlir::arts::epoch_opt {
+namespace mlir::carts::arts::epoch_opt {
 namespace {
 
 SmallVector<unsigned> findEpochCutPoints(ArrayRef<Operation *> ops) {
@@ -520,4 +521,4 @@ bool tryAmortizeRepeatedEpochLoop(EpochOp epochOp) {
   return true;
 }
 
-} // namespace mlir::arts::epoch_opt
+} // namespace mlir::carts::arts::epoch_opt

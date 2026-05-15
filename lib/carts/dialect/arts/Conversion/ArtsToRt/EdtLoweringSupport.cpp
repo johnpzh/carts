@@ -2,7 +2,7 @@
 /// File: EdtLoweringSupport.cpp
 ///
 /// Helper functions extracted from EdtLowering.cpp to reduce file size.
-/// All functions live in the mlir::arts::edt_lowering namespace and are
+/// All functions live in the mlir::carts::arts::edt_lowering namespace and are
 /// declared in EdtLoweringInternal.h.
 ///==========================================================================///
 
@@ -17,9 +17,10 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
-namespace mlir::arts::edt_lowering {
+namespace mlir::carts::arts::edt_lowering {
 
 ///===----------------------------------------------------------------------===///
 /// normalizeTaskDepSlice
@@ -338,4 +339,4 @@ Operation *getCanonicalDependencySource(Value dep) {
   return nullptr;
 }
 
-} // namespace mlir::arts::edt_lowering
+} // namespace mlir::carts::arts::edt_lowering

@@ -17,7 +17,7 @@
 
 #include "carts/dialect/arts-rt/IR/RtOpsDialect.h.inc"
 
-namespace mlir::arts::rt {} // namespace mlir::arts::rt
+namespace mlir::carts::arts_rt {} // namespace mlir::carts::arts_rt
 
 #include "carts/dialect/arts-rt/IR/RtOpsEnums.h.inc"
 

@@ -42,7 +42,8 @@
 
 using namespace mlir;
 using namespace mlir::func;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 #define GEN_PASS_DEF_EDTSTRUCTURALOPT
 #include "carts/passes/Passes.h.inc"
@@ -192,7 +193,7 @@ unsigned sinkExternalAllocasInEdt(EdtOp edt) {
 namespace {
 struct EdtStructuralOptPass
     : public ::impl::EdtStructuralOptBase<EdtStructuralOptPass> {
-  EdtStructuralOptPass(mlir::arts::AnalysisManager *AM, bool runAnalysis)
+  EdtStructuralOptPass(mlir::carts::arts::AnalysisManager *AM, bool runAnalysis)
       : AM(AM), numExternalAllocasSunk(
                     this, "num-external-allocas-sunk",
                     "Number of external allocas cloned into EDT-local storage"),
@@ -233,7 +234,7 @@ struct EdtStructuralOptPass
 
 private:
   ModuleOp module;
-  mlir::arts::AnalysisManager *AM = nullptr;
+  mlir::carts::arts::AnalysisManager *AM = nullptr;
   Statistic numExternalAllocasSunk;
   Statistic numNoDepEdtsInlined;
   Statistic numSyncEdtsConvertedToEpochs;
@@ -490,10 +491,10 @@ bool EdtStructuralOptPass::removeRedundantBarriersWithGraphs(
 /// Pass creation
 ////===----------------------------------------------------------------------===////
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 std::unique_ptr<Pass>
-createEdtStructuralOptPass(mlir::arts::AnalysisManager *AM, bool runAnalysis) {
+createEdtStructuralOptPass(mlir::carts::arts::AnalysisManager *AM, bool runAnalysis) {
   return std::make_unique<EdtStructuralOptPass>(AM, runAnalysis);
 }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

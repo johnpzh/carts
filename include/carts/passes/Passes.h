@@ -23,7 +23,7 @@ class PatternRewriter;
 class RewritePatternSet;
 class DominanceInfo;
 
-namespace arts {
+namespace carts::arts {
 class AnalysisManager;
 class RuntimeConfig;
 
@@ -96,7 +96,7 @@ std::unique_ptr<Pass> createVerifyLoweredPass();
 std::unique_ptr<Pass> createVerifyEdtLoweredPass();
 std::unique_ptr<Pass> createVerifyDbLoweredPass();
 std::unique_ptr<Pass> createVerifyEpochLoweredPass();
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 namespace mlir {

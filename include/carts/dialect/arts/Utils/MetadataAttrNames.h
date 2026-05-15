@@ -12,7 +12,7 @@
 #include "llvm/ADT/StringRef.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 namespace AttrNames {
 
 namespace LoopMetadata {
@@ -27,7 +27,7 @@ constexpr StringLiteral AllocationId = "allocation_id";
 } // namespace MemrefMetadata
 
 } // namespace AttrNames
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_UTILS_METADATA_METADATAATTRNAMES_H

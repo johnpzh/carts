@@ -26,7 +26,7 @@ namespace mlir {
 
 class Pass;
 
-namespace arts {
+namespace carts::arts {
 
 /// Centralized manager for all ARTS analysis objects.
 class AnalysisManager {
@@ -122,7 +122,7 @@ private:
   MetadataCoverage metadataCoverage;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_ANALYSISMANAGER_H

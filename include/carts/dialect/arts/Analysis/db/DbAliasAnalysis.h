@@ -13,7 +13,7 @@
 #include <string>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 class NodeBase;
 class DbAcquireNode;
 class DbAllocNode;
@@ -33,7 +33,7 @@ public:
   OverlapKind estimateOverlap(const DbAcquireNode *a, const DbAcquireNode *b);
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_DB_DBALIASANALYSIS_H

@@ -18,10 +18,11 @@
 #include <algorithm>
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 std::pair<EdtOp, BlockArgument>
 EdtUtils::getBlockArgumentForAcquire(DbAcquireOp acquireOp) {
@@ -339,5 +340,5 @@ SmallVector<Value> EdtUtils::collectPackedValues(EdtOp edt) {
   return packedValues;
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

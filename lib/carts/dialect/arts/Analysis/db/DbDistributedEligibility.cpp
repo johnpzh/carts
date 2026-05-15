@@ -16,7 +16,8 @@
 #include "llvm/ADT/SmallVector.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 
@@ -230,7 +231,7 @@ static bool hasReadOnlyAfterInitAttr(DbAllocOp alloc) {
 
 } // namespace
 
-const char *mlir::arts::toString(DistributedDbEligibilityRejectReason reason) {
+const char *mlir::carts::arts::toString(DistributedDbEligibilityRejectReason reason) {
   switch (reason) {
   case DistributedDbEligibilityRejectReason::None:
     return "eligible";
@@ -257,7 +258,7 @@ const char *mlir::arts::toString(DistributedDbEligibilityRejectReason reason) {
 }
 
 DistributedDbEligibilityResult
-mlir::arts::evaluateDistributedDbEligibility(DbAllocOp alloc,
+mlir::carts::arts::evaluateDistributedDbEligibility(DbAllocOp alloc,
                                              DbAnalysis &dbAnalysis) {
   if (!alloc)
     return {false, DistributedDbEligibilityRejectReason::UnsupportedShape};

@@ -21,7 +21,7 @@
 #include "mlir/Support/LLVM.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Returns true when an operation carries the minimum SDE-authored physical
 /// layout plan needed to create a block DB immediately.
@@ -58,7 +58,7 @@ std::optional<SmallVector<int64_t, 4>>
 getSourceOwnerBlockShape(DbAllocOp sourceAlloc,
                          const LoweringContractInfo &contract);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H

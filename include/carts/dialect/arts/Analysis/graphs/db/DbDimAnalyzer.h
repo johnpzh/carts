@@ -10,14 +10,14 @@
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class DbDimAnalyzer {
 public:
   static DbAcquirePartitionFacts compute(DbAcquireNode *node);
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_DB_DBDIMANALYZER_H

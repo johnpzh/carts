@@ -64,7 +64,8 @@ static llvm::Statistic numAllocsSkippedAlreadyLowered{
     "Number of DB allocations skipped because already lowered"};
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 
@@ -560,7 +561,7 @@ Value DbLoweringPass::getLLVMPtr(Value base, ValueRange opIndices,
 /// Pass creation
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 std::unique_ptr<Pass> createDbLoweringPass() {
   return std::make_unique<DbLoweringPass>();
 }
@@ -568,5 +569,5 @@ std::unique_ptr<Pass> createDbLoweringPass() {
 std::unique_ptr<Pass> createDbLoweringPass(uint64_t idStride) {
   return std::make_unique<DbLoweringPass>(idStride);
 }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

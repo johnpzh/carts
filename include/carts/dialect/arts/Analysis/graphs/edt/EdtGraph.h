@@ -22,7 +22,7 @@
 #include <memory>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class EdtDepEdge;
 class EdtAnalysis;
@@ -80,7 +80,7 @@ private:
   void buildDependencies();
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_EDT_EDTGRAPH_H

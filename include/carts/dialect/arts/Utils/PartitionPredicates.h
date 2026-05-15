@@ -11,7 +11,7 @@
 #include "carts/Dialect.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Returns true for partition modes that use a blocked (tiled) memory layout.
 /// Matches block and stencil modes (both partition into contiguous chunks).
@@ -36,7 +36,7 @@ inline bool usesElementLayout(PartitionMode m) {
   return m == PartitionMode::fine_grained;
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_UTILS_PARTITIONPREDICATES_H

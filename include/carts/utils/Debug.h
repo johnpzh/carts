@@ -12,7 +12,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 #define ARTS_DEBUG_COLORS true
 
 /// Returns the ARTS debug output stream. Intended as the single entrypoint
@@ -154,6 +154,6 @@ static inline llvm::raw_ostream &debugStream() {
     __os << " " << msg << "\n";                                                \
     llvm_unreachable(msg);                                                     \
   }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 #endif /// ARTS_UTILS_ARTSDEBUG_H

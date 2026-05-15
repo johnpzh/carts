@@ -16,6 +16,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 
 using namespace mlir;
+using namespace mlir::carts;
 
 namespace mlir::carts::sde {
 namespace {
@@ -33,7 +34,7 @@ static SmallVector<Operation *> getBodyOps(Block &body) {
 }
 
 static bool isLocalScratchMemref(Value value, Block &scope) {
-  Value root = arts::ValueAnalysis::stripMemrefViewOps(value);
+  Value root = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(value);
   if (!root)
     return false;
 
@@ -66,7 +67,7 @@ static bool isLocalScratchSideEffectUsedByLoop(Operation *op, Block &scope,
   }
 
   auto isLoopScratchAccess = [&](Value memref) {
-    Value root = arts::ValueAnalysis::stripMemrefViewOps(memref);
+    Value root = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(memref);
     return isLocalScratchMemref(root, scope) &&
            isUsedInside(loop.getOperation(), root);
   };
@@ -226,7 +227,7 @@ static std::optional<AffineMap> tryBuildIndexingMap(OperandRange indices,
 }
 
 static bool isLocalScratchAccess(Operation *scope, Value memref) {
-  Value root = arts::ValueAnalysis::stripMemrefViewOps(memref);
+  Value root = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(memref);
   return root && isDefinedInside(scope, root);
 }
 
@@ -544,7 +545,7 @@ static Value normalizeOutputRoot(Value value) {
   if (!value)
     return {};
   if (isa<BaseMemRefType>(value.getType()))
-    return arts::ValueAnalysis::stripMemrefViewOps(value);
+    return ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(value);
   return value;
 }
 

@@ -35,7 +35,7 @@
 ARTS_DEBUG_SETUP(inliner);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -393,9 +393,9 @@ private:
 } // namespace
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 std::unique_ptr<Pass> createArtsInlinerPass() {
   return std::make_unique<ArtsInlinerPass>();
 }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

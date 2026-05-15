@@ -11,10 +11,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_SCHEDULEREFINEMENT
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -26,7 +26,7 @@ namespace mlir::arts {
 #include <limits>
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -48,7 +48,7 @@ static bool hasPositiveConstantStep(sde::SdeSuIterateOp op) {
     return false;
 
   int64_t step = 0;
-  return arts::ValueAnalysis::getConstantIndex(op.getSteps().front(), step) &&
+  return ::mlir::carts::arts::ValueAnalysis::getConstantIndex(op.getSteps().front(), step) &&
          step > 0;
 }
 

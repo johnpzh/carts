@@ -30,7 +30,7 @@ static bool indexValuesMatch(Value actual, Value expected) {
   std::optional<int64_t> expectedConstant = getConstantIndexValue(expected);
   if (actualConstant && expectedConstant)
     return *actualConstant == *expectedConstant;
-  return arts::ValueAnalysis::sameValue(actual, expected);
+  return ::mlir::carts::arts::ValueAnalysis::sameValue(actual, expected);
 }
 
 static bool opFoldResultMatchesValue(OpFoldResult actual, Value expected) {

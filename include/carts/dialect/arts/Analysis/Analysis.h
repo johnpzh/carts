@@ -9,7 +9,7 @@
 #define ARTS_DIALECT_CORE_ANALYSIS_ANALYSIS_H
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class AnalysisManager;
 
@@ -26,7 +26,7 @@ protected:
   AnalysisManager &manager;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_ANALYSIS_H

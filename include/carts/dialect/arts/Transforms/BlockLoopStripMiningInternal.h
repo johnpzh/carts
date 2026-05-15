@@ -28,7 +28,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace mlir::arts::block_loop_strip_mining {
+namespace mlir::carts::arts::block_loop_strip_mining {
 
 struct OffsetPatternGroup {
   int64_t offsetConst = 0;
@@ -197,6 +197,6 @@ bool stripMineNeighborhoodLoop(scf::ForOp loop,
 
 bool stripMineLegacyLoop(scf::ForOp loop, const LoopBlockInfo &info);
 
-} // namespace mlir::arts::block_loop_strip_mining
+} // namespace mlir::carts::arts::block_loop_strip_mining
 
 #endif // ARTS_DIALECT_CORE_TRANSFORMS_BLOCKLOOPSTRIPMININGINTERNAL_H

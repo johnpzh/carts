@@ -11,7 +11,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 bool isLoopInvariant(scf::ForOp loop, Value v) {
   if (!v)
@@ -94,5 +94,5 @@ scf::ForOp findHoistTarget(Operation *op, Operation *addrOp,
   return target;
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

@@ -10,6 +10,7 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 
 using namespace mlir;
+using namespace mlir::carts;
 
 namespace mlir::carts::sde {
 namespace {
@@ -31,34 +32,34 @@ static bool isLoopInductionLike(Value value) {
 static std::optional<LinearizedAccess2D>
 matchLinearizedMul(Value mulCandidate, Value innerCandidate,
                    Value requiredStride) {
-  mulCandidate = arts::ValueAnalysis::stripNumericCasts(mulCandidate);
-  innerCandidate = arts::ValueAnalysis::stripNumericCasts(innerCandidate);
+  mulCandidate = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(mulCandidate);
+  innerCandidate = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(innerCandidate);
 
   auto mulOp = mulCandidate.getDefiningOp<arith::MulIOp>();
   if (!mulOp)
     return std::nullopt;
 
-  Value lhs = arts::ValueAnalysis::stripNumericCasts(mulOp.getLhs());
-  Value rhs = arts::ValueAnalysis::stripNumericCasts(mulOp.getRhs());
+  Value lhs = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(mulOp.getLhs());
+  Value rhs = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(mulOp.getRhs());
 
   auto build = [&](Value outer, Value stride)
       -> std::optional<LinearizedAccess2D> {
-    outer = arts::ValueAnalysis::stripNumericCasts(outer);
-    stride = arts::ValueAnalysis::stripNumericCasts(stride);
+    outer = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(outer);
+    stride = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(stride);
     if (!outer || !stride || !innerCandidate)
       return std::nullopt;
     if (!outer.getType().isIndex() || !stride.getType().isIndex() ||
         !innerCandidate.getType().isIndex())
       return std::nullopt;
-    if (requiredStride && !arts::ValueAnalysis::sameValue(stride, requiredStride))
+    if (requiredStride && !::mlir::carts::arts::ValueAnalysis::sameValue(stride, requiredStride))
       return std::nullopt;
     return LinearizedAccess2D{outer, innerCandidate, stride};
   };
 
   if (requiredStride) {
-    if (arts::ValueAnalysis::sameValue(lhs, requiredStride))
+    if (::mlir::carts::arts::ValueAnalysis::sameValue(lhs, requiredStride))
       return build(rhs, lhs);
-    if (arts::ValueAnalysis::sameValue(rhs, requiredStride))
+    if (::mlir::carts::arts::ValueAnalysis::sameValue(rhs, requiredStride))
       return build(lhs, rhs);
     return std::nullopt;
   }
@@ -70,8 +71,8 @@ matchLinearizedMul(Value mulCandidate, Value innerCandidate,
   if (rhsIv && !lhsIv)
     return build(rhs, lhs);
 
-  std::optional<int64_t> lhsConst = arts::ValueAnalysis::tryFoldConstantIndex(lhs);
-  std::optional<int64_t> rhsConst = arts::ValueAnalysis::tryFoldConstantIndex(rhs);
+  std::optional<int64_t> lhsConst = ::mlir::carts::arts::ValueAnalysis::tryFoldConstantIndex(lhs);
+  std::optional<int64_t> rhsConst = ::mlir::carts::arts::ValueAnalysis::tryFoldConstantIndex(rhs);
   if (lhsConst && !rhsConst)
     return build(rhs, lhs);
   if (rhsConst && !lhsConst)
@@ -84,7 +85,7 @@ matchLinearizedMul(Value mulCandidate, Value innerCandidate,
 
 std::optional<LinearizedAccess2D>
 decomposeRowMajorLinearizedIndex(Value index, Value requiredStride) {
-  index = arts::ValueAnalysis::stripNumericCasts(index);
+  index = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(index);
   auto addOp = index.getDefiningOp<arith::AddIOp>();
   if (!addOp)
     return std::nullopt;
@@ -100,8 +101,8 @@ inferRowMajorFlatShape(Value totalElements, Value stride) {
   if (!totalElements || !stride)
     return std::nullopt;
 
-  totalElements = arts::ValueAnalysis::stripNumericCasts(totalElements);
-  stride = arts::ValueAnalysis::stripNumericCasts(stride);
+  totalElements = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(totalElements);
+  stride = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(stride);
   if (!totalElements.getType().isIndex() || !stride.getType().isIndex())
     return std::nullopt;
 
@@ -109,11 +110,11 @@ inferRowMajorFlatShape(Value totalElements, Value stride) {
   if (!mulOp)
     return std::nullopt;
 
-  Value lhs = arts::ValueAnalysis::stripNumericCasts(mulOp.getLhs());
-  Value rhs = arts::ValueAnalysis::stripNumericCasts(mulOp.getRhs());
-  if (arts::ValueAnalysis::sameValue(lhs, stride))
+  Value lhs = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(mulOp.getLhs());
+  Value rhs = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(mulOp.getRhs());
+  if (::mlir::carts::arts::ValueAnalysis::sameValue(lhs, stride))
     return SmallVector<Value, 2>{rhs, stride};
-  if (arts::ValueAnalysis::sameValue(rhs, stride))
+  if (::mlir::carts::arts::ValueAnalysis::sameValue(rhs, stride))
     return SmallVector<Value, 2>{lhs, stride};
 
   return std::nullopt;

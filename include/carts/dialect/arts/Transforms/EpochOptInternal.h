@@ -42,7 +42,7 @@
 #include <optional>
 #include <string>
 
-namespace mlir::arts::epoch_opt {
+namespace mlir::carts::arts::epoch_opt {
 
 struct EpochNarrowingCounts {
   unsigned epochsNarrowed = 0;
@@ -61,6 +61,6 @@ LogicalResult
 transformToContinuation(EpochOp epochOp,
                         const EpochContinuationDecision &decision);
 
-} // namespace mlir::arts::epoch_opt
+} // namespace mlir::carts::arts::epoch_opt
 
 #endif // ARTS_DIALECT_CORE_TRANSFORMS_EPOCHOPTINTERNAL_H

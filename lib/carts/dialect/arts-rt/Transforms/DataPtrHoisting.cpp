@@ -30,10 +30,10 @@
 
 #include "carts/dialect/arts-rt/Transforms/DataPtrHoistingInternal.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_DATAPTRHOISTING
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 #include "carts/passes/Passes.h"
 #include "carts/dialect/arts-rt/Utils/LoopInvarianceUtils.h"
 #include "carts/utils/LoopUtils.h"
@@ -43,8 +43,9 @@ namespace mlir::arts {
 ARTS_DEBUG_SETUP(data_ptr_hoisting);
 
 using namespace mlir;
-using namespace mlir::arts;
-using namespace mlir::arts::data_ptr_hoisting;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
+using namespace mlir::carts::arts::data_ptr_hoisting;
 
 namespace {
 
@@ -393,11 +394,11 @@ void DataPtrHoistingPass::runOnOperation() {
 /// Pass creation
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 std::unique_ptr<Pass> createDataPtrHoistingPass() {
   return std::make_unique<DataPtrHoistingPass>();
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

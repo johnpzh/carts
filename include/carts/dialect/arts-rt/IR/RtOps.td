@@ -15,7 +15,7 @@ include "carts/dialect/arts-rt/IR/RtDialect.td"
 class ArtsRt_I32Enum<string name, string description,
                      list<I32EnumAttrCase> cases>
     : I32EnumAttr<name, description, cases> {
-  let cppNamespace = "::mlir::arts::rt";
+  let cppNamespace = "::mlir::carts::arts_rt";
   let genSpecializedAttr = 0;
 }
 
@@ -127,7 +127,7 @@ def RecordDepOp
     Variadic<Index>:$byte_offsets,
     Variadic<Index>:$byte_sizes,
     DefaultValuedAttr<DepAccessModeAttr,
-                      "::mlir::arts::rt::DepAccessMode::direct">:$access_mode,
+                      "::mlir::carts::arts_rt::DepAccessMode::direct">:$access_mode,
     OptionalAttr<DenseI32ArrayAttr>:$acquire_modes,
     OptionalAttr<DenseI32ArrayAttr>:$dep_flags
   );
@@ -150,7 +150,7 @@ def IncrementDepOp : ArtsRt_Op<"inc_dep", [MemoryEffects<[MemWrite]>]> {
     I64:$edt_guid,
     Variadic<AnyType>:$datablocks,
     DefaultValuedAttr<DepAccessModeAttr,
-                      "::mlir::arts::rt::DepAccessMode::direct">:$access_mode
+                      "::mlir::carts::arts_rt::DepAccessMode::direct">:$access_mode
   );
   let assemblyFormat =
       "$edt_guid `(` $datablocks `:` type($datablocks) `)` attr-dict";

@@ -32,10 +32,10 @@
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_GUIDRANGCALLOPT
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 #include "carts/passes/Passes.h"
 #include "carts/utils/Debug.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -45,7 +45,8 @@ namespace mlir::arts {
 ARTS_DEBUG_SETUP(guid_rang_call_opt);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 
@@ -212,11 +213,11 @@ struct GuidRangCallOptPass
 } // namespace
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 std::unique_ptr<Pass> createGuidRangCallOptPass() {
   return std::make_unique<GuidRangCallOptPass>();
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

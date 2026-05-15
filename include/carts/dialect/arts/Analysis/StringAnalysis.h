@@ -16,7 +16,7 @@
 #include "llvm/ADT/DenseSet.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 ///===----------------------------------------------------------------------===///
 /// StringAnalysis
@@ -56,7 +56,7 @@ private:
   bool isStringFunction(StringRef funcName);
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_STRINGANALYSIS_H

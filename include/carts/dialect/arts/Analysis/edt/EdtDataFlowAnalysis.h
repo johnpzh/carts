@@ -19,7 +19,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class DbAliasAnalysis;
 class AnalysisManager;
@@ -68,7 +68,7 @@ private:
       dependencyMap;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_EDT_EDTDATAFLOWANALYSIS_H

@@ -15,7 +15,7 @@
 #include "llvm/ADT/ArrayRef.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class DbAcquireNode;
 
@@ -46,7 +46,7 @@ public:
                               Value *offsetForCheck = nullptr);
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_DB_DBBLOCKINFOCOMPUTER_H

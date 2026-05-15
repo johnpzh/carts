@@ -27,10 +27,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_ITERATIONSPACEDECOMPOSITION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/utils/Debug.h"
 #include "carts/utils/Utils.h"
@@ -49,7 +49,7 @@ namespace mlir::arts {
 ARTS_DEBUG_SETUP(iteration_space_decomposition);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -68,7 +68,7 @@ static bool yieldsConstantBool(Block &block, bool expected) {
   auto yield = dyn_cast<scf::YieldOp>(block.getTerminator());
   if (!yield || yield.getNumOperands() != 1)
     return false;
-  return arts::ValueAnalysis::isConstantBool(yield.getOperand(0), expected);
+  return ::mlir::carts::arts::ValueAnalysis::isConstantBool(yield.getOperand(0), expected);
 }
 
 static bool matchEqConst(Value condition, Value value, int64_t expectedConst) {
@@ -76,11 +76,11 @@ static bool matchEqConst(Value condition, Value value, int64_t expectedConst) {
   if (!cmp || cmp.getPredicate() != arith::CmpIPredicate::eq)
     return false;
 
-  value = arts::ValueAnalysis::stripNumericCasts(value);
-  Value lhs = arts::ValueAnalysis::stripNumericCasts(cmp.getLhs());
-  Value rhs = arts::ValueAnalysis::stripNumericCasts(cmp.getRhs());
-  auto lhsConst = arts::ValueAnalysis::getConstantIndexStripped(lhs);
-  auto rhsConst = arts::ValueAnalysis::getConstantIndexStripped(rhs);
+  value = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(value);
+  Value lhs = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(cmp.getLhs());
+  Value rhs = ::mlir::carts::arts::ValueAnalysis::stripNumericCasts(cmp.getRhs());
+  auto lhsConst = ::mlir::carts::arts::ValueAnalysis::getConstantIndexStripped(lhs);
+  auto rhsConst = ::mlir::carts::arts::ValueAnalysis::getConstantIndexStripped(rhs);
   if (lhs == value && rhsConst && *rhsConst == expectedConst)
     return true;
   if (rhs == value && lhsConst && *lhsConst == expectedConst)
@@ -124,9 +124,9 @@ static bool matchBoundaryPattern(scf::ForOp loop, BoundaryPeelingMatch &match) {
   if (!loop || loop.getNumResults() != 0)
     return fail("loop missing or has results");
 
-  auto lowerConst = arts::ValueAnalysis::tryFoldConstantIndex(loop.getLowerBound());
-  auto upperConst = arts::ValueAnalysis::tryFoldConstantIndex(loop.getUpperBound());
-  auto stepConst = arts::ValueAnalysis::tryFoldConstantIndex(loop.getStep());
+  auto lowerConst = ::mlir::carts::arts::ValueAnalysis::tryFoldConstantIndex(loop.getLowerBound());
+  auto upperConst = ::mlir::carts::arts::ValueAnalysis::tryFoldConstantIndex(loop.getUpperBound());
+  auto stepConst = ::mlir::carts::arts::ValueAnalysis::tryFoldConstantIndex(loop.getStep());
   if (!lowerConst || !upperConst || !stepConst || *stepConst != 1)
     return fail("bounds are not constant step-1");
   if ((*upperConst - *lowerConst) <= 2)
@@ -263,8 +263,8 @@ static void cloneLoopSegment(OpBuilder &builder, BoundaryPeelingMatch &match,
     return;
 
   Location loc = match.innerLoop.getLoc();
-  Value lower = arts::createConstantIndex(builder, loc, lowerConst);
-  Value upper = arts::createConstantIndex(builder, loc, upperConst);
+  Value lower = ::mlir::carts::arts::createConstantIndex(builder, loc, lowerConst);
+  Value upper = ::mlir::carts::arts::createConstantIndex(builder, loc, upperConst);
   auto segment =
       scf::ForOp::create(builder, loc, lower, upper, match.innerLoop.getStep());
   builder.setInsertionPointToStart(segment.getBody());
@@ -288,9 +288,9 @@ static bool peelBoundaryLoop(BoundaryPeelingMatch &match) {
     return false;
   DominanceInfo domInfo(func);
 
-  Value rowIsFirst = arts::ValueAnalysis::traceValueToDominating(
+  Value rowIsFirst = ::mlir::carts::arts::ValueAnalysis::traceValueToDominating(
       match.rowIsFirst, match.innerLoop, builder, domInfo, loc);
-  Value rowIsLast = arts::ValueAnalysis::traceValueToDominating(
+  Value rowIsLast = ::mlir::carts::arts::ValueAnalysis::traceValueToDominating(
       match.rowIsLast, match.innerLoop, builder, domInfo, loc);
   if (!rowIsFirst || !rowIsLast)
     return false;

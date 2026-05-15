@@ -25,7 +25,8 @@
 #include "llvm/Support/raw_ostream.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 #include "carts/utils/Debug.h"
 ARTS_DEBUG_SETUP(edt_graph);

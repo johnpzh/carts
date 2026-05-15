@@ -17,10 +17,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_LOOPINTERCHANGE
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -34,7 +34,7 @@ namespace mlir::arts {
 ARTS_DEBUG_SETUP(loop_interchange);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -733,7 +733,7 @@ static bool isDirectMemoryMatmulAccumulator(scf::ForOp jLoop, scf::ForOp kLoop,
 
     if (auto load = dyn_cast<memref::LoadOp>(op)) {
       if (load.getMemref() == output) {
-        if (!arts::ValueAnalysis::areValueRangesIdentical(load.getIndices(),
+        if (!::mlir::carts::arts::ValueAnalysis::areValueRangesIdentical(load.getIndices(),
                                                     outputIndices))
           return false;
         ++outputLoads;
@@ -747,7 +747,7 @@ static bool isDirectMemoryMatmulAccumulator(scf::ForOp jLoop, scf::ForOp kLoop,
     if (auto store = dyn_cast<memref::StoreOp>(op)) {
       if (store.getMemref() != output)
         return false;
-      if (!arts::ValueAnalysis::areValueRangesIdentical(store.getIndices(),
+      if (!::mlir::carts::arts::ValueAnalysis::areValueRangesIdentical(store.getIndices(),
                                                   outputIndices))
         return false;
       ++outputStores;
@@ -755,12 +755,12 @@ static bool isDirectMemoryMatmulAccumulator(scf::ForOp jLoop, scf::ForOp kLoop,
       if (auto add = store.getValueToStore().getDefiningOp<arith::AddFOp>()) {
         if (auto load = add.getLhs().getDefiningOp<memref::LoadOp>();
             load && load.getMemref() == output &&
-            arts::ValueAnalysis::areValueRangesIdentical(load.getIndices(),
+            ::mlir::carts::arts::ValueAnalysis::areValueRangesIdentical(load.getIndices(),
                                                    outputIndices))
           hasAccumulatingStore = true;
         if (auto load = add.getRhs().getDefiningOp<memref::LoadOp>();
             load && load.getMemref() == output &&
-            arts::ValueAnalysis::areValueRangesIdentical(load.getIndices(),
+            ::mlir::carts::arts::ValueAnalysis::areValueRangesIdentical(load.getIndices(),
                                                    outputIndices))
           hasAccumulatingStore = true;
       }

@@ -7,10 +7,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_VECTORIZATION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/utils/Debug.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
@@ -23,7 +23,7 @@ namespace mlir::arts {
 ARTS_DEBUG_SETUP(vectorization);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {

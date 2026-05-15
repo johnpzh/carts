@@ -21,14 +21,14 @@
 #include "mlir/IR/BuiltinOps.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Detect loops with batch GUID allocation opportunities.
 /// Marks DbAllocOps inside qualifying loops with guid_range_candidate attr.
 /// Returns true if any candidates were found.
 bool detectGUIDRangeCandidates(ModuleOp module);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_TRANSFORMS_DB_TRANSFORMS_GUIDRANGEDETECTION_H

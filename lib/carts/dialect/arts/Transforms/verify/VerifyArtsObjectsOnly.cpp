@@ -58,6 +58,6 @@ struct VerifyArtsObjectsOnlyPass
 
 } /// namespace
 
-std::unique_ptr<Pass> mlir::arts::createVerifyArtsObjectsOnlyPass() {
+std::unique_ptr<Pass> mlir::carts::arts::createVerifyArtsObjectsOnlyPass() {
   return std::make_unique<VerifyArtsObjectsOnlyPass>();
 }

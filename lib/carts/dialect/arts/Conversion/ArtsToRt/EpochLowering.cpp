@@ -28,10 +28,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_EPOCHLOWERING
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 #include "carts/dialect/arts/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/passes/Passes.h"
@@ -64,10 +64,11 @@ static llvm::Statistic numEdtCreatesUpdatedWithEpoch{
 
 using namespace mlir;
 using namespace mlir::func;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 using AttrNames::Operation::ContinuationForEpoch;
 using AttrNames::Operation::ControlDep;
-using namespace mlir::arts::rt;
+using namespace mlir::carts::arts_rt;
 
 ///===----------------------------------------------------------------------===///
 /// Epoch Lowering Pass Implementation
@@ -324,11 +325,11 @@ void EpochLoweringPass::runOnOperation() {
 ///===----------------------------------------------------------------------===///
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 std::unique_ptr<Pass> createEpochLoweringPass() {
   return std::make_unique<EpochLoweringPass>();
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

@@ -27,8 +27,9 @@
 ARTS_DEBUG_SETUP(db_utils);
 
 using namespace mlir;
-using namespace mlir::arts;
-using namespace mlir::arts::rt;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
+using namespace mlir::carts::arts_rt;
 
 namespace {
 

@@ -42,7 +42,7 @@
 ARTS_DEBUG_SETUP(edt_invariant_code_motion);
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 bool canBeHoistedFromEdt(Region &edtRegion, Operation *op) {
   /// Do not move terminators.
@@ -118,5 +118,5 @@ uint64_t moveEdtInvariantCode(EdtOp edtOp) {
   return numMoved;
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

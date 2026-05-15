@@ -27,12 +27,12 @@ namespace mlir::carts::sde {
 std::unique_ptr<Pass> createMemoryUnitMaterializationPass();
 } // namespace mlir::carts::sde
 
-namespace mlir::arts {
+namespace mlir::carts::arts {
 
 #define GEN_PASS_DECL
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 namespace mlir::carts::sde {
 

@@ -28,7 +28,7 @@
 #include <cassert>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 static std::optional<bool> proveValuesEqualWithBounds(Value lhs, Value rhs) {
   if (!lhs || !rhs || !lhs.getType().isIndex() || !rhs.getType().isIndex())
@@ -1318,7 +1318,7 @@ Value ValueAnalysis::traceValueToDominating(Value value,
   }
   if (auto constIdxOp = dyn_cast<arith::ConstantIndexOp>(defOp)) {
     builder.setInsertionPoint(insertBefore);
-    return arts::createConstantIndex(builder, loc, constIdxOp.value());
+    return ::mlir::carts::arts::createConstantIndex(builder, loc, constIdxOp.value());
   }
   if (auto tsOp = dyn_cast<polygeist::TypeSizeOp>(defOp)) {
     builder.setInsertionPoint(insertBefore);
@@ -1461,5 +1461,5 @@ bool ValueAnalysis::isOneLikeValue(Value value) {
   return false;
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

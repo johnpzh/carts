@@ -18,7 +18,7 @@ include "Dialect.td"
 
 class Arts_I32Enum<string name, string description, list<I32EnumAttrCase> cases>
     : I32EnumAttr<name, description, cases> {
-  let cppNamespace = "::mlir::arts";
+  let cppNamespace = "::mlir::carts::arts";
   let genSpecializedAttr = 0;
 }
 
@@ -266,9 +266,9 @@ def PatternAttr : Arts_Attr<"Pattern", "pattern"> {
     meaning across unrelated top-level attrs.
   }];
   let parameters = (ins
-    OptionalParameter<"::mlir::arts::ArtsDepPatternAttr">:$depPattern,
-    OptionalParameter<"::mlir::arts::EdtDistributionKindAttr">:$distributionKind,
-    OptionalParameter<"::mlir::arts::EdtDistributionPatternAttr">:$distributionPattern,
+    OptionalParameter<"::mlir::carts::arts::ArtsDepPatternAttr">:$depPattern,
+    OptionalParameter<"::mlir::carts::arts::EdtDistributionKindAttr">:$distributionKind,
+    OptionalParameter<"::mlir::carts::arts::EdtDistributionPatternAttr">:$distributionPattern,
     OptionalParameter<"::mlir::IntegerAttr">:$distributionVersion,
     OptionalParameter<"::mlir::IntegerAttr">:$revision
   );

@@ -34,7 +34,7 @@
 ARTS_DEBUG_SETUP(edt_ptr_rematerialization);
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Check if an operation produces pointer or memref types that should be
 /// rematerialized. Returns true if ANY result is a pointer-like type.
@@ -239,5 +239,5 @@ void rematerializePointersInEdt(EdtOp edt) {
     }
   }
 }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

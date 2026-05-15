@@ -15,7 +15,7 @@
 #include "mlir/IR/Value.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 struct ExpandedElementWindow {
   Value offset;
@@ -29,29 +29,29 @@ inline ExpandedElementWindow
 expandElementWindowWithHalo(OpBuilder &builder, Location loc, Value elemOffset,
                             Value elemSize, Value totalExtent,
                             int64_t minOffset, int64_t maxOffset) {
-  Value zero = arts::createConstantIndex(builder, loc, 0);
+  Value zero = ::mlir::carts::arts::createConstantIndex(builder, loc, 0);
 
   Value start = elemOffset;
   if (minOffset < 0) {
-    Value haloLeft = arts::createConstantIndex(builder, loc, -minOffset);
+    Value haloLeft = ::mlir::carts::arts::createConstantIndex(builder, loc, -minOffset);
     Value canShift = arith::CmpIOp::create(
         builder, loc, arith::CmpIPredicate::uge, start, haloLeft);
     Value shifted = arith::SubIOp::create(builder, loc, start, haloLeft);
     start = arith::SelectOp::create(builder, loc, canShift, shifted, zero);
   } else if (minOffset > 0) {
-    Value shift = arts::createConstantIndex(builder, loc, minOffset);
+    Value shift = ::mlir::carts::arts::createConstantIndex(builder, loc, minOffset);
     start = arith::AddIOp::create(builder, loc, start, shift);
   }
 
   Value end = arith::AddIOp::create(builder, loc, elemOffset, elemSize);
   if (maxOffset > 0) {
-    Value haloRight = arts::createConstantIndex(builder, loc, maxOffset);
+    Value haloRight = ::mlir::carts::arts::createConstantIndex(builder, loc, maxOffset);
     Value endPlusHalo = arith::AddIOp::create(builder, loc, end, haloRight);
     end = totalExtent
               ? arith::MinUIOp::create(builder, loc, endPlusHalo, totalExtent)
               : endPlusHalo;
   } else if (maxOffset < 0) {
-    Value shrink = arts::createConstantIndex(builder, loc, -maxOffset);
+    Value shrink = ::mlir::carts::arts::createConstantIndex(builder, loc, -maxOffset);
     Value canShrink = arith::CmpIOp::create(
         builder, loc, arith::CmpIPredicate::uge, end, shrink);
     Value shrunken = arith::SubIOp::create(builder, loc, end, shrink);
@@ -66,7 +66,7 @@ expandElementWindowWithHalo(OpBuilder &builder, Location loc, Value elemOffset,
   return ExpandedElementWindow{start, size};
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_TRANSFORMS_DB_DBPARTITIONWINDOWUTILS_H

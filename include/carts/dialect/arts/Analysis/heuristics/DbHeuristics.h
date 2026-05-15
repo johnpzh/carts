@@ -25,7 +25,7 @@ namespace mlir {
 
 class Operation;
 
-namespace arts {
+namespace carts::arts {
 
 struct HeuristicDecision {
   std::string heuristic;
@@ -40,7 +40,7 @@ struct HeuristicDecision {
 
 class DbHeuristics {
 public:
-  explicit DbHeuristics(const mlir::arts::RuntimeConfig &machine);
+  explicit DbHeuristics(const mlir::carts::arts::RuntimeConfig &machine);
 
   bool isSingleNode() const;
   bool isValid() const;
@@ -65,14 +65,14 @@ public:
   void clearDecisions() { decisions.clear(); }
 
 private:
-  const mlir::arts::RuntimeConfig &machine;
+  const mlir::carts::arts::RuntimeConfig &machine;
   llvm::SmallVector<HeuristicDecision> decisions;
   int64_t maxOuterDBsOverride = kMaxOuterDBs;
   int64_t maxDepsPerEDTOverride = kMaxDepsPerEDT;
   int64_t minInnerBytesOverride = kMinInnerBytes;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_HEURISTICS_DBHEURISTICS_H

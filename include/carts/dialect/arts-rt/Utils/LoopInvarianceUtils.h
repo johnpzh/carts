@@ -15,7 +15,7 @@
 #include "mlir/IR/Value.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Check if a value is loop-invariant w.r.t. the given for-loop.
 /// Handles numeric casts and constants via ValueUtils.
@@ -48,7 +48,7 @@ bool allOperandsDominate(Operation *op, Operation *insertionPoint,
 scf::ForOp findHoistTarget(Operation *op, Operation *addrOp,
                            DominanceInfo &domInfo);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_UTILS_LOOPINVARIANCEUTILS_H

@@ -48,7 +48,8 @@
 ARTS_DEBUG_SETUP(dead_code_elimination);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 
@@ -641,6 +642,6 @@ struct DeadCodeEliminationPass
 
 } // namespace
 
-std::unique_ptr<Pass> mlir::arts::createDCEPass() {
+std::unique_ptr<Pass> mlir::carts::arts::createDCEPass() {
   return std::make_unique<DeadCodeEliminationPass>();
 }

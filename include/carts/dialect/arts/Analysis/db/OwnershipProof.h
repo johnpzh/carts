@@ -22,7 +22,7 @@
 #include "mlir/IR/Operation.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class DbAnalysis;
 
@@ -58,7 +58,7 @@ void stampOwnershipProof(LoweringContractOp contractOp,
 /// Read proof attributes from a LoweringContractOp (if present).
 OwnershipProof readOwnershipProof(Operation *op);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_DB_OWNERSHIPPROOF_H

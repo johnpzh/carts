@@ -15,7 +15,7 @@
 #include <string>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 ///===----------------------------------------------------------------------===///
 /// LocationMetadata
@@ -85,7 +85,7 @@ private:
   void updateKey();
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_UTILS_LOCATIONMETADATA_H

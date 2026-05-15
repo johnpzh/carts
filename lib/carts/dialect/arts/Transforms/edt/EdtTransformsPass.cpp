@@ -53,7 +53,8 @@
 
 using namespace mlir;
 using namespace mlir::func;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 #define GEN_PASS_DEF_EDTTRANSFORMS
 #include "carts/passes/Passes.h.inc"
@@ -84,14 +85,14 @@ static constexpr int64_t kSmallTaskThreshold = 64;
 static constexpr int64_t kLoopDepthMultiplier = 8;
 
 struct EdtTransformsPass : public ::impl::EdtTransformsBase<EdtTransformsPass> {
-  EdtTransformsPass(mlir::arts::AnalysisManager *AM) : AM(AM) {
+  EdtTransformsPass(mlir::carts::arts::AnalysisManager *AM) : AM(AM) {
     assert(AM && "AnalysisManager must be provided externally");
   }
 
   void runOnOperation() override;
 
 private:
-  mlir::arts::AnalysisManager *AM = nullptr;
+  mlir::carts::arts::AnalysisManager *AM = nullptr;
 
   /// ET-1: Estimate task granularity and annotate dependency contracts.
   /// Returns the number of annotated EDTs.
@@ -683,9 +684,9 @@ unsigned EdtTransformsPass::eliminateDeadDependencies() {
 /// Pass creation
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace arts {
-std::unique_ptr<Pass> createEdtTransformsPass(mlir::arts::AnalysisManager *AM) {
+namespace carts::arts {
+std::unique_ptr<Pass> createEdtTransformsPass(mlir::carts::arts::AnalysisManager *AM) {
   return std::make_unique<EdtTransformsPass>(AM);
 }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

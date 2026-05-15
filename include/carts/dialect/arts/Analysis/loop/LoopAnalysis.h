@@ -21,7 +21,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 ///===----------------------------------------------------------------------===///
 /// LoopAnalysis
@@ -91,7 +91,7 @@ private:
   DenseMap<Operation *, std::unique_ptr<LoopNode>> loopNodes;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_LOOP_LOOPANALYSIS_H

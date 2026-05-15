@@ -12,7 +12,7 @@ include "mlir/IR/OpBase.td"
 ///===----------------------------------------------------------------------===///
 def ArtsDialect : Dialect {
   let name = "arts";
-  let cppNamespace = "::mlir::arts";
+  let cppNamespace = "::mlir::carts::arts";
 
   let summary = "Types and operations for the ARTS dialect";
   let description =

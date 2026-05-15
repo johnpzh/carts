@@ -16,7 +16,8 @@ ARTS_DEBUG_SETUP(db_alias_analysis);
 #include <optional>
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 struct ConstantSlice {

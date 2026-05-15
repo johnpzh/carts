@@ -7,7 +7,8 @@
 #include "carts/dialect/arts/Analysis/edt/EpochAnalysis.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 EpochAccessSummary EpochAnalysis::summarizeEpochAccess(EpochOp epoch) const {
   return EpochHeuristics::summarizeEpochAccess(epoch);

@@ -19,7 +19,7 @@
 #include <cstdint>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Unified ID registry for deterministic arts_id assignment.
 /// This class is the SINGLE source of truth for:
@@ -103,7 +103,7 @@ private:
   bool initialized = false;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_UTILS_METADATA_IDREGISTRY_H

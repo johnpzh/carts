@@ -32,10 +32,10 @@
 
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
 
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_LOOPVECTORIZATIONHINTS
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/utils/Debug.h"
 #include "carts/utils/LoopUtils.h"
@@ -50,7 +50,8 @@ namespace mlir::arts {
 ARTS_DEBUG_SETUP(loop_vectorization_hints);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 
@@ -858,11 +859,11 @@ struct LoopVectorizationHintsPass
 /// Pass creation and registration
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 std::unique_ptr<Pass> createLoopVectorizationHintsPass() {
   return std::make_unique<LoopVectorizationHintsPass>();
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

@@ -18,7 +18,7 @@
 #include <string>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class DbAllocNode;
 class DbAcquireNode;
@@ -60,21 +60,21 @@ private:
   std::string typeLabel;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 namespace llvm {
-template <> struct DenseMapInfo<mlir::arts::DbEdge> {
-  using DbEdge = mlir::arts::DbEdge;
+template <> struct DenseMapInfo<mlir::carts::arts::DbEdge> {
+  using DbEdge = mlir::carts::arts::DbEdge;
   static inline DbEdge getEmptyKey() {
-    return {reinterpret_cast<mlir::arts::DbAcquireNode *>(-1),
-            reinterpret_cast<mlir::arts::DbAcquireNode *>(-1),
-            mlir::arts::DbDepType::RAW};
+    return {reinterpret_cast<mlir::carts::arts::DbAcquireNode *>(-1),
+            reinterpret_cast<mlir::carts::arts::DbAcquireNode *>(-1),
+            mlir::carts::arts::DbDepType::RAW};
   }
   static inline DbEdge getTombstoneKey() {
-    return {reinterpret_cast<mlir::arts::DbAcquireNode *>(-2),
-            reinterpret_cast<mlir::arts::DbAcquireNode *>(-2),
-            mlir::arts::DbDepType::RAW};
+    return {reinterpret_cast<mlir::carts::arts::DbAcquireNode *>(-2),
+            reinterpret_cast<mlir::carts::arts::DbAcquireNode *>(-2),
+            mlir::carts::arts::DbDepType::RAW};
   }
   static unsigned getHashValue(const DbEdge &edge) {
     return DenseMapInfo<void *>::getHashValue(edge.producer) ^

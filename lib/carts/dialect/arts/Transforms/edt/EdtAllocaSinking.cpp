@@ -16,7 +16,8 @@
 #include <algorithm>
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 #define GEN_PASS_DEF_EDTALLOCASINKING
 #include "carts/passes/Passes.h.inc"
@@ -165,9 +166,9 @@ struct EdtAllocaSinkingPass
 } // namespace
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 std::unique_ptr<Pass> createEdtAllocaSinkingPass() {
   return std::make_unique<EdtAllocaSinkingPass>();
 }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

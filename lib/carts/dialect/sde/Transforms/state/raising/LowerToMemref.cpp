@@ -20,10 +20,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_LOWERTOMEMREF
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/utils/OperationAttributes.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -47,7 +47,7 @@ ARTS_DEBUG_SETUP(lower_to_memref);
 #include "llvm/ADT/SmallVector.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {

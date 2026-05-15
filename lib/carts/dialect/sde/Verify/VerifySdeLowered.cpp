@@ -8,10 +8,10 @@
 #include "carts/Dialect.h"
 #include "carts/dialect/sde/IR/SdeDialect.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_VERIFYSDELOWERED
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 #include "mlir/Pass/Pass.h"
 
 using namespace mlir;

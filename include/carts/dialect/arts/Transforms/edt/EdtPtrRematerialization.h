@@ -32,12 +32,12 @@
 #define ARTS_DIALECT_CORE_TRANSFORMS_EDT_EDTPTRREMATERIALIZATION_H
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 class EdtOp;
 
 void rematerializePointersInEdt(EdtOp edtOp);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_TRANSFORMS_EDT_EDTPTRREMATERIALIZATION_H

@@ -21,7 +21,7 @@ ARTS_DEBUG_SETUP(runtime_config);
 #include <sstream>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 ///===----------------------------------------------------------------------===///
 /// RuntimeConfig Implementation
@@ -351,5 +351,5 @@ bool RuntimeConfig::validateConfiguration() {
   return isValid;
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

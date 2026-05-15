@@ -16,7 +16,7 @@
 #include <string>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 ///==========================================================================///
 /// LoopNode - Represents a loop operation with metadata
@@ -108,7 +108,7 @@ private:
   DenseMap<Value, bool> ivDepCache;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_LOOP_LOOPNODE_H

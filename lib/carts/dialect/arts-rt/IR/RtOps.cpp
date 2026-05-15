@@ -9,7 +9,8 @@
 #include "mlir/IR/Types.h"
 
 using namespace mlir;
-using namespace mlir::arts::rt;
+using namespace mlir::carts;
+using namespace mlir::carts::arts_rt;
 
 #define GET_OP_CLASSES
 #include "carts/dialect/arts-rt/IR/RtOps.cpp.inc"

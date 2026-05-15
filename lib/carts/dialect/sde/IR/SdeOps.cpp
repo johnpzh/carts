@@ -11,6 +11,7 @@
 #include "mlir/IR/OpImplementation.h"
 
 using namespace mlir;
+using namespace mlir::carts;
 using namespace mlir::carts::sde;
 
 #define GET_OP_CLASSES

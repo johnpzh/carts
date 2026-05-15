@@ -20,7 +20,7 @@
 #include "mlir/Pass/Pass.h"
 #include "polygeist/Dialect.h"
 
-namespace mlir::arts {
+namespace mlir::carts::arts {
 
 #define GEN_PASS_DECL
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
@@ -32,6 +32,6 @@ std::unique_ptr<::mlir::Pass> createLoopVectorizationHintsPass();
 /// Transform memory-based reductions to register-based iter_args.
 std::unique_ptr<::mlir::Pass> createScalarReplacementPass();
 
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #endif // ARTS_DIALECT_RT_TRANSFORMS_PASSES_H

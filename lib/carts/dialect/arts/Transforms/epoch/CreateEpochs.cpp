@@ -56,7 +56,8 @@ static llvm::Statistic numEpochsCreated{
     "Total number of epoch regions created"};
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 static void clearIsSyncAttr(EdtOp op) {
   auto newTypeAttr = EdtTypeAttr::get(op.getContext(), EdtType::single);
@@ -283,9 +284,9 @@ void CreateEpochsPass::runOnOperation() {
 /// Pass creation
 ///==========================================================================///
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 std::unique_ptr<Pass> createCreateEpochsPass() {
   return std::make_unique<CreateEpochsPass>();
 }
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

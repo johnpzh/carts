@@ -16,7 +16,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Forward declarations
 class LoopNode;
@@ -79,7 +79,7 @@ private:
   SmallVector<LoopNode *, 4> enclosingLoops;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_EDT_EDTNODE_H

@@ -12,10 +12,11 @@
 #include "mlir/IR/BuiltinTypes.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 OwnershipProof
-mlir::arts::computeOwnershipProof(LoweringContractOp contractOp) {
+mlir::carts::arts::computeOwnershipProof(LoweringContractOp contractOp) {
   OwnershipProof proof;
   if (!contractOp)
     return proof;
@@ -96,7 +97,7 @@ mlir::arts::computeOwnershipProof(LoweringContractOp contractOp) {
   return proof;
 }
 
-void mlir::arts::stampOwnershipProof(LoweringContractOp contractOp,
+void mlir::carts::arts::stampOwnershipProof(LoweringContractOp contractOp,
                                      const OwnershipProof &proof) {
   if (!contractOp)
     return;
@@ -113,7 +114,7 @@ void mlir::arts::stampOwnershipProof(LoweringContractOp contractOp,
                       BoolAttr::get(ctx, proof.relaunchStateSoundness));
 }
 
-OwnershipProof mlir::arts::readOwnershipProof(Operation *op) {
+OwnershipProof mlir::carts::arts::readOwnershipProof(Operation *op) {
   OwnershipProof proof;
   if (!op)
     return proof;

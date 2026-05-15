@@ -16,7 +16,7 @@
 #include <cstddef>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class DbAcquireNode;
 
@@ -56,7 +56,7 @@ public:
 /// Shared between MemoryAccessClassifier and PartitionBoundsAnalyzer.
 bool isIndirectIndex(Value idx, Value partitionOffset, int depth = 0);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_DB_MEMORYACCESSCLASSIFIER_H

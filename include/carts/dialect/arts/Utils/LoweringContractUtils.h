@@ -11,7 +11,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Discriminator for the high-level computational pattern a lowering contract
 /// represents.  When the field is `Unknown` on a `LoweringContractInfo`,
@@ -213,7 +213,7 @@ void transferContract(Operation *sourceOp, Operation *targetOp,
                       Value sourceContractTarget, Value targetContractTarget,
                       OpBuilder &builder, Location loc);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // CARTS_UTILS_LOWERINGCONTRACTUTILS_H

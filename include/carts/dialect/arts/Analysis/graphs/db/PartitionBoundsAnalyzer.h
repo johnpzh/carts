@@ -13,7 +13,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class DbAcquireNode;
 
@@ -64,7 +64,7 @@ public:
                                                 Value partitionOffset);
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_DB_PARTITIONBOUNDSANALYZER_H

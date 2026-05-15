@@ -39,7 +39,8 @@ static llvm::Statistic numScratchCandidatesRejected{
     "Number of scratch DB candidates rejected"};
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 
@@ -351,6 +352,6 @@ struct DbScratchEliminationPass
 
 } // namespace
 
-std::unique_ptr<Pass> mlir::arts::createDbScratchEliminationPass() {
+std::unique_ptr<Pass> mlir::carts::arts::createDbScratchEliminationPass() {
   return std::make_unique<DbScratchEliminationPass>();
 }

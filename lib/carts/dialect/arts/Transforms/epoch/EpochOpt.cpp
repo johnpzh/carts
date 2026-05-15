@@ -17,10 +17,11 @@
 
 ARTS_DEBUG_SETUP(epoch_opt);
 
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 using namespace mlir;
-using namespace mlir::arts::epoch_opt;
+using namespace mlir::carts::arts::epoch_opt;
 
 namespace {
 
@@ -43,7 +44,7 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
                            "Number of consecutive epoch pairs fused") {
   }
 
-  explicit EpochOptPass(mlir::arts::AnalysisManager *AM)
+  explicit EpochOptPass(mlir::carts::arts::AnalysisManager *AM)
       : AM(AM), numRepeatedEpochLoopsAmortized(
                     this, "num-repeated-epoch-loops-amortized",
                     "Number of repeated epoch loops amortized"),
@@ -59,7 +60,7 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
                            "Number of consecutive epoch pairs fused") {
   }
 
-  EpochOptPass(mlir::arts::AnalysisManager *AM, bool narrowing, bool fusion,
+  EpochOptPass(mlir::carts::arts::AnalysisManager *AM, bool narrowing, bool fusion,
                bool amortization, bool continuation)
       : EpochOptPass(AM) {
     enableEpochNarrowing = narrowing;
@@ -68,9 +69,9 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
     enableContinuation = continuation;
   }
 
-  mlir::arts::AnalysisManager &getEpochAnalysisManager(ModuleOp module) {
+  mlir::carts::arts::AnalysisManager &getEpochAnalysisManager(ModuleOp module) {
     if (!AM) {
-      ownedAM = std::make_unique<mlir::arts::AnalysisManager>(module);
+      ownedAM = std::make_unique<mlir::carts::arts::AnalysisManager>(module);
       AM = ownedAM.get();
     }
     return *AM;
@@ -79,7 +80,7 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
   void runOnOperation() override {
     ModuleOp module = getOperation();
     bool changed = false;
-    mlir::arts::AnalysisManager &epochAM = getEpochAnalysisManager(module);
+    mlir::carts::arts::AnalysisManager &epochAM = getEpochAnalysisManager(module);
     EpochAnalysis &epochAnalysis = epochAM.getEpochAnalysis();
 
     ARTS_INFO_HEADER(EpochOptPass);
@@ -159,29 +160,29 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
   }
 
 private:
-  mlir::arts::AnalysisManager *AM = nullptr;
+  mlir::carts::arts::AnalysisManager *AM = nullptr;
   Statistic numRepeatedEpochLoopsAmortized;
   Statistic numContinuationEdtsCreated;
   Statistic numEpochsNarrowed;
   Statistic numEpochsCreatedByNarrowing;
   Statistic numEpochPairsFused;
-  std::unique_ptr<mlir::arts::AnalysisManager> ownedAM;
+  std::unique_ptr<mlir::carts::arts::AnalysisManager> ownedAM;
 };
 
 } // namespace
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 std::unique_ptr<Pass> createEpochOptPass() {
   return std::make_unique<EpochOptPass>();
 }
 
-std::unique_ptr<Pass> createEpochOptPass(mlir::arts::AnalysisManager *AM) {
+std::unique_ptr<Pass> createEpochOptPass(mlir::carts::arts::AnalysisManager *AM) {
   return std::make_unique<EpochOptPass>(AM);
 }
 
-std::unique_ptr<Pass> createEpochOptPass(mlir::arts::AnalysisManager *AM,
+std::unique_ptr<Pass> createEpochOptPass(mlir::carts::arts::AnalysisManager *AM,
                                          bool amortization,
                                          bool continuation) {
   return std::make_unique<EpochOptPass>(AM, /*narrowing=*/true, /*fusion=*/true,
@@ -189,11 +190,11 @@ std::unique_ptr<Pass> createEpochOptPass(mlir::arts::AnalysisManager *AM,
 }
 
 std::unique_ptr<Pass>
-createEpochOptSchedulingPass(mlir::arts::AnalysisManager *AM, bool amortization,
+createEpochOptSchedulingPass(mlir::carts::arts::AnalysisManager *AM, bool amortization,
                              bool continuation) {
   return std::make_unique<EpochOptPass>(
       AM, /*narrowing=*/false, /*fusion=*/false, amortization, continuation);
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

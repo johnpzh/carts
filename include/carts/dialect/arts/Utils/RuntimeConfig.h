@@ -15,7 +15,7 @@
 #include <vector>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Execution mode classification for chunking decisions.
 enum class ExecutionMode { SingleThreaded, IntraNode, InterNode };
@@ -177,5 +177,5 @@ private:
   bool isValidFlag = false;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

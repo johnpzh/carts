@@ -20,7 +20,7 @@
 #include <limits>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 Value getLoopInductionVar(Operation *op) {
   if (!op)
@@ -263,5 +263,5 @@ bool operationTouchesFloatingPoint(Operation *op) {
   return false;
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

@@ -35,7 +35,8 @@
 ARTS_DEBUG_SETUP(edt_icm);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 struct EdtICMPass : public impl::EdtICMBase<EdtICMPass> {
@@ -72,10 +73,10 @@ void EdtICMPass::runOnOperation() {
 /// Pass creation
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 std::unique_ptr<Pass> createEdtICMPass() {
   return std::make_unique<EdtICMPass>();
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

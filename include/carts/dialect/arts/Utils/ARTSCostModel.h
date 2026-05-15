@@ -16,7 +16,7 @@
 #include "carts/dialect/sde/Utils/SDECostModel.h"
 #include "carts/dialect/arts/Utils/RuntimeConfig.h"
 
-namespace mlir::arts {
+namespace mlir::carts::arts {
 
 class ARTSCostModel : public carts::sde::SDECostModel {
   const RuntimeConfig &machine;
@@ -75,6 +75,6 @@ public:
   int getLogicalNodeCapacity() const override { return machine.getNodeCount(); }
 };
 
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #endif // ARTS_UTILS_COSTS_ARTSCOSTMODEL_H

@@ -16,7 +16,7 @@
 #include "llvm/ADT/SetVector.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Collect external values needed by operations in a block, including nested
 /// regions, while respecting the task boundary being cloned into.
@@ -28,7 +28,7 @@ void collectExternalValues(Block &sourceBlock, Region *boundaryRegion,
 void cloneExternalAllocasIntoEdt(Region *taskEdtRegion, Block &taskBlock,
                                  IRMapping &mapper, OpBuilder &builder);
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_TRANSFORMS_EDT_EDTTASKBODYCLONING_H

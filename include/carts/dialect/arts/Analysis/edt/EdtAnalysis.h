@@ -27,7 +27,7 @@
 #include <shared_mutex>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class LoopAnalysis;
 
@@ -121,7 +121,7 @@ private:
   void analyzeFunc(func::FuncOp func);
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_EDT_EDTANALYSIS_H

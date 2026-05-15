@@ -11,7 +11,8 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 #include "carts/utils/Debug.h"
 ARTS_DEBUG_SETUP(edt_node);

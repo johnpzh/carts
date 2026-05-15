@@ -18,7 +18,7 @@
 #include <string>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Forward declarations
 class DbAnalysis;
@@ -99,7 +99,7 @@ private:
   std::atomic<uint64_t> version{0};
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_DB_DBGRAPH_H

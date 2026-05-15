@@ -15,7 +15,8 @@
 #include <algorithm>
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 ARTS_DEBUG_SETUP(id_registry)
 

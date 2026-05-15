@@ -26,10 +26,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_EDTLOWERING
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Analysis/db/OwnershipProof.h"
@@ -87,12 +87,13 @@ static llvm::Statistic numEdtsDemotedToTask{
 
 using namespace mlir;
 using namespace mlir::func;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 using AttrNames::Operation::ContinuationForEpoch;
 using AttrNames::Operation::ControlDep;
-using namespace mlir::arts::rt;
+using namespace mlir::carts::arts_rt;
 
-using namespace mlir::arts::edt_lowering;
+using namespace mlir::carts::arts::edt_lowering;
 
 namespace {
 
@@ -208,7 +209,7 @@ static bool hasTrustedPartitionedWriteContract(DbAcquireOp acquire) {
 }
 
 static bool canUseUnorderedLocalWrite(DbAcquireOp acquire, EdtOp edtOp,
-                                      mlir::arts::AnalysisManager *AM) {
+                                      mlir::carts::arts::AnalysisManager *AM) {
   if (!acquire || !edtOp || acquire.getMode() != ArtsMode::out)
     return false;
   if (edtOp.getConcurrency() != EdtConcurrency::intranode)
@@ -223,7 +224,7 @@ static bool canUseUnorderedLocalWrite(DbAcquireOp acquire, EdtOp edtOp,
 /// EDT Lowering Pass Implementation
 ///===----------------------------------------------------------------------===///
 struct EdtLoweringPass : public arts::impl::EdtLoweringBase<EdtLoweringPass> {
-  explicit EdtLoweringPass(mlir::arts::AnalysisManager *AM = nullptr,
+  explicit EdtLoweringPass(mlir::carts::arts::AnalysisManager *AM = nullptr,
                            uint64_t idStride = IdRegistry::DefaultStride)
       : idStride(idStride), AM(AM) {}
   EdtLoweringPass(const EdtLoweringPass &other)
@@ -266,14 +267,14 @@ private:
   LogicalResult insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
                                     const SmallVector<Value> &deps);
 
-  mlir::arts::AnalysisManager &getAnalysisManager();
+  mlir::carts::arts::AnalysisManager &getAnalysisManager();
 
   /// Attributes
   uint64_t idStride = IdRegistry::DefaultStride;
   unsigned functionCounter = 0;
   ModuleOp module;
-  mlir::arts::AnalysisManager *AM = nullptr;
-  std::unique_ptr<mlir::arts::AnalysisManager> ownedAM;
+  mlir::carts::arts::AnalysisManager *AM = nullptr;
+  std::unique_ptr<mlir::carts::arts::AnalysisManager> ownedAM;
   ArtsCodegen *AC = nullptr;
   IdRegistry idRegistry;
 };
@@ -284,9 +285,9 @@ private:
 /// Pass Implementation
 ///===----------------------------------------------------------------------===///
 
-mlir::arts::AnalysisManager &EdtLoweringPass::getAnalysisManager() {
+mlir::carts::arts::AnalysisManager &EdtLoweringPass::getAnalysisManager() {
   if (!AM) {
-    ownedAM = std::make_unique<mlir::arts::AnalysisManager>(module);
+    ownedAM = std::make_unique<mlir::carts::arts::AnalysisManager>(module);
     AM = ownedAM.get();
   }
   return *AM;
@@ -296,7 +297,7 @@ void EdtLoweringPass::runOnOperation() {
   module = getOperation();
   auto ownedAC = std::make_unique<ArtsCodegen>(module, false);
   AC = ownedAC.get();
-  mlir::arts::AnalysisManager &analysisManager = getAnalysisManager();
+  mlir::carts::arts::AnalysisManager &analysisManager = getAnalysisManager();
 
   ARTS_INFO_HEADER(EdtLoweringPass);
   ARTS_DEBUG_REGION(module.dump(););
@@ -2044,7 +2045,7 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
 ///===----------------------------------------------------------------------===///
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 std::unique_ptr<Pass> createEdtLoweringPass(uint64_t idStride) {
   return std::make_unique<EdtLoweringPass>(nullptr, idStride);
@@ -2055,5 +2056,5 @@ std::unique_ptr<Pass> createEdtLoweringPass(AnalysisManager *AM,
   return std::make_unique<EdtLoweringPass>(AM, idStride);
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

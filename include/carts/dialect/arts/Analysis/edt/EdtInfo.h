@@ -13,7 +13,7 @@
 #include <cstdint>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Base info aggregated for an EDT region.
 struct EdtInfo {
@@ -29,7 +29,7 @@ struct EdtInfo {
   EdtDistributionPattern dominantDistributionPattern =
       EdtDistributionPattern::unknown;
 };
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_EDT_EDTINFO_H

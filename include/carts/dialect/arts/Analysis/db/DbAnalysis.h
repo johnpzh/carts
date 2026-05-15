@@ -31,7 +31,7 @@
 #include <shared_mutex>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 class DbGraph;
 class DbAllocNode;
@@ -255,7 +255,7 @@ private:
   std::unique_ptr<DbAliasAnalysis> dbAliasAnalysis;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_ANALYSIS_DB_DBANALYSIS_H

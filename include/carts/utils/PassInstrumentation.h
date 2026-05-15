@@ -13,7 +13,7 @@
 #include <memory>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Shared timing data accumulated across multiple PassManager instances.
 struct PassTimingData {
@@ -53,7 +53,7 @@ private:
   PassTimingData *data;
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_UTILS_PASSINSTRUMENTATION_H

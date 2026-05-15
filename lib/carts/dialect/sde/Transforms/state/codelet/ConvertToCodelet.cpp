@@ -20,10 +20,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_CONVERTTOCODELET
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/dialect/sde/Transforms/CodeletUtils.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -37,7 +37,7 @@ namespace mlir::arts {
 #include "llvm/ADT/SmallVector.h"
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {

@@ -7,7 +7,8 @@
 #include "carts/dialect/arts/Analysis/graphs/base/NodeBase.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
 
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 std::string inferLabel(const DbEdge &edge) {

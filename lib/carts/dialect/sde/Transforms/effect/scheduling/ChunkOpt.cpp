@@ -7,10 +7,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_CHUNKOPT
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -25,7 +25,7 @@ namespace mlir::arts {
 #include <algorithm>
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -75,7 +75,7 @@ static Value buildTripCountValue(OpBuilder &builder, Location loc,
 
   int64_t constantStep = 0;
   Value safeStep = step;
-  if (arts::ValueAnalysis::getConstantIndex(step, constantStep)) {
+  if (::mlir::carts::arts::ValueAnalysis::getConstantIndex(step, constantStep)) {
     if (constantStep <= 0)
       return Value();
   }
@@ -87,7 +87,7 @@ static Value buildTripCountValue(OpBuilder &builder, Location loc,
   Value nonNegativeSpan =
       arith::SelectOp::create(builder, loc, spanIsNegative, zero, span);
 
-  if (!arts::ValueAnalysis::getConstantIndex(step, constantStep)) {
+  if (!::mlir::carts::arts::ValueAnalysis::getConstantIndex(step, constantStep)) {
     Value stepIsTooSmall = arith::CmpIOp::create(
         builder, loc, arith::CmpIPredicate::sle, step, zero);
     safeStep = arith::SelectOp::create(builder, loc, stepIsTooSmall, one, step);

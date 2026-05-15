@@ -35,7 +35,8 @@
 ARTS_DEBUG_SETUP(contract_validation);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 
@@ -251,6 +252,6 @@ struct ContractValidationPass
 } // namespace
 
 std::unique_ptr<Pass>
-mlir::arts::createContractValidationPass(bool failOnError) {
+mlir::carts::arts::createContractValidationPass(bool failOnError) {
   return std::make_unique<ContractValidationPass>(failOnError);
 }

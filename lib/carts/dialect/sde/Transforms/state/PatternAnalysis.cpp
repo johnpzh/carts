@@ -11,16 +11,16 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/IRMapping.h"
 
-namespace mlir::arts {
+namespace mlir::carts::arts {
 #define GEN_PASS_DEF_PATTERNANALYSIS
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::arts
+} // namespace mlir::carts::arts
 
 #include "carts/utils/Debug.h"
 ARTS_DEBUG_SETUP(semantic_contracts);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -41,7 +41,7 @@ static Value accessRoot(Value value) {
   if (!value)
     return {};
   if (isa<BaseMemRefType>(value.getType()))
-    return arts::ValueAnalysis::stripMemrefViewOps(value);
+    return ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(value);
   return value;
 }
 
@@ -218,9 +218,9 @@ static bool isSafeRank2OutOfPlaceStencilPromotion(
   if (!innerFor.getInitArgs().empty() || innerFor.getNumResults() != 0)
     return false;
   Value outerIv = op.getBody().front().getArgument(0);
-  if (arts::ValueAnalysis::dependsOn(innerFor.getLowerBound(), outerIv) ||
-      arts::ValueAnalysis::dependsOn(innerFor.getUpperBound(), outerIv) ||
-      arts::ValueAnalysis::dependsOn(innerFor.getStep(), outerIv))
+  if (::mlir::carts::arts::ValueAnalysis::dependsOn(innerFor.getLowerBound(), outerIv) ||
+      ::mlir::carts::arts::ValueAnalysis::dependsOn(innerFor.getUpperBound(), outerIv) ||
+      ::mlir::carts::arts::ValueAnalysis::dependsOn(innerFor.getStep(), outerIv))
     return false;
 
   bool nestedLoop = false;

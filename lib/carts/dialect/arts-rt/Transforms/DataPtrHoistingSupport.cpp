@@ -10,10 +10,11 @@
 ARTS_DEBUG_SETUP(data_ptr_hoisting);
 
 using namespace mlir;
-using namespace mlir::arts;
-using namespace mlir::arts::rt;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
+using namespace mlir::carts::arts_rt;
 
-namespace mlir::arts::data_ptr_hoisting {
+namespace mlir::carts::arts::data_ptr_hoisting {
 
 /// Check if an LLVM load is loading a data pointer from deps struct.
 /// Pattern: llvm.load from a GEP that accesses the ptr field (offset 2) of
@@ -1409,4 +1410,4 @@ bool hoistLoadOutOfLoop(LLVM::LoadOp loadOp, scf::ForOp targetLoop) {
   return true;
 }
 
-} // namespace mlir::arts::data_ptr_hoisting
+} // namespace mlir::carts::arts::data_ptr_hoisting

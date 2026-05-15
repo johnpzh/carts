@@ -19,7 +19,7 @@
 #include "llvm/ADT/SmallVector.h"
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Get string name for mode for diagnostics/debugging.
 inline StringRef getPartitionModeName(PartitionMode mode) {
@@ -78,7 +78,7 @@ struct DbPhysicalLayoutPlan {
   explicit DbPhysicalLayoutPlan(PartitionMode m) : mode(m) {}
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLAN_H

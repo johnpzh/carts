@@ -10,7 +10,7 @@ include "mlir/IR/OpBase.td"
 
 def ArtsRtDialect : Dialect {
   let name = "arts_rt";
-  let cppNamespace = "::mlir::arts::rt";
+  let cppNamespace = "::mlir::carts::arts_rt";
 
   let summary = "Flat ARTS runtime operations";
   let description = [{

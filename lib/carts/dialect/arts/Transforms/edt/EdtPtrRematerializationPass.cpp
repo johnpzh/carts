@@ -31,7 +31,8 @@
 ARTS_DEBUG_SETUP(edt_ptr_rematerialization);
 
 using namespace mlir;
-using namespace mlir::arts;
+using namespace mlir::carts;
+using namespace mlir::carts::arts;
 
 namespace {
 struct EdtPtrRematerializationPass
@@ -64,10 +65,10 @@ void EdtPtrRematerializationPass::runOnOperation() {
 /// Pass creation
 ////===----------------------------------------------------------------------===////
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 std::unique_ptr<Pass> createEdtPtrRematerializationPass() {
   return std::make_unique<EdtPtrRematerializationPass>();
 }
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir

@@ -8,7 +8,8 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace mlir::arts::rt;
+using namespace mlir::carts;
+using namespace mlir::carts::arts_rt;
 
 void ArtsRtDialect::initialize() {
   addOperations<

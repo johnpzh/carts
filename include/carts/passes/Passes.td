@@ -13,9 +13,9 @@ def ArtsInliner : Pass<"arts-inliner", "mlir::ModuleOp"> {
   let summary = "Inline functions in the program";
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::polygeist::PolygeistDialect"
+    "::mlir::carts::arts::ArtsDialect", "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::arts::createArtsInlinerPass()";
+  let constructor = "mlir::carts::arts::createArtsInlinerPass()";
 }
 
 def MemrefNormalization : Pass<"memref-normalization", "mlir::ModuleOp"> {
@@ -28,10 +28,10 @@ def MemrefNormalization : Pass<"memref-normalization", "mlir::ModuleOp"> {
   }];
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect",
+    "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect",
     "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::arts::createMemrefNormalizationPass()";
+  let constructor = "mlir::carts::arts::createMemrefNormalizationPass()";
 }
 
 def HandleDeps : Pass<"handle-deps", "mlir::ModuleOp"> {
@@ -45,10 +45,10 @@ def HandleDeps : Pass<"handle-deps", "mlir::ModuleOp"> {
   }];
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect",
+    "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect",
     "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::arts::createHandleDepsPass()";
+  let constructor = "mlir::carts::arts::createHandleDepsPass()";
 }
 
 def DeadCodeElimination : Pass<"arts-dce", "mlir::ModuleOp"> {
@@ -64,7 +64,7 @@ def DeadCodeElimination : Pass<"arts-dce", "mlir::ModuleOp"> {
     dependency proxy allocas become unused.
   }];
   let dependentDialects = ["::mlir::memref::MemRefDialect"];
-  let constructor = "mlir::arts::createDCEPass()";
+  let constructor = "mlir::carts::arts::createDCEPass()";
 }
 
 def DbModeTightening : Pass<"db-mode-tightening", "mlir::ModuleOp"> {
@@ -74,12 +74,12 @@ def DbModeTightening : Pass<"db-mode-tightening", "mlir::ModuleOp"> {
             of DB allocations and acquires based on the actual load /
         store operations performed on them, and infers storage types.}];
   let dependentDialects =
-      ["::mlir::memref::MemRefDialect", "::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect"];
+      ["::mlir::memref::MemRefDialect", "::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect"];
   let options = [
     Option<"forceInout", "force-inout", "bool", "false",
            "Force all stores to use inout mode (disables mode tightening to out)">
   ];
-  let constructor = "mlir::arts::createDbModeTighteningPass(nullptr)";
+  let constructor = "mlir::carts::arts::createDbModeTighteningPass(nullptr)";
 }
 
 def DbScratchElimination : Pass<"db-scratch-elimination", "mlir::ModuleOp"> {
@@ -88,8 +88,8 @@ def DbScratchElimination : Pass<"db-scratch-elimination", "mlir::ModuleOp"> {
     Replaces task-private single-element scratch DBs with local allocas.
   }];
   let dependentDialects =
-      ["::mlir::memref::MemRefDialect", "::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createDbScratchEliminationPass()";
+      ["::mlir::memref::MemRefDialect", "::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect"];
+  let constructor = "mlir::carts::arts::createDbScratchEliminationPass()";
 }
 
 def DbDistributedOwnership
@@ -100,8 +100,8 @@ def DbDistributedOwnership
     nodes and annotates them with the `distributed` attribute for lowering.
   }];
   let dependentDialects =
-      ["::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect", "::mlir::memref::MemRefDialect"];
-  let constructor = "mlir::arts::createDbDistributedOwnershipPass(nullptr)";
+      ["::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect", "::mlir::memref::MemRefDialect"];
+  let constructor = "mlir::carts::arts::createDbDistributedOwnershipPass(nullptr)";
 }
 
 def DbTransforms : Pass<"db-transforms", "mlir::ModuleOp"> {
@@ -121,17 +121,17 @@ def DbTransforms : Pass<"db-transforms", "mlir::ModuleOp"> {
     - DT-5: Acquire coalescing
   }];
   let dependentDialects =
-      ["::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createDbTransformsPass(nullptr)";
+      ["::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect"];
+  let constructor = "mlir::carts::arts::createDbTransformsPass(nullptr)";
 }
 
 def CreateDbs : Pass<"create-dbs", "mlir::ModuleOp"> {
   let summary = "Identify Dbs in the program";
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
+    "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::arts::createCreateDbsPass(nullptr)";
+  let constructor = "mlir::carts::arts::createCreateDbsPass(nullptr)";
 }
 
 def DbLowering : Pass<"db-lowering", "mlir::ModuleOp"> {
@@ -142,18 +142,18 @@ def DbLowering : Pass<"db-lowering", "mlir::ModuleOp"> {
                 .It assumes the DBs are already in canonical form.}];
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
+    "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::arts::createDbLoweringPass()";
+  let constructor = "mlir::carts::arts::createDbLoweringPass()";
 }
 
 def EdtStructuralOpt : Pass<"edt-structural-opt", "mlir::ModuleOp"> {
   let summary = "Optimize EDTs";
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
+    "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::arts::createEdtStructuralOptPass(nullptr, true)";
+  let constructor = "mlir::carts::arts::createEdtStructuralOptPass(nullptr, true)";
   let options = [Option<"runAnalysis", "run-analysis", "bool",
                         /*default=*/"true", "Enable EDT analysis.">];
 }
@@ -161,8 +161,8 @@ def EdtStructuralOpt : Pass<"edt-structural-opt", "mlir::ModuleOp"> {
 def EdtAllocaSinking : Pass<"edt-alloca-sinking", "mlir::ModuleOp"> {
   let summary = "Clone external stack allocas into EDT regions";
   let dependentDialects =
-      ["::mlir::memref::MemRefDialect", "::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createEdtAllocaSinkingPass()";
+      ["::mlir::memref::MemRefDialect", "::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect"];
+  let constructor = "mlir::carts::arts::createEdtAllocaSinkingPass()";
 }
 
 def EdtTransforms : Pass<"edt-transforms", "mlir::ModuleOp"> {
@@ -176,26 +176,26 @@ def EdtTransforms : Pass<"edt-transforms", "mlir::ModuleOp"> {
     - EXT-EDT-2: Dead dependency elimination
   }];
   let dependentDialects =
-      ["::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createEdtTransformsPass(nullptr)";
+      ["::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect"];
+  let constructor = "mlir::carts::arts::createEdtTransformsPass(nullptr)";
 }
 
 def CreateEpochs : Pass<"create-epochs", "mlir::ModuleOp"> {
   let summary = "Analyzes the program and creates ARTS epochs";
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
+    "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::arts::createCreateEpochsPass()";
+  let constructor = "mlir::carts::arts::createCreateEpochsPass()";
 }
 
 def ConvertArtsToLLVM : Pass<"convert-arts-to-llvm", "mlir::ModuleOp"> {
   let summary = "Convert ARTS Dialect to LLVM Dialect";
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
+    "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::arts::createConvertArtsToLLVMPass()";
+  let constructor = "mlir::carts::arts::createConvertArtsToLLVMPass()";
   let options = [
     Option<"debug", "debug", "bool", /*default=*/"false", "Enable debug mode.">,
   ];
@@ -203,8 +203,8 @@ def ConvertArtsToLLVM : Pass<"convert-arts-to-llvm", "mlir::ModuleOp"> {
 
 def EdtICM : Pass<"arts-edt-icm", "mlir::ModuleOp"> {
   let summary = "Hoist invariant operations from arts edt regions";
-  let dependentDialects = ["::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createEdtICMPass()";
+  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
+  let constructor = "mlir::carts::arts::createEdtICMPass()";
 }
 
 def EdtPtrRematerialization
@@ -213,7 +213,7 @@ def EdtPtrRematerialization
   let description =
       [{This pass rematerializes pointer dependencies in event -
         driven tasks(EDTs) to optimize memory usage and data movement.}];
-  let constructor = "mlir::arts::createEdtPtrRematerializationPass()";
+  let constructor = "mlir::carts::arts::createEdtPtrRematerializationPass()";
 }
 
 def LoweringContractCleanup : Pass<"lowering-contract-cleanup", "mlir::ModuleOp"> {
@@ -224,8 +224,8 @@ def LoweringContractCleanup : Pass<"lowering-contract-cleanup", "mlir::ModuleOp"
     post-db-refinement and late-concurrency-cleanup while ensuring
     pre-lowering/LLVM translation does not see dialect-only metadata ops.
   }];
-  let dependentDialects = ["::mlir::arts::ArtsDialect", "::mlir::func::FuncDialect"];
-  let constructor = "mlir::arts::createLoweringContractCleanupPass()";
+  let dependentDialects = ["::mlir::carts::arts::ArtsDialect", "::mlir::func::FuncDialect"];
+  let constructor = "mlir::carts::arts::createLoweringContractCleanupPass()";
 }
 
 def EpochOpt : Pass<"arts-epoch-opt", "mlir::ModuleOp"> {
@@ -260,9 +260,9 @@ def EpochOpt : Pass<"arts-epoch-opt", "mlir::ModuleOp"> {
            "Enable finish-EDT continuation scheduling">
   ];
   let dependentDialects =
-      ["::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect", "::mlir::scf::SCFDialect",
+      ["::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect", "::mlir::scf::SCFDialect",
        "::mlir::arith::ArithDialect"];
-  let constructor = "mlir::arts::createEpochOptPass()";
+  let constructor = "mlir::carts::arts::createEpochOptPass()";
 }
 
 def Hoisting : Pass<"arts-hoisting", "mlir::ModuleOp"> {
@@ -280,10 +280,10 @@ def Hoisting : Pass<"arts-hoisting", "mlir::ModuleOp"> {
     Option<"enableRefHoisting", "ref", "bool", "true", "Hoist db_ref in EDTs">
   ];
   let dependentDialects = [
-    "::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect", "::mlir::scf::SCFDialect",
+    "::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect", "::mlir::scf::SCFDialect",
     "::mlir::memref::MemRefDialect"
   ];
-  let constructor = "mlir::arts::createHoistingPass()";
+  let constructor = "mlir::carts::arts::createHoistingPass()";
 }
 
 def BlockLoopStripMining : Pass<"block-stripmine", "mlir::func::FuncOp"> {
@@ -296,9 +296,9 @@ def BlockLoopStripMining : Pass<"block-stripmine", "mlir::func::FuncOp"> {
                       indexing state.}];
   let dependentDialects = [
     "::mlir::func::FuncDialect", "::mlir::scf::SCFDialect", "::mlir::arith::ArithDialect",
-    "::mlir::arts::ArtsDialect"
+    "::mlir::carts::arts::ArtsDialect"
   ];
-  let constructor = "mlir::arts::createBlockLoopStripMiningPass()";
+  let constructor = "mlir::carts::arts::createBlockLoopStripMiningPass()";
 }
 
 def ContractValidation : Pass<"contract-validation", "mlir::ModuleOp"> {
@@ -318,14 +318,14 @@ def ContractValidation : Pass<"contract-validation", "mlir::ModuleOp"> {
     Collects per-pattern statistics and optionally fails on errors.
   }];
   let dependentDialects =
-      ["::mlir::memref::MemRefDialect", "::mlir::func::FuncDialect", "::mlir::arts::ArtsDialect"];
+      ["::mlir::memref::MemRefDialect", "::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect"];
   let options = [
     Option<"failOnError", "fail-on-error", "bool", "false",
            "Fail compilation if any contract validation errors are found">,
     Option<"warnOnProofGaps", "warn-on-proof-gaps", "bool", "false",
            "Emit advisory warnings for ownership proof gaps">
   ];
-  let constructor = "mlir::arts::createContractValidationPass()";
+  let constructor = "mlir::carts::arts::createContractValidationPass()";
 }
 
 ///===----------------------------------------------------------------------===///
@@ -334,14 +334,14 @@ def ContractValidation : Pass<"contract-validation", "mlir::ModuleOp"> {
 
 def VerifyEdtCreated : Pass<"verify-edt-created", "mlir::ModuleOp"> {
   let summary = "Verify EDT operations exist after OpenMP conversion";
-  let dependentDialects = ["::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createVerifyEdtCreatedPass()";
+  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
+  let constructor = "mlir::carts::arts::createVerifyEdtCreatedPass()";
 }
 
 def VerifyEpochCreated : Pass<"verify-epoch-created", "mlir::ModuleOp"> {
   let summary = "Verify epoch operations exist after epoch creation";
-  let dependentDialects = ["::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createVerifyEpochCreatedPass()";
+  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
+  let constructor = "mlir::carts::arts::createVerifyEpochCreatedPass()";
 }
 
 def VerifyArtsObjectsOnly : Pass<"verify-arts-objects-only", "mlir::ModuleOp"> {
@@ -351,40 +351,40 @@ def VerifyArtsObjectsOnly : Pass<"verify-arts-objects-only", "mlir::ModuleOp"> {
     SDE or OpenMP operations may remain after CODIR-to-ARTS materialization.
   }];
   let dependentDialects = [
-    "::mlir::arts::ArtsDialect",
+    "::mlir::carts::arts::ArtsDialect",
     "::mlir::carts::sde::CartsSdeDialect"
   ];
-  let constructor = "mlir::arts::createVerifyArtsObjectsOnlyPass()";
+  let constructor = "mlir::carts::arts::createVerifyArtsObjectsOnlyPass()";
 }
 
 def VerifyPreLowered : Pass<"verify-pre-lowered", "mlir::ModuleOp"> {
   let summary = "Verify pre-lowering removed high-level scheduler ops";
-  let dependentDialects = ["::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createVerifyPreLoweredPass()";
+  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
+  let constructor = "mlir::carts::arts::createVerifyPreLoweredPass()";
 }
 
 def VerifyLowered : Pass<"verify-lowered", "mlir::ModuleOp"> {
   let summary = "Verify no high-level ARTS ops survive past arts-to-llvm";
-  let dependentDialects = ["::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createVerifyLoweredPass()";
+  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
+  let constructor = "mlir::carts::arts::createVerifyLoweredPass()";
 }
 
 def VerifyEdtLowered : Pass<"verify-edt-lowered", "mlir::ModuleOp"> {
   let summary = "Verify all EDTs have been lowered";
-  let dependentDialects = ["::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createVerifyEdtLoweredPass()";
+  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
+  let constructor = "mlir::carts::arts::createVerifyEdtLoweredPass()";
 }
 
 def VerifyDbLowered : Pass<"verify-db-lowered", "mlir::ModuleOp"> {
   let summary = "Verify all DB operations have been lowered";
-  let dependentDialects = ["::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createVerifyDbLoweredPass()";
+  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
+  let constructor = "mlir::carts::arts::createVerifyDbLoweredPass()";
 }
 
 def VerifyEpochLowered : Pass<"verify-epoch-lowered", "mlir::ModuleOp"> {
   let summary = "Verify all epoch operations have been lowered";
-  let dependentDialects = ["::mlir::arts::ArtsDialect"];
-  let constructor = "mlir::arts::createVerifyEpochLoweredPass()";
+  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
+  let constructor = "mlir::carts::arts::createVerifyEpochLoweredPass()";
 }
 
 #endif // CARTS_PASSES

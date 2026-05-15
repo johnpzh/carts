@@ -19,7 +19,7 @@
 #include <optional>
 
 namespace mlir {
-namespace arts {
+namespace carts::arts {
 
 /// Information extracted from a datablock operation for lowering.
 /// Consolidates sizes, offsets, indices, and single-element detection into
@@ -329,7 +329,7 @@ public:
   }
 };
 
-} // namespace arts
+} // namespace carts::arts
 } // namespace mlir
 
 #endif // CARTS_UTILS_DBUTILS_H
