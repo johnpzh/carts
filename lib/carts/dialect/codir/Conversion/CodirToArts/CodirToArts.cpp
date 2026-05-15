@@ -106,7 +106,7 @@ struct ConvertCodirToArtsPass
     Location loc = codelet.getLoc();
     OpBuilder builder(codelet);
 
-    auto depModes = codelet->getAttrOfType<ArrayAttr>("dep_modes");
+    ArrayAttr depModes = codelet.getDepModesAttr();
     if (codelet.getDeps().size() != (depModes ? depModes.size() : 0))
       return codelet.emitOpError()
              << "requires one dep_modes entry per dependency before "

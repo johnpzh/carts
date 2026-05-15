@@ -16,6 +16,7 @@
 #include "arts/utils/DbUtils.h"
 #include "arts/utils/OperationAttributes.h"
 #include "arts/utils/StencilAttributes.h"
+#include "arts/utils/Utils.h"
 #include "arts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -28,20 +29,9 @@
 #include "llvm/ADT/STLExtras.h"
 #include <functional>
 using namespace mlir;
+using namespace mlir::arts;
 using namespace mlir::carts;
-using mlir::carts::codir::collectExactRootAccessProofsInTask;
-using mlir::carts::codir::collectExactSubindexAccessProofsInTask;
-using mlir::carts::codir::collectExactSubviewAccessProofsInTask;
-using mlir::carts::codir::hasCodirTaskDepSliceBoundsSupport;
-using mlir::carts::codir::hasCompleteMuDepSlice;
-using mlir::carts::codir::hasExactRootAccessProofInTask;
-using mlir::carts::codir::hasExactSubviewAccessProofInTask;
-using mlir::carts::codir::hasOnlyDirectLoadStoreUsersInTask;
-using mlir::carts::codir::hasOnlyStaticMuDepSliceBounds;
-using mlir::carts::codir::hasPartitionedExactAccessProofInTask;
-using mlir::carts::codir::haveSameMuDepSlice;
-using mlir::carts::codir::isCodirDependencyType;
-using mlir::carts::codir::isCodirScalarParamType;
+using namespace mlir::carts::codir;
 
 namespace {
 
@@ -448,22 +438,6 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
   }
 }
 
-static inline Value createConstantIndex(OpBuilder &builder, Location loc,
-                                 int64_t value) {
-  return arith::ConstantIndexOp::create(builder, loc, value);
-}
-
-static inline Value createZeroIndex(OpBuilder &builder, Location loc) {
-  return createConstantIndex(builder, loc, 0);
-}
-
-static inline Value createOneIndex(OpBuilder &builder, Location loc) {
-  return createConstantIndex(builder, loc, 1);
-}
-
-static inline Value createCurrentNodeRoute(OpBuilder &builder, Location loc) {
-  return arith::ConstantIntOp::create(builder, loc, -1, 32);
-}
 
 static inline Value materializeIndexFoldResult(OpBuilder &builder, Location loc,
                                         OpFoldResult value) {

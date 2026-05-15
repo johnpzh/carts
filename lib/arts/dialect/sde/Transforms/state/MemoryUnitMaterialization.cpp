@@ -155,8 +155,6 @@ struct MemoryUnitMaterializationPass
     SetVector<Value> roots;
     module.walk([&](sde::SdeSuIterateOp op) {
       collectSchedulingUnitMemrefRoots(op, roots);
-    });
-    module.walk([&](sde::SdeSuIterateOp op) {
       demoteUnsupportedPhysicalStoragePlan(op);
     });
 

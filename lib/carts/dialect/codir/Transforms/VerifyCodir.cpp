@@ -25,7 +25,7 @@ struct VerifyCodirPass
   void runOnOperation() override {
     bool failed = false;
     getOperation().walk([&](codir::CodeletOp codelet) {
-      auto depModes = codelet->getAttrOfType<ArrayAttr>("dep_modes");
+      ArrayAttr depModes = codelet.getDepModesAttr();
       if (!codelet.getDeps().empty() && !depModes) {
         codelet.emitOpError()
             << "expects dep_modes attribute when dependency operands are "

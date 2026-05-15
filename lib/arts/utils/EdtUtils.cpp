@@ -281,10 +281,10 @@ SmallVector<Value> EdtUtils::collectPackedValues(EdtOp edt) {
   llvm::SetVector<Value> constants;
   llvm::SetVector<Value> dbHandles;
   SmallVector<Value> parameters;
-  for (Value param : edt.getParams())
+  for (Value param : edt.getParams()) {
     parameters.push_back(param);
-  for (Value param : parameters)
     uniqueParameters.insert(param);
+  }
   EdtUtils::analyzeCapturedValues(edt, capturedValues, uniqueParameters,
                                   constants, dbHandles);
 

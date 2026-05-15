@@ -967,10 +967,6 @@ static bool
 isStageEnabledWhenEmitLLVMRequested(const StageExecutionContext &ctx) {
   return ctx.emitLLVM;
 }
-static bool
-isCodirConversionStageEnabledByDefault(const StageExecutionContext &) {
-  return true;
-}
 
 // --- Pipeline dependency declarations ---
 static constexpr llvm::StringLiteral kDepRaiseMemref[] = {
@@ -993,7 +989,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        [](PassManager &pm, const StageExecutionContext &) {
          buildRaiseMemRefDimensionalityPipeline(pm);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/llvm::ArrayRef<llvm::StringLiteral>()},
       {StageId::InitialCleanup, "initial-cleanup", StageKind::Core, true, true,
        false, "Error simplifying the IR", kInitialCleanupPasses,
@@ -1001,7 +997,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
          OpPassManager &optPM = pm.nest<func::FuncOp>();
          buildInitialCleanupPipeline(optPM);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/kDepRaiseMemref},
       {StageId::SdePlanning, "sde-planning", StageKind::Core, true, true,
        false, "Error when converting OpenMP to SDE planning IR",
@@ -1009,7 +1005,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildSdePlanningPipeline(pm, ctx.analysisManager);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/kDepInitialCleanup},
       {StageId::SdeToCodir, "sde-to-codir", StageKind::Core, true, true,
        false, "Error when materializing SDE plans into CODIR codelets",
@@ -1017,7 +1013,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        [](PassManager &pm, const StageExecutionContext &) {
          buildSdeToCodirPipeline(pm);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/kDepSdePlanning},
       {StageId::CodirToArts, "codir-to-arts", StageKind::Core, true, true,
        false, "Error when materializing CODIR codelets into ARTS objects",
@@ -1025,14 +1021,14 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        [](PassManager &pm, const StageExecutionContext &) {
          buildCodirToArtsPipeline(pm);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/kDepSdeToCodir},
       {StageId::EdtTransforms, "edt-transforms", StageKind::Core, true, true,
        false, "Error when running EDT transformations", kEdtTransformsPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildEdtTransformsPipeline(pm, ctx.analysisManager);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/kDepCodirToArts},
       {StageId::CreateDbs, "create-dbs",
        StageKind::Core, true, true, false, "Error when creating DBs",
@@ -1040,7 +1036,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildCreateDbsPipeline(pm, ctx.analysisManager);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/kDepCodirToArts},
       {StageId::DbOpt, "db-opt",
        StageKind::Core, true, true, false, "Error when optimizing DBs",
@@ -1048,7 +1044,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildDbOptPipeline(pm, ctx.analysisManager);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/kDepCreateDbs},
       {StageId::PostDbRefinement, "post-db-refinement", StageKind::Core, true, true,
        false, "Error when refining post-partition DB contracts",
@@ -1056,7 +1052,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildPostDbRefinementPipeline(pm, ctx.analysisManager);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/kDepCreateDbs},
       {StageId::LateConcurrencyCleanup, "late-concurrency-cleanup", StageKind::Core, true, true,
        false, "Error when running late concurrency cleanup",
@@ -1064,7 +1060,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        [](PassManager &pm, const StageExecutionContext &) {
          buildLateConcurrencyCleanupPipeline(pm);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/kDepPostDbRefinement},
       {StageId::Epochs, "epochs",
        StageKind::Core, true, true, false,
@@ -1072,7 +1068,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildEpochsPipeline(pm, ctx.analysisManager, EpochFinishContinuation);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/kDepPostDbRefinement},
       {StageId::PreLowering, "pre-lowering", StageKind::Core, true, true, true,
        "Error when pre-lowering DBs, EDTs, and Epochs", kPreLoweringPasses,
@@ -1080,14 +1076,14 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
          buildPreLoweringPipeline(pm, ctx.analysisManager,
                                   EpochFinishContinuation);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/kDepPreLowering},
       {StageId::ArtsToLLVM, "arts-to-llvm", StageKind::Core, true, true,
        false, "Error when converting ARTS to LLVM", kArtsToLLVMPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildArtsToLLVMPipeline(pm, Debug, DistributedDb, ctx.machine);
        },
-       isCodirConversionStageEnabledByDefault,
+       isStageEnabledAlways,
        /*dependsOn=*/kDepArtsToLLVM},
       {StageId::PostO3Opt, kPostO3OptToken, StageKind::Epilogue, false, false,
        false, "Error when running classical optimizations", kPostO3OptPasses,

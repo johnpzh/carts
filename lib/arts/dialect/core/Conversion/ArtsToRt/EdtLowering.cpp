@@ -259,9 +259,7 @@ private:
                         ArrayRef<Value> allParams, EdtEnvManager &envManager,
                         ArrayRef<Value> depIdentifiers);
 
-  /// Clone EDT body operations with nested region remapping
   void cloneAndRemapEdtBody(Block &sourceBlock, OpBuilder &builder,
-                            IRMapping &valueMapping,
                             const DenseMap<Value, Value> &moveValueMapping);
 
   /// Dep satisfaction
@@ -924,9 +922,8 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
     if (failed(cloneCaptured(captured)))
       return failure();
 
-  /// Move EDT body operations into the outlined function.
   builder.setInsertionPointToEnd(entryBlock);
-  cloneAndRemapEdtBody(edtBlock, builder, valueMapping, moveValueMapping);
+  cloneAndRemapEdtBody(edtBlock, builder, moveValueMapping);
 
   AC->create<func::ReturnOp>(loc);
 
@@ -1281,11 +1278,9 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
 ///===----------------------------------------------------------------------===///
 void EdtLoweringPass::cloneAndRemapEdtBody(Block &sourceBlock,
                                            OpBuilder &builder,
-                                           IRMapping &valueMapping,
                                            const DenseMap<Value, Value>
                                                &moveValueMapping) {
   Block *destBlock = builder.getInsertionBlock();
-  (void)valueMapping;
   auto remapOperands = [&](Operation *op) {
     for (const auto &it : moveValueMapping) {
       Value oldValue = it.first;

@@ -161,10 +161,10 @@ public:
 
   void analyze() {
     llvm::SetVector<Value> uniqueParameters;
-    for (Value param : edtOp.getParams())
+    for (Value param : edtOp.getParams()) {
       parameters.push_back(param);
-    for (Value param : parameters)
       uniqueParameters.insert(param);
+    }
     EdtUtils::analyzeCapturedValues(edtOp, capturedValues, uniqueParameters,
                                     constants, dbHandles);
     for (Value operand : edtOp.getDependencies())

@@ -195,11 +195,10 @@ void mlir::arts::EdtOp::setDependencies(ValueRange newDeps) {
   operands.append(newDeps.begin(), newDeps.end());
   operands.append(params.begin(), params.end());
   op->setOperands(operands);
-  OpBuilder builder(getContext());
   op->setAttr(EdtOp::getOperandSegmentSizesAttrName(op->getName()),
-              builder.getDenseI32ArrayAttr(
-                  {1, static_cast<int32_t>(newDeps.size()),
-                   static_cast<int32_t>(params.size())}));
+              DenseI32ArrayAttr::get(
+                  getContext(), {1, static_cast<int32_t>(newDeps.size()),
+                                 static_cast<int32_t>(params.size())}));
 }
 
 void mlir::arts::EdtOp::appendDependency(Value dep) {
@@ -248,6 +247,11 @@ LogicalResult EdtOp::verify() {
   for (Value dep : deps)
     externalValues.insert(dep);
 
+  DenseSet<Value> blockArgSet;
+  blockArgSet.reserve(blockArgs.size());
+  for (BlockArgument arg : blockArgs)
+    blockArgSet.insert(arg);
+
   auto isDefinedInsideBody = [&](Operation *op) {
     if (!op)
       return false;
@@ -270,7 +274,7 @@ LogicalResult EdtOp::verify() {
 
     for (Value operand : op->getOperands()) {
       if (operand.getType().isIntOrIndexOrFloat()) {
-        if (llvm::is_contained(blockArgs, operand))
+        if (blockArgSet.contains(operand))
           continue;
 
         if (isValueDefinedInsideBody(operand))
@@ -286,7 +290,7 @@ LogicalResult EdtOp::verify() {
         return WalkResult::interrupt();
       }
 
-      if (!llvm::is_contained(blockArgs, operand) &&
+      if (!blockArgSet.contains(operand) &&
           !isValueDefinedInsideBody(operand)) {
         Operation *definingOp = operand.getDefiningOp();
         bool rematerializable =
@@ -309,7 +313,7 @@ LogicalResult EdtOp::verify() {
       if (!isa<MemRefType>(operand.getType()))
         continue;
 
-      if (llvm::is_contained(blockArgs, operand)) {
+      if (blockArgSet.contains(operand)) {
         DbAcquireOp underlyingAcquire;
         if (auto *rawDb = DbUtils::getUnderlyingDb(operand))
           underlyingAcquire = dyn_cast<DbAcquireOp>(rawDb);
