@@ -39,7 +39,7 @@ The names are part of the contract:
   syntax requires an underscore.
 
 Namespace cleanup should follow the same rule. The current implementation still
-uses names such as `mlir::arts::sde` and paths under `lib/arts/dialect/sde`.
+uses names such as `mlir::carts::sde` and paths under `lib/arts/dialect/sde`.
 That is an implementation artifact, not the target ownership model. New design
 work should keep SDE and CODIR as CARTS-owned dialects and reserve `arts` for
 the abstract ARTS machine.

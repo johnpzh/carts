@@ -22,6 +22,7 @@ namespace mlir::arts {
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -78,10 +79,10 @@ struct TensorCleanupPass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createTensorCleanupPass() {
   return std::make_unique<TensorCleanupPass>();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

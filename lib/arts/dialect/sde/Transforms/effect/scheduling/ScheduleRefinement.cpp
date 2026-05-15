@@ -27,6 +27,7 @@ namespace mlir::arts {
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -47,7 +48,7 @@ static bool hasPositiveConstantStep(sde::SdeSuIterateOp op) {
     return false;
 
   int64_t step = 0;
-  return ValueAnalysis::getConstantIndex(op.getSteps().front(), step) &&
+  return arts::ValueAnalysis::getConstantIndex(op.getSteps().front(), step) &&
          step > 0;
 }
 
@@ -142,11 +143,11 @@ private:
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass>
 createScheduleRefinementPass(sde::SDECostModel *costModel) {
   return std::make_unique<ScheduleRefinementPass>(costModel);
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

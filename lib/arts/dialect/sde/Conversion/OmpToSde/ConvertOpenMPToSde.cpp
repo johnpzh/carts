@@ -69,6 +69,7 @@ static llvm::Statistic numAtomicsConverted{
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 //===----------------------------------------------------------------------===//
 // Helpers
@@ -260,14 +261,14 @@ static SmallVector<Value> collectEnclosingScfLoopIvs(Operation *op) {
 
 static bool dependsOnAny(Value value, ArrayRef<Value> roots) {
   for (Value root : roots)
-    if (ValueAnalysis::dependsOn(value, root))
+    if (arts::ValueAnalysis::dependsOn(value, root))
       return true;
   return false;
 }
 
 static bool sameDependSource(Value lhs, Value rhs) {
-  return ValueAnalysis::sameValue(ValueAnalysis::stripMemrefViewOps(lhs),
-                                  ValueAnalysis::stripMemrefViewOps(rhs));
+  return arts::ValueAnalysis::sameValue(arts::ValueAnalysis::stripMemrefViewOps(lhs),
+                                  arts::ValueAnalysis::stripMemrefViewOps(rhs));
 }
 
 static bool isElementDependSlice(const OmpDependSlice &slice) {
@@ -276,7 +277,7 @@ static bool isElementDependSlice(const OmpDependSlice &slice) {
   if (slice.sizes.empty())
     return true;
   return slice.sizes.size() == 1 &&
-         ValueAnalysis::isOneConstant(slice.sizes.front());
+         arts::ValueAnalysis::isOneConstant(slice.sizes.front());
 }
 
 static bool isWavefrontTaskDependPattern(Operation *taskOp,
@@ -313,7 +314,7 @@ static bool isWavefrontTaskDependPattern(Operation *taskOp,
   for (const TaskDependSpec *read : reads) {
     if (!sameDependSource(read->slice.source, write->slice.source))
       return false;
-    if (ValueAnalysis::sameValue(read->slice.offsets.front(),
+    if (arts::ValueAnalysis::sameValue(read->slice.offsets.front(),
                                  write->slice.offsets.front()))
       return false;
   }
@@ -921,12 +922,12 @@ private:
 //===----------------------------------------------------------------------===//
 
 namespace mlir {
-namespace arts {
+namespace carts {
 namespace sde {
 std::unique_ptr<Pass>
-createConvertOpenMPToSdePass(sde::SDECostModel *costModel) {
+createConvertOpenMPToSdePass(SDECostModel *costModel) {
   return std::make_unique<ConvertOpenMPToSdePass>(costModel);
 }
 } // namespace sde
-} // namespace arts
+} // namespace carts
 } // namespace mlir

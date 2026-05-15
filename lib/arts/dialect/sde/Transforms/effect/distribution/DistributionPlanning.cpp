@@ -33,6 +33,7 @@ namespace mlir::arts {
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -234,12 +235,12 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
   if (auto plannedWorkers = getWorkers(op.getOperation());
       plannedWorkers && *plannedWorkers <= 1)
     return;
-  if (op.getInPlaceSafe())
-    return;
   auto classification = op.getStructuredClassification();
   bool isStencil =
       classification &&
       *classification == sde::SdeStructuredClassification::stencil;
+  if (op.getInPlaceSafe() && !isStencil)
+    return;
   if (classification && !isStencil)
     return;
 
@@ -250,9 +251,6 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
     return;
 
   if (isStencil) {
-    if (isInPlaceSelfReadStencil(op))
-      return;
-
     std::optional<sde::StructuredOutputLayoutPlan> outputPlan =
         sde::findCompatibleOutputLayoutPlan(op);
     if (outputPlan) {
@@ -272,6 +270,20 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
       if (!buildOwnerDimPlan(op, *outputPlan, ownerLoopDims, workers, ownerDims,
                              physicalBlockShape, haloShape))
         return;
+
+      if (isInPlaceSelfReadStencil(op)) {
+        auto effects = sde::collectStructuredMemoryEffects(op.getBody());
+        if (effects.hasUnknownEffects || effects.writes.empty())
+          return;
+        for (Value written : effects.writes) {
+          if (sde::isDefinedInside(op.getOperation(), written))
+            continue;
+          if (!effects.reads.contains(written))
+            continue;
+          if (!sde::allRootAccessesStayWithinOwnerSlice(op, written, ownerDims))
+            return;
+        }
+      }
 
       applyPhysicalPlan(op, ownerDims, physicalBlockShape, haloShape);
       return;
@@ -468,6 +480,11 @@ chooseDistributionKind(sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
     return std::nullopt;
   }
 
+  if (op.getNumResults() > 0 &&
+      classificationAttr.getValue() !=
+          sde::SdeStructuredClassification::reduction)
+    return std::nullopt;
+
   switch (classificationAttr.getValue()) {
   case sde::SdeStructuredClassification::elementwise:
   case sde::SdeStructuredClassification::elementwise_pipeline:
@@ -534,11 +551,11 @@ private:
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass>
 createDistributionPlanningPass(sde::SDECostModel *costModel) {
   return std::make_unique<DistributionPlanningPass>(costModel);
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

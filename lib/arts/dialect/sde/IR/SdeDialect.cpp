@@ -8,9 +8,9 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace mlir::arts::sde;
+using namespace mlir::carts::sde;
 
-void ArtsSdeDialect::initialize() {
+void CartsSdeDialect::initialize() {
   addOperations<
 #define GET_OP_LIST
 #include "arts/dialect/sde/IR/SdeOps.cpp.inc"

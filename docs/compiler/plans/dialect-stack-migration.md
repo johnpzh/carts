@@ -27,7 +27,17 @@ Important current names:
 - Source paths still use `lib/arts/dialect/core`, `lib/arts/dialect/sde`, and
   `lib/arts/dialect/rt`.
 - Target source paths are staged under `include/carts/dialect/...` and
-  `lib/carts/dialect/...`.
+  `lib/carts/dialect/...`. CODIR is the first build-visible target dialect
+  skeleton: `codir.codelet` and `codir.yield` parse and verify in the
+  `carts/dialect/codir` tree. The placeholder `convert-sde-to-codir`,
+  `verify-codir`, and `convert-codir-to-arts` passes are registered for focused
+  pass-pipeline tests. `verify-codir` owns the first CODIR-only operand-shape
+  checks: deps are memory dependencies with one access-mode entry per dep,
+  params are scalar values, block args mirror deps then params, and yielded
+  values are scalar. Lowering behavior still routes through the current direct
+  SDE-to-ARTS compatibility conversion, but `convert-sde-to-codir` has focused
+  `sde.cu_codelet` smoke conversions for whole-storage MU tokens and sliced
+  token-local views represented as CODIR dep memrefs.
 
 ## Target Contract
 

@@ -40,6 +40,7 @@ ARTS_DEBUG_SETUP(raise_to_linalg);
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 //===----------------------------------------------------------------------===//
@@ -88,7 +89,7 @@ static std::optional<unsigned> findOperandIndex(ArrayRef<OutputOperand> outputs,
 
 static bool isConstantIndex(Value value, int64_t expected) {
   int64_t actual = 0;
-  return ValueAnalysis::getConstantIndex(value, actual) && actual == expected;
+  return arts::ValueAnalysis::getConstantIndex(value, actual) && actual == expected;
 }
 
 static bool hasZeroLowerUnitStep(sde::SdeSuIterateOp iterOp,
@@ -717,10 +718,10 @@ struct RaiseToLinalgPass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createRaiseToLinalgPass() {
   return std::make_unique<RaiseToLinalgPass>();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

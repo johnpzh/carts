@@ -18,8 +18,8 @@ def ScheduleRefinement
     schedules, and chooses the lowest-overhead concrete policy among
     `static`, `dynamic`, and `guided`.
   }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
-  let constructor = "mlir::arts::sde::createScheduleRefinementPass()";
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect"];
+  let constructor = "mlir::carts::sde::createScheduleRefinementPass()";
 }
 
 def ChunkOpt : Pass<"chunk-opt", "mlir::ModuleOp"> {
@@ -32,9 +32,9 @@ def ChunkOpt : Pass<"chunk-opt", "mlir::ModuleOp"> {
     mechanism. The current implementation handles one-dimensional
     dynamic/guided loops and preserves explicit source chunk sizes.
   }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect",
                            "::mlir::arith::ArithDialect"];
-  let constructor = "mlir::arts::sde::createChunkOptPass()";
+  let constructor = "mlir::carts::sde::createChunkOptPass()";
 }
 
 def ReductionStrategy : Pass<"reduction-strategy", "mlir::ModuleOp"> {
@@ -46,8 +46,8 @@ def ReductionStrategy : Pass<"reduction-strategy", "mlir::ModuleOp"> {
     single-reduction loops with preserved reduction kinds, chooses between
     `atomic` and `tree`, and leaves lowering behavior unchanged.
   }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
-  let constructor = "mlir::arts::sde::createReductionStrategyPass()";
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect"];
+  let constructor = "mlir::carts::sde::createReductionStrategyPass()";
 }
 
 def DistributionPlanning
@@ -64,8 +64,8 @@ def DistributionPlanning
     The target boundary is responsible for materializing this advisory into
     downstream distribution metadata.
   }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
-  let constructor = "mlir::arts::sde::createDistributionPlanningPass()";
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect"];
+  let constructor = "mlir::carts::sde::createDistributionPlanningPass()";
 }
 
 def BarrierElimination
@@ -83,10 +83,10 @@ def BarrierElimination
     strategy remains reserved until SDE has made every scalar, data, and
     control carry explicit.
   }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect",
                            "::mlir::memref::MemRefDialect",
                            "::mlir::scf::SCFDialect"];
-  let constructor = "mlir::arts::sde::createBarrierEliminationPass()";
+  let constructor = "mlir::carts::sde::createBarrierEliminationPass()";
 }
 
 #endif // ARTS_DIALECT_SDE_TRANSFORMS_EFFECT_PASSES

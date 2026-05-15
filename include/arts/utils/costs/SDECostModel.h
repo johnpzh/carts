@@ -18,7 +18,7 @@
 #include <cstdint>
 #include <limits>
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 class SDECostModel {
 public:
@@ -85,6 +85,6 @@ public:
   }
 };
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde
 
 #endif // ARTS_UTILS_COSTS_SDECOSTMODEL_H

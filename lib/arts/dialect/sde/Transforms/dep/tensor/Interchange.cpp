@@ -35,6 +35,7 @@ ARTS_DEBUG_SETUP(loop_interchange);
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -732,7 +733,7 @@ static bool isDirectMemoryMatmulAccumulator(scf::ForOp jLoop, scf::ForOp kLoop,
 
     if (auto load = dyn_cast<memref::LoadOp>(op)) {
       if (load.getMemref() == output) {
-        if (!ValueAnalysis::areValueRangesIdentical(load.getIndices(),
+        if (!arts::ValueAnalysis::areValueRangesIdentical(load.getIndices(),
                                                     outputIndices))
           return false;
         ++outputLoads;
@@ -746,7 +747,7 @@ static bool isDirectMemoryMatmulAccumulator(scf::ForOp jLoop, scf::ForOp kLoop,
     if (auto store = dyn_cast<memref::StoreOp>(op)) {
       if (store.getMemref() != output)
         return false;
-      if (!ValueAnalysis::areValueRangesIdentical(store.getIndices(),
+      if (!arts::ValueAnalysis::areValueRangesIdentical(store.getIndices(),
                                                   outputIndices))
         return false;
       ++outputStores;
@@ -754,12 +755,12 @@ static bool isDirectMemoryMatmulAccumulator(scf::ForOp jLoop, scf::ForOp kLoop,
       if (auto add = store.getValueToStore().getDefiningOp<arith::AddFOp>()) {
         if (auto load = add.getLhs().getDefiningOp<memref::LoadOp>();
             load && load.getMemref() == output &&
-            ValueAnalysis::areValueRangesIdentical(load.getIndices(),
+            arts::ValueAnalysis::areValueRangesIdentical(load.getIndices(),
                                                    outputIndices))
           hasAccumulatingStore = true;
         if (auto load = add.getRhs().getDefiningOp<memref::LoadOp>();
             load && load.getMemref() == output &&
-            ValueAnalysis::areValueRangesIdentical(load.getIndices(),
+            arts::ValueAnalysis::areValueRangesIdentical(load.getIndices(),
                                                    outputIndices))
           hasAccumulatingStore = true;
       }
@@ -898,10 +899,10 @@ struct LoopInterchangePass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createLoopInterchangePass() {
   return std::make_unique<LoopInterchangePass>();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

@@ -24,6 +24,7 @@ ARTS_DEBUG_SETUP(vectorization);
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -201,10 +202,10 @@ private:
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createVectorizationPass(sde::SDECostModel *costModel) {
   return std::make_unique<VectorizationPass>(costModel);
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

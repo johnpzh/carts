@@ -48,6 +48,7 @@ ARTS_DEBUG_SETUP(lower_to_memref);
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -1191,10 +1192,10 @@ struct LowerToMemrefPass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createLowerToMemrefPass() {
   return std::make_unique<LowerToMemrefPass>();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

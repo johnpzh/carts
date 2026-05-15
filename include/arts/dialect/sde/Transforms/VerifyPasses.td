@@ -8,14 +8,14 @@ include "mlir/Pass/PassBase.td"
 
 def VerifySdeLowered : Pass<"verify-sde-lowered", "mlir::ModuleOp"> {
   let summary = "Verify no SDE operations survive past boundary conversion";
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
-  let constructor = "mlir::arts::sde::createVerifySdeLoweredPass()";
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect"];
+  let constructor = "mlir::carts::sde::createVerifySdeLoweredPass()";
 }
 
 def VerifySdeCpsPlan : Pass<"verify-sde-cps-plan", "mlir::ModuleOp"> {
   let summary = "Verify SDE CPS stage groups before Core conversion";
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
-  let constructor = "mlir::arts::sde::createVerifySdeCpsPlanPass()";
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect"];
+  let constructor = "mlir::carts::sde::createVerifySdeCpsPlanPass()";
 }
 
 #endif // ARTS_DIALECT_SDE_TRANSFORMS_VERIFY_PASSES

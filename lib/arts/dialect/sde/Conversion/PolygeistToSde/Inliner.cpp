@@ -36,6 +36,7 @@ ARTS_DEBUG_SETUP(inliner);
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 

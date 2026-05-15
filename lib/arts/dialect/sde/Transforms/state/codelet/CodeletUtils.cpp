@@ -7,7 +7,7 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 namespace {
 
 static bool isDirectCaptureType(Type type) {
@@ -227,4 +227,4 @@ LogicalResult planExternalCaptures(
   return success();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

@@ -1,22 +1,9 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: not %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts 2>&1 | %FileCheck %s
 
-// Verify the before/after for transient tensor-carrier cleanup:
-// ConvertSdeToArts should erase the carrier-authoritative tensor chain
-// without leaving tensor IR in the ARTS loop.
+// Tensor-carrier cleanup is retired with the tensor fallback. The legacy
+// carrier op must stay unavailable instead of reaching SDE/Core lowering.
 
-// CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
-// CHECK: func.func @main
-// CHECK: arts.epoch
-// CHECK: arts.edt <task>
-// CHECK: memref.load
-// CHECK: memref.store
-// CHECK-NOT: sde.mu_memref_to_tensor
-// CHECK-NOT: bufferization.to_tensor
-// CHECK-NOT: tensor.empty
-// CHECK-NOT: tensor.cast
-// CHECK-NOT: tensor.extract_slice
-// CHECK-NOT: tensor.insert_slice
-// CHECK-NOT: linalg.generic
+// CHECK: error: custom op 'sde.mu_memref_to_tensor' is unknown
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<16xf64>, %B: memref<16xf64>) {

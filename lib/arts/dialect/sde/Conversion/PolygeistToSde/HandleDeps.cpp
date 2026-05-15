@@ -28,6 +28,7 @@ ARTS_DEBUG_SETUP(handle_deps);
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 using namespace mlir::omp;
 
 namespace {

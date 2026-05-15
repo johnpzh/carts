@@ -11,7 +11,7 @@
 
 using namespace mlir;
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 namespace {
 
 static bool isLoopInductionLike(Value value) {
@@ -31,34 +31,34 @@ static bool isLoopInductionLike(Value value) {
 static std::optional<LinearizedAccess2D>
 matchLinearizedMul(Value mulCandidate, Value innerCandidate,
                    Value requiredStride) {
-  mulCandidate = ValueAnalysis::stripNumericCasts(mulCandidate);
-  innerCandidate = ValueAnalysis::stripNumericCasts(innerCandidate);
+  mulCandidate = arts::ValueAnalysis::stripNumericCasts(mulCandidate);
+  innerCandidate = arts::ValueAnalysis::stripNumericCasts(innerCandidate);
 
   auto mulOp = mulCandidate.getDefiningOp<arith::MulIOp>();
   if (!mulOp)
     return std::nullopt;
 
-  Value lhs = ValueAnalysis::stripNumericCasts(mulOp.getLhs());
-  Value rhs = ValueAnalysis::stripNumericCasts(mulOp.getRhs());
+  Value lhs = arts::ValueAnalysis::stripNumericCasts(mulOp.getLhs());
+  Value rhs = arts::ValueAnalysis::stripNumericCasts(mulOp.getRhs());
 
   auto build = [&](Value outer, Value stride)
       -> std::optional<LinearizedAccess2D> {
-    outer = ValueAnalysis::stripNumericCasts(outer);
-    stride = ValueAnalysis::stripNumericCasts(stride);
+    outer = arts::ValueAnalysis::stripNumericCasts(outer);
+    stride = arts::ValueAnalysis::stripNumericCasts(stride);
     if (!outer || !stride || !innerCandidate)
       return std::nullopt;
     if (!outer.getType().isIndex() || !stride.getType().isIndex() ||
         !innerCandidate.getType().isIndex())
       return std::nullopt;
-    if (requiredStride && !ValueAnalysis::sameValue(stride, requiredStride))
+    if (requiredStride && !arts::ValueAnalysis::sameValue(stride, requiredStride))
       return std::nullopt;
     return LinearizedAccess2D{outer, innerCandidate, stride};
   };
 
   if (requiredStride) {
-    if (ValueAnalysis::sameValue(lhs, requiredStride))
+    if (arts::ValueAnalysis::sameValue(lhs, requiredStride))
       return build(rhs, lhs);
-    if (ValueAnalysis::sameValue(rhs, requiredStride))
+    if (arts::ValueAnalysis::sameValue(rhs, requiredStride))
       return build(lhs, rhs);
     return std::nullopt;
   }
@@ -70,8 +70,8 @@ matchLinearizedMul(Value mulCandidate, Value innerCandidate,
   if (rhsIv && !lhsIv)
     return build(rhs, lhs);
 
-  std::optional<int64_t> lhsConst = ValueAnalysis::tryFoldConstantIndex(lhs);
-  std::optional<int64_t> rhsConst = ValueAnalysis::tryFoldConstantIndex(rhs);
+  std::optional<int64_t> lhsConst = arts::ValueAnalysis::tryFoldConstantIndex(lhs);
+  std::optional<int64_t> rhsConst = arts::ValueAnalysis::tryFoldConstantIndex(rhs);
   if (lhsConst && !rhsConst)
     return build(rhs, lhs);
   if (rhsConst && !lhsConst)
@@ -84,7 +84,7 @@ matchLinearizedMul(Value mulCandidate, Value innerCandidate,
 
 std::optional<LinearizedAccess2D>
 decomposeRowMajorLinearizedIndex(Value index, Value requiredStride) {
-  index = ValueAnalysis::stripNumericCasts(index);
+  index = arts::ValueAnalysis::stripNumericCasts(index);
   auto addOp = index.getDefiningOp<arith::AddIOp>();
   if (!addOp)
     return std::nullopt;
@@ -100,8 +100,8 @@ inferRowMajorFlatShape(Value totalElements, Value stride) {
   if (!totalElements || !stride)
     return std::nullopt;
 
-  totalElements = ValueAnalysis::stripNumericCasts(totalElements);
-  stride = ValueAnalysis::stripNumericCasts(stride);
+  totalElements = arts::ValueAnalysis::stripNumericCasts(totalElements);
+  stride = arts::ValueAnalysis::stripNumericCasts(stride);
   if (!totalElements.getType().isIndex() || !stride.getType().isIndex())
     return std::nullopt;
 
@@ -109,14 +109,14 @@ inferRowMajorFlatShape(Value totalElements, Value stride) {
   if (!mulOp)
     return std::nullopt;
 
-  Value lhs = ValueAnalysis::stripNumericCasts(mulOp.getLhs());
-  Value rhs = ValueAnalysis::stripNumericCasts(mulOp.getRhs());
-  if (ValueAnalysis::sameValue(lhs, stride))
+  Value lhs = arts::ValueAnalysis::stripNumericCasts(mulOp.getLhs());
+  Value rhs = arts::ValueAnalysis::stripNumericCasts(mulOp.getRhs());
+  if (arts::ValueAnalysis::sameValue(lhs, stride))
     return SmallVector<Value, 2>{rhs, stride};
-  if (ValueAnalysis::sameValue(rhs, stride))
+  if (arts::ValueAnalysis::sameValue(rhs, stride))
     return SmallVector<Value, 2>{lhs, stride};
 
   return std::nullopt;
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

@@ -12,7 +12,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include <optional>
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 struct LinearizedAccess2D {
   Value outer;
@@ -26,6 +26,6 @@ decomposeRowMajorLinearizedIndex(Value index, Value requiredStride = Value());
 std::optional<SmallVector<Value, 2>>
 inferRowMajorFlatShape(Value totalElements, Value stride);
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde
 
 #endif // ARTS_DIALECT_SDE_ANALYSIS_AFFINEACCESSUTILS_H

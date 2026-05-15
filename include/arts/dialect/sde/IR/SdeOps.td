@@ -17,28 +17,28 @@ include "arts/dialect/sde/IR/SdeDialect.td"
 include "arts/dialect/sde/IR/SdeTypes.td"
 
 def SdeDepType
-    : Type<CPred<"::llvm::isa<::mlir::arts::sde::DepType>($_self)">,
+    : Type<CPred<"::llvm::isa<::mlir::carts::sde::DepType>($_self)">,
            "SDE dependency token">;
 def SdeCompletionType
-    : Type<CPred<"::llvm::isa<::mlir::arts::sde::CompletionType>($_self)">,
+    : Type<CPred<"::llvm::isa<::mlir::carts::sde::CompletionType>($_self)">,
            "SDE completion token">;
 def SdeTokenType
-    : Type<CPred<"::llvm::isa<::mlir::arts::sde::TokenType>($_self)">,
+    : Type<CPred<"::llvm::isa<::mlir::carts::sde::TokenType>($_self)">,
            "SDE memref access token">;
 
 //===----------------------------------------------------------------------===//
 // Enum helpers
 //===----------------------------------------------------------------------===//
 
-class ArtsSde_I32Enum<string name, string description,
+class CartsSde_I32Enum<string name, string description,
                       list<I32EnumAttrCase> cases>
     : I32EnumAttr<name, description, cases> {
-  let cppNamespace = "::mlir::arts::sde";
+  let cppNamespace = "::mlir::carts::sde";
   let genSpecializedAttr = 0;
 }
 
-class ArtsSde_I32EnumAttr<string mnemonic, ArtsSde_I32Enum enumInfo>
-    : EnumAttr<ArtsSdeDialect, enumInfo, mnemonic> {
+class CartsSde_I32EnumAttr<string mnemonic, CartsSde_I32Enum enumInfo>
+    : EnumAttr<CartsSdeDialect, enumInfo, mnemonic> {
   let assemblyFormat = "`<` $value `>`";
 }
 
@@ -47,23 +47,23 @@ class ArtsSde_I32EnumAttr<string mnemonic, ArtsSde_I32Enum enumInfo>
 //===----------------------------------------------------------------------===//
 
 def SdeCuKind
-    : ArtsSde_I32Enum<"SdeCuKind", "Compute unit kind", [
+    : CartsSde_I32Enum<"SdeCuKind", "Compute unit kind", [
       I32EnumAttrCase<"parallel", 0, "parallel">,
       I32EnumAttrCase<"single", 1, "single">,
       I32EnumAttrCase<"task", 2, "task">
     ]>;
-def SdeCuKindAttr : ArtsSde_I32EnumAttr<"cu_kind", SdeCuKind>;
+def SdeCuKindAttr : CartsSde_I32EnumAttr<"cu_kind", SdeCuKind>;
 
 def SdeAccessMode
-    : ArtsSde_I32Enum<"SdeAccessMode", "Memory access mode", [
+    : CartsSde_I32Enum<"SdeAccessMode", "Memory access mode", [
       I32EnumAttrCase<"read", 0, "read">,
       I32EnumAttrCase<"write", 1, "write">,
       I32EnumAttrCase<"readwrite", 2, "readwrite">
     ]>;
-def SdeAccessModeAttr : ArtsSde_I32EnumAttr<"access_mode", SdeAccessMode>;
+def SdeAccessModeAttr : CartsSde_I32EnumAttr<"access_mode", SdeAccessMode>;
 
 def SdeReductionKind
-    : ArtsSde_I32Enum<"SdeReductionKind", "Reduction operation kind", [
+    : CartsSde_I32Enum<"SdeReductionKind", "Reduction operation kind", [
       I32EnumAttrCase<"add", 0, "add">,
       I32EnumAttrCase<"mul", 1, "mul">,
       I32EnumAttrCase<"min", 2, "min">,
@@ -73,20 +73,20 @@ def SdeReductionKind
       I32EnumAttrCase<"lxor", 6, "xor">,
       I32EnumAttrCase<"custom", 7, "custom">
     ]>;
-def SdeReductionKindAttr : ArtsSde_I32EnumAttr<"reduction_kind", SdeReductionKind>;
+def SdeReductionKindAttr : CartsSde_I32EnumAttr<"reduction_kind", SdeReductionKind>;
 
 def SdeReductionStrategy
-    : ArtsSde_I32Enum<"SdeReductionStrategy",
+    : CartsSde_I32Enum<"SdeReductionStrategy",
                       "Reduction execution strategy", [
       I32EnumAttrCase<"atomic", 0, "atomic">,
       I32EnumAttrCase<"tree", 1, "tree">,
       I32EnumAttrCase<"local_accumulate", 2, "local_accumulate">
     ]>;
 def SdeReductionStrategyAttr
-    : ArtsSde_I32EnumAttr<"reduction_strategy", SdeReductionStrategy>;
+    : CartsSde_I32EnumAttr<"reduction_strategy", SdeReductionStrategy>;
 
 def SdeStructuredClassification
-    : ArtsSde_I32Enum<"SdeStructuredClassification",
+    : CartsSde_I32Enum<"SdeStructuredClassification",
                       "Structured loop classification", [
       I32EnumAttrCase<"elementwise", 0, "elementwise">,
       I32EnumAttrCase<"stencil", 1, "stencil">,
@@ -95,11 +95,11 @@ def SdeStructuredClassification
       I32EnumAttrCase<"elementwise_pipeline", 4, "elementwise_pipeline">
     ]>;
 def SdeStructuredClassificationAttr
-    : ArtsSde_I32EnumAttr<"structured_classification",
+    : CartsSde_I32EnumAttr<"structured_classification",
                           SdeStructuredClassification>;
 
 def SdePattern
-    : ArtsSde_I32Enum<"SdePattern",
+    : CartsSde_I32Enum<"SdePattern",
                       "SDE dependency and schedule family", [
       I32EnumAttrCase<"uniform", 0, "uniform">,
       I32EnumAttrCase<"stencil_tiling_nd", 1, "stencil_tiling_nd">,
@@ -113,47 +113,47 @@ def SdePattern
       I32EnumAttrCase<"reduction", 8, "reduction">
     ]>;
 def SdePatternAttr
-    : ArtsSde_I32EnumAttr<"pattern", SdePattern>;
+    : CartsSde_I32EnumAttr<"pattern", SdePattern>;
 
 def SdeScheduleKind
-    : ArtsSde_I32Enum<"SdeScheduleKind", "Scheduling policy", [
+    : CartsSde_I32Enum<"SdeScheduleKind", "Scheduling policy", [
       I32EnumAttrCase<"static_", 0, "static">,
       I32EnumAttrCase<"dynamic", 1, "dynamic">,
       I32EnumAttrCase<"guided", 2, "guided">,
       I32EnumAttrCase<"auto_", 3, "auto">,
       I32EnumAttrCase<"runtime", 4, "runtime">
     ]>;
-def SdeScheduleKindAttr : ArtsSde_I32EnumAttr<"schedule", SdeScheduleKind>;
+def SdeScheduleKindAttr : CartsSde_I32EnumAttr<"schedule", SdeScheduleKind>;
 
 def SdeConcurrencyScope
-    : ArtsSde_I32Enum<"SdeConcurrencyScope", "Concurrency scope", [
+    : CartsSde_I32Enum<"SdeConcurrencyScope", "Concurrency scope", [
       I32EnumAttrCase<"local", 0, "local">,
       I32EnumAttrCase<"distributed", 1, "distributed">
     ]>;
 def SdeConcurrencyScopeAttr
-    : ArtsSde_I32EnumAttr<"concurrency_scope", SdeConcurrencyScope>;
+    : CartsSde_I32EnumAttr<"concurrency_scope", SdeConcurrencyScope>;
 
 def SdeDistributionKind
-    : ArtsSde_I32Enum<"SdeDistributionKind", "Distribution advisory hint", [
+    : CartsSde_I32Enum<"SdeDistributionKind", "Distribution advisory hint", [
       I32EnumAttrCase<"owner_compute", 0, "owner_compute">,
       I32EnumAttrCase<"blocked", 1, "blocked">,
       I32EnumAttrCase<"cyclic", 2, "cyclic">
     ]>;
 def SdeDistributionKindAttr
-    : ArtsSde_I32EnumAttr<"distribution_kind", SdeDistributionKind>;
+    : CartsSde_I32EnumAttr<"distribution_kind", SdeDistributionKind>;
 
 def SdeIterationTopology
-    : ArtsSde_I32Enum<"SdeIterationTopology",
+    : CartsSde_I32Enum<"SdeIterationTopology",
                       "SDE physical iteration topology", [
       I32EnumAttrCase<"owner_strip", 0, "owner_strip">,
       I32EnumAttrCase<"owner_tile", 1, "owner_tile">,
       I32EnumAttrCase<"owner_tile_2d", 2, "owner_tile_2d">
     ]>;
 def SdeIterationTopologyAttr
-    : ArtsSde_I32EnumAttr<"iteration_topology", SdeIterationTopology>;
+    : CartsSde_I32EnumAttr<"iteration_topology", SdeIterationTopology>;
 
 def SdeRepetitionStructure
-    : ArtsSde_I32Enum<"SdeRepetitionStructure",
+    : CartsSde_I32Enum<"SdeRepetitionStructure",
                       "SDE repeated-wave or timestep structure", [
       I32EnumAttrCase<"none", 0, "none">,
       I32EnumAttrCase<"pair_step", 1, "pair_step">,
@@ -161,21 +161,21 @@ def SdeRepetitionStructure
       I32EnumAttrCase<"full_timestep", 3, "full_timestep">
     ]>;
 def SdeRepetitionStructureAttr
-    : ArtsSde_I32EnumAttr<"repetition_structure",
+    : CartsSde_I32EnumAttr<"repetition_structure",
                           SdeRepetitionStructure>;
 
 def SdeAsyncStrategy
-    : ArtsSde_I32Enum<"SdeAsyncStrategy",
+    : CartsSde_I32Enum<"SdeAsyncStrategy",
                       "SDE async task-shape strategy", [
       I32EnumAttrCase<"blocking", 0, "blocking">,
       I32EnumAttrCase<"advance_edt", 1, "advance_edt">,
       I32EnumAttrCase<"cps_chain", 2, "cps_chain">
     ]>;
 def SdeAsyncStrategyAttr
-    : ArtsSde_I32EnumAttr<"async_strategy", SdeAsyncStrategy>;
+    : CartsSde_I32EnumAttr<"async_strategy", SdeAsyncStrategy>;
 
 def SdeBarrierReason
-    : ArtsSde_I32Enum<"SdeBarrierReason",
+    : CartsSde_I32Enum<"SdeBarrierReason",
                       "SDE barrier preservation or elimination reason", [
       I32EnumAttrCase<"redundant", 0, "redundant">,
       I32EnumAttrCase<"required_memory", 1, "required_memory">,
@@ -185,21 +185,21 @@ def SdeBarrierReason
       I32EnumAttrCase<"unknown_required", 4, "unknown_required">
     ]>;
 def SdeBarrierReasonAttr
-    : ArtsSde_I32EnumAttr<"barrier_reason", SdeBarrierReason>;
+    : CartsSde_I32EnumAttr<"barrier_reason", SdeBarrierReason>;
 
 def SdeResourceQueryKind
-    : ArtsSde_I32Enum<"SdeResourceQueryKind",
+    : CartsSde_I32Enum<"SdeResourceQueryKind",
                       "Target-neutral SDE resource query kind", [
       I32EnumAttrCase<"logicalWorkers", 0, "logical_workers">
     ]>;
 def SdeResourceQueryKindAttr
-    : ArtsSde_I32EnumAttr<"resource_query_kind", SdeResourceQueryKind>;
+    : CartsSde_I32EnumAttr<"resource_query_kind", SdeResourceQueryKind>;
 
 //===----------------------------------------------------------------------===//
 // Resource Ops
 //===----------------------------------------------------------------------===//
 
-def SdeResourceQueryOp : ArtsSde_Op<"resource_query", [Pure]> {
+def SdeResourceQueryOp : CartsSde_Op<"resource_query", [Pure]> {
   let summary = "Query target-neutral SDE execution resources";
   let description = [{
     Queries a runtime-neutral execution resource needed to build SDE-level
@@ -228,7 +228,7 @@ def SdeResourceQueryOp : ArtsSde_Op<"resource_query", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def SdeCuRegionOp
-    : ArtsSde_Op<"cu_region", [
+    : CartsSde_Op<"cu_region", [
       SingleBlock,
       RecursiveMemoryEffects
     ]> {
@@ -262,7 +262,7 @@ def SdeCuRegionOp
 }
 
 def SdeCuTaskOp
-    : ArtsSde_Op<"cu_task", [
+    : CartsSde_Op<"cu_task", [
       SingleBlock, NoTerminator,
       RecursiveMemoryEffects
     ]> {
@@ -285,7 +285,7 @@ def SdeCuTaskOp
 }
 
 def SdeControlTokenOp
-    : ArtsSde_Op<"control_token", [MemoryEffects<[MemWrite]>]> {
+    : CartsSde_Op<"control_token", [MemoryEffects<[MemWrite]>]> {
   let summary = "SDE completion/control token";
   let description = [{
     Produces an SDE-level completion token for task and wait control edges.
@@ -300,7 +300,7 @@ def SdeControlTokenOp
 }
 
 def SdeCuReduceOp
-    : ArtsSde_Op<"cu_reduce", [MemoryEffects<[MemRead, MemWrite]>]> {
+    : CartsSde_Op<"cu_reduce", [MemoryEffects<[MemRead, MemWrite]>]> {
   let summary = "Reduction accumulation";
   let description = [{
     Captures reduction semantics from `omp.wsloop reduction(+: sum)`.
@@ -330,7 +330,7 @@ def SdeCuReduceOp
 }
 
 def SdeCuAtomicOp
-    : ArtsSde_Op<"cu_atomic", [MemoryEffects<[MemWrite]>]> {
+    : CartsSde_Op<"cu_atomic", [MemoryEffects<[MemWrite]>]> {
   let summary = "Atomic memory update";
   let description = [{
     Captures `omp.atomic.update`. Currently only supports add{i,f}.
@@ -355,7 +355,7 @@ def SdeCuAtomicOp
 //===----------------------------------------------------------------------===//
 
 def SdeSuIterateOp
-    : ArtsSde_Op<"su_iterate", [
+    : CartsSde_Op<"su_iterate", [
       SingleBlock,
       RecursiveMemoryEffects,
       AttrSizedOperandSegments,
@@ -425,7 +425,7 @@ def SdeSuIterateOp
 }
 
 def SdeSuDistributeOp
-    : ArtsSde_Op<"su_distribute", [
+    : CartsSde_Op<"su_distribute", [
       SingleBlock, NoTerminator,
       RecursiveMemoryEffects
     ]> {
@@ -445,7 +445,7 @@ def SdeSuDistributeOp
 }
 
 def SdeSuBarrierOp
-    : ArtsSde_Op<"su_barrier", [MemoryEffects<[MemWrite]>]> {
+    : CartsSde_Op<"su_barrier", [MemoryEffects<[MemWrite]>]> {
   let summary = "Synchronization point";
   let description = [{
     Captures `omp.barrier` (implicit) and `omp.taskwait` (explicit tokens).
@@ -468,7 +468,7 @@ def SdeSuBarrierOp
 //===----------------------------------------------------------------------===//
 
 def SdeMuDepOp
-    : ArtsSde_Op<"mu_dep", [Pure, AttrSizedOperandSegments]> {
+    : CartsSde_Op<"mu_dep", [Pure, AttrSizedOperandSegments]> {
   let summary = "SDE memref dependency declaration";
   let description = [{
     Declares a memory-unit dependency with access mode and region. This is the
@@ -502,7 +502,7 @@ def SdeMuDepOp
 }
 
 def SdeMuTokenOp
-    : ArtsSde_Op<"mu_token", [Pure, AttrSizedOperandSegments]> {
+    : CartsSde_Op<"mu_token", [Pure, AttrSizedOperandSegments]> {
   let summary = "Produce an MU access token (whole storage or slice).";
   let description = [{
     Names a memref (or a rectangular slice of one) for consumption by a
@@ -535,7 +535,7 @@ def SdeMuTokenOp
 }
 
 def SdeCuCodeletOp
-    : ArtsSde_Op<"cu_codelet", [
+    : CartsSde_Op<"cu_codelet", [
       IsolatedFromAbove,
       SingleBlock,
       RecursiveMemoryEffects,
@@ -575,7 +575,7 @@ def SdeCuCodeletOp
   let hasVerifier = 1;
 }
 
-def SdeMuAllocOp : ArtsSde_Op<"mu_alloc", [Pure]> {
+def SdeMuAllocOp : CartsSde_Op<"mu_alloc", [Pure]> {
   let summary = "Allocate an SDE memref value with given shape.";
   let description = [{
     Creates a memref SSA value for an SDE memory unit. This is the SDE-level
@@ -593,7 +593,7 @@ def SdeMuAllocOp : ArtsSde_Op<"mu_alloc", [Pure]> {
   let hasVerifier = 1;
 }
 
-def SdeMuDataOp : ArtsSde_Op<"mu_data", [Pure]> {
+def SdeMuDataOp : CartsSde_Op<"mu_data", [Pure]> {
   let summary = "Declarative SDE shared-data handle.";
   let description = [{
     Canonical anchor for data that crosses SDE tasks. Replaces the pattern
@@ -617,7 +617,7 @@ def SdeMuDataOp : ArtsSde_Op<"mu_data", [Pure]> {
 }
 
 def SdeMuReductionDeclOp
-    : ArtsSde_Op<"mu_reduction_decl", [IsolatedFromAbove, Symbol]> {
+    : CartsSde_Op<"mu_reduction_decl", [IsolatedFromAbove, Symbol]> {
   let summary = "Module-level SDE reduction declaration";
   let description = [{
     Declares a named SDE reduction symbol with its element type, reduction
@@ -648,7 +648,7 @@ def SdeMuReductionDeclOp
 //===----------------------------------------------------------------------===//
 
 def SdeYieldOp
-    : ArtsSde_Op<"yield", [Pure, ReturnLike, Terminator]> {
+    : CartsSde_Op<"yield", [Pure, ReturnLike, Terminator]> {
   let summary = "SDE region terminator";
   let description = [{
     Terminates all SDE regions. Can optionally return values for reductions

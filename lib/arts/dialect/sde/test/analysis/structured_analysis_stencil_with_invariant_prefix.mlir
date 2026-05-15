@@ -6,7 +6,7 @@
 
 // CHECK-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // CHECK: func.func @main
-// CHECK: sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
+// CHECK: sde.su_iterate (%c1, %c1) to (%c63, %c63) step (%c1, %c1) classification(<stencil>) {
 // CHECK: } {
 // CHECK-SAME: accessMaxOffsets = [1, 1]
 // CHECK-SAME: accessMinOffsets = [-1, -1]

@@ -59,6 +59,8 @@ external/*/cmake_install.cmake
 !tests/contracts/partitioning/safety/specfem3d_stress_block_halo_contract.mlir
 !lib/arts/dialect/*/test/*.mlir
 !lib/arts/dialect/*/test/**/*.mlir
+!lib/carts/dialect/*/test/*.mlir
+!lib/carts/dialect/*/test/**/*.mlir
 
 # CARTS generated executables
 *_arts

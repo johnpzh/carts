@@ -38,6 +38,7 @@ ARTS_DEBUG_SETUP(raise_to_tensor);
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -1048,10 +1049,10 @@ struct RaiseToTensorPass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createRaiseToTensorPass() {
   return std::make_unique<RaiseToTensorPass>();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

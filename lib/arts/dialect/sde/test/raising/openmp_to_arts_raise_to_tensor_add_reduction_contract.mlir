@@ -1,10 +1,10 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=TENSOR
 
-// Verify that reduction-only loops keep the scalar body after RaiseToLinalg.
-// The su_iterate already owns the reduction dimension, so SDE must not place
-// a full-domain linalg.generic carrier inside that loop.
+// Verify that reduction-only loops keep the scalar body after PatternAnalysis.
+// The su_iterate already owns the reduction dimension, so SDE must not place a
+// full-domain linalg.generic carrier inside that loop.
 
-// TENSOR-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
+// TENSOR-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // TENSOR: func.func @main
 // TENSOR: sde.cu_region <parallel>
 // TENSOR: sde.su_iterate (%c0) to (%c128) step (%c1)

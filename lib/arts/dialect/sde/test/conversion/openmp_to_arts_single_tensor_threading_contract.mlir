@@ -1,23 +1,18 @@
-// Verify the full tensor-first pipeline for a scalar single+wsloop pattern:
+// Verify the memref-native pipeline for a scalar single+wsloop pattern:
 //   1. ConvertOpenMPToSde wraps su_iterate body in cu_region <parallel>
-//   2. RaiseToTensor threads scalar alloca through cu_region <single> as tensor iter_arg
-//   3. ConvertToCodelet + ConvertSdeToArts preserve scalar single state on the
+//   2. ConvertSdeToArts preserves scalar single state on the
 //      user-visible alloca and lower the loop to Core task dispatch
 
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 \
-// RUN:   | awk '/IR Dump After ConvertOpenMPToSde/,/IR Dump After RaiseToLinalg/' \
+// RUN:   | awk '/IR Dump After ConvertOpenMPToSde/,/IR Dump After PatternAnalysis/' \
 // RUN:   | %FileCheck %s --check-prefix=OMP
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 \
-// RUN:   | awk '/IR Dump After RaiseToTensor/,/IR Dump After LoopInterchange/' \
-// RUN:   | %FileCheck %s --check-prefix=TENSOR
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 \
 // RUN:   | awk '/IR Dump After ConvertSdeToArts/,/IR Dump After VerifySdeLowered/' \
 // RUN:   | %FileCheck %s --check-prefix=ARTS
 
 // Verify that:
 //   1. ConvertOpenMPToSde wraps su_iterate body in cu_region <parallel>
-//   2. RaiseToTensor threads scalar alloca through cu_region <single> as tensor iter_arg
-//   3. Boundary materialization keeps scalar memref.load/store on preserved storage
+//   2. Boundary materialization keeps scalar memref.load/store on preserved storage
 
 // --- After ConvertOpenMPToSde ---
 // OMP: func.func @main
@@ -32,23 +27,6 @@
 // OMP: memref.load
 // OMP: arith.muli
 // OMP: memref.store
-
-// --- After RaiseToTensor ---
-// TENSOR: func.func @main
-//   cu_region <parallel> threads both arrays and the scalar as iter_args:
-// TENSOR: sde.cu_region <parallel> iter_args(
-//   cu_region <single> threads the scalar tensor:
-// TENSOR: sde.cu_region <single> scope(<local>) iter_args(%[[ARG:.+]] = %{{.*}} : tensor<i32>) -> (tensor<i32>)
-// TENSOR: tensor.extract %[[ARG]][] : tensor<i32>
-// TENSOR: arith.addi
-// TENSOR: tensor.insert %{{.*}} into %[[ARG]][] : tensor<i32>
-//   Barrier still present:
-// TENSOR: sde.su_barrier
-//   su_iterate body with tensor ops:
-// TENSOR: sde.su_iterate
-// TENSOR: tensor.extract
-// TENSOR: arith.muli
-// TENSOR: tensor.insert
 
 // --- After ConvertSdeToArts ---
 // ARTS: func.func @main

@@ -1428,7 +1428,7 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
     ArrayRef<Value> depIndexSizes = usePayloadIndexing
                                         ? ArrayRef<Value>(accessSizes)
                                         : ArrayRef<Value>(depSlotSizes);
-    /// DbBlockIndexer/CreateDbs rewrites block-layout pointer-table accesses to
+    /// SDE MU/token lowering rewrites block-layout accesses to
     /// dependency-window-local DB slots before EDT outlining. Do not subtract
     /// the acquire's DB-space offset a second time here; only keep the window
     /// size clamp below.

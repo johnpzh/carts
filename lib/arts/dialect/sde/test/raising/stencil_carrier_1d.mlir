@@ -1,26 +1,24 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
-// Verify that a 1D 3-point stencil B[i] = A[i-1] + A[i] + A[i+1] gets a
-// shifted-view linalg.generic carrier with identity indexing maps. The scalar
-// body (scf.for + memref.load/store) is preserved alongside (dual-rep).
+// Verify that a 1D 3-point stencil B[i] = A[i-1] + A[i] + A[i+1] stays
+// memref-native and is classified with stencil access metadata. The scalar body
+// (memref.load/store) is preserved as the owning representation.
 
-// CHECK-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
+// CHECK-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // CHECK: func.func @main
 // CHECK: sde.su_iterate (%c1) to (%c127) step (%c1) classification(<stencil>) {
 // Scalar body preserved:
 // CHECK: memref.load
 // CHECK: memref.store
-// Carrier created with shifted extract_slice views:
-// CHECK: sde.mu_memref_to_tensor %arg0 : memref<128xf64>
-// CHECK: tensor.extract_slice
-// CHECK: tensor.extract_slice
-// CHECK: tensor.extract_slice
-// CHECK: linalg.generic
-// CHECK-SAME: iterator_types = ["parallel"]
+// Stencil access metadata stamped by PatternAnalysis:
+// CHECK: accessMaxOffsets = [1]
+// CHECK-SAME: accessMinOffsets = [-1]
+// CHECK-SAME: ownerDims = [0]
+// CHECK-SAME: pattern = #sde.pattern<stencil_tiling_nd>
+// CHECK-SAME: spatialDims = [0]
+// CHECK-SAME: writeFootprint = [1]
 // CHECK: arith.addf
 // CHECK: arith.addf
-// CHECK: linalg.yield
-// CHECK: tensor.insert_slice
 
 // After full pipeline: stencil contract stamped on Core task dispatch.
 // CHECK: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //

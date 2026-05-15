@@ -16,6 +16,7 @@ namespace mlir::arts {
 #include <iterator>
 
 using namespace mlir;
+using namespace mlir::carts;
 
 namespace {
 
@@ -29,31 +30,31 @@ constexpr llvm::StringLiteral kCpsCandidateRequiresTokenizedDataflow =
 
 struct CpsGroupInfo {
   int64_t expectedCount = -1;
-  SmallVector<arts::sde::SdeSuIterateOp, 4> stages;
-  DenseMap<int64_t, arts::sde::SdeSuIterateOp> byIndex;
+  SmallVector<sde::SdeSuIterateOp, 4> stages;
+  DenseMap<int64_t, sde::SdeSuIterateOp> byIndex;
 };
 
 struct CandidateBoundary {
   Operation *firstContainer = nullptr;
-  arts::sde::SdeSuBarrierOp barrier;
+  sde::SdeSuBarrierOp barrier;
 };
 
-static bool hasCandidateAttr(arts::sde::SdeSuIterateOp op) {
+static bool hasCandidateAttr(sde::SdeSuIterateOp op) {
   return op->hasAttr(kCpsCandidateGroupId) ||
          op->hasAttr(kCpsCandidateStageIndex) ||
          op->hasAttr(kCpsCandidateStageCount) ||
          op->hasAttr(kCpsCandidateRequiresTokenizedDataflow);
 }
 
-static bool isTimestepBarrier(arts::sde::SdeSuBarrierOp barrier) {
+static bool isTimestepBarrier(sde::SdeSuBarrierOp barrier) {
   if (!barrier)
     return false;
   auto reason = barrier.getBarrierReason();
   return reason &&
-         *reason == arts::sde::SdeBarrierReason::timestep_stage_boundary;
+         *reason == sde::SdeBarrierReason::timestep_stage_boundary;
 }
 
-static LogicalResult verifyCandidateAttrSet(arts::sde::SdeSuIterateOp op) {
+static LogicalResult verifyCandidateAttrSet(sde::SdeSuIterateOp op) {
   bool hasGroup = op->hasAttr(kCpsCandidateGroupId);
   bool hasIndex = op->hasAttr(kCpsCandidateStageIndex);
   bool hasCount = op->hasAttr(kCpsCandidateStageCount);
@@ -81,13 +82,13 @@ static LogicalResult verifyCandidateAttrSet(arts::sde::SdeSuIterateOp op) {
 
     auto repetition = op.getRepetitionStructure();
     if (!repetition ||
-        *repetition != arts::sde::SdeRepetitionStructure::full_timestep)
+        *repetition != sde::SdeRepetitionStructure::full_timestep)
       return op.emitOpError()
              << "sde.cps candidate plan requires sde.repetition_structure "
                 "full_timestep";
 
     auto strategy = op.getAsyncStrategy();
-    if (!strategy || *strategy != arts::sde::SdeAsyncStrategy::advance_edt)
+    if (!strategy || *strategy != sde::SdeAsyncStrategy::advance_edt)
       return op.emitOpError()
              << "sde.cps candidate plan requires sde.async_strategy "
                 "advance_edt until tokenized dataflow exists";
@@ -114,7 +115,7 @@ static LogicalResult verifyCandidateAttrSet(arts::sde::SdeSuIterateOp op) {
 
 static void recordGroup(
     DenseMap<Operation *, DenseMap<int64_t, CpsGroupInfo>> &groupsByScope,
-    ModuleOp module, arts::sde::SdeSuIterateOp op, int64_t groupId,
+    ModuleOp module, sde::SdeSuIterateOp op, int64_t groupId,
     int64_t stageIndex, int64_t stageCount, bool &hasFailure, StringRef label,
     StringRef stageCountName, StringRef stageIndexName) {
   Operation *scope = op->getParentOfType<func::FuncOp>();
@@ -179,7 +180,7 @@ static SmallVector<Operation *, 4> collectBlockAncestors(Operation *op) {
 }
 
 static CandidateBoundary findTimestepBarrierBetween(
-    arts::sde::SdeSuIterateOp first, arts::sde::SdeSuIterateOp second) {
+    sde::SdeSuIterateOp first, sde::SdeSuIterateOp second) {
   SmallVector<Operation *, 4> firstAncestors =
       collectBlockAncestors(first.getOperation());
   SmallVector<Operation *, 4> secondAncestors =
@@ -194,7 +195,7 @@ static CandidateBoundary findTimestepBarrierBetween(
 
       for (auto it = std::next(firstContainer->getIterator());
            it != secondContainer->getIterator(); ++it) {
-        auto barrier = dyn_cast<arts::sde::SdeSuBarrierOp>(&*it);
+        auto barrier = dyn_cast<sde::SdeSuBarrierOp>(&*it);
         if (isTimestepBarrier(barrier))
           return {firstContainer, barrier};
       }
@@ -207,7 +208,7 @@ static CandidateBoundary findTimestepBarrierBetween(
 static bool isControlTokenProducedBetween(Value token,
                                           Operation *firstContainer,
                                           Operation *barrier) {
-  auto producer = token.getDefiningOp<arts::sde::SdeControlTokenOp>();
+  auto producer = token.getDefiningOp<sde::SdeControlTokenOp>();
   if (!producer)
     return false;
   Operation *producerOp = producer.getOperation();
@@ -265,7 +266,7 @@ struct VerifySdeCpsPlanPass
     bool hasFailure = false;
     ModuleOp module = getOperation();
 
-    module.walk([&](arts::sde::SdeSuIterateOp op) {
+    module.walk([&](sde::SdeSuIterateOp op) {
       if (mlir::failed(verifyCandidateAttrSet(op))) {
         hasFailure = true;
         return;
@@ -306,6 +307,6 @@ struct VerifySdeCpsPlanPass
 
 } // namespace
 
-std::unique_ptr<Pass> mlir::arts::sde::createVerifySdeCpsPlanPass() {
+std::unique_ptr<Pass> mlir::carts::sde::createVerifySdeCpsPlanPass() {
   return std::make_unique<VerifySdeCpsPlanPass>();
 }

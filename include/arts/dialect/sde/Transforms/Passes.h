@@ -23,9 +23,9 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/Pass.h"
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 std::unique_ptr<Pass> createMemoryUnitMaterializationPass();
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde
 
 namespace mlir::arts {
 
@@ -34,7 +34,7 @@ namespace mlir::arts {
 
 } // namespace mlir::arts
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 /// Ensure a region has at least one block, creating an empty one if needed.
 inline Block &ensureBlock(Region &region) {
@@ -87,6 +87,6 @@ std::unique_ptr<Pass> createConvertSdeToArtsPass();
 std::unique_ptr<Pass> createVerifySdeCpsPlanPass();
 std::unique_ptr<Pass> createVerifySdeLoweredPass();
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde
 
 #endif // ARTS_DIALECT_SDE_TRANSFORMS_PASSES_H

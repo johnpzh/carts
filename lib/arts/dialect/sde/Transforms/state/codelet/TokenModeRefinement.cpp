@@ -20,6 +20,7 @@ namespace mlir::arts {
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -131,10 +132,10 @@ struct TokenModeRefinePass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createTokenModeRefinementPass() {
   return std::make_unique<TokenModeRefinePass>();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

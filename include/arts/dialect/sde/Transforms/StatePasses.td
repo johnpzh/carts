@@ -19,26 +19,29 @@ def ScalarForwarding : Pass<"scalar-forwarding", "mlir::ModuleOp"> {
   }];
   let dependentDialects = ["::mlir::memref::MemRefDialect",
                            "::mlir::arith::ArithDialect"];
-  let constructor = "mlir::arts::sde::createScalarForwardingPass()";
+  let constructor = "mlir::carts::sde::createScalarForwardingPass()";
 }
 
 def MemoryUnitMaterialization
     : Pass<"sde-memory-unit-materialization", "mlir::ModuleOp"> {
-  let summary = "Materialize coarse SDE shared memrefs as memory units";
+  let summary = "Materialize SDE shared memrefs as memory units";
   let description = [{
     Rewrites shared memref allocations used by SDE scheduling units into
     `sde.mu_alloc` storage before the SDE/Core boundary. This pass is
     intentionally SDE-local: it creates target-neutral MU storage declarations
     and leaves conversion to Core DB objects to `ConvertSdeToArts`.
 
-    Blocked physical layouts are skipped until SDE block-local access rewriting
-    covers the allocation. Those layouts remain on the raw compatibility bridge
-    instead of being silently lowered to an incorrect first-block host view.
+    Physical layout and owner-slice facts stay on the scheduling unit and are
+    consumed at boundary conversion to form acquire windows for supported
+    elementwise/matmul owner slices. Stencil, reduction, halo, and other
+    complex blocked plans remain on the raw bridge until their SDE-local view
+    rewrite exists. The pass does not rediscover DB layouts or perform Core
+    index rewriting.
   }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect",
                            "::mlir::memref::MemRefDialect"];
   let constructor =
-      "mlir::arts::sde::createMemoryUnitMaterializationPass()";
+      "mlir::carts::sde::createMemoryUnitMaterializationPass()";
 }
 
 #endif // ARTS_DIALECT_SDE_TRANSFORMS_STATE_PASSES

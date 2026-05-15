@@ -13,6 +13,7 @@
 #include "mlir/Pass/Pass.h"
 
 using namespace mlir;
+using namespace mlir::carts;
 
 namespace {
 
@@ -23,7 +24,7 @@ struct VerifyCoreObjectsOnlyPass
   void runOnOperation() override {
     auto module = getOperation();
     auto *sdeDialect =
-        module->getContext()->getLoadedDialect<arts::sde::ArtsSdeDialect>();
+        module->getContext()->getLoadedDialect<sde::CartsSdeDialect>();
     bool found = false;
 
     module.walk([&](Operation *op) {

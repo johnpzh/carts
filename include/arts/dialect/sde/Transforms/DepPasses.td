@@ -19,9 +19,9 @@ def LoopInterchange
     solution that operates on structured SDE memref loops before boundary
     conversion.
   }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect",
                            "::mlir::scf::SCFDialect"];
-  let constructor = "mlir::arts::sde::createLoopInterchangePass()";
+  let constructor = "mlir::carts::sde::createLoopInterchangePass()";
 }
 
 def Tiling : Pass<"tiling", "mlir::ModuleOp"> {
@@ -36,11 +36,11 @@ def Tiling : Pass<"tiling", "mlir::ModuleOp"> {
     tiles and the surrounding sde.su_iterate step is rewritten so the
     transformed loop nest survives into later lowering.
   }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect",
                            "::mlir::arith::ArithDialect",
                            "::mlir::memref::MemRefDialect",
                            "::mlir::scf::SCFDialect"];
-  let constructor = "mlir::arts::sde::createTilingPass()";
+  let constructor = "mlir::carts::sde::createTilingPass()";
 }
 
 def PatternAnalysis
@@ -65,8 +65,8 @@ def PatternAnalysis
       loops
     - SDE execution hints for vectorization/unrolling/interleaving
   }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
-  let constructor = "mlir::arts::sde::createPatternAnalysisPass()";
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect"];
+  let constructor = "mlir::carts::sde::createPatternAnalysisPass()";
 }
 
 def ElementwiseFusion
@@ -81,8 +81,8 @@ def ElementwiseFusion
     ownership on the SDE side of the boundary instead of inventing that family
     later in target IR.
   }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect"];
-  let constructor = "mlir::arts::sde::createElementwiseFusionPass()";
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect"];
+  let constructor = "mlir::carts::sde::createElementwiseFusionPass()";
 }
 
 def Vectorization
@@ -100,9 +100,9 @@ def Vectorization
     translate the SDE hints into target loop metadata after storage and task
     materialization are fixed.
   }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect",
                            "::mlir::memref::MemRefDialect"];
-  let constructor = "mlir::arts::sde::createVectorizationPass()";
+  let constructor = "mlir::carts::sde::createVectorizationPass()";
 }
 
 def IterationSpaceDecomposition
@@ -123,7 +123,7 @@ def IterationSpaceDecomposition
                            "::mlir::arith::ArithDialect",
                            "::mlir::scf::SCFDialect",
                            "::mlir::memref::MemRefDialect"];
-  let constructor = "mlir::arts::sde::createIterationSpaceDecompositionPass()";
+  let constructor = "mlir::carts::sde::createIterationSpaceDecompositionPass()";
 }
 
 #endif // ARTS_DIALECT_SDE_TRANSFORMS_DEP_PASSES

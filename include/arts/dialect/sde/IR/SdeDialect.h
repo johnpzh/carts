@@ -17,7 +17,7 @@
 
 #include "arts/dialect/sde/IR/SdeOpsDialect.h.inc"
 
-namespace mlir::arts::sde {} // namespace mlir::arts::sde
+namespace mlir::carts::sde {} // namespace mlir::carts::sde
 
 #define GET_TYPEDEF_CLASSES
 #include "arts/dialect/sde/IR/SdeOpsTypes.h.inc"

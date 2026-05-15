@@ -4,7 +4,7 @@
 // su_iterate itself owns the reduction dimension; raising a full-domain
 // linalg.generic inside it would duplicate the reduction work.
 
-// CHECK-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
+// CHECK-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // CHECK: func.func @main
 // CHECK: sde.cu_region <parallel> {
 // CHECK: sde.su_iterate (%c0) to (%c128) step (%c1)

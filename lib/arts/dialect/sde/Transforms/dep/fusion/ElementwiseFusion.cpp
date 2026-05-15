@@ -15,6 +15,7 @@ namespace mlir::arts {
 #include "arts/utils/ValueAnalysis.h"
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
@@ -24,6 +25,7 @@ namespace mlir::arts {
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -39,6 +41,10 @@ struct ElementwiseStage {
   SmallVector<MemrefAccess, 4> writes;
 };
 
+static bool isSkippableInterStageOp(Operation *op) {
+  return op && op->getNumRegions() == 0 && isMemoryEffectFree(op);
+}
+
 static sde::SdeSuIterateOp getStageSuIterate(Operation *op) {
   if (auto suIter = dyn_cast_or_null<sde::SdeSuIterateOp>(op))
     return suIter;
@@ -50,12 +56,77 @@ static sde::SdeSuIterateOp getStageSuIterate(Operation *op) {
 
   sde::SdeSuIterateOp nested;
   for (Operation &inner : cuRegion.getBody().front().without_terminator()) {
-    auto suIter = dyn_cast<sde::SdeSuIterateOp>(inner);
-    if (!suIter || nested)
-      return {};
-    nested = suIter;
+    if (auto suIter = dyn_cast<sde::SdeSuIterateOp>(inner)) {
+      if (nested)
+        return {};
+      nested = suIter;
+      continue;
+    }
+    if (isSkippableInterStageOp(&inner))
+      continue;
+    return {};
   }
   return nested;
+}
+
+static bool areStageValuesEquivalent(Value lhs, sde::SdeSuIterateOp lhsStage,
+                                     Value rhs, sde::SdeSuIterateOp rhsStage,
+                                     unsigned depth = 0);
+
+static bool isCorrespondingStageLocalForIv(Value lhs,
+                                           sde::SdeSuIterateOp lhsStage,
+                                           Value rhs,
+                                           sde::SdeSuIterateOp rhsStage,
+                                           unsigned depth) {
+  auto lhsArg = dyn_cast<BlockArgument>(lhs);
+  auto rhsArg = dyn_cast<BlockArgument>(rhs);
+  if (!lhsArg || !rhsArg || lhsArg.getArgNumber() != 0 ||
+      rhsArg.getArgNumber() != 0)
+    return false;
+
+  auto lhsFor = dyn_cast_or_null<scf::ForOp>(lhsArg.getOwner()->getParentOp());
+  auto rhsFor = dyn_cast_or_null<scf::ForOp>(rhsArg.getOwner()->getParentOp());
+  if (!lhsFor || !rhsFor)
+    return false;
+  if (lhsFor->getParentOfType<sde::SdeSuIterateOp>() != lhsStage ||
+      rhsFor->getParentOfType<sde::SdeSuIterateOp>() != rhsStage)
+    return false;
+
+  if (!areStageValuesEquivalent(lhsFor.getLowerBound(), lhsStage,
+                                rhsFor.getLowerBound(), rhsStage, depth + 1))
+    return false;
+  if (!areStageValuesEquivalent(lhsFor.getUpperBound(), lhsStage,
+                                rhsFor.getUpperBound(), rhsStage, depth + 1))
+    return false;
+  if (!areStageValuesEquivalent(lhsFor.getStep(), lhsStage, rhsFor.getStep(),
+                                rhsStage, depth + 1))
+    return false;
+  return true;
+}
+
+static SmallVector<Value, 4> mapValues(ValueRange values, IRMapping &mapping) {
+  SmallVector<Value, 4> mapped;
+  mapped.reserve(values.size());
+  for (Value value : values)
+    mapped.push_back(mapping.lookupOrDefault(value));
+  return mapped;
+}
+
+static void cloneSkippablePrefixOps(Operation *root,
+                                    sde::SdeSuIterateOp until,
+                                    IRRewriter &rewriter,
+                                    IRMapping &mapping) {
+  auto cuRegion = dyn_cast_or_null<sde::SdeCuRegionOp>(root);
+  if (!cuRegion || !cuRegion.getBody().hasOneBlock())
+    return;
+
+  for (Operation &inner : cuRegion.getBody().front().without_terminator()) {
+    if (&inner == until.getOperation())
+      return;
+    if (!isSkippableInterStageOp(&inner))
+      return;
+    rewriter.clone(inner, mapping);
+  }
 }
 
 static bool haveSameIterationSpace(sde::SdeSuIterateOp lhs,
@@ -66,15 +137,15 @@ static bool haveSameIterationSpace(sde::SdeSuIterateOp lhs,
     return false;
 
   for (auto [a, b] : llvm::zip(lhs.getLowerBounds(), rhs.getLowerBounds())) {
-    if (!ValueAnalysis::areValuesEquivalent(a, b))
+    if (!arts::ValueAnalysis::areValuesEquivalent(a, b))
       return false;
   }
   for (auto [a, b] : llvm::zip(lhs.getUpperBounds(), rhs.getUpperBounds())) {
-    if (!ValueAnalysis::areValuesEquivalent(a, b))
+    if (!arts::ValueAnalysis::areValuesEquivalent(a, b))
       return false;
   }
   for (auto [a, b] : llvm::zip(lhs.getSteps(), rhs.getSteps())) {
-    if (!ValueAnalysis::areValuesEquivalent(a, b))
+    if (!arts::ValueAnalysis::areValuesEquivalent(a, b))
       return false;
   }
   return true;
@@ -91,11 +162,11 @@ static bool haveCompatibleSchedule(sde::SdeSuIterateOp lhs,
   Value rhsChunk = rhs.getChunkSize();
   if (!lhsChunk || !rhsChunk)
     return lhsChunk == rhsChunk;
-  return ValueAnalysis::areValuesEquivalent(lhsChunk, rhsChunk);
+  return arts::ValueAnalysis::areValuesEquivalent(lhsChunk, rhsChunk);
 }
 
 static Value getWriteRoot(Value value) {
-  return ValueAnalysis::stripMemrefViewOps(value);
+  return arts::ValueAnalysis::stripMemrefViewOps(value);
 }
 
 static bool hasDisjointWrites(ArrayRef<ElementwiseStage> stages) {
@@ -130,18 +201,20 @@ static bool isCorrespondingStageArg(Value lhs, sde::SdeSuIterateOp lhsStage,
 
 static bool areStageValuesEquivalent(Value lhs, sde::SdeSuIterateOp lhsStage,
                                      Value rhs, sde::SdeSuIterateOp rhsStage,
-                                     unsigned depth = 0) {
+                                     unsigned depth) {
   if (!lhs || !rhs || depth > 8)
     return false;
-  lhs = ValueAnalysis::stripNumericCasts(lhs);
-  rhs = ValueAnalysis::stripNumericCasts(rhs);
-  if (ValueAnalysis::sameValue(lhs, rhs))
+  lhs = arts::ValueAnalysis::stripNumericCasts(lhs);
+  rhs = arts::ValueAnalysis::stripNumericCasts(rhs);
+  if (arts::ValueAnalysis::sameValue(lhs, rhs))
     return true;
   if (isCorrespondingStageArg(lhs, lhsStage, rhs, rhsStage))
     return true;
+  if (isCorrespondingStageLocalForIv(lhs, lhsStage, rhs, rhsStage, depth))
+    return true;
 
-  auto lhsConst = ValueAnalysis::tryFoldConstantIndex(lhs);
-  auto rhsConst = ValueAnalysis::tryFoldConstantIndex(rhs);
+  auto lhsConst = arts::ValueAnalysis::tryFoldConstantIndex(lhs);
+  auto rhsConst = arts::ValueAnalysis::tryFoldConstantIndex(rhs);
   if (lhsConst || rhsConst)
     return lhsConst && rhsConst && *lhsConst == *rhsConst;
 
@@ -240,10 +313,6 @@ static bool isElementwiseStage(Operation *root, ElementwiseStage &stage) {
   return true;
 }
 
-static bool isSkippableInterStageOp(Operation *op) {
-  return op && op->getNumRegions() == 0 && isMemoryEffectFree(op);
-}
-
 static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
                                       IRRewriter &rewriter) {
   assert(stages.size() >= 2 && "expected at least two stages");
@@ -257,6 +326,7 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
   });
 
   Block *insertionBlock = nullptr;
+  IRMapping fusedOperandMapping;
   if (wrappedStages) {
     rewriter.setInsertionPoint(stages.back().root);
     auto outerCuRegion = sde::SdeCuRegionOp::create(
@@ -268,14 +338,26 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
         /*iterArgs=*/ValueRange{});
     insertionBlock = &sde::ensureBlock(outerCuRegion.getBody());
     rewriter.setInsertionPointToStart(insertionBlock);
+    cloneSkippablePrefixOps(stages.front().root, first, rewriter,
+                            fusedOperandMapping);
   } else {
     rewriter.setInsertionPoint(stages.back().root);
   }
 
+  SmallVector<Value, 4> lowerBounds =
+      mapValues(first.getLowerBounds(), fusedOperandMapping);
+  SmallVector<Value, 4> upperBounds =
+      mapValues(first.getUpperBounds(), fusedOperandMapping);
+  SmallVector<Value, 4> steps = mapValues(first.getSteps(), fusedOperandMapping);
+  Value chunkSize = first.getChunkSize()
+                        ? fusedOperandMapping.lookupOrDefault(
+                              first.getChunkSize())
+                        : Value{};
+
   auto fused = sde::SdeSuIterateOp::create(
-      rewriter, loc, /*resultTypes=*/TypeRange{}, first.getLowerBounds(),
-      first.getUpperBounds(), first.getSteps(), first.getScheduleAttr(),
-      first.getChunkSize(), first.getNowaitAttr(),
+      rewriter, loc, /*resultTypes=*/TypeRange{}, lowerBounds, upperBounds,
+      steps, first.getScheduleAttr(),
+      chunkSize, first.getNowaitAttr(),
       first.getReductionAccumulators(), first.getReductionKindsAttr(),
       first.getReductionStrategyAttr(),
       sde::SdeStructuredClassificationAttr::get(
@@ -327,6 +409,7 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
     for (auto [srcArg, dstArg] : llvm::zip(
              stage.op.getBody().front().getArguments(), dst.getArguments()))
       mapper.map(srcArg, dstArg);
+    cloneSkippablePrefixOps(stage.root, stage.op, rewriter, mapper);
     for (Operation &nested : srcBody->without_terminator())
       rewriter.clone(nested, mapper);
   }
@@ -408,10 +491,10 @@ struct ElementwiseFusionPass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createElementwiseFusionPass() {
   return std::make_unique<ElementwiseFusionPass>();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

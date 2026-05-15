@@ -16,7 +16,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 struct ExternalCapturePlan {
   SmallVector<Value> captures;
@@ -53,6 +53,6 @@ LogicalResult planExternalCaptures(
     const DenseSet<Type> &materializableMemrefTypes,
     const DenseSet<Operation *> &movedOps, ExternalCapturePlan &plan);
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde
 
 #endif // ARTS_DIALECT_SDE_TRANSFORMS_CODELETUTILS_H

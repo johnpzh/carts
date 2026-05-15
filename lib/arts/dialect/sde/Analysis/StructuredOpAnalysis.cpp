@@ -13,10 +13,11 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "arts/utils/ValueAnalysis.h"
 #include "llvm/ADT/SmallBitVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 using namespace mlir;
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 namespace {
 
 static SmallVector<Operation *> getBodyOps(Block &body) {
@@ -32,7 +33,7 @@ static SmallVector<Operation *> getBodyOps(Block &body) {
 }
 
 static bool isLocalScratchMemref(Value value, Block &scope) {
-  Value root = ValueAnalysis::stripMemrefViewOps(value);
+  Value root = arts::ValueAnalysis::stripMemrefViewOps(value);
   if (!root)
     return false;
 
@@ -65,7 +66,7 @@ static bool isLocalScratchSideEffectUsedByLoop(Operation *op, Block &scope,
   }
 
   auto isLoopScratchAccess = [&](Value memref) {
-    Value root = ValueAnalysis::stripMemrefViewOps(memref);
+    Value root = arts::ValueAnalysis::stripMemrefViewOps(memref);
     return isLocalScratchMemref(root, scope) &&
            isUsedInside(loop.getOperation(), root);
   };
@@ -80,6 +81,24 @@ static bool isLocalScratchSideEffectUsedByLoop(Operation *op, Block &scope,
     return isLoopScratchAccess(deallocOp.getMemref());
 
   return false;
+}
+
+static bool isRankZeroScalarMemrefAccess(Operation *op) {
+  Value memref;
+  if (auto loadOp = dyn_cast_or_null<memref::LoadOp>(op)) {
+    if (isa<MemRefType>(loadOp.getResult().getType()))
+      return false;
+    memref = loadOp.getMemref();
+  } else if (auto storeOp = dyn_cast_or_null<memref::StoreOp>(op)) {
+    if (isa<MemRefType>(storeOp.getValueToStore().getType()))
+      return false;
+    memref = storeOp.getMemref();
+  } else {
+    return false;
+  }
+
+  auto memrefType = dyn_cast<MemRefType>(memref.getType());
+  return memrefType && memrefType.getRank() == 0;
 }
 
 static bool collectInner(Block &body, LoopNestInfo &info) {
@@ -104,7 +123,7 @@ static bool collectInner(Block &body, LoopNestInfo &info) {
         innerFor = nestedFor;
         continue;
       }
-      if (!isMemoryEffectFree(op))
+      if (!isMemoryEffectFree(op) && !isRankZeroScalarMemrefAccess(op))
         sideEffectsAroundInnerLoop.push_back(op);
     }
     if (innerFor) {
@@ -206,14 +225,34 @@ static std::optional<AffineMap> tryBuildIndexingMap(OperandRange indices,
   return AffineMap::get(/*dimCount=*/ivs.size(), /*symbolCount=*/0, exprs, ctx);
 }
 
-static bool
-collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
-                          SmallVectorImpl<MemrefAccessEntry> &reads,
-                          SmallVectorImpl<MemrefAccessEntry> &writes,
-                          MLIRContext *ctx, bool &sawAccess) {
+static bool isLocalScratchAccess(Operation *scope, Value memref) {
+  Value root = arts::ValueAnalysis::stripMemrefViewOps(memref);
+  return root && isDefinedInside(scope, root);
+}
+
+static bool isLocalScratchAllocation(Operation *scope, Operation *op) {
+  if (!op || !isa<memref::AllocOp, memref::AllocaOp>(op))
+    return false;
+  return llvm::all_of(op->getResults(), [&](Value result) {
+    return isLocalScratchAccess(scope, result);
+  });
+}
+
+static bool collectMemrefAccessesImpl(
+    Operation *scope, Block &body, ArrayRef<Value> ivs,
+    SmallVectorImpl<MemrefAccessEntry> &reads,
+    SmallVectorImpl<MemrefAccessEntry> &writes, MLIRContext *ctx,
+    bool &sawAccess) {
   for (auto &op : body) {
     if (op.hasTrait<OpTrait::IsTerminator>())
       continue;
+
+    if (isLocalScratchAllocation(scope, &op))
+      continue;
+
+    if (auto deallocOp = dyn_cast<memref::DeallocOp>(&op))
+      if (isLocalScratchAccess(scope, deallocOp.getMemref()))
+        continue;
 
     if (auto loadOp = dyn_cast<memref::LoadOp>(&op)) {
       // Skip pointer-to-memref wrapper loads (e.g., memref.load %wrapper[] :
@@ -221,6 +260,11 @@ collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
       // accesses.  Including them would create linalg.generic inputs with
       // memref-of-memref types, which cannot be raised to tensors.
       if (isa<MemRefType>(loadOp.getResult().getType()))
+        continue;
+      auto memrefType = dyn_cast<MemRefType>(loadOp.getMemref().getType());
+      if (memrefType && memrefType.getRank() == 0)
+        continue;
+      if (isLocalScratchAccess(scope, loadOp.getMemref()))
         continue;
 
       auto map = tryBuildIndexingMap(loadOp.getIndices(), ivs, ctx);
@@ -236,6 +280,11 @@ collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
       // Skip stores to pointer-to-memref wrappers.
       if (isa<MemRefType>(storeOp.getValueToStore().getType()))
         continue;
+      auto memrefType = dyn_cast<MemRefType>(storeOp.getMemref().getType());
+      if (memrefType && memrefType.getRank() == 0)
+        continue;
+      if (isLocalScratchAccess(scope, storeOp.getMemref()))
+        continue;
 
       auto map = tryBuildIndexingMap(storeOp.getIndices(), ivs, ctx);
       if (!map)
@@ -248,15 +297,16 @@ collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
 
     if (auto ifOp = dyn_cast<scf::IfOp>(&op)) {
       bool thenSawAccess = false;
-      if (!collectMemrefAccessesImpl(ifOp.getThenRegion().front(), ivs, reads,
-                                     writes, ctx, thenSawAccess))
+      if (!collectMemrefAccessesImpl(scope, ifOp.getThenRegion().front(), ivs,
+                                     reads, writes, ctx, thenSawAccess))
         return false;
       sawAccess |= thenSawAccess;
 
       if (!ifOp.getElseRegion().empty()) {
         bool elseSawAccess = false;
-        if (!collectMemrefAccessesImpl(ifOp.getElseRegion().front(), ivs, reads,
-                                       writes, ctx, elseSawAccess))
+        if (!collectMemrefAccessesImpl(scope, ifOp.getElseRegion().front(),
+                                       ivs, reads, writes, ctx,
+                                       elseSawAccess))
           return false;
         sawAccess |= elseSawAccess;
       }
@@ -265,8 +315,8 @@ collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
 
     if (auto nestedFor = dyn_cast<scf::ForOp>(&op)) {
       bool nestedSawAccess = false;
-      if (!collectMemrefAccessesImpl(*nestedFor.getBody(), ivs, reads, writes,
-                                     ctx, nestedSawAccess))
+      if (!collectMemrefAccessesImpl(scope, *nestedFor.getBody(), ivs, reads,
+                                     writes, ctx, nestedSawAccess))
         return false;
       sawAccess |= nestedSawAccess;
       continue;
@@ -284,12 +334,14 @@ collectMemrefAccessesImpl(Block &body, ArrayRef<Value> ivs,
   return true;
 }
 
-static bool collectMemrefAccesses(Block &body, ArrayRef<Value> ivs,
+static bool collectMemrefAccesses(Operation *scope, Block &body,
+                                  ArrayRef<Value> ivs,
                                   SmallVectorImpl<MemrefAccessEntry> &reads,
                                   SmallVectorImpl<MemrefAccessEntry> &writes,
                                   MLIRContext *ctx) {
   bool sawAccess = false;
-  if (!collectMemrefAccessesImpl(body, ivs, reads, writes, ctx, sawAccess))
+  if (!collectMemrefAccessesImpl(scope, body, ivs, reads, writes, ctx,
+                                 sawAccess))
     return false;
   return sawAccess;
 }
@@ -315,6 +367,18 @@ computeIteratorTypes(unsigned numDims, ArrayRef<AffineMap> outputMaps,
 
 // AffineDimOffset and extractDimOffset are defined below the anonymous
 // namespace as public functions declared in StructuredOpAnalysis.h.
+
+static void appendNestedForIvs(Block &body, SmallVectorImpl<Value> &ivs) {
+  llvm::SmallPtrSet<Value, 8> seen;
+  for (Value iv : ivs)
+    seen.insert(iv);
+
+  body.walk([&](scf::ForOp loop) {
+    Value iv = loop.getInductionVar();
+    if (seen.insert(iv).second)
+      ivs.push_back(iv);
+  });
+}
 
 static std::optional<StructuredNeighborhoodInfo>
 extractNeighborhoodSummary(ArrayRef<MemrefAccessEntry> reads,
@@ -353,6 +417,61 @@ extractNeighborhoodSummary(ArrayRef<MemrefAccessEntry> reads,
   return info;
 }
 
+static llvm::SmallBitVector getUsedDims(AffineMap map, unsigned numDims) {
+  llvm::SmallBitVector used(numDims);
+  for (AffineExpr result : map.getResults())
+    for (unsigned dim = 0; dim < numDims; ++dim)
+      if (result.isFunctionOfDim(dim))
+        used.set(dim);
+  return used;
+}
+
+static bool hasExactDimUse(AffineMap map, const llvm::SmallBitVector &expected,
+                           unsigned numDims) {
+  return getUsedDims(map, numDims) == expected;
+}
+
+static bool hasCanonicalMatmulAccessShape(ArrayRef<MemrefAccessEntry> reads,
+                                          ArrayRef<AffineMap> outputMaps,
+                                          ArrayRef<utils::IteratorType> iterTypes,
+                                          unsigned numDims) {
+  SmallVector<unsigned, 2> parallelDims;
+  SmallVector<unsigned, 1> reductionDims;
+  for (auto [dim, type] : llvm::enumerate(iterTypes)) {
+    if (type == utils::IteratorType::parallel)
+      parallelDims.push_back(dim);
+    else
+      reductionDims.push_back(dim);
+  }
+
+  if (parallelDims.size() != 2 || reductionDims.size() != 1 || numDims != 3)
+    return false;
+
+  llvm::SmallBitVector outputDims(numDims);
+  outputDims.set(parallelDims[0]);
+  outputDims.set(parallelDims[1]);
+  bool hasMatmulOutput = llvm::any_of(outputMaps, [&](AffineMap map) {
+    return hasExactDimUse(map, outputDims, numDims);
+  });
+  if (!hasMatmulOutput)
+    return false;
+
+  llvm::SmallBitVector lhsDims(numDims);
+  lhsDims.set(parallelDims[0]);
+  lhsDims.set(reductionDims[0]);
+  llvm::SmallBitVector rhsDims(numDims);
+  rhsDims.set(reductionDims[0]);
+  rhsDims.set(parallelDims[1]);
+
+  bool hasLhs = false;
+  bool hasRhs = false;
+  for (const MemrefAccessEntry &read : reads) {
+    hasLhs |= hasExactDimUse(read.indexingMap, lhsDims, numDims);
+    hasRhs |= hasExactDimUse(read.indexingMap, rhsDims, numDims);
+  }
+  return hasLhs && hasRhs;
+}
+
 static SdeStructuredClassification
 classifyPattern(ArrayRef<MemrefAccessEntry> reads,
                 ArrayRef<AffineMap> outputMaps,
@@ -375,7 +494,8 @@ classifyPattern(ArrayRef<MemrefAccessEntry> reads,
   }
 
   if (numParallel == 2 && numReduction == 1 && numDims == 3 &&
-      reads.size() >= 2 && !outputMaps.empty())
+      reads.size() >= 2 && !outputMaps.empty() &&
+      hasCanonicalMatmulAccessShape(reads, outputMaps, iterTypes, numDims))
     return SdeStructuredClassification::matmul;
 
   return SdeStructuredClassification::reduction;
@@ -424,7 +544,7 @@ static Value normalizeOutputRoot(Value value) {
   if (!value)
     return {};
   if (isa<BaseMemRefType>(value.getType()))
-    return ValueAnalysis::stripMemrefViewOps(value);
+    return arts::ValueAnalysis::stripMemrefViewOps(value);
   return value;
 }
 
@@ -525,9 +645,11 @@ analyzeStructuredLoop(SdeSuIterateOp iterOp) {
     return std::nullopt;
   if (!summary.nest.innermostBody || summary.nest.ivs.empty())
     return std::nullopt;
+  appendNestedForIvs(*summary.nest.innermostBody, summary.nest.ivs);
 
-  if (!collectMemrefAccesses(*summary.nest.innermostBody, summary.nest.ivs,
-                             summary.reads, summary.writes, ctx))
+  if (!collectMemrefAccesses(iterOp.getOperation(), *summary.nest.innermostBody,
+                             summary.nest.ivs, summary.reads, summary.writes,
+                             ctx))
     return std::nullopt;
 
   summary.outputMaps.reserve(summary.writes.size() +
@@ -610,4 +732,4 @@ findCompatibleOutputLayoutPlan(SdeSuIterateOp op) {
   return findCompatibleOutputLayoutPlan(*summary);
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

@@ -9,12 +9,12 @@
 include "mlir/IR/AttrTypeBase.td"
 include "SdeDialect.td"
 
-class ArtsSde_Type<string name, string typeMnemonic>
-    : TypeDef<ArtsSdeDialect, name> {
+class CartsSde_Type<string name, string typeMnemonic>
+    : TypeDef<CartsSdeDialect, name> {
   let mnemonic = typeMnemonic;
 }
 
-def CompletionType : ArtsSde_Type<"Completion", "completion"> {
+def CompletionType : CartsSde_Type<"Completion", "completion"> {
   let summary = "typed SDE completion token";
   let description = [{
     `!sde.completion` models SDE-level completion tokens used to express
@@ -23,7 +23,7 @@ def CompletionType : ArtsSde_Type<"Completion", "completion"> {
   }];
 }
 
-def DepType : ArtsSde_Type<"Dep", "dep"> {
+def DepType : CartsSde_Type<"Dep", "dep"> {
   let summary = "typed SDE dependency token";
   let description = [{
     `!sde.dep` models an explicit SDE dependency handle produced by
@@ -31,7 +31,7 @@ def DepType : ArtsSde_Type<"Dep", "dep"> {
   }];
 }
 
-def TokenType : ArtsSde_Type<"Token", "token"> {
+def TokenType : CartsSde_Type<"Token", "token"> {
   let summary = "Handle to a (sub)region of shared memref storage.";
   let description = [{
     `!sde.token` names a subset of an MU-backed memref with a declared access

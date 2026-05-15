@@ -15,6 +15,7 @@ namespace mlir::arts {
 #include "mlir/Pass/Pass.h"
 
 using namespace mlir;
+using namespace mlir::carts;
 
 namespace {
 
@@ -23,7 +24,7 @@ struct VerifySdeLoweredPass
   void runOnOperation() override {
     auto *sdeDialect = getOperation()
                            ->getContext()
-                           ->getLoadedDialect<arts::sde::ArtsSdeDialect>();
+                           ->getLoadedDialect<sde::CartsSdeDialect>();
     bool failed = false;
     getOperation().walk([&](Operation *op) {
       if (sdeDialect && op->getDialect() == sdeDialect) {
@@ -38,6 +39,6 @@ struct VerifySdeLoweredPass
 };
 } // namespace
 
-std::unique_ptr<Pass> mlir::arts::sde::createVerifySdeLoweredPass() {
+std::unique_ptr<Pass> mlir::carts::sde::createVerifySdeLoweredPass() {
   return std::make_unique<VerifySdeLoweredPass>();
 }

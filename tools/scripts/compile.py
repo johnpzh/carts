@@ -52,6 +52,7 @@ class PipelineManifest:
     tokens: PipelineTokens
     steps: List[PipelineManifestStep]
     epilogue_steps: List[PipelineManifestStep]
+    dialect_groups: Dict[str, object]
 
 
 def _parse_manifest_steps_field(
@@ -142,11 +143,15 @@ def _parse_pipeline_manifest_payload(payload: str) -> PipelineManifest:
     data = json.loads(payload)
     steps = _parse_manifest_steps_field(data, "pipeline_steps")
     epilogue_steps = _parse_manifest_steps_field(data, "epilogue_steps")
+    dialect_groups_raw = data.get("dialect_groups", {})
+    if not isinstance(dialect_groups_raw, dict):
+        raise ValueError("field 'dialect_groups' must be an object when present")
 
     return PipelineManifest(
         tokens=tokens,
         steps=steps,
         epilogue_steps=epilogue_steps,
+        dialect_groups=dialect_groups_raw,
     )
 
 
@@ -165,6 +170,8 @@ def _pipeline_manifest_to_dict(manifest: PipelineManifest) -> Dict[str, object]:
             for step in manifest.epilogue_steps
         ],
     }
+    if manifest.dialect_groups:
+        payload["dialect_groups"] = manifest.dialect_groups
     return payload
 
 
@@ -533,7 +540,7 @@ def pipeline(
         raise Exit(1)
 
     if json_output:
-        console.print(json.dumps(_pipeline_manifest_to_dict(manifest), indent=2))
+        print(json.dumps(_pipeline_manifest_to_dict(manifest), indent=2))
         return
 
     print_header("CARTS Pipeline")

@@ -67,6 +67,7 @@ namespace mlir::arts {
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -905,10 +906,10 @@ struct RaiseMemrefToTensorPass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createRaiseMemrefToTensorPass() {
   return std::make_unique<RaiseMemrefToTensorPass>();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

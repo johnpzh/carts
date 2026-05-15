@@ -20,6 +20,18 @@ For the target per-dialect analysis and optimization ownership, see
 - `dekk carts pipeline --json`: print the machine-readable manifest.
 - `dekk carts compile <file> --all-pipelines`: dump stage and pass outputs for
   a focused input.
+- `carts-compile <file> --pass-pipeline='builtin.module(...)'`: run a focused
+  MLIR pass pipeline for registration and boundary smoke tests. This bypasses
+  the staged CARTS pipeline and should not be used as normal project entrypoint
+  work; use `dekk carts ...` commands for regular compilation and testing.
+
+The JSON manifest includes both executable pipeline steps and dialect grouping
+metadata. `dialect_groups.current` names the compatibility groups implemented
+by the live stages. `dialect_groups.target` names the intended
+`sde -> codir -> arts -> arts-rt` boundary groups, including planned stage
+tokens such as `sde-to-codir` and `codir-to-arts` before they become runnable
+pipeline stops. These group records are descriptive; only `pipeline`,
+`start_from`, and `pipeline_sequence` list accepted stage tokens.
 
 ## Pipeline Order
 

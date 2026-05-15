@@ -28,6 +28,7 @@ ARTS_DEBUG_SETUP(scalar_forwarding);
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -223,10 +224,10 @@ struct ScalarForwardingPass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createScalarForwardingPass() {
   return std::make_unique<ScalarForwardingPass>();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

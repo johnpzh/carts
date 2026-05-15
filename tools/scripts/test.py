@@ -68,7 +68,7 @@ def _setup_lit_pythonpath(config: CartsConfig) -> None:
 def _resolve_lit_targets(config: CartsConfig, suite: str) -> List[Path]:
     """Resolve built-in test paths for a named suite.
 
-    Pass tests are co-located with source code under lib/arts/dialect/*/test/.
+    Pass tests are co-located with source code under lib/{arts,carts}/dialect/*/test/.
     Cross-cutting tests live under tests/{cli,verify}/.
     E2E tests compile and run samples under tests/e2e/.
     """
@@ -76,6 +76,7 @@ def _resolve_lit_targets(config: CartsConfig, suite: str) -> List[Path]:
 
     # Co-located pass test directories (IREE-style)
     pass_test_dirs = [
+        carts_dir / "lib" / "carts" / "dialect" / "codir" / "test",
         carts_dir / "lib" / "arts" / "dialect" / "sde" / "test",
         carts_dir / "lib" / "arts" / "dialect" / "core" / "test",
         carts_dir / "lib" / "arts" / "dialect" / "rt" / "test",

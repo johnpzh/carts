@@ -45,6 +45,18 @@ SDE planning -> ConvertSdeToArts direct MU/token lowering
 Important current facts:
 
 - `sde.cu_codelet` is a migration surface, not the final codelet layer.
+- `codir` now has a minimal registered dialect skeleton under
+  `include/carts/dialect/codir/IR` and `lib/carts/dialect/codir/IR`, with
+  parser/verifier coverage for an isolated `codir.codelet` boundary. The
+  placeholder `convert-sde-to-codir`, `verify-codir`, and
+  `convert-codir-to-arts` passes are registered for pass-pipeline testing.
+  `verify-codir` currently enforces that dependency operands are memrefs with
+  one access-mode entry per dep, that params are scalar values, that body block
+  args mirror deps then params, and that yielded values are scalar; none of
+  these passes are wired into active staged lowering. `convert-sde-to-codir`
+  can materialize focused `sde.cu_codelet` smoke cases into `codir.codelet`,
+  including whole-storage MU tokens and sliced token-local views represented
+  as CODIR dep memrefs.
 - The Core raw DB indexers have been removed. `CreateDbs` may only materialize
   coarse whole-storage raw memrefs; a blocked/tiled raw memref reaching it is
   a boundary error because SDE/CODIR must own the token-local access rewrite.

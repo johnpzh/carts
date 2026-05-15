@@ -45,6 +45,7 @@
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 using namespace mlir::omp;
 
 #define GEN_PASS_DEF_MEMREFNORMALIZATION
@@ -98,7 +99,7 @@ static bool isMemrefContainerValue(Value value) {
 static bool isSameUnderlyingValue(Value value, Value expected) {
   if (value == expected)
     return true;
-  Value underlying = ValueAnalysis::getUnderlyingValue(value);
+  Value underlying = arts::ValueAnalysis::getUnderlyingValue(value);
   return underlying && underlying == expected;
 }
 
@@ -258,13 +259,13 @@ static Value materializeDependView(OpBuilder &builder, Location loc,
 
 static bool isWholeFlatDep(const DepInfo &dep, Value totalElements) {
   return dep.indices.size() == 1 && dep.sizes.size() == 1 &&
-         ValueAnalysis::isZeroConstant(dep.indices.front()) &&
-         ValueAnalysis::sameValue(dep.sizes.front(), totalElements);
+         arts::ValueAnalysis::isZeroConstant(dep.indices.front()) &&
+         arts::ValueAnalysis::sameValue(dep.sizes.front(), totalElements);
 }
 
 static bool isUnitFlatDep(const DepInfo &dep) {
   return dep.indices.size() == 1 && dep.sizes.size() == 1 &&
-         ValueAnalysis::isOneConstant(dep.sizes.front());
+         arts::ValueAnalysis::isOneConstant(dep.sizes.front());
 }
 
 /// Pattern for a nested allocation structure
@@ -320,7 +321,7 @@ static Value traceWrapperLoadToAlloc(Value val) {
         if (storeOp.getMemref() == wrapper) {
           Value storedVal = storeOp.getValue();
           /// Check if direct allocation (through casts)
-          Value underlying = ValueAnalysis::getUnderlyingValue(storedVal);
+          Value underlying = arts::ValueAnalysis::getUnderlyingValue(storedVal);
           if (underlying && underlying.getDefiningOp<memref::AllocOp>())
             return underlying;
           /// Otherwise continue tracing through nested loads
@@ -687,7 +688,7 @@ MemrefNormalizationPass::detectPattern(Value alloc) {
           ///   %alloc = memref.alloc() : memref<10xf64>
           ///   %cast = memref.cast %alloc : memref<10xf64> to memref<?xf64>
           ///   memref.store %cast, %wrapper[]
-          Value underlying = ValueAnalysis::getUnderlyingValue(storedVal);
+          Value underlying = arts::ValueAnalysis::getUnderlyingValue(storedVal);
           if (underlying && underlying.getDefiningOp<memref::AllocOp>()) {
             pattern.wrapperAlloca = alloc;
             pattern.rootAlloc = storedVal; /// Keep cast result for SROA
@@ -816,7 +817,7 @@ MemrefNormalizationPass::detectPattern(Value alloc) {
 
     if (allocType.getRank() >= 1) {
       /// Get underlying allocation (traces through casts)
-      Value underlying = ValueAnalysis::getUnderlyingValue(pattern.rootAlloc);
+      Value underlying = arts::ValueAnalysis::getUnderlyingValue(pattern.rootAlloc);
       auto underlyingAlloc =
           underlying ? underlying.getDefiningOp<memref::AllocOp>() : nullptr;
       auto underlyingType =
@@ -1721,7 +1722,7 @@ LogicalResult MemrefNormalizationPass::transformPattern(AllocPattern &pattern,
     bool hoistOk = true;
 
     for (Value dim : pattern.dimensions) {
-      Value hoisted = ValueAnalysis::traceValueToDominating(
+      Value hoisted = arts::ValueAnalysis::traceValueToDominating(
           dim, candidate, builder, localDomInfo, pattern.rootAlloc.getLoc());
       if (!hoisted) {
         hoistOk = false;
@@ -2023,7 +2024,7 @@ MemrefNormalizationPass::transformSimpleWrapper(AllocPattern &pattern,
   pattern.hoistedDimensions.clear();
 
   for (Value dim : pattern.dimensions) {
-    Value hoisted = ValueAnalysis::traceValueToDominating(
+    Value hoisted = arts::ValueAnalysis::traceValueToDominating(
         dim, insertPoint, builder, localDomInfo, pattern.rootAlloc.getLoc());
     if (!hoisted) {
       ARTS_DEBUG("  FAILED: Cannot hoist dimension " << dim);
@@ -2126,7 +2127,7 @@ Value MemrefNormalizationPass::createCanonicalAllocation(
   dynamicDims.reserve(dimSizes.size());
 
   for (Value dim : dimSizes) {
-    if (auto folded = ValueAnalysis::tryFoldConstantIndex(dim)) {
+    if (auto folded = arts::ValueAnalysis::tryFoldConstantIndex(dim)) {
       shape.push_back(*folded);
       continue;
     }
@@ -2504,7 +2505,7 @@ bool MemrefNormalizationPass::extractNestedAllocations(Value storedVal,
   }
 
   /// Trace through casts to find the underlying allocation
-  Value underlying = ValueAnalysis::getUnderlyingValue(storedVal);
+  Value underlying = arts::ValueAnalysis::getUnderlyingValue(storedVal);
   auto innerAlloc = underlying ? underlying.getDefiningOp<memref::AllocOp>()
                                : storedVal.getDefiningOp<memref::AllocOp>();
   if (!innerAlloc) {

@@ -26,14 +26,16 @@
 /// Responsibility split:
 /// - SDE chooses structured patterns, task grain, owner dimensions, physical
 ///   block shapes, and task element slices.
-/// - The target SDE path emits MU tokens/codelets that lower directly to DB ops.
-/// - CreateDbs materializes remaining raw EDT memref captures into Core DB ops
-///   and localizes raw accesses to DB-relative coordinates. It must not encode
-///   SDE dependency semantics with Core-only marker ops.
+/// - The target SDE path emits MU tokens/codelets that lower directly to DB
+/// ops.
+/// - CreateDbs materializes only remaining coarse raw EDT memref captures into
+///   Core DB ops. Tiled/block-local access rewriting is an SDE MU/token
+///   responsibility and must not be rediscovered here.
 ///
 /// CreateDbs must not rediscover tensor/linalg partition policy.  Its
-/// remaining indexers are compatibility localizers for raw memref bodies until
-/// the corresponding SDE regions lower through canonical MU/token/codelet form.
+/// remaining raw bridge is intentionally limited to a whole-storage DB ref
+/// (`db_ref[0]`) plus the original memref access. Structured/tiled layouts
+/// must lower through canonical MU/token/codelet form before Core.
 ///==========================================================================///
 
 #include "arts/Dialect.h"
@@ -41,8 +43,6 @@
 #include "arts/dialect/core/Analysis/db/DbAnalysis.h"
 #include "arts/dialect/core/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "arts/dialect/core/Transforms/db/DbLayoutPlanUtils.h"
-#include "arts/dialect/core/Transforms/db/block/DbBlockIndexer.h"
-#include "arts/dialect/core/Transforms/db/elementwise/DbElementWiseIndexer.h"
 #include "arts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_CREATEDBS
 #include "arts/dialect/core/Transforms/db/DbTransforms.h"
@@ -95,10 +95,6 @@ static llvm::Statistic numMemrefsDefaultedToInOut{
 static llvm::Statistic numDbAcquireGroupsCreated{
     "create_dbs", "NumDbAcquireGroupsCreated",
     "Number of DbAcquireOp groups created for EDT dependencies"};
-static llvm::Statistic numOutAcquiresPromotedForPartialBlocks{
-    "create_dbs", "NumOutAcquiresPromotedForPartialBlocks",
-    "Number of out acquires promoted to inout because a logical element slice "
-    "widens to partial physical DB blocks"};
 static llvm::Statistic numGlobalDbInitializations{
     "create_dbs", "NumGlobalDbInitializations",
     "Number of global datablocks initialized from memref.global contents"};
@@ -129,69 +125,98 @@ static bool isForwardingMemrefAliasOp(Operation *op, Value source) {
   return false;
 }
 
-static bool isKnownMultipleOf(Value value, Value divisor,
-                              unsigned depth = 0) {
-  if (!value || !divisor || depth > 6)
-    return false;
+static Value materializeMemrefAsType(Value value, Type targetType,
+                                     Operation *insertBefore,
+                                     ArtsCodegen &AC) {
+  if (!value || value.getType() == targetType)
+    return value;
+  if (!isa<MemRefType>(value.getType()) || !isa<MemRefType>(targetType))
+    return Value();
 
-  value = ValueAnalysis::stripNumericCasts(value);
-  divisor = ValueAnalysis::stripNumericCasts(divisor);
-  if (value == divisor)
-    return true;
+  auto srcType = cast<MemRefType>(value.getType());
+  auto dstType = cast<MemRefType>(targetType);
 
-  std::optional<int64_t> valueConst =
-      ValueAnalysis::tryFoldConstantIndex(value);
-  std::optional<int64_t> divisorConst =
-      ValueAnalysis::tryFoldConstantIndex(divisor);
-  if (valueConst && *valueConst == 0)
-    return true;
-  if (valueConst && divisorConst && *divisorConst > 0)
-    return *valueConst % *divisorConst == 0;
-
-  Operation *def = value.getDefiningOp();
-  if (!def)
-    return false;
-
-  if (auto mul = dyn_cast<arith::MulIOp>(def)) {
-    Value lhs = ValueAnalysis::stripNumericCasts(mul.getLhs());
-    Value rhs = ValueAnalysis::stripNumericCasts(mul.getRhs());
-    return lhs == divisor || rhs == divisor ||
-           isKnownMultipleOf(lhs, divisor, depth + 1) ||
-           isKnownMultipleOf(rhs, divisor, depth + 1);
+  if (srcType.getRank() != dstType.getRank()) {
+    if (srcType.getRank() == 1 && dstType.getRank() == 0 &&
+        srcType.getElementType() == dstType.getElementType()) {
+      OpBuilder::InsertionGuard guard(AC.getBuilder());
+      AC.setInsertionPoint(insertBefore);
+      OpFoldResult zero = AC.getBuilder().getIndexAttr(0);
+      OpFoldResult one = AC.getBuilder().getIndexAttr(1);
+      return AC.create<memref::SubViewOp>(
+          insertBefore->getLoc(), dstType, value,
+          /*offsets=*/SmallVector<OpFoldResult>{zero},
+          /*sizes=*/SmallVector<OpFoldResult>{one},
+          /*strides=*/SmallVector<OpFoldResult>{one});
+    }
+    return Value();
   }
 
-  if (auto add = dyn_cast<arith::AddIOp>(def))
-    return isKnownMultipleOf(add.getLhs(), divisor, depth + 1) &&
-           isKnownMultipleOf(add.getRhs(), divisor, depth + 1);
+  if (!memref::CastOp::areCastCompatible(srcType, dstType))
+    return Value();
 
-  if (auto sub = dyn_cast<arith::SubIOp>(def))
-    return isKnownMultipleOf(sub.getLhs(), divisor, depth + 1) &&
-           isKnownMultipleOf(sub.getRhs(), divisor, depth + 1);
-
-  return false;
+  OpBuilder::InsertionGuard guard(AC.getBuilder());
+  AC.setInsertionPoint(insertBefore);
+  return AC.create<memref::CastOp>(insertBefore->getLoc(), dstType, value);
 }
 
-static bool canProveWholePhysicalBlocks(ValueRange elementOffsets,
-                                        ValueRange elementSizes,
-                                        ValueRange blockSizes,
-                                        unsigned ownerRank) {
-  if (elementOffsets.size() < ownerRank || elementSizes.size() < ownerRank ||
-      blockSizes.size() < ownerRank)
-    return false;
+static Value createCoarseDbRef(Value dbPtr, Operation *insertBefore,
+                               ArtsCodegen &AC) {
+  OpBuilder::InsertionGuard guard(AC.getBuilder());
+  AC.setInsertionPoint(insertBefore);
+  Value zero = AC.createIndexConstant(0, insertBefore->getLoc());
+  SmallVector<Value, 1> indices{zero};
+  return AC.create<DbRefOp>(insertBefore->getLoc(), dbPtr,
+                            ArrayRef<Value>(indices))
+      .getResult();
+}
 
-  for (unsigned i = 0; i < ownerRank; ++i) {
-    Value blockSize = blockSizes[i];
-    if (!blockSize)
-      return false;
-    std::optional<int64_t> folded =
-        ValueAnalysis::tryFoldConstantIndex(blockSize);
-    if (folded && *folded <= 0)
-      return false;
-    if (!isKnownMultipleOf(elementOffsets[i], blockSize) ||
-        !isKnownMultipleOf(elementSizes[i], blockSize))
-      return false;
+static LogicalResult rewriteCoarseRawAccess(Operation *op, Value expectedRoot,
+                                            Value dbPtr, ArtsCodegen &AC) {
+  if (isa<polygeist::SubIndexOp>(op)) {
+    return op->emitError(
+        "raw memref subindex reached Core DB materialization; SDE must "
+        "rewrite tiled or sliced MU/token views before ARTS conversion");
   }
-  return true;
+
+  auto access = DbUtils::getMemoryAccessInfo(op);
+  if (!access) {
+    if (isa<memref::CopyOp>(op)) {
+      return op->emitError(
+          "raw memref copy reached Core DB materialization; SDE/CODIR must "
+          "materialize explicit MU/token copies before ARTS conversion");
+    }
+    return success();
+  }
+
+  if (expectedRoot && access->memref != expectedRoot) {
+    return op->emitError(
+        "raw memref view/alias access reached Core DB materialization; "
+        "SDE must rewrite accesses to token-local memref views before ARTS "
+        "conversion");
+  }
+
+  Value dbView = createCoarseDbRef(dbPtr, op, AC);
+  Value typedView =
+      materializeMemrefAsType(dbView, access->memref.getType(), op, AC);
+  if (!typedView) {
+    return op->emitError(
+        "cannot type the coarse DB view for raw memref access; SDE/CODIR "
+        "must materialize an explicit token-local view");
+  }
+
+  bool replaced = false;
+  for (OpOperand &operand : op->getOpOperands()) {
+    if (operand.get() != access->memref)
+      continue;
+    operand.set(typedView);
+    replaced = true;
+  }
+
+  if (!replaced)
+    return op->emitError("failed to replace raw memref operand with DB view");
+
+  return success();
 }
 
 ///===----------------------------------------------------------------------===///
@@ -219,115 +244,10 @@ private:
     /// True if this allocation is used by an EDT other than its defining EDT.
     bool usedByOtherEdts = false;
     ArtsMode accessMode = ArtsMode::uninitialized;
-    bool usedFineGrained = false;
-    bool usedBlock = false;
-    SmallVector<Value> blockSizes;
     DbAllocOp dbAllocOp = nullptr;
 
     /// The computed allocation strategy plan
     std::optional<DbPhysicalLayoutPlan> rewritePlan;
-
-    /// Structure to track a specific DB access (mode + indices + chunks)
-    struct DbDep {
-      ArtsMode mode;
-      SmallVector<Value, 4> indices, offsets, sizes;
-      SmallVector<Operation *, 4> operations;
-      bool preserveDepEdge = true;
-    };
-
-    /// Map from EDT operation to all DB accesses for that EDT
-    DenseMap<EdtOp, SmallVector<DbDep>> edtToDeps;
-
-    /// Add an access for this memref and update combined mode
-    void addAccess(EdtOp edtOp, ArtsMode mode, SmallVector<Value, 4> indices,
-                   SmallVector<Value, 4> offsets = {},
-                   SmallVector<Value, 4> sizes = {},
-                   SmallVector<Operation *, 4> operations = {},
-                   bool preserveDepEdge = true) {
-      accessMode = combineAccessModes(accessMode, mode);
-      edtToDeps[edtOp].push_back(
-          {mode, indices, offsets, sizes, operations, preserveDepEdge});
-    }
-
-    /// Compute index pattern information from stored accesses
-    struct AccessPatternInfo {
-      /// Whether all accesses have the same number of indices
-      bool isConsistent = true;
-      /// Whether all accesses have indices
-      bool allAccessesHaveIndices = true;
-      /// Minimum number of pinned dimensions across all accesses
-      unsigned pinnedDimCount = 0;
-
-      /// Any deps have offsets/sizes?
-      bool hasChunkDeps = false;
-      /// Number of chunk dimensions
-      unsigned chunkDimCount = 0;
-      /// SSA values for block sizes
-      SmallVector<Value> blockSizes;
-      /// All deps use same block size count?
-      bool blockSizesAreConsistent = true;
-    };
-
-    AccessPatternInfo getAccessPatternInfo() const {
-      AccessPatternInfo info;
-      std::optional<unsigned> expectedDimCount;
-      bool hasPinnedAccess = false;
-
-      for (const auto &[edtOp, accesses] : edtToDeps) {
-        for (const auto &access : accesses) {
-          /// If no operations matched this dependency (SSA value mismatch),
-          /// fallback to coarse-grained allocation
-          if (access.operations.empty()) {
-            info.isConsistent = false;
-            info.allAccessesHaveIndices = false;
-            continue;
-          }
-
-          if (access.indices.empty()) {
-            info.allAccessesHaveIndices = false;
-          } else {
-            unsigned dimCount = access.indices.size();
-
-            /// Track minimum pinned dimensions
-            if (!hasPinnedAccess) {
-              info.pinnedDimCount = dimCount;
-              hasPinnedAccess = true;
-            } else {
-              info.pinnedDimCount = std::min(info.pinnedDimCount, dimCount);
-            }
-
-            /// Check consistency
-            if (!expectedDimCount) {
-              expectedDimCount = dimCount;
-              info.pinnedDimCount = dimCount;
-            } else if (*expectedDimCount != dimCount) {
-              info.isConsistent = false;
-            }
-          }
-
-          /// Track explicit chunk dependencies carried by SDE-authored
-          /// acquire metadata.
-          /// Chunk deps have: indices=[], offsets=[offset], sizes=[blockSize]
-          if (!access.offsets.empty() && !access.sizes.empty()) {
-            info.hasChunkDeps = true;
-
-            if (info.blockSizes.empty()) {
-              /// First chunk dep - record the sizes
-              info.blockSizes.assign(access.sizes.begin(), access.sizes.end());
-              info.chunkDimCount = access.sizes.size();
-            } else {
-              /// Subsequent chunk deps - check consistency (dimension count)
-              /// We can't compare SSA values statically, so we just check count
-              if (access.sizes.size() != info.chunkDimCount) {
-                info.blockSizesAreConsistent = false;
-              }
-            }
-          }
-        }
-      }
-
-      return info;
-    }
   };
 
   DenseMap<Operation *, MemrefInfo> memrefInfo;
@@ -343,8 +263,6 @@ private:
                                         Operation *targetOp,
                                         Value contractTarget);
   void createDbAcquireOps(EdtOp edt, SetVector<Value> &externalDeps);
-  Value findLocalAcquireView(EdtOp edt, Operation *dbAllocOp,
-                             bool requiresIndexedAccess = false);
   Value findParentAcquireSource(EdtOp edt, Operation *dbAllocOp,
                                 ArtsMode requestedMode,
                                 bool requiresIndexedAccess = false);
@@ -355,9 +273,7 @@ private:
   DbAllocType inferAllocType(Operation *alloc);
   void insertDbFreeForDbAlloc(DbAllocOp dbAlloc, Operation *alloc);
   void rewriteOpsToUseDbAcquire(EdtOp edt, SmallVector<Operation *> &operations,
-                                Operation *dbOp,
-                                SmallVector<Value> &acquireIndices,
-                                SmallVector<Value> &acquireOffsets,
+                                Operation *rawAlloc,
                                 Value localAcquireView,
                                 const DbPhysicalLayoutPlan &plan);
   void rewriteUsesInParentEdt(MemrefInfo &memrefInfo);
@@ -425,10 +341,6 @@ void CreateDbsPass::reconcileExternalDepAccessModes() {
         continue; // already a DB
 
       MemrefInfo &info = memrefInfo[underlyingOp];
-      bool hasExplicitDep = !info.edtToDeps[edt].empty();
-      if (hasExplicitDep)
-        continue;
-
       ArtsMode inferredMode =
           AM->getDbAnalysis().inferEdtAccessMode(underlyingOp, edt);
       if (inferredMode == ArtsMode::uninitialized)
@@ -515,8 +427,7 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
         readI64ArrayAttr(getPlanOwnerDimsAttr(candidate));
     std::optional<SmallVector<int64_t, 4>> blockShape =
         readI64ArrayAttr(getPlanPhysicalBlockShapeAttr(candidate));
-    if (!ownerDims || ownerDims->empty() || !blockShape ||
-        blockShape->empty())
+    if (!ownerDims || ownerDims->empty() || !blockShape || blockShape->empty())
       return false;
 
     const unsigned rank = memRefType.getRank();
@@ -572,14 +483,16 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
   };
 
   SmallVector<Operation *, 4> candidates;
-  module.walk([&](EdtOp edt) {
-    if (!hasPhysicalDbLayoutPlan(edt.getOperation()))
+  module.walk([&](Operation *candidate) {
+    if (!candidate || candidate == alloc)
       return WalkResult::advance();
-    if (!compatiblePlanTarget(edt.getOperation()))
+    if (!hasPhysicalDbLayoutPlan(candidate))
       return WalkResult::advance();
-    if (!writesAlloc(edt.getOperation()))
+    if (!compatiblePlanTarget(candidate))
       return WalkResult::advance();
-    candidates.push_back(edt.getOperation());
+    if (!writesAlloc(candidate))
+      return WalkResult::advance();
+    candidates.push_back(candidate);
     return WalkResult::advance();
   });
 
@@ -590,9 +503,9 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
   for (Operation *candidate : ArrayRef<Operation *>(candidates).drop_front()) {
     if (equivalentPlan(selected, candidate))
       continue;
-    InFlightDiagnostic diag =
-        alloc->emitError("conflicting SDE-authored physical DB layout plans for "
-                         "one allocation");
+    InFlightDiagnostic diag = alloc->emitError(
+        "conflicting SDE-authored physical DB layout plans for "
+        "one allocation");
     diag.attachNote(selected->getLoc()) << "first layout plan source";
     diag.attachNote(candidate->getLoc()) << "conflicting layout plan source";
     signalPassFailure();
@@ -763,13 +676,6 @@ void CreateDbsPass::createDbAllocOps() {
     SmallVector<Value> sizes, logicalElementSizes, elementSizes;
     const bool isRankZero = memRefType.getRank() == 0;
     const unsigned rank = std::max<unsigned>(1, memRefType.getRank());
-    const auto accessPatternInfo = info.getAccessPatternInfo();
-
-    /// Store block sizes for later use in createDbAcquireOps
-    if (accessPatternInfo.hasChunkDeps) {
-      info.blockSizes.assign(accessPatternInfo.blockSizes.begin(),
-                             accessPatternInfo.blockSizes.end());
-    }
 
     /// Build the original logical allocation extents. These are the source
     /// extents for any SDE-authored physical layout plan.
@@ -785,9 +691,9 @@ void CreateDbsPass::createDbAllocOps() {
       }
     }
 
-    /// Coarse is the conservative fallback. If SDE has already authored a
-    /// physical tensor layout plan, materialize it now so CreateDbs is the
-    /// point where the final DB shape first appears.
+    /// Coarse is the only raw-memref bridge left in Core. If SDE authored a
+    /// physical block layout, the corresponding MU/token/codelet materializer
+    /// must have already rewritten the accesses before this pass.
     DbPhysicalLayoutPlan plan(PartitionMode::coarse);
     sizes.push_back(AC->createIndexConstant(1, loc));
     elementSizes.assign(logicalElementSizes.begin(), logicalElementSizes.end());
@@ -795,31 +701,14 @@ void CreateDbsPass::createDbAllocOps() {
     Operation *planSource = nullptr;
 
     planSource = findPhysicalLayoutPlanSource(alloc);
-    if (planSource && DbUtils::hasNonPartitionableHostViewUses(allocValue)) {
-      InFlightDiagnostic diag =
-          alloc->emitError("SDE-authored physical DB layout cannot be "
-                           "materialized because the allocation still has "
-                           "whole-view host uses");
+    if (planSource) {
+      InFlightDiagnostic diag = alloc->emitError(
+          "SDE-authored physical DB layout reached CreateDbs as a raw "
+          "memref; SDE must materialize MU/token/codelet storage and "
+          "token-local access rewrites before ARTS conversion");
       diag.attachNote(planSource->getLoc()) << "layout plan source";
       signalPassFailure();
       return;
-    }
-    if (planSource) {
-      FailureOr<DbPhysicalLayoutPlan> resolvedPlan = resolvePhysicalDbLayoutPlan(
-          planSource, ValueRange(logicalElementSizes), AC->getBuilder(), loc);
-      if (failed(resolvedPlan)) {
-        InFlightDiagnostic diag =
-            alloc->emitError("invalid SDE-authored physical DB layout plan");
-        diag.attachNote(planSource->getLoc()) << "layout plan source";
-        signalPassFailure();
-        return;
-      }
-
-      plan = *resolvedPlan;
-      sizes.assign(plan.outerSizes.begin(), plan.outerSizes.end());
-      elementSizes.assign(plan.innerSizes.begin(), plan.innerSizes.end());
-      partitionMode = plan.mode;
-      ARTS_DEBUG(" - Using SDE-authored physical DB layout");
     } else if (DbUtils::hasNonPartitionableHostViewUses(allocValue)) {
       ARTS_DEBUG(" - Keeping coarse DB layout due to host whole-view use");
     }
@@ -852,8 +741,7 @@ void CreateDbsPass::createDbAllocOps() {
     /// Record allocation strategy decision for diagnostics
     AM->getDbHeuristics().recordDecision(
         "AllocationStrategy", true,
-        plan.isCoarse() ? "Coarse allocation"
-                        : "SDE-authored physical block allocation",
+        "Coarse raw-memref bridge allocation",
         alloc,
         {{"outerRank", static_cast<int64_t>(plan.outerRank())},
          {"innerRank", static_cast<int64_t>(plan.innerRank())}});
@@ -877,25 +765,9 @@ void CreateDbsPass::createDbAllocOps() {
       /// datablock contents instead of a disconnected host allocation.
       rewriteUsesEverywhereWithPlan(alloc, dbAllocOp, plan);
 
-      /// Step 2: Rewrite EDT uses without explicit deps
-      Type elementMemRefType = dbAllocOp.getAllocatedElementType();
-      SmallVector<Operation *> edtUsesToRewrite;
-      for (auto &use : alloc->getUses()) {
-        Operation *user = use.getOwner();
-        if (user == dbAllocOp.getOperation())
-          continue;
-        if (auto parentEdt = user->getParentOfType<EdtOp>()) {
-          if (info.edtToDeps.count(parentEdt) == 0)
-            edtUsesToRewrite.push_back(user);
-        }
-      }
-      if (!edtUsesToRewrite.empty()) {
-        PartitionInfo partInfo;
-        partInfo.mode = PartitionMode::coarse;
-        DbElementWiseIndexer indexer(partInfo, 0, rank, {});
-        indexer.transformOps(edtUsesToRewrite, dbAllocOp.getPtr(),
-                             elementMemRefType, *AC, opsToRemove);
-      }
+      /// EDT uses are rewritten only after a matching db_acquire has been
+      /// materialized in createDbAcquireOps. Rewriting them here would capture
+      /// the allocation DB pointer directly inside the task body.
     }
   }
 }
@@ -940,23 +812,10 @@ void CreateDbsPass::initializeGlobalDbIfNeeded(Operation *alloc,
 
   auto storeToDb = [&](Value initVal, ArrayRef<Value> indices) {
     if (plan.usesBlockedLayout()) {
-      PartitionInfo blockInfo;
-      blockInfo.mode = PartitionMode::block;
-      blockInfo.sizes.assign(plan.blockSizes.begin(), plan.blockSizes.end());
-      blockInfo.partitionedDims.assign(plan.partitionedDims.begin(),
-                                       plan.partitionedDims.end());
-      SmallVector<Value> startBlocks;
-      startBlocks.reserve(plan.blockSizes.size());
-      for (size_t i = 0; i < plan.blockSizes.size(); ++i)
-        startBlocks.push_back(AC->createIndexConstant(0, loc));
-      DbBlockIndexer indexer(blockInfo, startBlocks, plan.outerRank(),
-                             plan.innerRank());
-      LocalizedIndices localized =
-          indexer.localize(indices, AC->getBuilder(), loc);
-      Value dbRef =
-          AC->create<DbRefOp>(loc, dbAllocOp.getAllocatedElementType(),
-                              dbAllocOp.getPtr(), localized.dbRefIndices);
-      AC->create<memref::StoreOp>(loc, initVal, dbRef, localized.memrefIndices);
+      alloc->emitError("blocked global DB initialization reached CreateDbs; "
+                       "SDE/CODIR must materialize tiled MU storage before "
+                       "ARTS conversion");
+      signalPassFailure();
       return;
     }
 
@@ -990,46 +849,6 @@ void CreateDbsPass::initializeGlobalDbIfNeeded(Operation *alloc,
     indices.pop_back();
   };
   emitLoopCopy(emitLoopCopy, 0);
-}
-
-/// Find parent scope's acquired handle for a datablock
-/// Checks if the parent EDT already has an acquired handle for the given
-/// DbAllocOp.
-Value CreateDbsPass::findLocalAcquireView(EdtOp edt, Operation *dbAllocOp,
-                                          bool requiresIndexedAccess) {
-  auto dbAlloc = dyn_cast_or_null<DbAllocOp>(dbAllocOp);
-  if (!dbAlloc || !edt)
-    return nullptr;
-
-  Type targetType = dbAlloc.getPtr().getType();
-  Block &body = edt.getBody().front();
-  auto deps = edt.getDependenciesAsVector();
-
-  auto matchesDb = [&](Value v) -> bool {
-    if (!v || v.getType() != targetType)
-      return false;
-
-    Operation *db = DbUtils::getUnderlyingDbAlloc(v);
-    if (!db || db != dbAllocOp)
-      return false;
-
-    if (requiresIndexedAccess) {
-      if (Operation *dbOp = DbUtils::getUnderlyingDb(v)) {
-        if (DbAnalysis::hasSingleSize(dbOp))
-          return false;
-      }
-    }
-    return true;
-  };
-
-  for (auto [idx, dep] : llvm::enumerate(deps)) {
-    if (idx >= body.getNumArguments())
-      break;
-    if (matchesDb(dep))
-      return body.getArgument(idx);
-  }
-
-  return nullptr;
 }
 
 Value CreateDbsPass::findParentAcquireSource(EdtOp edt, Operation *dbAllocOp,
@@ -1112,17 +931,16 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
   ARTS_DEBUG(" - Creating DbAcquire operations for "
              << externalDeps.size() << " external dependencies");
 
-  /// Accumulate dependency operands to set on the EDT.  The tensor-path
-  /// SDE->ARTS lowering may have already wired DbAcquire-backed dependencies
-  /// before this pass; preserve those while appending any dependencies that
-  /// CreateDbs materializes from ordinary memrefs.
+  /// Accumulate dependency operands to set on the EDT. Direct SDE MU/token
+  /// lowering may have already wired DB-backed dependencies before this pass;
+  /// preserve those while appending dependencies that this raw bridge
+  /// materializes from ordinary memrefs.
   SmallVector<Value> dependencyOperands(edt.getDependencies().begin(),
                                         edt.getDependencies().end());
 
-  /// Track which DbAllocOps have already been processed for coarse-grained
-  /// acquires. For fine-grained acquires, we may need multiple acquires per
-  /// DbAllocOp with different indices/offsets, so we don't skip those.
-  DenseSet<Operation *> processedCoarseAllocs;
+  /// One raw bridge acquire per allocation per EDT. Canonical SDE tokens
+  /// already lower directly in ConvertSdeToArts and do not reach this path.
+  DenseSet<Operation *> processedAllocs;
 
   /// For each external value, create acquire and release operations
   for (Value externalDep : externalDeps) {
@@ -1146,6 +964,11 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
     }
     if (isa<DbAllocOp>(underlyingOp))
       continue; // already a DB, no DbAlloc wiring required
+
+    if (!processedAllocs.insert(underlyingOp).second) {
+      ARTS_DEBUG("   - Skipping duplicate external dependency for allocation");
+      continue;
+    }
 
     /// Get the memref info for the underlying operation
     MemrefInfo &info = memrefInfo[underlyingOp];
@@ -1178,17 +1001,9 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
     OpBuilder::InsertionGuard IG(AC->getBuilder());
     AC->setInsertionPoint(edt);
 
-    /// Create acquires based on explicit dependency entries when present,
-    /// otherwise fall back to the whole external memref use in this EDT.
-    const auto &deps = info.edtToDeps[edt];
+    /// Raw bridge acquires cover the whole physical DB range selected at
+    /// allocation time. SDE-tokenized slices lower before this pass.
     const auto &plan = info.rewritePlan.value();
-
-    /// Deduplicate: one acquire per allocation per EDT
-    if (!processedCoarseAllocs.insert(dbAllocOp.getOperation()).second) {
-      ARTS_DEBUG("   - Skipping duplicate acquire for already-processed "
-                 "DbAllocOp");
-      continue;
-    }
 
     /// Build full DB-space range for the already-created physical layout.
     SmallVector<Value> dbOffsets, dbSizes;
@@ -1204,297 +1019,98 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
       }
     }
 
-    SmallVector<SmallVector<const MemrefInfo::DbDep *, 4>, 4> depGroups;
-    SmallVector<ArtsMode, 4> depGroupModes;
-    SmallVector<bool, 4> depGroupPreserveDepEdges;
-    SmallVector<PartitionMode, 4> depGroupPartitionModes;
-    if (deps.empty()) {
-      depGroups.emplace_back();
-      depGroupModes.push_back(ArtsMode::uninitialized);
-      depGroupPreserveDepEdges.push_back(true);
-      depGroupPartitionModes.push_back(
-          plan.usesBlockedLayout() ? plan.mode : PartitionMode::coarse);
-    } else {
-      for (const auto &dep : deps) {
-        PartitionMode depPartitionMode =
-            plan.usesBlockedLayout() ? plan.mode : PartitionMode::coarse;
-        if (!plan.usesBlockedLayout()) {
-          if (!dep.indices.empty()) {
-            depPartitionMode = PartitionMode::fine_grained;
-          } else if (!dep.offsets.empty() && !dep.sizes.empty()) {
-            depPartitionMode = PartitionMode::block;
-          }
-        }
-        int groupIndex = -1;
-        for (auto [idx, groupMode] : llvm::enumerate(depGroupModes)) {
-          if (groupMode == dep.mode &&
-              depGroupPreserveDepEdges[idx] == dep.preserveDepEdge &&
-              depGroupPartitionModes[idx] == depPartitionMode) {
-            groupIndex = static_cast<int>(idx);
-            break;
-          }
-        }
-        if (groupIndex < 0) {
-          depGroupModes.push_back(dep.mode);
-          depGroupPreserveDepEdges.push_back(dep.preserveDepEdge);
-          depGroupPartitionModes.push_back(depPartitionMode);
-          depGroups.emplace_back();
-          depGroups.back().push_back(&dep);
-          continue;
-        }
-        depGroups[groupIndex].push_back(&dep);
-      }
+    ArtsMode acquireMode =
+        AM->getDbAnalysis().inferEdtAccessMode(underlyingOp, edt);
+    if (acquireMode == ArtsMode::uninitialized) {
+      acquireMode = (info.accessMode == ArtsMode::uninitialized)
+                        ? ArtsMode::inout
+                        : info.accessMode;
     }
 
-    /// Track the first dependency-backed local view materialized for this DB
-    /// so locality-only acquires inside the EDT can derive nested views from
-    /// an in-scope handle instead of the outer db_alloc result.
-    Value inScopeAcquireView;
+    if (!plan.isCoarse()) {
+      InFlightDiagnostic diag = edt->emitError(
+          "non-coarse raw memref dependency reached CreateDbs; SDE must "
+          "materialize MU/token/codelet dependencies before ARTS conversion");
+      diag.attachNote(underlyingOp->getLoc()) << "raw allocation";
+      signalPassFailure();
+      return;
+    }
+    PartitionMode partMode = PartitionMode::coarse;
 
-    for (size_t groupIdx = 0, groupCount = depGroups.size();
-         groupIdx < groupCount; ++groupIdx) {
-      auto &depGroup = depGroups[groupIdx];
-      /// Create the parent acquire over the full physical DB range selected at
-      /// allocation time. Element-space partition hints from SDE materialized
-      /// acquires remain attached so task lowering can derive worker-local
-      /// dependency windows.
-      /// Keep different access modes in separate acquires so downstream
-      /// rec_dep lowering preserves read vs write slots.
-      const bool preserveDepEdge = depGroupPreserveDepEdges[groupIdx];
-      ARTS_DEBUG(" - Creating coarse-grained acquire group "
-                 << groupIdx << " for mode " << depGroupModes[groupIdx]
-                 << ", preserveDepEdge=" << preserveDepEdge);
+    Value acqGuid = sourceGuid;
+    Value acqPtr = sourcePtr;
+    if (Value availableHandle =
+            findParentAcquireSource(edt, dbAllocOp, acquireMode)) {
+      ARTS_DEBUG("   - Reusing existing datablock handle in parent scope");
+      acqGuid = Value();
+      acqPtr = availableHandle;
+    }
 
-      /// Collect partition hints from this group's deps.
-      SmallVector<Value> partIndices, partOffsets, partSizes;
-      SmallVector<int32_t> indicesSegments, offsetsSegments, sizesSegments;
-      SmallVector<int32_t> entryModes;
-      ArtsMode acquireMode = depGroupModes[groupIdx];
-
-      for (const MemrefInfo::DbDep *dep : depGroup) {
-        PartitionMode entryMode = PartitionMode::coarse;
-        if (plan.usesBlockedLayout()) {
-          entryMode = plan.mode;
-        } else if (!dep->indices.empty()) {
-          entryMode = PartitionMode::fine_grained;
-        } else if (!dep->offsets.empty() && !dep->sizes.empty()) {
-          entryMode = PartitionMode::block;
-        }
-        entryModes.push_back(static_cast<int32_t>(entryMode));
-
-        indicesSegments.push_back(static_cast<int32_t>(dep->indices.size()));
-        for (Value v : dep->indices)
-          partIndices.push_back(v);
-
-        offsetsSegments.push_back(static_cast<int32_t>(dep->offsets.size()));
-        for (Value v : dep->offsets)
-          partOffsets.push_back(v);
-
-        sizesSegments.push_back(static_cast<int32_t>(dep->sizes.size()));
-        for (Value v : dep->sizes)
-          partSizes.push_back(v);
-      }
-
-      /// If this EDT has no explicit SDE acquire metadata for the memref,
-      /// infer per-EDT access from actual loads/stores before falling back.
-      if (acquireMode == ArtsMode::uninitialized) {
-        acquireMode = AM->getDbAnalysis().inferEdtAccessMode(underlyingOp, edt);
-        if (acquireMode == ArtsMode::uninitialized) {
-          acquireMode = (info.accessMode == ArtsMode::uninitialized)
-                            ? ArtsMode::inout
-                            : info.accessMode;
-        }
-      }
-
-      PartitionMode partMode = depGroupPartitionModes[groupIdx];
-      if (!plan.usesBlockedLayout() && !entryModes.empty())
-        partMode = static_cast<PartitionMode>(entryModes[0]);
-
-      SmallVector<Value> groupDbOffsets(dbOffsets.begin(), dbOffsets.end());
-      SmallVector<Value> groupDbSizes(dbSizes.begin(), dbSizes.end());
-      bool promoteOutToInoutForPartialPhysicalBlocks = false;
-      bool preserveModeForRawBlockedAcquire = false;
-      auto materializeExplicitOwnerSlice = [&]() -> bool {
-        if (!plan.usesBlockedLayout() || depGroup.size() != 1 ||
-            plan.partitionedDims.empty())
-          return false;
-
-        const MemrefInfo::DbDep *dep = depGroup.front();
-        if (!dep || dep->offsets.size() < plan.partitionedDims.size() ||
-            dep->sizes.size() < plan.partitionedDims.size() ||
-            plan.blockSizes.size() < plan.partitionedDims.size() ||
-            allocSizes.size() < plan.partitionedDims.size())
-          return false;
-
-        SmallVector<Value, 4> elementOffsets;
-        SmallVector<Value, 4> elementSizes;
-        SmallVector<Value, 4> blockSpans;
-        SmallVector<Value, 4> totalBlockCounts;
-        for (unsigned ownerSlot = 0; ownerSlot < plan.partitionedDims.size();
-             ++ownerSlot) {
-          elementOffsets.push_back(dep->offsets[ownerSlot]);
-          elementSizes.push_back(dep->sizes[ownerSlot]);
-          blockSpans.push_back(plan.blockSizes[ownerSlot]);
-          totalBlockCounts.push_back(allocSizes[ownerSlot]);
-        }
-
-        if (dep->mode == ArtsMode::out &&
-            !canProveWholePhysicalBlocks(elementOffsets, elementSizes,
-                                         blockSpans,
-                                         plan.partitionedDims.size())) {
-          promoteOutToInoutForPartialPhysicalBlocks = true;
-        }
-
-        SmallVector<Value, 4> normalizedOffsets;
-        SmallVector<Value, 4> normalizedSizes;
-        DbUtils::convertElementSliceToBlockSlice(
-            AC->getBuilder(), edt.getLoc(), elementOffsets, elementSizes,
-            blockSpans, totalBlockCounts, normalizedOffsets, normalizedSizes);
-
-        SmallVector<Value, 4> mergedOffsets;
-        SmallVector<Value, 4> mergedSizes;
-        DbUtils::mergeNormalizedBlockSlice(
-            AC->getBuilder(), edt.getLoc(), groupDbOffsets, groupDbSizes,
-            allocSizes, normalizedOffsets, normalizedSizes, mergedOffsets,
-            mergedSizes);
-        groupDbOffsets.assign(mergedOffsets.begin(), mergedOffsets.end());
-        groupDbSizes.assign(mergedSizes.begin(), mergedSizes.end());
-        return true;
-      };
-
-      (void)materializeExplicitOwnerSlice();
-      if (acquireMode == ArtsMode::out &&
-          promoteOutToInoutForPartialPhysicalBlocks) {
-        ARTS_DEBUG(" - Promoting widened physical block out acquire to inout "
-                   "because the logical element slice does not prove whole "
-                   "DB-block coverage");
-        acquireMode = ArtsMode::inout;
-        ++numOutAcquiresPromotedForPartialBlocks;
-      }
-      if (deps.empty() && plan.usesBlockedLayout() &&
-          acquireMode == ArtsMode::out) {
-        ARTS_DEBUG(" - Promoting raw blocked out acquire to inout because no "
-                   "SDE slice record proves whole-block ownership");
-        acquireMode = ArtsMode::inout;
-        preserveModeForRawBlockedAcquire = true;
-        ++numOutAcquiresPromotedForPartialBlocks;
-      }
-
-      Value acqGuid = sourceGuid;
-      Value acqPtr = sourcePtr;
-      if (!preserveDepEdge && inScopeAcquireView) {
-        ARTS_DEBUG("   - Reusing existing datablock handle inside EDT");
-        acqGuid = Value();
-        acqPtr = inScopeAcquireView;
-      }
-      if (acqPtr == sourcePtr)
-        if (Value availableHandle =
-                findParentAcquireSource(edt, dbAllocOp, acquireMode)) {
-          ARTS_DEBUG("   - Reusing existing datablock handle in parent scope");
-          acqGuid = Value();
-          acqPtr = availableHandle;
-        }
-
-      auto createAcquire = [&](Location acquireLoc) {
-        Type ptrType = acqPtr ? acqPtr.getType() : Type();
-        if (DbUtils::getUnderlyingDbAlloc(acqPtr)) {
-          return AC->create<DbAcquireOp>(
-              acquireLoc, acquireMode, acqGuid, acqPtr, partMode,
-              /*indices=*/SmallVector<Value>{}, /*offsets=*/groupDbOffsets,
-              /*sizes=*/groupDbSizes,
-              /*partition_indices=*/partIndices,
-              /*partition_offsets=*/partOffsets,
-              /*partition_sizes=*/partSizes);
-        }
-
+    auto createAcquire = [&](Location acquireLoc) {
+      Type ptrType = acqPtr ? acqPtr.getType() : Type();
+      if (DbUtils::getUnderlyingDbAlloc(acqPtr)) {
         return AC->create<DbAcquireOp>(
-            acquireLoc, acquireMode, acqGuid, acqPtr, ptrType, partMode,
-            /*indices=*/SmallVector<Value>{}, /*offsets=*/groupDbOffsets,
-            /*sizes=*/groupDbSizes,
-            /*partition_indices=*/partIndices,
-            /*partition_offsets=*/partOffsets,
-            /*partition_sizes=*/partSizes);
-      };
-
-      if (!preserveDepEdge)
-        AC->setInsertionPointToStart(&edt.getBody().front());
-      auto acquireOp = createAcquire(edt.getLoc());
-      ++numDbAcquireGroupsCreated;
-
-      projectSemanticContractToDbValue(
-          edt.getOperation(), acquireOp.getOperation(), acquireOp.getPtr());
-
-      if (!depGroup.empty()) {
-        /// Explicit SDE-derived acquires always preserve their access mode
-        /// contract. Only true predecessor dependency contracts also preserve
-        /// the EDT dependency edge.
-        acquireOp.setPreserveAccessMode();
-        if (preserveDepEdge)
-          acquireOp.setPreserveDepEdge();
-      }
-      if (preserveModeForRawBlockedAcquire)
-        acquireOp.setPreserveAccessMode();
-
-      acquireOp.setPartitionSegments(indicesSegments, offsetsSegments,
-                                     sizesSegments, entryModes);
-
-      ARTS_DEBUG(" - Created acquire group with "
-                 << depGroup.size() << " partition entries, primary mode="
-                 << static_cast<int>(partMode) << ": " << acquireOp);
-
-      Value localAcquireView = acquireOp.getPtr();
-      if (preserveDepEdge) {
-        auto sourceType = dyn_cast<MemRefType>(localAcquireView.getType());
-        BlockArgument dbAcquireArg =
-            edt.getBody().front().addArgument(sourceType, edt.getLoc());
-        dependencyOperands.push_back(localAcquireView);
-        localAcquireView = dbAcquireArg;
-        if (!inScopeAcquireView)
-          inScopeAcquireView = localAcquireView;
+            acquireLoc, acquireMode, acqGuid, acqPtr, partMode,
+            /*indices=*/SmallVector<Value>{}, /*offsets=*/dbOffsets,
+            /*sizes=*/dbSizes,
+            /*partition_indices=*/SmallVector<Value>{},
+            /*partition_offsets=*/SmallVector<Value>{},
+            /*partition_sizes=*/SmallVector<Value>{});
       }
 
-      SmallVector<Operation *> opsToRewrite;
-      llvm::SmallPtrSet<Operation *, 16> seenOps;
-      auto addOpIfNew = [&](Operation *op) {
-        if (!op)
-          return;
-        if (seenOps.insert(op).second)
-          opsToRewrite.push_back(op);
-      };
+      return AC->create<DbAcquireOp>(
+          acquireLoc, acquireMode, acqGuid, acqPtr, ptrType, partMode,
+          /*indices=*/SmallVector<Value>{}, /*offsets=*/dbOffsets,
+          /*sizes=*/dbSizes,
+          /*partition_indices=*/SmallVector<Value>{},
+          /*partition_offsets=*/SmallVector<Value>{},
+          /*partition_sizes=*/SmallVector<Value>{});
+    };
 
-      bool missingOpsForDeps = deps.empty();
-      for (const MemrefInfo::DbDep *dep : depGroup) {
-        for (Operation *op : dep->operations)
-          addOpIfNew(op);
-      }
+    auto acquireOp = createAcquire(edt.getLoc());
+    ++numDbAcquireGroupsCreated;
 
-      /// Fallback: collect all operations using this memref in EDT when there
-      /// are no explicit dependency entries for the memref.
-      if (opsToRewrite.empty() || missingOpsForDeps) {
-        ARTS_DEBUG(
-            " - Fallback: collecting all operations using this memref in EDT");
-        edt.walk([&](Operation *op) {
-          if (op->getParentOfType<EdtOp>() != edt)
-            return;
-          if (!DbAnalysis::opMatchesAccessMode(op, underlyingOp, acquireMode))
-            return;
-          addOpIfNew(op);
-        });
-        ARTS_DEBUG(" - Found " << opsToRewrite.size()
-                               << " operations to rewrite");
-      }
+    projectSemanticContractToDbValue(
+        edt.getOperation(), acquireOp.getOperation(), acquireOp.getPtr());
 
-      if (!opsToRewrite.empty()) {
-        SmallVector<Value> dbRefIndices;
-        dbRefIndices.push_back(AC->createIndexConstant(0, edt.getLoc()));
-        rewriteOpsToUseDbAcquire(edt, opsToRewrite, acquireOp, dbRefIndices,
-                                 groupDbOffsets, localAcquireView, plan);
-      }
+    ARTS_DEBUG(" - Created raw bridge acquire, mode="
+               << acquireMode << ", partition=" << static_cast<int>(partMode)
+               << ": " << acquireOp);
 
-      OpBuilder::InsertionGuard releaseGuard(AC->getBuilder());
-      AC->setInsertionPoint(edt.getBody().front().getTerminator());
-      AC->create<DbReleaseOp>(edt.getLoc(), localAcquireView);
+    Value localAcquireView = acquireOp.getPtr();
+    auto sourceType = dyn_cast<MemRefType>(localAcquireView.getType());
+    BlockArgument dbAcquireArg =
+        edt.getBody().front().addArgument(sourceType, edt.getLoc());
+    dependencyOperands.push_back(localAcquireView);
+    localAcquireView = dbAcquireArg;
+
+    SmallVector<Operation *> opsToRewrite;
+    llvm::SmallPtrSet<Operation *, 16> seenOps;
+    auto addOpIfNew = [&](Operation *op) {
+      if (!op)
+        return;
+      if (seenOps.insert(op).second)
+        opsToRewrite.push_back(op);
+    };
+
+    edt.walk([&](Operation *op) {
+      if (op->getParentOfType<EdtOp>() != edt)
+        return;
+      if (!DbAnalysis::opMatchesAccessMode(op, underlyingOp, acquireMode))
+        return;
+      addOpIfNew(op);
+    });
+    ARTS_DEBUG(" - Found " << opsToRewrite.size()
+                           << " raw memref operation(s) to rewrite");
+
+    if (!opsToRewrite.empty()) {
+      rewriteOpsToUseDbAcquire(edt, opsToRewrite, underlyingOp,
+                               localAcquireView, plan);
     }
+
+    OpBuilder::InsertionGuard releaseGuard(AC->getBuilder());
+    AC->setInsertionPoint(edt.getBody().front().getTerminator());
+    AC->create<DbReleaseOp>(edt.getLoc(), localAcquireView);
   }
 
   /// After processing all memrefs, set EDT dependencies
@@ -1531,7 +1147,6 @@ void CreateDbsPass::rewriteUsesInParentEdt(MemrefInfo &memrefInfo) {
   assert(memrefInfo.dbAllocOp && "No DbAllocOp found");
 
   auto dbAlloc = memrefInfo.dbAllocOp;
-  Type elementMemRefType = dbAlloc.getAllocatedElementType();
 
   /// Collect users in the parent edt
   SmallVector<Operation *, 8> users;
@@ -1555,72 +1170,45 @@ void CreateDbsPass::rewriteUsesInParentEdt(MemrefInfo &memrefInfo) {
                              << users.size() << " in parent EDT, skipped "
                              << skippedUses);
 
-  /// Coarse-grained: db_ref[0] + load/store[indices]
-  /// Fine-grained: db_ref[indices] + load/store[0]
+  /// Coarse raw bridge: db_ref[0] + original load/store indices. Tiled or
+  /// sliced views must already have been rewritten at the SDE MU/token level.
   const DbPhysicalLayoutPlan &plan = memrefInfo.rewritePlan.value();
-  unsigned innerRank = cast<MemRefType>(elementMemRefType).getRank();
-
-  std::unique_ptr<DbIndexerBase> indexer;
-  if (plan.usesBlockedLayout()) {
-    PartitionInfo blockInfo;
-    blockInfo.mode = PartitionMode::block;
-    blockInfo.sizes.assign(plan.blockSizes.begin(), plan.blockSizes.end());
-    blockInfo.partitionedDims.assign(plan.partitionedDims.begin(),
-                                     plan.partitionedDims.end());
-    SmallVector<Value> startBlocks(plan.blockSizes.size());
-    for (Value &startBlock : startBlocks)
-      startBlock = AC->createIndexConstant(0, dbAlloc.getLoc());
-    indexer = std::make_unique<DbBlockIndexer>(blockInfo, startBlocks,
-                                               plan.outerRank(), innerRank);
-  } else {
-    PartitionInfo info;
-    info.mode = PartitionMode::coarse;
-    unsigned outerRank =
-        memrefInfo.usedFineGrained ? dbAlloc.getSizes().size() : 0;
-    indexer =
-        std::make_unique<DbElementWiseIndexer>(info, outerRank, innerRank);
+  if (!plan.isCoarse()) {
+    InFlightDiagnostic diag = memrefInfo.alloc->emitError(
+        "non-coarse raw memref parent uses reached CreateDbs; SDE must "
+        "materialize MU/token/codelet storage and token-local rewrites before "
+        "ARTS conversion");
+    diag.attachNote(dbAlloc->getLoc()) << "DB allocation created for raw memref";
+    signalPassFailure();
+    return;
   }
 
+  Value rootValue = memrefInfo.alloc->getResult(0);
   for (Operation *user : users) {
-    size_t sizeBefore = opsToRemove.size();
-    indexer->transformOps({user}, dbAlloc.getPtr(), elementMemRefType, *AC,
-                          opsToRemove);
-    if (opsToRemove.size() > sizeBefore) {
-      ARTS_DEBUG("   Transformed: " << user->getName()
-                                    << " -> added to remove");
-    } else {
-      ARTS_DEBUG("   NOT transformed: " << user->getName() << " at "
-                                        << user->getLoc());
+    if (failed(rewriteCoarseRawAccess(user, rootValue, dbAlloc.getPtr(), *AC))) {
+      signalPassFailure();
+      return;
     }
+    ARTS_DEBUG("   Rewritten or validated coarse raw user: "
+               << user->getName() << " at " << user->getLoc());
   }
 }
 
 /// Rewrite uses of a DB allocation in the parent region.
 /// This is used when the allocation is not inside an EDT, but is still shared
 /// with EDTs and the host needs to see the updated data.
-void CreateDbsPass::rewriteUsesEverywhereWithPlan(Operation *alloc,
-                                                  DbAllocOp dbAlloc,
-                                                  const DbPhysicalLayoutPlan &plan) {
+void CreateDbsPass::rewriteUsesEverywhereWithPlan(
+    Operation *alloc, DbAllocOp dbAlloc, const DbPhysicalLayoutPlan &plan) {
   Value originalValue = alloc->getResult(0);
   if (!originalValue)
     return;
 
   if (plan.usesBlockedLayout()) {
-    for (auto &use : llvm::make_early_inc_range(originalValue.getUses()))
-      if (isa<memref::DeallocOp>(use.getOwner()))
-        opsToRemove.insert(use.getOwner());
-
-    PartitionInfo blockInfo;
-    blockInfo.mode = PartitionMode::block;
-    blockInfo.sizes.assign(plan.blockSizes.begin(), plan.blockSizes.end());
-    blockInfo.partitionedDims.assign(plan.partitionedDims.begin(),
-                                     plan.partitionedDims.end());
-    SmallVector<Value> startBlocks(plan.blockSizes.size());
-    for (Value &startBlock : startBlocks)
-      startBlock = AC->createIndexConstant(0, dbAlloc.getLoc());
-    DbBlockIndexer indexer(blockInfo, startBlocks, plan.outerRank(),
-                           plan.innerRank());
-    indexer.transformUsesInParentRegion(alloc, dbAlloc, *AC, opsToRemove);
+    InFlightDiagnostic diag = alloc->emitError(
+        "blocked raw host uses reached CreateDbs; SDE/CODIR must materialize "
+        "tiled MU/token views before ARTS conversion");
+    diag.attachNote(dbAlloc->getLoc()) << "DB allocation created for raw memref";
+    signalPassFailure();
     return;
   }
 
@@ -1658,51 +1246,10 @@ void CreateDbsPass::rewriteUsesEverywhereWithPlan(Operation *alloc,
   if (!hasHostUses)
     return;
 
-  auto materializeMemrefAsType = [&](Value value, Type targetType,
-                                     Operation *insertBefore) -> Value {
-    if (!value || value.getType() == targetType)
-      return value;
-    if (!isa<MemRefType>(value.getType()) || !isa<MemRefType>(targetType))
-      return Value();
-
-    auto srcType = cast<MemRefType>(value.getType());
-    auto dstType = cast<MemRefType>(targetType);
-
-    // Handle rank-1 -> rank-0 for scalar DBs (memref<?xT> -> memref<T>):
-    // use subview to extract a rank-reducing 0-d slice at index 0.
-    if (srcType.getRank() != dstType.getRank()) {
-      if (srcType.getRank() == 1 && dstType.getRank() == 0 &&
-          srcType.getElementType() == dstType.getElementType()) {
-        OpBuilder::InsertionGuard guard(AC->getBuilder());
-        AC->setInsertionPoint(insertBefore);
-        OpFoldResult zero = AC->getBuilder().getIndexAttr(0);
-        OpFoldResult one = AC->getBuilder().getIndexAttr(1);
-        return AC->create<memref::SubViewOp>(
-            insertBefore->getLoc(), dstType, value,
-            /*offsets=*/SmallVector<OpFoldResult>{zero},
-            /*sizes=*/SmallVector<OpFoldResult>{one},
-            /*strides=*/SmallVector<OpFoldResult>{one});
-      }
-      return Value();
-    }
-
-    if (!memref::CastOp::areCastCompatible(srcType, dstType))
-      return Value();
-
-    OpBuilder::InsertionGuard guard(AC->getBuilder());
-    AC->setInsertionPoint(insertBefore);
-    return AC->create<memref::CastOp>(insertBefore->getLoc(), dstType, value);
-  };
-
   auto materializeCoarseView = [&](Type targetType,
                                    Operation *insertBefore) -> Value {
-    OpBuilder::InsertionGuard guard(AC->getBuilder());
-    AC->setInsertionPoint(insertBefore);
-    Value zero = AC->createIndexConstant(0, insertBefore->getLoc());
-    Value view = AC->create<DbRefOp>(insertBefore->getLoc(),
-                                     dbAlloc.getAllocatedElementType(),
-                                     dbAlloc.getPtr(), ValueRange{zero});
-    return materializeMemrefAsType(view, targetType, insertBefore);
+    Value view = createCoarseDbRef(dbAlloc.getPtr(), insertBefore, *AC);
+    return materializeMemrefAsType(view, targetType, insertBefore, *AC);
   };
 
   std::function<void(Value, Value)> rewriteForwardedUses =
@@ -1729,7 +1276,7 @@ void CreateDbsPass::rewriteUsesEverywhereWithPlan(Operation *alloc,
 
           if (isForwardingMemrefAliasOp(user, oldValue)) {
             Value mappedSource = materializeMemrefAsType(
-                baseReplacement, oldValue.getType(), user);
+                baseReplacement, oldValue.getType(), user, *AC);
             if (!mappedSource)
               continue;
 
@@ -1750,7 +1297,7 @@ void CreateDbsPass::rewriteUsesEverywhereWithPlan(Operation *alloc,
           }
 
           Value typedReplacement = materializeMemrefAsType(
-              baseReplacement, oldValue.getType(), user);
+              baseReplacement, oldValue.getType(), user, *AC);
           if (!typedReplacement)
             continue;
           use->set(typedReplacement);
@@ -1762,28 +1309,21 @@ void CreateDbsPass::rewriteUsesEverywhereWithPlan(Operation *alloc,
 
 /// Rewrite operations to use DbAcquire
 void CreateDbsPass::rewriteOpsToUseDbAcquire(
-    EdtOp edt, SmallVector<Operation *> &operations, Operation *dbOp,
-    SmallVector<Value> &acquireIndices, SmallVector<Value> &acquireOffsets,
-    Value localAcquireView, const DbPhysicalLayoutPlan &plan) {
+    EdtOp edt, SmallVector<Operation *> &operations, Operation *rawAlloc,
+    Value localAcquireView,
+    const DbPhysicalLayoutPlan &plan) {
   ARTS_DEBUG(" - Rewriting " << operations.size() << " operations in EDT");
   numOpsRewrittenToDbViews += operations.size();
 
-  /// Get the element type from the acquired datablock
-  /// For fine-grained: memref<?xmemref<?xT>> -> extract memref<?xT>
-  Type elementMemRefType = localAcquireView.getType();
-  if (auto outerMemrefType = dyn_cast<MemRefType>(elementMemRefType)) {
-    if (auto innerMemrefType =
-            dyn_cast<MemRefType>(outerMemrefType.getElementType())) {
-      elementMemRefType = innerMemrefType;
-    }
+  if (!plan.isCoarse()) {
+    InFlightDiagnostic diag = edt->emitError(
+        "non-coarse raw memref access rewrite reached CreateDbs; SDE must "
+        "materialize tiled MU/token views before ARTS conversion");
+    if (rawAlloc)
+      diag.attachNote(rawAlloc->getLoc()) << "raw allocation";
+    signalPassFailure();
+    return;
   }
-  ARTS_DEBUG(" - Element memref type: " << elementMemRefType);
-
-  /// Use stored ranks from plan, with fallback for innerRank
-  unsigned innerRank = plan.innerRank();
-  if (innerRank == 0)
-    if (auto memrefType = dyn_cast<MemRefType>(elementMemRefType))
-      innerRank = memrefType.getRank();
 
   /// Build value mapping from parent EDT block args/acquires to this EDT's args
   IRMapping scopeMapping;
@@ -1821,106 +1361,13 @@ void CreateDbsPass::rewriteOpsToUseDbAcquire(
       }
     }
 
-    if (plan.isCoarse()) {
-      /// Coarse mode: db_ref index must be constant zero.
-      PartitionInfo coarseInfo;
-      coarseInfo.mode = PartitionMode::coarse;
-      DbElementWiseIndexer indexer(coarseInfo, /*outerRank=*/0, innerRank, {});
-      llvm::SetVector<Operation *> localOpsToRemove;
-      indexer.transformOps({op}, localAcquireView, elementMemRefType, *AC,
-                           localOpsToRemove);
-      for (Operation *toRemove : localOpsToRemove)
-        opsToRemove.insert(toRemove);
-      continue;
-    }
-
-    if (plan.usesBlockedLayout()) {
-      /// Block mode: Use DbBlockIndexer with stored block size
-      ARTS_DEBUG(" - Using DbBlockIndexer with stored plan");
-      Location loc = op->getLoc();
-      unsigned chunkOuterRank = plan.outerRank();
-      if (chunkOuterRank == 0)
-        if (auto acquireOp = dyn_cast<DbAcquireOp>(dbOp))
-          chunkOuterRank = acquireOp.getSizes().size();
-
-      SmallVector<Value> blockSizes;
-      SmallVector<Value> startBlocks;
-      blockSizes.reserve(plan.blockSizes.size());
-      startBlocks.reserve(plan.blockSizes.size());
-
-      Value zero = AC->createIndexConstant(0, loc);
-      for (auto [dimIdx, blockSize] : llvm::enumerate(plan.blockSizes)) {
-        if (!blockSize)
-          continue;
-        blockSizes.push_back(blockSize);
-        /// DbAcquireOp offsets are already DB-space.  Partition offsets carry
-        /// element-space hints; using the acquire offset directly keeps
-        /// db_ref indices relative to narrowed dependency windows.
-        Value startBlock =
-            dimIdx < acquireOffsets.size() ? acquireOffsets[dimIdx] : zero;
-        startBlocks.push_back(startBlock);
-      }
-
-      if (blockSizes.empty()) {
-        Value fallbackBlockSize = plan.getBlockSize(0);
-        if (fallbackBlockSize) {
-          blockSizes.push_back(fallbackBlockSize);
-          Value startBlock = acquireOffsets.empty() ? zero : acquireOffsets[0];
-          startBlocks.push_back(startBlock);
-        }
-      }
-
-      /// Build PartitionInfo from stored N-D block plan.
-      PartitionInfo blockInfo;
-      blockInfo.mode = PartitionMode::block;
-      blockInfo.sizes.assign(blockSizes.begin(), blockSizes.end());
-      blockInfo.partitionedDims.assign(plan.partitionedDims.begin(),
-                                       plan.partitionedDims.end());
-      DbBlockIndexer indexer(blockInfo, startBlocks, chunkOuterRank, innerRank);
-      llvm::SetVector<Operation *> localOpsToRemove;
-      indexer.transformOps({op}, localAcquireView, elementMemRefType, *AC,
-                           localOpsToRemove);
-      for (Operation *toRemove : localOpsToRemove)
-        opsToRemove.insert(toRemove);
-      continue;
-    }
-
-    /// ElementWise mode
-    Value elemOffset = AC->createIndexConstant(0, op->getLoc());
-
-    /// Build PartitionInfo from elemOffset
-    PartitionInfo ewInfo;
-    ewInfo.mode = PartitionMode::fine_grained;
-    ewInfo.indices.push_back(elemOffset);
-    DbElementWiseIndexer indexer(ewInfo, plan.outerRank(), innerRank, {});
-
-    if (auto load = dyn_cast<memref::LoadOp>(op)) {
-      auto localized = indexer.localizeForFineGrained(
-          load.getIndices(), acquireIndices, acquireOffsets, AC->getBuilder(),
-          op->getLoc());
-      auto dbRef =
-          AC->create<DbRefOp>(op->getLoc(), elementMemRefType, localAcquireView,
-                              localized.dbRefIndices);
-      auto newLoad = AC->create<memref::LoadOp>(op->getLoc(), dbRef,
-                                                localized.memrefIndices);
-      load.replaceAllUsesWith(newLoad.getResult());
-      opsToRemove.insert(op);
-    } else if (auto store = dyn_cast<memref::StoreOp>(op)) {
-      auto localized = indexer.localizeForFineGrained(
-          store.getIndices(), acquireIndices, acquireOffsets, AC->getBuilder(),
-          op->getLoc());
-      auto dbRef =
-          AC->create<DbRefOp>(op->getLoc(), elementMemRefType, localAcquireView,
-                              localized.dbRefIndices);
-      AC->create<memref::StoreOp>(op->getLoc(), store.getValue(), dbRef,
-                                  localized.memrefIndices);
-      opsToRemove.insert(op);
-    } else {
-      llvm::SetVector<Operation *> localOpsToRemove;
-      indexer.transformOps({op}, localAcquireView, elementMemRefType, *AC,
-                           localOpsToRemove);
-      for (Operation *toRemove : localOpsToRemove)
-        opsToRemove.insert(toRemove);
+    Value rootValue = rawAlloc && rawAlloc->getNumResults() > 0
+                          ? rawAlloc->getResult(0)
+                          : Value();
+    if (failed(
+            rewriteCoarseRawAccess(op, rootValue, localAcquireView, *AC))) {
+      signalPassFailure();
+      return;
     }
   }
 }

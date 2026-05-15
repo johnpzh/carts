@@ -38,13 +38,16 @@ module {
   // CHECK: arts.db_acquire[<in>]
   // CHECK-SAME: partitioning(<block>
   // CHECK: arts.edt <task> <intranode>
+  // CHECK-NOT: memref.subview
+  // CHECK: memref.load %{{.*}}[%c16] : memref<1024xf32>
   // CHECK-NOT: sde.
   func.func @codelet_memref_slice_read() {
     %c0 = arith.constant 0 : index
+    %c16 = arith.constant 16 : index
     %c512 = arith.constant 512 : index
     %d = sde.mu_data shared : memref<1024xf32>
 
-    %t = sde.mu_token <read> %d [%c0] size [%c512]
+    %t = sde.mu_token <read> %d [%c16] size [%c512]
       : memref<1024xf32> -> !sde.token<memref<?xf32, strided<[1], offset: ?>>>
 
     sde.cu_codelet (%t : !sde.token<memref<?xf32, strided<[1], offset: ?>>>) {

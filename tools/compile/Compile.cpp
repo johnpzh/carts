@@ -48,6 +48,8 @@
 #include "arts/utils/Debug.h"
 #include "arts/utils/OperationAttributes.h"
 #include "arts/utils/PassInstrumentation.h"
+#include "carts/dialect/codir/IR/CodirDialect.h"
+#include "carts/dialect/codir/Transforms/Passes.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Debug.h"
@@ -64,6 +66,7 @@
 
 using namespace llvm;
 using namespace mlir;
+using namespace mlir::carts;
 using mlir::arts::debugStream;
 
 ARTS_DEBUG_SETUP(compile)
@@ -219,6 +222,15 @@ struct StageDescriptor {
   llvm::ArrayRef<llvm::StringLiteral> dependsOn;
 };
 
+struct DialectGroupDescriptor {
+  llvm::StringLiteral name;
+  llvm::StringLiteral status;
+  llvm::StringLiteral summary;
+  llvm::ArrayRef<llvm::StringLiteral> layers;
+  llvm::ArrayRef<llvm::StringLiteral> currentStages;
+  llvm::ArrayRef<llvm::StringLiteral> targetStages;
+};
+
 static constexpr llvm::StringLiteral kCompletePipelineToken = "complete";
 static constexpr llvm::StringLiteral kPostO3OptToken = "post-o3-opt";
 static constexpr llvm::StringLiteral kLLVMIREmissionToken = "llvm-ir-emission";
@@ -239,6 +251,12 @@ static cl::opt<bool> PrintPipelineManifestJSON(
     "print-pipeline-manifest-json",
     cl::desc("Print pipeline step/pass manifest as JSON and exit"),
     cl::init(false));
+
+static cl::opt<std::string> CustomPassPipeline(
+    "pass-pipeline",
+    cl::desc("Run a textual MLIR pass pipeline instead of the staged CARTS "
+             "pipeline"),
+    cl::value_desc("pipeline"), cl::init(""));
 
 static const std::array<llvm::StringLiteral, 10>
     kRaiseMemRefDimensionalityPasses = {"LowerAffine(func)",
@@ -361,6 +379,81 @@ static const std::array<llvm::StringLiteral, 12> kLLVMIREmissionPasses = {
     "PolygeistCanonicalize",
     "CSE"};
 
+static constexpr llvm::StringLiteral kFrontendLayers[] = {
+    "polygeist", "memref", "scf"};
+static constexpr llvm::StringLiteral kSdeCompatLayers[] = {
+    "sde", "compat-sde-to-arts"};
+static constexpr llvm::StringLiteral kArtsLayers[] = {"arts"};
+static constexpr llvm::StringLiteral kArtsRtLayers[] = {"arts-rt", "llvm"};
+static constexpr llvm::StringLiteral kSdeLayers[] = {"sde"};
+static constexpr llvm::StringLiteral kCodirLayers[] = {"codir"};
+static constexpr llvm::StringLiteral kSdeToCodirLayers[] = {"sde", "codir"};
+static constexpr llvm::StringLiteral kCodirToArtsLayers[] = {"codir", "arts"};
+
+static constexpr llvm::StringLiteral kCurrentFrontendStages[] = {
+    "raise-memref-dimensionality", "initial-cleanup"};
+static constexpr llvm::StringLiteral kCurrentOpenMPToArtsStages[] = {
+    "openmp-to-arts"};
+static constexpr llvm::StringLiteral kCurrentArtsStages[] = {
+    "edt-transforms", "create-dbs", "db-opt", "post-db-refinement",
+    "late-concurrency-cleanup", "epochs"};
+static constexpr llvm::StringLiteral kCurrentArtsRtStages[] = {
+    "pre-lowering", "arts-to-llvm"};
+
+static constexpr llvm::StringLiteral kTargetFrontendStages[] = {
+    "frontend-normalization"};
+static constexpr llvm::StringLiteral kTargetSdeStages[] = {
+    "openmp-to-sde", "sde-planning"};
+static constexpr llvm::StringLiteral kTargetSdeToCodirStages[] = {
+    "sde-to-codir"};
+static constexpr llvm::StringLiteral kTargetCodirStages[] = {
+    "verify-codir", "codir-codelet-opt"};
+static constexpr llvm::StringLiteral kTargetCodirToArtsStages[] = {
+    "codir-to-arts"};
+static constexpr llvm::StringLiteral kTargetArtsStages[] = {
+    "arts-object-refinement", "arts-epochs"};
+static constexpr llvm::StringLiteral kTargetArtsRtStages[] = {
+    "arts-to-arts-rt", "arts-rt-to-llvm"};
+
+static const std::array<DialectGroupDescriptor, 4> kCurrentDialectGroups = {{
+    {"frontend-normalization", "current",
+     "Frontend and memref normalization before SDE owns source semantics.",
+     kFrontendLayers, kCurrentFrontendStages, kTargetFrontendStages},
+    {"sde-planning-and-compat-boundary", "current",
+     "Current SDE lifecycle plus transitional direct SDE-to-ARTS conversion.",
+     kSdeCompatLayers, kCurrentOpenMPToArtsStages, llvm::ArrayRef<llvm::StringLiteral>()},
+    {"arts-object-refinement", "current",
+     "Abstract ARTS DB, EDT, epoch, dependency, and cleanup stages.",
+     kArtsLayers, kCurrentArtsStages, llvm::ArrayRef<llvm::StringLiteral>()},
+    {"arts-rt-lowering", "current",
+     "Runtime ABI and LLVM-facing lowering after ARTS object shape is chosen.",
+     kArtsRtLayers, kCurrentArtsRtStages, kTargetArtsRtStages},
+}};
+
+static const std::array<DialectGroupDescriptor, 7> kTargetDialectGroups = {{
+    {"frontend-normalization", "target",
+     "Normalize frontend IR before entering the CARTS dialect stack.",
+     kFrontendLayers, kCurrentFrontendStages, kTargetFrontendStages},
+    {"sde", "target",
+     "SDE proves source semantics and authors MU/CU/SU planning facts.",
+     kSdeLayers, kCurrentOpenMPToArtsStages, kTargetSdeStages},
+    {"sde-to-codir", "planned",
+     "Materialize SDE plans into isolated CODIR codelets and token-local views.",
+     kSdeToCodirLayers, kCurrentOpenMPToArtsStages, kTargetSdeToCodirStages},
+    {"codir", "planned",
+     "Verify explicit deps, params, yielded values, and no implicit captures.",
+     kCodirLayers, llvm::ArrayRef<llvm::StringLiteral>(), kTargetCodirStages},
+    {"codir-to-arts", "planned",
+     "Lower explicit CODIR deps and codelets to ARTS DB/EDT objects.",
+     kCodirToArtsLayers, kCurrentOpenMPToArtsStages, kTargetCodirToArtsStages},
+    {"arts", "target",
+     "Refine abstract ARTS DB, EDT, epoch, dependency, and placement objects.",
+     kArtsLayers, kCurrentArtsStages, kTargetArtsStages},
+    {"arts-rt", "target",
+     "Lower the chosen ARTS object graph to runtime ABI and LLVM.",
+     kArtsRtLayers, kCurrentArtsRtStages, kTargetArtsRtStages},
+}};
+
 static ArrayRef<StageDescriptor> getStageRegistry();
 
 static const StageDescriptor *findStageById(StageId id) {
@@ -442,6 +535,27 @@ static void printStringArray(llvm::raw_ostream &os,
   os << "]";
 }
 
+static void printDialectGroupArray(
+    llvm::raw_ostream &os,
+    llvm::ArrayRef<DialectGroupDescriptor> groups) {
+  os << "[\n";
+  for (size_t i = 0; i < groups.size(); ++i) {
+    const DialectGroupDescriptor &group = groups[i];
+    if (i != 0)
+      os << ",\n";
+    os << "      {\"name\": \"" << group.name << "\", \"status\": \""
+       << group.status << "\", \"summary\": \"" << group.summary
+       << "\", \"layers\": ";
+    printStringArray(os, group.layers);
+    os << ", \"currentStages\": ";
+    printStringArray(os, group.currentStages);
+    os << ", \"targetStages\": ";
+    printStringArray(os, group.targetStages);
+    os << "}";
+  }
+  os << "\n    ]";
+}
+
 static void printPipelineManifestAsJSON(llvm::raw_ostream &os) {
   os << "{\n";
   printPipelineTokenArray(os, "pipeline", [](const StageDescriptor &stage) {
@@ -486,7 +600,14 @@ static void printPipelineManifestAsJSON(llvm::raw_ostream &os) {
     printStringArray(os, stage.dependsOn);
     os << "}";
   }
-  os << "\n  ]\n";
+  os << "\n  ],\n";
+  os << "  \"dialect_groups\": {\n";
+  os << "    \"current\": ";
+  printDialectGroupArray(os, kCurrentDialectGroups);
+  os << ",\n";
+  os << "    \"target\": ";
+  printDialectGroupArray(os, kTargetDialectGroups);
+  os << "\n  }\n";
   os << "}\n";
 }
 
@@ -544,8 +665,10 @@ configurePassManager(PassManager &pm,
 /// Register standard MLIR dialects, passes, and translations.
 void registerDialects(DialectRegistry &registry) {
   registry.insert<polygeist::PolygeistDialect, arts::ArtsDialect,
-                  arts::rt::ArtsRtDialect, arts::sde::ArtsSdeDialect>();
+                  arts::rt::ArtsRtDialect, sde::CartsSdeDialect,
+                  codir::CartsCodirDialect>();
   registerAllPasses();
+  codir::registerCartsCodirPasses();
   registerAllTranslations();
   registerpolygeistPasses();
   func::registerInlinerExtension(registry);
@@ -578,7 +701,8 @@ void initializeContext(MLIRContext &context) {
   context.getOrLoadDialect<polygeist::PolygeistDialect>();
   context.getOrLoadDialect<arts::ArtsDialect>();
   context.getOrLoadDialect<arts::rt::ArtsRtDialect>();
-  context.getOrLoadDialect<arts::sde::ArtsSdeDialect>();
+  context.getOrLoadDialect<sde::CartsSdeDialect>();
+  context.getOrLoadDialect<codir::CartsCodirDialect>();
   context.getOrLoadDialect<cf::ControlFlowDialect>();
 
   /// Register all necessary interfaces for LLVM conversion
@@ -618,7 +742,7 @@ void buildRaiseMemRefDimensionalityPipeline(PassManager &pm) {
   pm.addPass(createCSEPass());
   pm.addPass(arts::createArtsInlinerPass());
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
-  pm.addPass(arts::sde::createScalarForwardingPass());
+  pm.addPass(sde::createScalarForwardingPass());
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
   pm.addPass(arts::createMemrefNormalizationPass());
   pm.addPass(arts::createHandleDepsPass());
@@ -636,30 +760,30 @@ void buildInitialCleanupPipeline(OpPassManager &optPM) {
 /// OpenMP to ARTS conversion pass (via SDE intermediate representation).
 void buildOpenMPToArtsPipeline(PassManager &pm,
                                arts::AnalysisManager *AM = nullptr) {
-  arts::sde::SDECostModel *costModel = AM ? &AM->getCostModel() : nullptr;
-  pm.addPass(arts::sde::createConvertOpenMPToSdePass(costModel));
+  sde::SDECostModel *costModel = AM ? &AM->getCostModel() : nullptr;
+  pm.addPass(sde::createConvertOpenMPToSdePass(costModel));
   // SDE pattern analysis first stamps approved memref/ND access facts. Dep
   // transforms then consume those SDE facts before effect passes make
   // scheduling decisions.
-  pm.addPass(arts::sde::createPatternAnalysisPass(costModel));
-  pm.addPass(arts::sde::createLoopInterchangePass());
-  pm.addPass(arts::sde::createTilingPass(costModel));
-  pm.addPass(arts::sde::createElementwiseFusionPass());
-  pm.addPass(arts::sde::createVectorizationPass(costModel));
-  pm.addPass(arts::sde::createScheduleRefinementPass(costModel));
-  pm.addPass(arts::sde::createChunkOptPass(costModel));
-  pm.addPass(arts::sde::createReductionStrategyPass(costModel));
-  pm.addPass(arts::sde::createDistributionPlanningPass(costModel));
-  pm.addPass(arts::sde::createIterationSpaceDecompositionPass());
-  pm.addPass(arts::sde::createBarrierEliminationPass(costModel));
-  pm.addPass(arts::sde::createVerifySdeCpsPlanPass());
-  pm.addPass(arts::sde::createMemoryUnitMaterializationPass());
+  pm.addPass(sde::createPatternAnalysisPass(costModel));
+  pm.addPass(sde::createLoopInterchangePass());
+  pm.addPass(sde::createTilingPass(costModel));
+  pm.addPass(sde::createElementwiseFusionPass());
+  pm.addPass(sde::createVectorizationPass(costModel));
+  pm.addPass(sde::createScheduleRefinementPass(costModel));
+  pm.addPass(sde::createChunkOptPass(costModel));
+  pm.addPass(sde::createReductionStrategyPass(costModel));
+  pm.addPass(sde::createDistributionPlanningPass(costModel));
+  pm.addPass(sde::createIterationSpaceDecompositionPass());
+  pm.addPass(sde::createBarrierEliminationPass(costModel));
+  pm.addPass(sde::createVerifySdeCpsPlanPass());
+  pm.addPass(sde::createMemoryUnitMaterializationPass());
   // Cleanup sub-pipeline deferred: Canonicalize+CSE+DCE here would optimize
   // codelet bodies (cu_codelet is IsolatedFromAbove) but the module-level
   // DCE+CSE after ConvertSdeToArts already covers this. Adding it here
   // changes IR shapes that downstream CHECK patterns depend on.
-  pm.addPass(arts::sde::createConvertSdeToArtsPass());
-  pm.addPass(arts::sde::createVerifySdeLoweredPass());
+  pm.addPass(sde::createConvertSdeToArtsPass());
+  pm.addPass(sde::createVerifySdeLoweredPass());
   pm.addPass(arts::createVerifyCoreObjectsOnlyPass());
   pm.addPass(arts::createDCEPass());
   pm.addPass(createCSEPass());
@@ -1218,6 +1342,41 @@ int main(int argc, char **argv) {
   if (!module) {
     ARTS_ERROR("Could not parse input file");
     return 1;
+  }
+
+  if (!CustomPassPipeline.empty()) {
+    PassManager pm(&context);
+    if (failed(configurePassManager(pm))) {
+      ARTS_ERROR("Error configuring pass manager for --pass-pipeline");
+      return 1;
+    }
+    StringRef passPipeline = CustomPassPipeline;
+    std::string unwrappedPassPipeline;
+    if (passPipeline.consume_front("builtin.module(") &&
+        passPipeline.consume_back(")")) {
+      unwrappedPassPipeline = passPipeline.str();
+      passPipeline = unwrappedPassPipeline;
+    } else {
+      passPipeline = CustomPassPipeline;
+    }
+    if (failed(parsePassPipeline(passPipeline, pm))) {
+      ARTS_ERROR("Could not parse --pass-pipeline: " << CustomPassPipeline);
+      return 1;
+    }
+    if (failed(pm.run(module.get()))) {
+      ARTS_ERROR("Error running --pass-pipeline: " << CustomPassPipeline);
+      module->dump();
+      return 1;
+    }
+
+    auto output = openOutputFile(OutputFilename);
+    if (!output) {
+      ARTS_ERROR("Could not open output file: " << OutputFilename);
+      return 1;
+    }
+    module->print(output->os());
+    output->keep();
+    return 0;
   }
 
   /// Set up optional pipeline hooks for diagnostics.

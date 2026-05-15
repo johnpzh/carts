@@ -1,8 +1,9 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: not %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
-// Rank-0 i1 tensor iter_args are control carriers introduced by scalar
+// Rank-0 i1 tensor iter_args are legacy control carriers introduced by scalar
 // threading. They must not turn an otherwise elementwise scheduling unit into
-// a reduction or the SDE plan loses uniform dependency/vectorization intent.
+// a reduction or a distributable result-producing task. The tensor carrier is
+// rejected at the SDE/Core boundary until CODIR owns explicit control deps.
 
 // CHECK-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // CHECK: func.func @control_token_elementwise
@@ -11,14 +12,9 @@
 // CHECK-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // CHECK: func.func @control_token_elementwise
 // CHECK: sde.su_iterate (%c0) to (%c128) step (%c1) classification(<elementwise>) iter_args
-// CHECK: distributionKind = #sde.distribution_kind<blocked>
-// CHECK-SAME: iterationTopology = #sde.iteration_topology<owner_strip>
+// CHECK: } {iterationTopology = #sde.iteration_topology<owner_strip>
 // CHECK-SAME: physicalOwnerDims = [0]
-// CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
-// CHECK: func.func @control_token_elementwise
-// CHECK: arts.epoch
-// CHECK-SAME: depPattern = #arts.dep_pattern<uniform>
-// CHECK-NOT: sde.
+// CHECK: error: 'sde.su_iterate' op cannot directly materialize result-producing su_iterate reductions
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @control_token_elementwise(%A: memref<128xf64>, %B: memref<128xf64>, %flag: tensor<i1>) {

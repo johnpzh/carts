@@ -1,13 +1,12 @@
 ///==========================================================================///
 /// File: DbLayoutPlan.h
 ///
-/// Physical DB layout data consumed by the raw-memref CreateDbs bridge.
+/// Physical DB layout data projected from SDE/CODIR plans.
 ///
 /// SDE owns the tensor/linalg analysis and chooses the physical owner
-/// dimensions, block shape, and task slice contracts. Core uses this small
-/// value type only to materialize that already-authored plan into
-/// `arts.db_alloc`/`arts.db_acquire` operations and to localize raw memref
-/// accesses while the compiler still has fallback memref bodies.
+/// dimensions, block shape, and task slice contracts. Core may use this small
+/// value type for ARTS object materialization and diagnostics, but block-local
+/// access rewriting belongs to SDE/CODIR token-local memref lowering.
 ///==========================================================================///
 
 #ifndef ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLAN_H

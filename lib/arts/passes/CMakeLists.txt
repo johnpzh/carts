@@ -14,7 +14,7 @@ DEPENDS
   MLIROpsIncGen
   MLIRArtsPassIncGen
   MLIRArtsRtPassIncGen
-  MLIRArtsSdePassIncGen
+  MLIRCartsSdePassIncGen
   MLIRRtOpsIncGen
   MLIRSdeOpsIncGen
 
@@ -36,7 +36,7 @@ LINK_LIBS PUBLIC
   MLIRPass
   MLIRArts
   MLIRArtsRt
-  MLIRArtsSde
+  MLIRCartsSde
   MLIRSideEffectInterfaces
   MLIRSCFToControlFlow
   MLIRTargetLLVMIRImport

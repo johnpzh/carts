@@ -18,7 +18,7 @@
 
 namespace mlir::arts {
 
-class ARTSCostModel : public sde::SDECostModel {
+class ARTSCostModel : public carts::sde::SDECostModel {
   const RuntimeConfig &machine;
 
 public:
@@ -50,14 +50,14 @@ public:
   }
 
   // --- Scheduling ---
-  double getSchedulingOverhead(sde::SdeScheduleKind kind,
+  double getSchedulingOverhead(carts::sde::SdeScheduleKind kind,
                                int64_t tripCount) const override {
     switch (kind) {
-    case sde::SdeScheduleKind::static_:
+    case carts::sde::SdeScheduleKind::static_:
       return 0.0;
-    case sde::SdeScheduleKind::dynamic:
+    case carts::sde::SdeScheduleKind::dynamic:
       return getTaskCreationCost() * 0.1;
-    case sde::SdeScheduleKind::guided:
+    case carts::sde::SdeScheduleKind::guided:
       return getTaskCreationCost() * 0.05;
     default:
       return 0.0;

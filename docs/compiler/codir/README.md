@@ -42,16 +42,18 @@ CODIR does not own:
 The initial dialect should stay small. Exact op names can change, but the
 contract should not:
 
-- `codir.codelet`: isolated body with dep and param region arguments.
+- `codir.codelet`: isolated body with dep and param region arguments, plus
+  one explicit access-mode entry for each dep.
 - `codir.dep`: memory or control dependency derived from SDE tokens.
 - `codir.param`: scalar immutable parameter.
 - `codir.launch`: logical launch carrier before ARTS EDT creation.
 - `codir.yield`: explicit results or completion values.
 
 Every external value used by a `codir.codelet` must be represented in the
-creation site. Memrefs, mutable state, and token windows are deps. Scalars and
-small immutable firstprivate-style captures are params. Values that can be
-recomputed from deps or params should be built inside the codelet body.
+creation site. Memrefs, mutable state, and token windows are deps with
+read/write/readwrite mode metadata. Scalars and small immutable
+firstprivate-style captures are params. Values that can be recomputed from deps
+or params should be built inside the codelet body.
 
 ## EDT Lowering Benefit
 

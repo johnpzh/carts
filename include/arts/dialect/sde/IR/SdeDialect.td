@@ -8,9 +8,9 @@
 
 include "mlir/IR/OpBase.td"
 
-def ArtsSdeDialect : Dialect {
+def CartsSdeDialect : Dialect {
   let name = "sde";
-  let cppNamespace = "::mlir::arts::sde";
+  let cppNamespace = "::mlir::carts::sde";
 
   let summary = "Structured Decomposition Environment -- runtime-agnostic parallel IR";
   let description = [{
@@ -32,7 +32,7 @@ def ArtsSdeDialect : Dialect {
   let useDefaultAttributePrinterParser = 1;
 }
 
-class ArtsSde_Op<string mnemonic, list<Trait> traits = []>
-    : Op<ArtsSdeDialect, mnemonic, traits>;
+class CartsSde_Op<string mnemonic, list<Trait> traits = []>
+    : Op<CartsSdeDialect, mnemonic, traits>;
 
 #endif // ARTS_SDE_DIALECT

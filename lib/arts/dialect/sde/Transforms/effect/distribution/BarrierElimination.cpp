@@ -34,6 +34,7 @@ static llvm::Statistic numCpsCandidateGroups{
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -113,25 +114,25 @@ static bool isTimestepBarrier(sde::SdeSuBarrierOp barrier) {
 
 static bool haveSameIterationShape(sde::SdeSuIterateOp lhs,
                                    sde::SdeSuIterateOp rhs) {
-  return ValueAnalysis::areValueRangesEquivalent(lhs.getLowerBounds(),
+  return arts::ValueAnalysis::areValueRangesEquivalent(lhs.getLowerBounds(),
                                                  rhs.getLowerBounds()) &&
-         ValueAnalysis::areValueRangesEquivalent(lhs.getUpperBounds(),
+         arts::ValueAnalysis::areValueRangesEquivalent(lhs.getUpperBounds(),
                                                  rhs.getUpperBounds()) &&
-         ValueAnalysis::areValueRangesEquivalent(lhs.getSteps(),
+         arts::ValueAnalysis::areValueRangesEquivalent(lhs.getSteps(),
                                                  rhs.getSteps());
 }
 
 static bool haveSameIterationBounds(sde::SdeSuIterateOp lhs,
                                     sde::SdeSuIterateOp rhs) {
   return lhs.getLowerBounds().size() == rhs.getLowerBounds().size() &&
-         ValueAnalysis::areValueRangesEquivalent(lhs.getLowerBounds(),
+         arts::ValueAnalysis::areValueRangesEquivalent(lhs.getLowerBounds(),
                                                  rhs.getLowerBounds()) &&
-         ValueAnalysis::areValueRangesEquivalent(lhs.getUpperBounds(),
+         arts::ValueAnalysis::areValueRangesEquivalent(lhs.getUpperBounds(),
                                                  rhs.getUpperBounds());
 }
 
 static bool isTiledMultipleOfStep(Value candidate, Value baseStep) {
-  if (ValueAnalysis::areValuesEquivalent(candidate, baseStep))
+  if (arts::ValueAnalysis::areValuesEquivalent(candidate, baseStep))
     return true;
 
   auto mul = candidate.getDefiningOp<arith::MulIOp>();
@@ -140,15 +141,15 @@ static bool isTiledMultipleOfStep(Value candidate, Value baseStep) {
 
   auto isPositiveMultiplier = [](Value value) {
     if (std::optional<int64_t> folded =
-            ValueAnalysis::tryFoldConstantIndex(value))
+            arts::ValueAnalysis::tryFoldConstantIndex(value))
       return *folded >= 1;
-    return ValueAnalysis::isConstantAtLeastOne(value) ||
-           ValueAnalysis::isProvablyNonZero(value);
+    return arts::ValueAnalysis::isConstantAtLeastOne(value) ||
+           arts::ValueAnalysis::isProvablyNonZero(value);
   };
 
-  if (ValueAnalysis::areValuesEquivalent(mul.getLhs(), baseStep))
+  if (arts::ValueAnalysis::areValuesEquivalent(mul.getLhs(), baseStep))
     return isPositiveMultiplier(mul.getRhs());
-  if (ValueAnalysis::areValuesEquivalent(mul.getRhs(), baseStep))
+  if (arts::ValueAnalysis::areValuesEquivalent(mul.getRhs(), baseStep))
     return isPositiveMultiplier(mul.getLhs());
   return false;
 }
@@ -159,7 +160,7 @@ static bool haveEquivalentOrTiledSteps(sde::SdeSuIterateOp lhs,
     return false;
 
   for (auto [lhsStep, rhsStep] : llvm::zip(lhs.getSteps(), rhs.getSteps())) {
-    if (ValueAnalysis::areValuesEquivalent(lhsStep, rhsStep))
+    if (arts::ValueAnalysis::areValuesEquivalent(lhsStep, rhsStep))
       continue;
     if (isTiledMultipleOfStep(lhsStep, rhsStep) ||
         isTiledMultipleOfStep(rhsStep, lhsStep))
@@ -411,7 +412,7 @@ static std::optional<SmallVector<int64_t, 4>>
 getUniqueStaticWrittenShape(const sde::StructuredMemoryEffectSummary &effects) {
   std::optional<SmallVector<int64_t, 4>> selectedShape;
   for (Value written : effects.writes) {
-    Value root = ValueAnalysis::stripMemrefViewOps(written);
+    Value root = arts::ValueAnalysis::stripMemrefViewOps(written);
     auto memrefType = dyn_cast<MemRefType>(root.getType());
     if (!memrefType || !memrefType.hasStaticShape())
       return std::nullopt;
@@ -733,11 +734,11 @@ private:
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass>
 createBarrierEliminationPass(sde::SDECostModel *costModel) {
   return std::make_unique<BarrierEliminationPass>(costModel);
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

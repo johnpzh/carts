@@ -11,7 +11,7 @@
 #include "mlir/IR/OpImplementation.h"
 
 using namespace mlir;
-using namespace mlir::arts::sde;
+using namespace mlir::carts::sde;
 
 #define GET_OP_CLASSES
 #include "arts/dialect/sde/IR/SdeOps.cpp.inc"

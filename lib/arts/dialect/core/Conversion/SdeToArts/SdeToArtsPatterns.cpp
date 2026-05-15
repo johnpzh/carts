@@ -59,6 +59,7 @@ static llvm::Statistic numCuTaskConverted{
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 static std::optional<ArtsDepPattern>
 mapStructuredClassificationToArtsDepPattern(
@@ -400,8 +401,14 @@ static void stampSdeContractOnCoreOp(sde::SdeSuIterateOp source,
     setEdtDistributionPattern(target, EdtDistributionPattern::uniform);
   }
 
-  if (auto distributionKind =
-          convertDistributionKind(source.getDistributionKindAttr()))
+  sde::SdeDistributionKindAttr distributionKindAttr =
+      source.getDistributionKindAttr();
+  if (!distributionKindAttr) {
+    if (auto parentDistribute =
+            source->getParentOfType<sde::SdeSuDistributeOp>())
+      distributionKindAttr = parentDistribute.getKindAttr();
+  }
+  if (auto distributionKind = convertDistributionKind(distributionKindAttr))
     stampDistributionKind(target, *distributionKind);
 
   translateSdePhysicalPlanToCoreOp(source, target);
@@ -428,7 +435,7 @@ static Value materializeGenericWorkerCount(OpBuilder &builder, Location loc) {
   Value runtimeWorkers =
       RuntimeQueryOp::create(builder, loc, RuntimeQueryKind::totalWorkers)
           .getResult();
-  Value workers = ValueAnalysis::castToIndex(runtimeWorkers, builder, loc);
+  Value workers = arts::ValueAnalysis::castToIndex(runtimeWorkers, builder, loc);
   return arith::MaxUIOp::create(builder, loc, workers,
                                 createOneIndex(builder, loc));
 }
@@ -515,6 +522,17 @@ struct BoundaryMemrefAccess {
   ArtsMode mode = ArtsMode::uninitialized;
 };
 
+struct BoundarySlicePlan {
+  bool enabled = false;
+  SmallVector<Value, 4> offsets;
+  SmallVector<Value, 4> sizes;
+};
+
+struct LocalizedMemrefView {
+  Value view;
+  SmallVector<Value, 4> offsets;
+};
+
 static bool isDefinedInside(Operation *container, Value value) {
   if (!container || !value)
     return false;
@@ -539,14 +557,14 @@ collectExternalMemrefAccessModes(Operation *container, Region &region) {
   DenseMap<Value, ArtsMode> modes;
   region.walk([&](Operation *op) {
     if (auto load = dyn_cast<memref::LoadOp>(op)) {
-      Value root = ValueAnalysis::stripMemrefViewOps(load.getMemref());
+      Value root = arts::ValueAnalysis::stripMemrefViewOps(load.getMemref());
       if (root && isa<MemRefType>(root.getType()) &&
           !isDefinedInside(container, root))
         combineMemrefMode(modes, root, ArtsMode::in);
       return;
     }
     if (auto store = dyn_cast<memref::StoreOp>(op)) {
-      Value root = ValueAnalysis::stripMemrefViewOps(store.getMemref());
+      Value root = arts::ValueAnalysis::stripMemrefViewOps(store.getMemref());
       if (root && isa<MemRefType>(root.getType()) &&
           !isDefinedInside(container, root))
         combineMemrefMode(modes, root, ArtsMode::out);
@@ -577,21 +595,294 @@ materializeBoundaryMemrefs(Operation *container, Region &region,
   return accesses;
 }
 
-static DbAcquireOp createWholeStorageAcquire(OpBuilder &builder, Location loc,
-                                             BoundaryMemrefAccess access) {
-  SmallVector<Value> offsets{arts::createZeroIndex(builder, loc)};
-  SmallVector<Value> sizes{arts::createOneIndex(builder, loc)};
+static bool isZero(Value value) {
+  int64_t constant = 0;
+  return arts::ValueAnalysis::getConstantIndex(value, constant) && constant == 0;
+}
+
+static Value getMemrefDimValue(OpBuilder &builder, Location loc, Value memref,
+                               unsigned dim) {
+  auto memrefType = dyn_cast<MemRefType>(memref.getType());
+  if (!memrefType || dim >= static_cast<unsigned>(memrefType.getRank()))
+    return Value();
+  if (!memrefType.isDynamicDim(dim))
+    return createConstantIndex(builder, loc, memrefType.getDimSize(dim));
+  return memref::DimOp::create(builder, loc, memref, dim);
+}
+
+static std::optional<sde::SdeStructuredClassification>
+getSdeClassification(sde::SdeSuIterateOp op) {
+  if (auto classification = op.getStructuredClassification())
+    return *classification;
+  return std::nullopt;
+}
+
+static bool canUseOwnerSliceBoundaryPlan(sde::SdeSuIterateOp source) {
+  if (!source || source.getLowerBounds().size() != 1 ||
+      source.getUpperBounds().size() != 1 || source.getSteps().size() != 1)
+    return false;
+
+  auto classification = getSdeClassification(source);
+  if (!classification)
+    return false;
+
+  switch (*classification) {
+  case sde::SdeStructuredClassification::matmul:
+  case sde::SdeStructuredClassification::elementwise:
+  case sde::SdeStructuredClassification::elementwise_pipeline:
+    return true;
+  case sde::SdeStructuredClassification::stencil:
+  case sde::SdeStructuredClassification::reduction:
+    return false;
+  }
+  return false;
+}
+
+static bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
+  if (arts::ValueAnalysis::dependsOn(index, ownerIv))
+    return true;
+
+  auto blockArg = dyn_cast<BlockArgument>(index);
+  if (!blockArg)
+    return false;
+
+  auto loop = dyn_cast_or_null<scf::ForOp>(blockArg.getOwner()->getParentOp());
+  if (!loop || loop.getInductionVar() != index)
+    return false;
+
+  return arts::ValueAnalysis::dependsOn(loop.getLowerBound(), ownerIv) ||
+         arts::ValueAnalysis::dependsOn(loop.getUpperBound(), ownerIv);
+}
+
+static bool allRootAccessesUseOwnerFirstDim(sde::SdeSuIterateOp source,
+                                            Value root) {
+  if (!source || !root || source.getBody().empty())
+    return false;
+
+  auto rootType = dyn_cast<MemRefType>(root.getType());
+  if (!rootType || rootType.getRank() == 0)
+    return false;
+
+  Block &body = source.getBody().front();
+  if (body.getNumArguments() == 0)
+    return false;
+  Value ownerIv = body.getArgument(0);
+
+  bool sawRootAccess = false;
+  bool rejected = false;
+  auto checkAccess = [&](Value memref, OperandRange indices) {
+    if (arts::ValueAnalysis::stripMemrefViewOps(memref) != root)
+      return;
+    sawRootAccess = true;
+    if (indices.empty() || !indexSelectsOwnerSlice(indices.front(), ownerIv))
+      rejected = true;
+  };
+
+  source.getBody().walk([&](Operation *op) {
+    if (rejected)
+      return WalkResult::interrupt();
+    if (auto load = dyn_cast<memref::LoadOp>(op)) {
+      if (isa<MemRefType>(load.getResult().getType()))
+        return WalkResult::advance();
+      checkAccess(load.getMemref(), load.getIndices());
+      return rejected ? WalkResult::interrupt() : WalkResult::advance();
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(op)) {
+      if (isa<MemRefType>(store.getValueToStore().getType()))
+        return WalkResult::advance();
+      checkAccess(store.getMemref(), store.getIndices());
+      return rejected ? WalkResult::interrupt() : WalkResult::advance();
+    }
+    return WalkResult::advance();
+  });
+
+  return sawRootAccess && !rejected;
+}
+
+static BoundarySlicePlan
+buildOwnerSlicePlan(sde::SdeSuIterateOp source, BoundaryMemrefAccess access,
+                    OpBuilder &builder, Location loc, Value globalBase,
+                    Value iterCount) {
+  BoundarySlicePlan plan;
+  if (!canUseOwnerSliceBoundaryPlan(source) ||
+      !allRootAccessesUseOwnerFirstDim(source, access.payload))
+    return plan;
+
+  auto memrefType = dyn_cast<MemRefType>(access.payload.getType());
+  if (!memrefType || memrefType.getRank() == 0)
+    return plan;
+
+  plan.enabled = true;
+  plan.offsets.reserve(memrefType.getRank());
+  plan.sizes.reserve(memrefType.getRank());
+  Value zero = createZeroIndex(builder, loc);
+  Value ownerSpan =
+      arith::MulIOp::create(builder, loc, iterCount, source.getSteps().front());
+  Value remaining =
+      arith::SubIOp::create(builder, loc, source.getUpperBounds().front(),
+                            globalBase);
+  Value ownerSize = arith::MinUIOp::create(builder, loc, ownerSpan, remaining);
+  for (unsigned dim = 0; dim < static_cast<unsigned>(memrefType.getRank());
+       ++dim) {
+    if (dim == 0) {
+      plan.offsets.push_back(globalBase);
+      plan.sizes.push_back(ownerSize);
+      continue;
+    }
+    plan.offsets.push_back(zero);
+    Value dimSize = getMemrefDimValue(builder, loc, access.payload, dim);
+    if (!dimSize)
+      return BoundarySlicePlan{};
+    plan.sizes.push_back(dimSize);
+  }
+  return plan;
+}
+
+static DbAcquireOp createBoundaryAcquire(OpBuilder &builder, Location loc,
+                                         BoundaryMemrefAccess access,
+                                         const BoundarySlicePlan &slicePlan) {
+  SmallVector<Value> offsets{createZeroIndex(builder, loc)};
+  SmallVector<Value> sizes{createOneIndex(builder, loc)};
+  SmallVector<Value> partitionOffsets;
+  SmallVector<Value> partitionSizes;
+  std::optional<PartitionMode> partitionMode;
+  if (slicePlan.enabled) {
+    partitionMode = PartitionMode::block;
+    partitionOffsets.assign(slicePlan.offsets.begin(), slicePlan.offsets.end());
+    partitionSizes.assign(slicePlan.sizes.begin(), slicePlan.sizes.end());
+  }
+
   return DbAcquireOp::create(
       builder, loc, access.mode == ArtsMode::uninitialized ? ArtsMode::inout
                                                            : access.mode,
-      access.dbAlloc.getGuid(), access.dbAlloc.getPtr(), PartitionMode::coarse,
+      access.dbAlloc.getGuid(), access.dbAlloc.getPtr(), partitionMode,
       /*indices=*/SmallVector<Value>{}, std::move(offsets), std::move(sizes),
-      /*partitionIndices=*/SmallVector<Value>{},
-      /*partitionOffsets=*/SmallVector<Value>{},
-      /*partitionSizes=*/SmallVector<Value>{},
+      /*partitionIndices=*/SmallVector<Value>{}, std::move(partitionOffsets),
+      std::move(partitionSizes),
       /*boundsValid=*/Value{},
       /*elementOffsets=*/SmallVector<Value>{},
       /*elementSizes=*/SmallVector<Value>{});
+}
+
+static Value materializeBoundaryView(OpBuilder &builder, Location loc,
+                                     Value payload,
+                                     const BoundarySlicePlan &slicePlan) {
+  (void)builder;
+  (void)loc;
+  (void)slicePlan;
+  return payload;
+}
+
+struct TokenPayloadAccess {
+  Value payload;
+  SmallVector<Value, 4> offsets;
+  SmallVector<Value, 4> sizes;
+};
+
+static void addOffsetsToMemrefIndices(OpBuilder &builder, Operation *op,
+                                      MutableOperandRange indices,
+                                      ArrayRef<Value> offsets) {
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPoint(op);
+  for (auto [idx, offset] : llvm::enumerate(offsets)) {
+    if (idx >= indices.size() || !offset || isZero(offset))
+      continue;
+    Value current = indices[idx].get();
+    indices[idx].assign(
+        arith::AddIOp::create(builder, op->getLoc(), current, offset));
+  }
+}
+
+static void rewriteSlicedTokenPayloadUses(
+    ArrayRef<Operation *> clonedOps, ArrayRef<TokenPayloadAccess> payloads,
+    OpBuilder &builder) {
+  if (clonedOps.empty() || payloads.empty())
+    return;
+
+  auto findPayload = [&](Value memref) -> const TokenPayloadAccess * {
+    for (const TokenPayloadAccess &payload : payloads)
+      if (arts::ValueAnalysis::isDerivedFromPtr(memref, payload.payload))
+        return &payload;
+    return nullptr;
+  };
+
+  auto rewriteDim = [&](memref::DimOp dimOp,
+                        const TokenPayloadAccess &payload) -> bool {
+    std::optional<int64_t> constantIndex = dimOp.getConstantIndex();
+    if (!constantIndex)
+      return false;
+    int64_t dim = *constantIndex;
+    if (dim < 0 || static_cast<size_t>(dim) >= payload.sizes.size() ||
+        !payload.sizes[dim])
+      return false;
+    dimOp.getResult().replaceAllUsesWith(payload.sizes[dim]);
+    return true;
+  };
+
+  SmallVector<Operation *> erase;
+  for (Operation *cloned : clonedOps) {
+    cloned->walk([&](Operation *op) {
+      if (auto load = dyn_cast<memref::LoadOp>(op)) {
+        if (const TokenPayloadAccess *payload = findPayload(load.getMemref()))
+          addOffsetsToMemrefIndices(builder, op, load.getIndicesMutable(),
+                                    payload->offsets);
+        return;
+      }
+      if (auto store = dyn_cast<memref::StoreOp>(op)) {
+        if (const TokenPayloadAccess *payload = findPayload(store.getMemref()))
+          addOffsetsToMemrefIndices(builder, op, store.getIndicesMutable(),
+                                    payload->offsets);
+        return;
+      }
+      if (auto dim = dyn_cast<memref::DimOp>(op)) {
+        if (const TokenPayloadAccess *payload = findPayload(dim.getSource()))
+          if (rewriteDim(dim, *payload))
+            erase.push_back(dim);
+      }
+    });
+  }
+
+  for (Operation *op : llvm::reverse(erase))
+    op->erase();
+}
+
+static void localizeClonedMemrefAccesses(
+    Operation *rootOp, ArrayRef<LocalizedMemrefView> localizedViews,
+    OpBuilder &builder) {
+  if (!rootOp || localizedViews.empty())
+    return;
+
+  auto findView = [&](Value memref) -> const LocalizedMemrefView * {
+    for (const LocalizedMemrefView &view : localizedViews)
+      if (arts::ValueAnalysis::isDerivedFromPtr(memref, view.view))
+        return &view;
+    return nullptr;
+  };
+
+  auto localize = [&](Operation *op, MutableOperandRange indices,
+                      Value memref) {
+    const LocalizedMemrefView *view = findView(memref);
+    if (!view)
+      return;
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPoint(op);
+    for (auto [idx, offset] : llvm::enumerate(view->offsets)) {
+      if (idx >= indices.size() || !offset || isZero(offset))
+        continue;
+      Value current = indices[idx].get();
+      indices[idx].assign(
+          arith::SubIOp::create(builder, op->getLoc(), current, offset));
+    }
+  };
+
+  rootOp->walk([&](Operation *op) {
+    if (auto load = dyn_cast<memref::LoadOp>(op)) {
+      localize(op, load.getIndicesMutable(), load.getMemref());
+      return;
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(op))
+      localize(op, store.getIndicesMutable(), store.getMemref());
+  });
 }
 
 struct SuReductionPlan {
@@ -811,12 +1102,12 @@ static void mapReductionAccumulatorAliases(IRMapping &mapper,
   mapper.map(sourceAccumulator, replacement);
   mapper.map(materializedAccumulator, replacement);
 
-  Value sourceRoot = ValueAnalysis::stripMemrefViewOps(sourceAccumulator);
+  Value sourceRoot = arts::ValueAnalysis::stripMemrefViewOps(sourceAccumulator);
   if (sourceRoot && sourceRoot != sourceAccumulator)
     mapper.map(sourceRoot, replacement);
 
   Value materializedRoot =
-      ValueAnalysis::stripMemrefViewOps(materializedAccumulator);
+      arts::ValueAnalysis::stripMemrefViewOps(materializedAccumulator);
   if (materializedRoot && materializedRoot != materializedAccumulator)
     mapper.map(materializedRoot, replacement);
 }
@@ -990,16 +1281,20 @@ static void combinePartialReductionsAfterEpoch(
 static LogicalResult cloneSuIterateBodyIntoLocalLoop(
     sde::SdeSuIterateOp source, scf::ForOp localLoop, Value globalBase,
     ArrayRef<Value> lowerBounds, ArrayRef<Value> upperBounds,
-    ArrayRef<Value> steps, IRMapping outerMapping, PatternRewriter &rewriter);
+    ArrayRef<Value> steps, IRMapping outerMapping, PatternRewriter &rewriter,
+    ArrayRef<LocalizedMemrefView> localizedViews);
 
 static LogicalResult buildTrailingLoopNestAndClone(
     sde::SdeSuIterateOp source, unsigned dim, ArrayRef<Value> lowerBounds,
     ArrayRef<Value> upperBounds, ArrayRef<Value> steps, IRMapping &mapper,
-    PatternRewriter &rewriter, Block *computeBlock) {
+    PatternRewriter &rewriter, Block *computeBlock,
+    ArrayRef<LocalizedMemrefView> localizedViews) {
   Location loc = source.getLoc();
   if (dim == lowerBounds.size()) {
-    for (Operation &srcOp : computeBlock->without_terminator())
-      rewriter.clone(srcOp, mapper);
+    for (Operation &srcOp : computeBlock->without_terminator()) {
+      Operation *cloned = rewriter.clone(srcOp, mapper);
+      localizeClonedMemrefAccesses(cloned, localizedViews, rewriter);
+    }
     return success();
   }
 
@@ -1013,13 +1308,14 @@ static LogicalResult buildTrailingLoopNestAndClone(
   rewriter.setInsertionPointToStart(loop.getBody());
   return buildTrailingLoopNestAndClone(source, dim + 1, lowerBounds,
                                        upperBounds, steps, mapper, rewriter,
-                                       computeBlock);
+                                       computeBlock, localizedViews);
 }
 
 static LogicalResult cloneSuIterateBodyIntoLocalLoop(
     sde::SdeSuIterateOp source, scf::ForOp localLoop, Value globalBase,
     ArrayRef<Value> lowerBounds, ArrayRef<Value> upperBounds,
-    ArrayRef<Value> steps, IRMapping outerMapping, PatternRewriter &rewriter) {
+    ArrayRef<Value> steps, IRMapping outerMapping, PatternRewriter &rewriter,
+    ArrayRef<LocalizedMemrefView> localizedViews) {
   Block *computeBlock = sde::getSuIterateComputeBlock(source);
   if (!computeBlock)
     return failure();
@@ -1037,7 +1333,7 @@ static LogicalResult cloneSuIterateBodyIntoLocalLoop(
 
   return buildTrailingLoopNestAndClone(source, /*dim=*/1, lowerBounds,
                                        upperBounds, steps, mapper, rewriter,
-                                       computeBlock);
+                                       computeBlock, localizedViews);
 }
 
 static LogicalResult materializeSuIterateAsGenericTaskDispatch(
@@ -1128,8 +1424,15 @@ static LogicalResult materializeSuIterateAsGenericTaskDispatch(
       createPartialReductionTaskDependencies(rewriter, loc, partialReductions,
                                              lane);
   unsigned partialDependencyCount = taskDependencies.size();
+  SmallVector<BoundarySlicePlan> boundarySlicePlans;
+  boundarySlicePlans.reserve(boundaryMemrefs.size());
   for (const BoundaryMemrefAccess &access : boundaryMemrefs) {
-    DbAcquireOp acquire = createWholeStorageAcquire(rewriter, loc, access);
+    BoundarySlicePlan slicePlan =
+        buildOwnerSlicePlan(source, access, rewriter, loc, globalBase,
+                            iterCount);
+    DbAcquireOp acquire =
+        createBoundaryAcquire(rewriter, loc, access, slicePlan);
+    boundarySlicePlans.push_back(std::move(slicePlan));
     taskDependencies.push_back(acquire.getPtr());
   }
 
@@ -1155,17 +1458,21 @@ static LogicalResult materializeSuIterateAsGenericTaskDispatch(
                                  partialDependencyArgs, taskMapping);
   }
 
+  SmallVector<LocalizedMemrefView> localizedViews;
   for (auto [idx, access] : llvm::enumerate(boundaryMemrefs)) {
     BlockArgument depArg =
         dependencyArgs[partialDependencyCount + static_cast<unsigned>(idx)];
     Value payload = materializeInnerPayload(rewriter, loc, depArg);
-    taskMapping.map(access.payload, payload);
+    const BoundarySlicePlan &slicePlan = boundarySlicePlans[idx];
+    Value view = materializeBoundaryView(rewriter, loc, payload, slicePlan);
+    taskMapping.map(access.payload, view);
   }
 
   auto localLoop = scf::ForOp::create(rewriter, loc, zero, iterCount, one);
   if (failed(cloneSuIterateBodyIntoLocalLoop(source, localLoop, globalBase,
                                              lowerBounds, upperBounds, steps,
-                                             taskMapping, rewriter)))
+                                             taskMapping, rewriter,
+                                             localizedViews)))
     return failure();
 
   rewriter.setInsertionPointToEnd(&taskBlock);
@@ -1308,7 +1615,7 @@ static LogicalResult materializeSdeOp(Operation *op, PatternRewriter &rewriter,
     return success();
 
   if (op->getDialect()->getNamespace() ==
-      sde::ArtsSdeDialect::getDialectNamespace())
+      sde::CartsSdeDialect::getDialectNamespace())
     return op->emitError("unsupported SDE operation at direct Core "
                          "materialization boundary");
 
@@ -1637,30 +1944,6 @@ static LogicalResult lowerMuAlloc(sde::SdeMuAllocOp op) {
   return success();
 }
 
-static Value buildTokenMemrefView(OpBuilder &builder, Location loc,
-                                  Value payload, MemRefType targetType,
-                                  sde::SdeMuTokenOp token) {
-  if (token.getOffsets().empty() && token.getSizes().empty()) {
-    if (payload.getType() == targetType)
-      return payload;
-    return memref::CastOp::create(builder, loc, targetType, payload);
-  }
-
-  SmallVector<OpFoldResult> offsets;
-  SmallVector<OpFoldResult> sizes;
-  SmallVector<OpFoldResult> strides;
-  offsets.reserve(targetType.getRank());
-  sizes.reserve(targetType.getRank());
-  strides.reserve(targetType.getRank());
-  for (int dim = 0, rank = targetType.getRank(); dim < rank; ++dim) {
-    offsets.push_back(OpFoldResult(token.getOffsets()[dim]));
-    sizes.push_back(OpFoldResult(token.getSizes()[dim]));
-    strides.push_back(builder.getIndexAttr(1));
-  }
-  return memref::SubViewOp::create(builder, loc, targetType, payload, offsets,
-                                   sizes, strides);
-}
-
 static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
   Location loc = codelet.getLoc();
   OpBuilder rewriter(codelet);
@@ -1749,6 +2032,7 @@ static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
   IRMapping mapper;
   Block &codeletBlock = codelet.getBody().front();
   unsigned numTokens = codelet.getTokens().size();
+  SmallVector<TokenPayloadAccess> tokenPayloadAccesses;
   for (unsigned idx = 0; idx < numTokens; ++idx) {
     BlockArgument codeletArg = codeletBlock.getArgument(idx);
     auto memrefArgType = dyn_cast<MemRefType>(codeletArg.getType());
@@ -1758,10 +2042,15 @@ static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
              << " must be a memref, got " << codeletArg.getType();
     Value edtArg = edtBlock.getArgument(idx);
     Value inner = materializeInnerPayload(rewriter, codelet.getLoc(), edtArg);
-    Value view =
-        buildTokenMemrefView(rewriter, codelet.getLoc(), inner, memrefArgType,
-                             muTokens[idx]);
-    mapper.map(codeletArg, view);
+    mapper.map(codeletArg, inner);
+    if (!muTokens[idx].getOffsets().empty() ||
+        !muTokens[idx].getSizes().empty()) {
+      TokenPayloadAccess access;
+      access.payload = inner;
+      llvm::append_range(access.offsets, muTokens[idx].getOffsets());
+      llvm::append_range(access.sizes, muTokens[idx].getSizes());
+      tokenPayloadAccesses.push_back(std::move(access));
+    }
   }
 
   for (auto [idx, capture] : llvm::enumerate(codelet.getCaptures())) {
@@ -1773,8 +2062,14 @@ static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
   // terminator is a value-less `sde.yield`; memref token writes happen
   // in-place through the mapped block arguments.
   Operation *terminator = codeletBlock.getTerminator();
-  for (Operation &nested : codeletBlock.without_terminator())
-    rewriter.insert(nested.clone(mapper));
+  SmallVector<Operation *> clonedOps;
+  for (Operation &nested : codeletBlock.without_terminator()) {
+    Operation *cloned = nested.clone(mapper);
+    rewriter.insert(cloned);
+    clonedOps.push_back(cloned);
+  }
+
+  rewriteSlicedTokenPayloadUses(clonedOps, tokenPayloadAccesses, rewriter);
 
   if (auto yieldOp = dyn_cast<sde::SdeYieldOp>(terminator)) {
     if (!yieldOp.getOperands().empty())
@@ -1794,7 +2089,7 @@ static LogicalResult lowerCuCodelet(sde::SdeCuCodeletOp codelet) {
 
 static LogicalResult lowerTokenSource(Value source,
                                       DenseSet<Operation *> &loweredMuOps) {
-  Value root = ValueAnalysis::stripMemrefViewOps(source);
+  Value root = arts::ValueAnalysis::stripMemrefViewOps(source);
   Operation *rootOp = root ? root.getDefiningOp() : nullptr;
   if (!rootOp || !loweredMuOps.insert(rootOp).second)
     return success();
@@ -1895,7 +2190,7 @@ struct ResourceQueryToArtsPattern
 
     Value runtimeQuery =
         RuntimeQueryOp::create(rewriter, op.getLoc(), kind).getResult();
-    Value indexValue = ValueAnalysis::castToIndex(runtimeQuery, rewriter,
+    Value indexValue = arts::ValueAnalysis::castToIndex(runtimeQuery, rewriter,
                                                   op.getLoc());
     rewriter.replaceOp(op, indexValue);
     return success();
@@ -1975,11 +2270,11 @@ struct ConvertSdeToArtsPass
 //===----------------------------------------------------------------------===//
 
 namespace mlir {
-namespace arts {
+namespace carts {
 namespace sde {
 std::unique_ptr<Pass> createConvertSdeToArtsPass() {
   return std::make_unique<ConvertSdeToArtsPass>();
 }
 } // namespace sde
-} // namespace arts
+} // namespace carts
 } // namespace mlir

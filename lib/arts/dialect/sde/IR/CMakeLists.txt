@@ -1,4 +1,4 @@
-add_mlir_dialect_library(MLIRArtsSde
+add_mlir_dialect_library(MLIRCartsSde
   SdeDialect.cpp
   SdeOps.cpp
 

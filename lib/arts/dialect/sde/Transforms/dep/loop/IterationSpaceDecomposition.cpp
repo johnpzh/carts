@@ -50,6 +50,7 @@ ARTS_DEBUG_SETUP(iteration_space_decomposition);
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -67,7 +68,7 @@ static bool yieldsConstantBool(Block &block, bool expected) {
   auto yield = dyn_cast<scf::YieldOp>(block.getTerminator());
   if (!yield || yield.getNumOperands() != 1)
     return false;
-  return ValueAnalysis::isConstantBool(yield.getOperand(0), expected);
+  return arts::ValueAnalysis::isConstantBool(yield.getOperand(0), expected);
 }
 
 static bool matchEqConst(Value condition, Value value, int64_t expectedConst) {
@@ -75,11 +76,11 @@ static bool matchEqConst(Value condition, Value value, int64_t expectedConst) {
   if (!cmp || cmp.getPredicate() != arith::CmpIPredicate::eq)
     return false;
 
-  value = ValueAnalysis::stripNumericCasts(value);
-  Value lhs = ValueAnalysis::stripNumericCasts(cmp.getLhs());
-  Value rhs = ValueAnalysis::stripNumericCasts(cmp.getRhs());
-  auto lhsConst = ValueAnalysis::getConstantIndexStripped(lhs);
-  auto rhsConst = ValueAnalysis::getConstantIndexStripped(rhs);
+  value = arts::ValueAnalysis::stripNumericCasts(value);
+  Value lhs = arts::ValueAnalysis::stripNumericCasts(cmp.getLhs());
+  Value rhs = arts::ValueAnalysis::stripNumericCasts(cmp.getRhs());
+  auto lhsConst = arts::ValueAnalysis::getConstantIndexStripped(lhs);
+  auto rhsConst = arts::ValueAnalysis::getConstantIndexStripped(rhs);
   if (lhs == value && rhsConst && *rhsConst == expectedConst)
     return true;
   if (rhs == value && lhsConst && *lhsConst == expectedConst)
@@ -123,9 +124,9 @@ static bool matchBoundaryPattern(scf::ForOp loop, BoundaryPeelingMatch &match) {
   if (!loop || loop.getNumResults() != 0)
     return fail("loop missing or has results");
 
-  auto lowerConst = ValueAnalysis::tryFoldConstantIndex(loop.getLowerBound());
-  auto upperConst = ValueAnalysis::tryFoldConstantIndex(loop.getUpperBound());
-  auto stepConst = ValueAnalysis::tryFoldConstantIndex(loop.getStep());
+  auto lowerConst = arts::ValueAnalysis::tryFoldConstantIndex(loop.getLowerBound());
+  auto upperConst = arts::ValueAnalysis::tryFoldConstantIndex(loop.getUpperBound());
+  auto stepConst = arts::ValueAnalysis::tryFoldConstantIndex(loop.getStep());
   if (!lowerConst || !upperConst || !stepConst || *stepConst != 1)
     return fail("bounds are not constant step-1");
   if ((*upperConst - *lowerConst) <= 2)
@@ -287,9 +288,9 @@ static bool peelBoundaryLoop(BoundaryPeelingMatch &match) {
     return false;
   DominanceInfo domInfo(func);
 
-  Value rowIsFirst = ValueAnalysis::traceValueToDominating(
+  Value rowIsFirst = arts::ValueAnalysis::traceValueToDominating(
       match.rowIsFirst, match.innerLoop, builder, domInfo, loc);
-  Value rowIsLast = ValueAnalysis::traceValueToDominating(
+  Value rowIsLast = arts::ValueAnalysis::traceValueToDominating(
       match.rowIsLast, match.innerLoop, builder, domInfo, loc);
   if (!rowIsFirst || !rowIsLast)
     return false;
@@ -344,10 +345,10 @@ struct IterationSpaceDecompositionPass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createIterationSpaceDecompositionPass() {
   return std::make_unique<IterationSpaceDecompositionPass>();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

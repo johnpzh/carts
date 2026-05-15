@@ -1,7 +1,7 @@
 ///==========================================================================///
 /// File: MemoryUnitMaterialization.cpp
 ///
-/// Materialize coarse SDE shared memrefs as SDE memory units.
+/// Materialize SDE shared memrefs as SDE memory units.
 ///==========================================================================///
 
 #include "arts/dialect/sde/Analysis/SdeAnalysisUtils.h"
@@ -20,6 +20,7 @@ namespace mlir::arts {
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -43,13 +44,33 @@ static bool isMuMaterializableAllocation(Value root) {
   return false;
 }
 
-static bool isBlockedSchedulingUnit(sde::SdeSuIterateOp op) {
+static bool hasPhysicalOwnerSlicePlan(sde::SdeSuIterateOp op) {
   return op.getPhysicalBlockShapeAttr() || op.getPhysicalOwnerDimsAttr();
+}
+
+static bool canMaterializePlannedOwnerSlices(sde::SdeSuIterateOp op) {
+  if (!hasPhysicalOwnerSlicePlan(op))
+    return true;
+
+  auto classification = op.getStructuredClassification();
+  if (!classification)
+    return false;
+
+  switch (*classification) {
+  case sde::SdeStructuredClassification::matmul:
+  case sde::SdeStructuredClassification::elementwise:
+  case sde::SdeStructuredClassification::elementwise_pipeline:
+    return true;
+  case sde::SdeStructuredClassification::stencil:
+  case sde::SdeStructuredClassification::reduction:
+    return false;
+  }
+  return false;
 }
 
 static void collectSchedulingUnitMemrefRoots(sde::SdeSuIterateOp op,
                                              SetVector<Value> &roots) {
-  if (!op || isBlockedSchedulingUnit(op))
+  if (!op || !canMaterializePlannedOwnerSlices(op))
     return;
 
   op.getBody().walk([&](Operation *nested) {
@@ -66,7 +87,7 @@ static void collectSchedulingUnitMemrefRoots(sde::SdeSuIterateOp op,
       return;
     }
 
-    Value root = ValueAnalysis::stripMemrefViewOps(memref);
+    Value root = arts::ValueAnalysis::stripMemrefViewOps(memref);
     if (!root || sde::isDefinedInside(op.getOperation(), root))
       return;
     if (isMuMaterializableAllocation(root))
@@ -139,10 +160,10 @@ struct MemoryUnitMaterializationPass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createMemoryUnitMaterializationPass() {
   return std::make_unique<MemoryUnitMaterializationPass>();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

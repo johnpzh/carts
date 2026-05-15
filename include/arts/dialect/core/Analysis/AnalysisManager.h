@@ -62,7 +62,7 @@ public:
   const RuntimeConfig &getRuntimeConfig() const { return runtimeConfig; }
 
   /// Get the runtime-agnostic cost model (SDE passes use this interface).
-  sde::SDECostModel &getCostModel();
+  carts::sde::SDECostModel &getCostModel();
 
   const StringAnalysis &getStringAnalysis() const;
 
@@ -107,7 +107,7 @@ private:
   std::string configFile;
   std::string metadataFile;
   RuntimeConfig runtimeConfig;
-  std::unique_ptr<sde::SDECostModel> costModel;
+  std::unique_ptr<carts::sde::SDECostModel> costModel;
   std::unique_ptr<DbAnalysis> dbAnalysis;
   std::unique_ptr<EdtAnalysis> edtAnalysis;
   std::unique_ptr<EpochAnalysis> epochAnalysis;

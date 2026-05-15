@@ -1,39 +1,39 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
-// Verify that a 2D 5-point Jacobi stencil gets a shifted-view linalg.generic
-// carrier with 5 inputs (one per neighbor access) and identity indexing maps.
-// The scalar body is preserved alongside (dual-rep). After ConvertSdeToArts,
-// the stencil contract attributes (min/max offsets) are stamped.
+// Verify that a 2D 5-point Jacobi stencil stays memref-native and is classified
+// with nested-IV stencil metadata. After ConvertSdeToArts, the stencil contract
+// attributes (min/max offsets) are stamped.
 
-// CHECK-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
+// CHECK-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // CHECK: func.func @main
-// CHECK: sde.su_iterate (%c1) to (%c63) step (%c1) classification(<stencil>) {
+// CHECK: sde.su_iterate (%c1, %c1) to (%c63, %c63) step (%c1, %c1) classification(<stencil>) {
 // Scalar body preserved:
-// CHECK: scf.for
 // CHECK: memref.load
 // CHECK: memref.store
-// 5 shifted-view inputs (A[i-1,j], A[i+1,j], A[i,j-1], A[i,j+1], A[i,j]):
-// CHECK: sde.mu_memref_to_tensor %arg0 : memref<64x64xf64>
-// CHECK-COUNT-5: tensor.extract_slice
-// CHECK: linalg.generic
-// CHECK-SAME: iterator_types = ["parallel", "parallel"]
+// Stencil access metadata stamped by PatternAnalysis:
+// CHECK: accessMaxOffsets = [1, 1]
+// CHECK-SAME: accessMinOffsets = [-1, -1]
+// CHECK-SAME: ownerDims = [0, 1]
+// CHECK-SAME: pattern = #sde.pattern<stencil_tiling_nd>
+// CHECK-SAME: spatialDims = [0, 1]
+// CHECK-SAME: writeFootprint = [1, 1]
 // 4 adds for the 5-point stencil computation:
 // CHECK: arith.addf
 // CHECK: arith.addf
 // CHECK: arith.addf
 // CHECK: arith.addf
-// CHECK: linalg.yield
-// CHECK: tensor.insert_slice
 
 // After ConvertSdeToArts: stencil contract with spatial metadata.
 // CHECK: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
 // CHECK: arts.epoch
 // CHECK-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
-// CHECK-SAME: planOwnerDims = [0]
-// CHECK-SAME: planPhysicalBlockShape = [8, 64]
-// CHECK-SAME: stencil_block_shape = [8, 64]
+// CHECK-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_tile>
+// CHECK-SAME: planOwnerDims = [0, 1]
+// CHECK-SAME: planPhysicalBlockShape = [16, 32]
+// CHECK-SAME: stencil_block_shape = [16, 32]
 // CHECK-SAME: stencil_max_offsets = [1, 1]
 // CHECK-SAME: stencil_min_offsets = [-1, -1]
+// CHECK-SAME: stencil_owner_dims = [0, 1]
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<64x64xf64>, %B: memref<64x64xf64>) {

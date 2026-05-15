@@ -4,9 +4,9 @@
 /// Helpers for materializing DB layouts from an already-authored plan.
 ///
 /// These utilities do not choose tensor partitioning policy. SDE owns owner
-/// dimensions, physical block shape, and halo policy; this layer only converts
-/// those attrs into the physical DbPhysicalLayoutPlan consumed by CreateDbs and
-/// DB indexers.
+/// dimensions, physical block shape, and halo policy. Core utilities may
+/// inspect those attrs for diagnostics or ARTS object materialization, but
+/// block-local access rewriting belongs to SDE MU/token lowering.
 ///==========================================================================///
 
 #ifndef ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H

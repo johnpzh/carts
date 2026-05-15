@@ -17,7 +17,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include <optional>
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 struct LoopNestInfo {
   SmallVector<Value> ivs;
@@ -96,6 +96,6 @@ std::optional<AffineDimOffset> extractDimOffset(AffineExpr expr);
 /// offsets of the form `dim + c` where c != 0.
 bool hasConstantOffsets(AffineMap map);
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde
 
 #endif // ARTS_DIALECT_SDE_ANALYSIS_STRUCTUREDMETHODANALYSIS_H

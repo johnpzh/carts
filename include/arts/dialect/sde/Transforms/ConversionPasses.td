@@ -18,11 +18,11 @@ def ConvertOpenMPToSde : Pass<"convert-openmp-to-sde", "mlir::ModuleOp"> {
   }];
   let dependentDialects = ["::mlir::memref::MemRefDialect",
                            "::mlir::omp::OpenMPDialect",
-                           "::mlir::arts::sde::ArtsSdeDialect",
+                           "::mlir::carts::sde::CartsSdeDialect",
                            "::mlir::arts::ArtsDialect",
                            "::mlir::arith::ArithDialect",
                            "::mlir::scf::SCFDialect"];
-  let constructor = "mlir::arts::sde::createConvertOpenMPToSdePass()";
+  let constructor = "mlir::carts::sde::createConvertOpenMPToSdePass()";
 }
 
 def ConvertSdeToArts : Pass<"convert-sde-to-arts", "mlir::ModuleOp"> {
@@ -33,11 +33,11 @@ def ConvertSdeToArts : Pass<"convert-sde-to-arts", "mlir::ModuleOp"> {
     consumed at this boundary; target-specific storage, access, task, and
     synchronization objects are created outside the SDE dialect contract.
   }];
-  let dependentDialects = ["::mlir::arts::sde::ArtsSdeDialect",
+  let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect",
                            "::mlir::arts::ArtsDialect",
                            "::mlir::memref::MemRefDialect",
                            "::mlir::arith::ArithDialect"];
-  let constructor = "mlir::arts::sde::createConvertSdeToArtsPass()";
+  let constructor = "mlir::carts::sde::createConvertSdeToArtsPass()";
 }
 
 #endif // ARTS_DIALECT_SDE_TRANSFORMS_CONVERSION_PASSES

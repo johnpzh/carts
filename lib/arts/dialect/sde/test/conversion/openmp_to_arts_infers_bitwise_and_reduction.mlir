@@ -6,14 +6,13 @@
 
 // SDE-LABEL: // -----// IR Dump After ReductionStrategy (reduction-strategy) //----- //
 // SDE: func.func @main
-// SDE: sde.cu_region <parallel> scope(<local>) {
+// SDE: sde.cu_region <parallel> {
 // SDE: sde.su_iterate (%c0) to (%c16) step (%c1)
 // SDE-SAME: reduction{{\[}}#sde.reduction_kind<and>{{\]}}
 // SDE-SAME: reduction_strategy(<tree>)
 // SDE-NOT: reduction_strategy(<atomic>)
 // SDE-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
-// SDE: arts.db_alloc
-// SDE-SAME: <fine_grained>
+// SDE: arts.db_alloc{{.*}}<fine_grained>
 // SDE: arts.epoch
 // SDE: arts.db_acquire
 // SDE-SAME: <fine_grained>

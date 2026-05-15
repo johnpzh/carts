@@ -4,7 +4,7 @@
 // fallback path: classification and strategy are preserved, but no transient
 // linalg carrier is materialized.
 
-// CHECK-LABEL: // -----// IR Dump After RaiseToLinalg (raise-to-linalg) //----- //
+// CHECK-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // CHECK: func.func @main
 // CHECK: sde.cu_region <parallel> {
 // CHECK: sde.su_iterate (%c0) to (%c16) step (%c1)

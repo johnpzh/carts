@@ -21,6 +21,7 @@ ARTS_DEBUG_SETUP(semantic_contracts);
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -40,7 +41,7 @@ static Value accessRoot(Value value) {
   if (!value)
     return {};
   if (isa<BaseMemRefType>(value.getType()))
-    return ValueAnalysis::stripMemrefViewOps(value);
+    return arts::ValueAnalysis::stripMemrefViewOps(value);
   return value;
 }
 
@@ -217,9 +218,9 @@ static bool isSafeRank2OutOfPlaceStencilPromotion(
   if (!innerFor.getInitArgs().empty() || innerFor.getNumResults() != 0)
     return false;
   Value outerIv = op.getBody().front().getArgument(0);
-  if (ValueAnalysis::dependsOn(innerFor.getLowerBound(), outerIv) ||
-      ValueAnalysis::dependsOn(innerFor.getUpperBound(), outerIv) ||
-      ValueAnalysis::dependsOn(innerFor.getStep(), outerIv))
+  if (arts::ValueAnalysis::dependsOn(innerFor.getLowerBound(), outerIv) ||
+      arts::ValueAnalysis::dependsOn(innerFor.getUpperBound(), outerIv) ||
+      arts::ValueAnalysis::dependsOn(innerFor.getStep(), outerIv))
     return false;
 
   bool nestedLoop = false;
@@ -480,11 +481,11 @@ struct PatternAnalysisPass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass>
 createPatternAnalysisPass(sde::SDECostModel *costModel) {
   return std::make_unique<PatternAnalysisPass>(costModel);
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde

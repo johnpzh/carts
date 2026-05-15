@@ -353,7 +353,7 @@ def VerifyCoreObjectsOnly : Pass<"verify-core-objects-only", "mlir::ModuleOp"> {
   }];
   let dependentDialects = [
     "::mlir::arts::ArtsDialect",
-    "::mlir::arts::sde::ArtsSdeDialect"
+    "::mlir::carts::sde::CartsSdeDialect"
   ];
   let constructor = "mlir::arts::createVerifyCoreObjectsOnlyPass()";
 }

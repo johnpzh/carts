@@ -38,6 +38,7 @@ namespace mlir::arts {
 
 using namespace mlir;
 using namespace mlir::arts;
+using namespace mlir::carts;
 
 namespace {
 
@@ -454,10 +455,10 @@ struct ConvertToCodeletPass
 
 } // namespace
 
-namespace mlir::arts::sde {
+namespace mlir::carts::sde {
 
 std::unique_ptr<Pass> createConvertToCodeletPass() {
   return std::make_unique<ConvertToCodeletPass>();
 }
 
-} // namespace mlir::arts::sde
+} // namespace mlir::carts::sde
