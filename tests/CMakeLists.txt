@@ -8,17 +8,17 @@ include(carts_lit_test)
 
 # Co-located pass tests (IREE-style: test/ dirs adjacent to pass source).
 carts_lit_test(NAME carts-sde-tests
-  TEST_DIR ${CMAKE_SOURCE_DIR}/lib/arts/dialect/sde/test
+  TEST_DIR ${CMAKE_SOURCE_DIR}/lib/carts/dialect/sde/test
   LABELS pass
   DEPENDS carts-compile)
 
 carts_lit_test(NAME carts-core-tests
-  TEST_DIR ${CMAKE_SOURCE_DIR}/lib/arts/dialect/core/test
+  TEST_DIR ${CMAKE_SOURCE_DIR}/lib/carts/dialect/arts/test
   LABELS pass
   DEPENDS carts-compile)
 
 carts_lit_test(NAME carts-rt-tests
-  TEST_DIR ${CMAKE_SOURCE_DIR}/lib/arts/dialect/rt/test
+  TEST_DIR ${CMAKE_SOURCE_DIR}/lib/carts/dialect/arts-rt/test
   LABELS pass
   DEPENDS carts-compile)
 

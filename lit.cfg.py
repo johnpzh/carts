@@ -2,12 +2,12 @@
 """
 Lit configuration for CARTS tests.
 
-Tests are co-located with pass source code under lib/arts/dialect/*/test/,
+Tests are co-located with pass source code under lib/carts/dialect/*/test/,
 with cross-cutting tests (CLI, verify) under tests/. This config discovers
 tests across all these directories.
 
 This file lives at the project root so lit can find it from any test directory
-(lib/arts/dialect/*/test/, tests/cli/, tests/verify/).  When invoked via
+(lib/carts/dialect/*/test/, tests/cli/, tests/verify/).  When invoked via
 CMake's lit.site.cfg.py, paths come from CMake variables.
 """
 
@@ -45,9 +45,9 @@ config.test_exec_root = os.path.join(build_dir, "tests", "lit-output")
 # Tell lit which subdirectories to scan for tests (IREE pattern).
 config.test_subdirs = [
     os.path.join("lib", "carts", "dialect", "codir", "test"),
-    os.path.join("lib", "arts", "dialect", "sde", "test"),
-    os.path.join("lib", "arts", "dialect", "core", "test"),
-    os.path.join("lib", "arts", "dialect", "rt", "test"),
+    os.path.join("lib", "carts", "dialect", "sde", "test"),
+    os.path.join("lib", "carts", "dialect", "arts", "test"),
+    os.path.join("lib", "carts", "dialect", "arts-rt", "test"),
     os.path.join("tests", "cli"),
     os.path.join("tests", "verify"),
 ]

@@ -7,8 +7,8 @@
 #ifndef CARTS_DIALECT_CODIR_CONVERSION_PASSES_H
 #define CARTS_DIALECT_CODIR_CONVERSION_PASSES_H
 
-#include "arts/Dialect.h"
-#include "arts/dialect/sde/IR/SdeDialect.h"
+#include "carts/Dialect.h"
+#include "carts/dialect/sde/IR/SdeDialect.h"
 #include "carts/dialect/codir/IR/CodirDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
