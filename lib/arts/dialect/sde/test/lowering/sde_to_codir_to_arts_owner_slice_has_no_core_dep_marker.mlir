@@ -1,18 +1,22 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config \
-// RUN:   --start-from openmp-to-arts --pipeline openmp-to-arts \
-// RUN:   --mlir-print-ir-after-all 2>&1 \
-// RUN:   | awk '/IR Dump After ConvertSdeToArts/,/IR Dump After VerifySdeLowered/' \
-// RUN:   | %FileCheck %s
+// RUN:   --start-from sde-planning --pipeline codir-to-arts \
+// RUN:   | %FileCheck %s --implicit-check-not=sde. --implicit-check-not=codir.codelet
 
-// SDE owns the task/data-shape contract. Core no longer has a dependency
-// marker op for owner slices; raw-memref owner-slice paths either become
-// canonical MU tokens/codelets in SDE or remain ordinary raw captures for
-// CreateDbs to materialize without a Core marker.
+// Owner-slice scheduling units become canonical MU tokens/codelets before ARTS,
+// preserving block partition metadata through CODIR-to-ARTS materialization.
 
 // CHECK-LABEL: func.func @owner_slice_no_core_dep_marker
+// CHECK: arts.db_alloc
+// CHECK-SAME: elementSizes[%c16, %c64]
+// CHECK-SAME: planPhysicalBlockShape = [16, 64]
+// CHECK: arts.db_acquire[<in>]
+// CHECK-SAME: partitioning(<block>)
+// CHECK: arts.db_acquire[<inout>]
+// CHECK-SAME: partitioning(<block>)
 // CHECK: arts.edt <task> <intranode>
-// CHECK-NOT: arts.db_control
-// CHECK-NOT: sde.
+// CHECK: arts.db_ref
+// CHECK: memref.load
+// CHECK: memref.store
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @owner_slice_no_core_dep_marker(%A: memref<128x64xf32>, %C: memref<128x64xf32>) {

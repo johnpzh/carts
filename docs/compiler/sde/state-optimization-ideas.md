@@ -23,8 +23,8 @@ Current state-related passes and utilities:
 - `StructuredOpAnalysis` and `SdeAnalysisUtils` provide output-layout,
   loop-indexed output, in-place self-read, and root memory-effect facts.
 - Memref-level `sde.mu_token` is the canonical access handle for planned MU
-  slices. Tensor tokens remain a legacy/non-default representation for existing
-  tests and compatibility, not the production structured-loop path.
+  slices. Tensor tokens remain a non-default transitional representation for
+  existing tests, not the production structured-loop path.
 
 ## Optimization Ideas
 
@@ -103,7 +103,9 @@ DistributionPlanning
 IterationSpaceDecomposition
 BarrierElimination
 VerifySdeCpsPlan
-ConvertSdeToArts
+MemoryUnitMaterialization
+ConvertSdeToCodir
+ConvertCodirToArts
 ```
 
 The main state-ordering question is whether `IterationSpaceDecomposition`

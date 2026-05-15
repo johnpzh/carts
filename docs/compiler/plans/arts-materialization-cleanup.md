@@ -2,17 +2,21 @@
 
 ## Objective
 
-Make ARTS materialization direct and mechanical: CODIR deps become ARTS acquires,
-MU storage becomes ARTS DB allocation, CODIR codelets become ARTS EDTs, and no
-ARTS pass rediscovers source-level DB or dependency policy.
+Make ARTS materialization direct and mechanical: CODIR deps become
+`arts.db_acquire`, MU storage becomes `arts.db_alloc`, CODIR codelets become
+`arts.edt`, and no ARTS pass rediscovers source-level DB or dependency policy.
+
+See [`codir-edt-isolation.md`](./codir-edt-isolation.md) for the codelet
+conversion paths that feed this materialization.
 
 ## Current Surface
 
 Relevant current areas:
 
-- `ConvertSdeToArts`
+- `ConvertCodirToArts`
+- retired direct SDE-to-ARTS materialization
 - `CreateDbs`
-- `VerifyCoreObjectsOnly`
+- `VerifyArtsObjectsOnly`
 - `VerifyEdtCreated`
 - DB/EDT/epoch analyses under the current `core/` source tree
 
@@ -20,9 +24,9 @@ Relevant current areas:
 
 ARTS may:
 
-- allocate DBs from explicit MU storage;
-- acquire DB windows from explicit CODIR deps;
-- create EDTs from isolated CODIR codelets and explicit params;
+- allocate DBs from explicit MU storage via `arts.db_alloc`;
+- acquire DB windows from explicit CODIR deps via `arts.db_acquire`;
+- create EDTs from isolated CODIR codelets and explicit params via `arts.edt`;
 - bind logical worker capacity to ARTS topology;
 - refine DB/EDT/epoch mechanics without changing SDE/CODIR policy.
 
@@ -32,17 +36,21 @@ ARTS must not:
 - infer dependency-window legality;
 - scan raw memrefs to invent DB roots for supported cases;
 - recover implicit codelet captures;
-- introduce an `arts.db_control` marker.
+- introduce an `arts.lowering_contract` marker (or any equivalent
+  late-rediscovery sentinel) for cases SDE/CODIR could have proved directly.
 
 ## Phases
 
 ### Phase 1: Direct Materialization Coverage
 
-- Audit every canonical MU/token/codelet path currently lowered in
-  `ConvertSdeToArts`.
-- Define the equivalent CODIR-to-ARTS lowering shape.
-- Preserve current no-subview behavior while moving responsibility to the
+- [x] Audit every canonical MU/token/codelet path previously lowered directly
+  from SDE to ARTS.
+- [x] Define the equivalent CODIR-to-ARTS lowering shape.
+- [x] Preserve current no-subview behavior while moving responsibility to the
   token-local rewrite path.
+- [x] Rematerialize sliced CODIR deps inside ARTS EDTs using result types
+  inferred from the actual DB payload memref type, so static SDE/CODIR views
+  remain valid after `sde.mu_alloc` lowers to dynamic ARTS DB payloads.
 
 Exit gate:
 
@@ -52,8 +60,8 @@ Exit gate:
 
 - Classify every remaining `CreateDbs` responsibility as:
   - direct materialization should own it;
-  - temporary raw-memref compatibility should own it;
-  - dead legacy behavior.
+  - temporary raw-memref materialization should own it;
+  - dead behavior.
 - Move direct materialization responsibilities into CODIR-to-ARTS.
 - Convert unsupported raw cases into clear diagnostics instead of silent policy
   inference.
@@ -80,8 +88,13 @@ Exit gate:
 
 ### Phase 4: Verifier Hardening
 
-- Replace `VerifyCoreObjectsOnly` conceptually with `VerifyArtsObjectsOnly`.
-- Add checks that ARTS EDTs have complete dep/param metadata.
+- [x] Use `VerifyArtsObjectsOnly` as the only CODIR-to-ARTS object verifier.
+- [x] Add checks that explicit-param ARTS EDTs have complete dep/param metadata
+  and reject nonconstant above-captures, including non-scalar values. External
+  `memref.alloca` stack scratch remains legal because it is sunk/cloned into
+  the EDT body rather than lowered as an ABI capture.
+- [x] Remove the ARTS EDT verifier-bypass attribute; invalid EDT shapes now
+  fail at parse/verify time instead of being carried to a later cleanup pass.
 - Add checks that no unsupported source-shaped SDE/CODIR ops survive.
 
 Exit gate:
@@ -92,6 +105,9 @@ Exit gate:
 
 - Conversion lit tests for MU storage, memory deps, control deps, scalar params,
   releases, and reductions.
+- 2026-05-15 evidence after verifier hardening: `dekk carts build` and
+  `dekk carts test` passed, with the stale raw-physical-layout fixture removed
+  because it only exercised the deleted verifier-bypass path.
 - Negative tests for unresolved raw memrefs in supported paths.
 - Focused e2e tests for samples that previously used `CreateDbs`.
 - Pipeline dumps proving supported paths bypass the coarse raw bridge.

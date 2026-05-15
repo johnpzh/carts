@@ -187,12 +187,19 @@ SmallVector<Value> mlir::arts::EdtOp::getDependenciesAsVector() {
 void mlir::arts::EdtOp::setDependencies(ValueRange newDeps) {
   Operation *op = getOperation();
   SmallVector<Value> operands;
+  SmallVector<Value> params(getParams().begin(), getParams().end());
 
   if (op->getNumOperands() > 0)
     operands.push_back(op->getOperand(0));
 
   operands.append(newDeps.begin(), newDeps.end());
+  operands.append(params.begin(), params.end());
   op->setOperands(operands);
+  OpBuilder builder(getContext());
+  op->setAttr(EdtOp::getOperandSegmentSizesAttrName(op->getName()),
+              builder.getDenseI32ArrayAttr(
+                  {1, static_cast<int32_t>(newDeps.size()),
+                   static_cast<int32_t>(params.size())}));
 }
 
 void mlir::arts::EdtOp::appendDependency(Value dep) {
@@ -202,17 +209,16 @@ void mlir::arts::EdtOp::appendDependency(Value dep) {
 }
 
 LogicalResult EdtOp::verify() {
-  if (getNoVerifyAttr())
-    return success();
-
   Block &block = getBody().front();
   auto blockArgs = block.getArguments();
   auto deps = getDependenciesAsVector();
+  ValueRange params = getParams();
+  unsigned expectedBlockArgs = deps.size() + params.size();
 
-  if (blockArgs.size() != deps.size()) {
+  if (blockArgs.size() != expectedBlockArgs) {
     return emitOpError("block arguments (")
-           << blockArgs.size() << ") must match dependencies (" << deps.size()
-           << ")";
+           << blockArgs.size() << ") must match dependencies + params ("
+           << deps.size() << " + " << params.size() << ")";
   }
 
   for (Value dep : deps) {
@@ -223,18 +229,83 @@ LogicalResult EdtOp::verify() {
     }
   }
 
+  for (auto [index, param] : llvm::enumerate(params)) {
+    if (!param.getType().isIntOrIndexOrFloat())
+      return emitOpError("param #")
+             << index
+             << " must be an integer, index, or float scalar, got "
+             << param.getType();
+
+    unsigned argIndex = deps.size() + index;
+    Type argType = block.getArgument(argIndex).getType();
+    if (argType != param.getType())
+      return emitOpError("param block argument #")
+             << index << " type (" << argType
+             << ") must match param operand type (" << param.getType() << ")";
+  }
+
   DenseSet<Value> externalValues;
   for (Value dep : deps)
     externalValues.insert(dep);
 
-  auto walkResult = getBody().walk([&](Operation *op) {
-    if (op == &block.front())
-      return WalkResult::advance();
+  auto isDefinedInsideBody = [&](Operation *op) {
+    if (!op)
+      return false;
+    Region *parentRegion = op->getParentRegion();
+    return parentRegion &&
+           (parentRegion == &getBody() || getBody().isAncestor(parentRegion));
+  };
+  auto isValueDefinedInsideBody = [&](Value value) {
+    if (auto blockArg = dyn_cast<BlockArgument>(value)) {
+      Region *parentRegion = blockArg.getOwner()->getParent();
+      return parentRegion && (parentRegion == &getBody() ||
+                              getBody().isAncestor(parentRegion));
+    }
+    return isDefinedInsideBody(value.getDefiningOp());
+  };
 
+  auto walkResult = getBody().walk([&](Operation *op) {
     if (isa<EdtOp>(op))
       return WalkResult::skip();
 
     for (Value operand : op->getOperands()) {
+      if (operand.getType().isIntOrIndexOrFloat()) {
+        if (llvm::is_contained(blockArgs, operand))
+          continue;
+
+        if (isValueDefinedInsideBody(operand))
+          continue;
+        Operation *definingOp = operand.getDefiningOp();
+        if (definingOp && definingOp->hasTrait<OpTrait::ConstantLike>())
+          continue;
+
+        op->emitOpError("EDT region captures scalar value '")
+            << operand
+            << "' directly; pass it as an EDT param and use the param block "
+               "argument";
+        return WalkResult::interrupt();
+      }
+
+      if (!llvm::is_contained(blockArgs, operand) &&
+          !isValueDefinedInsideBody(operand)) {
+        Operation *definingOp = operand.getDefiningOp();
+        bool rematerializable =
+            (definingOp && definingOp->hasTrait<OpTrait::ConstantLike>()) ||
+            isUndefLikeOp(definingOp);
+        bool stackScratch = isa_and_nonnull<memref::AllocaOp>(definingOp);
+        if (!rematerializable) {
+          if (stackScratch)
+            continue;
+          if (!isa<MemRefType>(operand.getType())) {
+            op->emitOpError("EDT region captures value '")
+                << operand
+                << "' directly; pass it as an EDT dependency or param and use "
+                   "the corresponding block argument";
+            return WalkResult::interrupt();
+          }
+        }
+      }
+
       if (!isa<MemRefType>(operand.getType()))
         continue;
 
@@ -254,7 +325,7 @@ LogicalResult EdtOp::verify() {
       if (!definingOp)
         continue;
 
-      if (getBody().isAncestor(definingOp->getParentRegion()))
+      if (isDefinedInsideBody(definingOp))
         continue;
 
       /// DbAcquire source handles may reference outer-scope datablock handles
@@ -339,21 +410,38 @@ void EdtOp::build(OpBuilder &builder, OperationState &state, EdtType type,
 
 void EdtOp::build(OpBuilder &builder, OperationState &state, EdtType type,
                   EdtConcurrency concurrency, ValueRange dependencies) {
+  build(builder, state, type, concurrency, dependencies, ValueRange{});
+}
+
+void EdtOp::build(OpBuilder &builder, OperationState &state, EdtType type,
+                  EdtConcurrency concurrency, ValueRange dependencies,
+                  ValueRange params) {
   /// Default EDT placement stays on the current node unless a pass provides
   /// an explicit route. Using node 0 here would silently bias multi-node
   /// programs toward rank 0 during lowering.
   Value route = createCurrentNodeRoute(builder, state.location);
-  build(builder, state, type, concurrency, route, dependencies);
+  build(builder, state, type, concurrency, route, dependencies, params);
 }
 
 void EdtOp::build(OpBuilder &builder, OperationState &state, EdtType type,
                   EdtConcurrency concurrency, Value route,
                   ValueRange dependencies) {
+  build(builder, state, type, concurrency, route, dependencies, ValueRange{});
+}
+
+void EdtOp::build(OpBuilder &builder, OperationState &state, EdtType type,
+                  EdtConcurrency concurrency, Value route,
+                  ValueRange dependencies, ValueRange params) {
   state.addAttribute("type", EdtTypeAttr::get(builder.getContext(), type));
   state.addAttribute("concurrency", EdtConcurrencyAttr::get(
                                         builder.getContext(), concurrency));
   state.addOperands(route);
   state.addOperands(dependencies);
+  state.addOperands(params);
+  state.addAttribute(EdtOp::getOperandSegmentSizesAttrName(state.name),
+                     builder.getDenseI32ArrayAttr(
+                         {1, static_cast<int32_t>(dependencies.size()),
+                          static_cast<int32_t>(params.size())}));
 
   Region *bodyRegion = state.addRegion();
   Block *bodyBlock = new Block();

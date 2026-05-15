@@ -8,22 +8,6 @@
 
 include "mlir/Pass/PassBase.td"
 
-def ConvertSdeToCodir : Pass<"convert-sde-to-codir", "mlir::ModuleOp"> {
-  let summary = "Materialize SDE planning intent as CODIR codelet IR";
-  let description = [{
-    Placeholder boundary pass for the target SDE-to-CODIR split. It currently
-    preserves IR unchanged so the compiler can expose and test the boundary
-    before moving behavior out of the direct SDE-to-ARTS compatibility path.
-  }];
-  let dependentDialects = [
-    "::mlir::carts::sde::CartsSdeDialect",
-    "::mlir::carts::codir::CartsCodirDialect",
-    "::mlir::memref::MemRefDialect",
-    "::mlir::arith::ArithDialect"
-  ];
-  let constructor = "mlir::carts::codir::createConvertSdeToCodirPass()";
-}
-
 def VerifyCodir : Pass<"verify-codir", "mlir::ModuleOp"> {
   let summary = "Verify CODIR codelet boundary invariants";
   let description = [{
@@ -37,20 +21,21 @@ def VerifyCodir : Pass<"verify-codir", "mlir::ModuleOp"> {
   let constructor = "mlir::carts::codir::createVerifyCodirPass()";
 }
 
-def ConvertCodirToArts : Pass<"convert-codir-to-arts", "mlir::ModuleOp"> {
-  let summary = "Materialize CODIR codelets as abstract ARTS objects";
+def CodirCodeletOpt : Pass<"codir-codelet-opt", "mlir::ModuleOp"> {
+  let summary = "Clean up isolated CODIR codelet bodies";
   let description = [{
-    Placeholder boundary pass for the target CODIR-to-ARTS split. It currently
-    preserves IR unchanged so the registered pass surface can be tested without
-    changing the active direct SDE-to-ARTS compatibility pipeline.
+    CODIR-local optimization pass. It removes dead side-effect-free operations
+    inside isolated codir.codelet bodies after SDE-to-CODIR token-local rewrites
+    and before CODIR verification / ARTS materialization. This keeps codelet
+    rematerialization cleanup owned by CODIR instead of relying on later ARTS
+    cleanup passes.
   }];
   let dependentDialects = [
     "::mlir::carts::codir::CartsCodirDialect",
-    "::mlir::arts::ArtsDialect",
-    "::mlir::memref::MemRefDialect",
-    "::mlir::arith::ArithDialect"
+    "::mlir::arith::ArithDialect",
+    "::mlir::memref::MemRefDialect"
   ];
-  let constructor = "mlir::carts::codir::createConvertCodirToArtsPass()";
+  let constructor = "mlir::carts::codir::createCodirCodeletOptPass()";
 }
 
 #endif // CARTS_DIALECT_CODIR_TRANSFORMS_PASSES

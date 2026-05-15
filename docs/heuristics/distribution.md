@@ -22,7 +22,7 @@ Transitional note:
   cost-model-driven wavefront tile policy belong to SDE.
 - Any ARTS-side classification or attr stamping described below should be read
   as current implementation debt, fallback behavior, or contract
-  materialization after `ConvertSdeToArts`.
+  materialization after the CODIR-to-ARTS boundary.
 
 ## 0. Motivation: Bridging AMT, OpenMP, and MPI
 
@@ -170,13 +170,16 @@ validate SDE contracts rather than redefine semantic pattern family.
 
 ## 5. Pipeline Architecture
 
-Distribution is planned inside `openmp-to-arts`. The target is for SDE/Core
-conversion to realize the MU/CU/SU plan directly as Core DB/EDT objects; the
-remaining `create-dbs` stage is a compatibility bridge for raw memref work that
-has not yet become canonical MU token/codelet form.
+Distribution is planned inside `sde-planning`. `sde-to-codir` isolates the
+planned codelets, and `codir-to-arts` realizes the MU/CU/SU plan as ARTS DB/EDT
+objects. The remaining `create-dbs` stage is a compatibility bridge for raw
+memref work that has not yet become canonical MU token/codelet form.
 
-- `openmp-to-arts`: SDE pattern/distribution/reduction planning, direct
-  SDE-to-Core EDT/DB/epoch materialization, and strict SDE/Core verification.
+- `sde-planning`: SDE pattern/distribution/reduction planning.
+- `sde-to-codir`: SDE codelet plans become explicit CODIR deps, params, and
+  token-local views.
+- `codir-to-arts`: CODIR deps and codelets become ARTS DB/acquire/EDT objects,
+  followed by residual non-codelet SDE compatibility lowering and verification.
 - `create-dbs`: transitional raw-memref bridge. It consumes SDE-authored layout
   attrs and dependency slices, then creates DB objects and localizes raw memref
   uses. It must not choose distribution policy.
@@ -187,13 +190,14 @@ has not yet become canonical MU token/codelet form.
 Key files:
 - `tools/compile/Compile.cpp`
 - `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
-- `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
+- `lib/carts/dialect/codir/Transforms/CodirBoundary.cpp`
 - `lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp`
 
 Useful stop points:
 
 ```bash
-dekk carts compile input.mlir --pipeline=openmp-to-arts
+dekk carts compile input.mlir --pipeline=sde-planning
+dekk carts compile input.mlir --pipeline=codir-to-arts
 dekk carts compile input.mlir --pipeline=post-db-refinement
 dekk carts compile input.mlir --pipeline=pre-lowering
 ```
@@ -265,10 +269,11 @@ Question: do loop normalization/reordering transforms harm multi-node distributi
 Current answer: **no for existing 1D outer-loop distribution path**.
 
 Reason:
-- Pipeline step 4 (`edt-transforms`) and the semantic work inside step 3
-  (`openmp-to-arts`) mostly target inner serial `scf.for` structure.
-- Core stages consume the SDE/Core materialization contract and preserve
-  concrete DB/EDT/epoch distribution facts.
+- The semantic work inside `sde-planning` mostly targets inner serial
+  `scf.for` structure.
+- `sde-to-codir`, `codir-to-arts`, and later ARTS stages consume the
+  SDE-authored materialization contract and preserve concrete DB/EDT/epoch
+  distribution facts.
 
 Pass-level summary (current behavior):
 - Loop normalization (triangular-to-rectangular forms): compatible
@@ -281,9 +286,9 @@ Future caveat:
 
 ## 9. Lowering Architecture
 
-Direct SDE-to-Core materialization emits EDT/DB/epoch structure from SDE plan
-data. Strategy-specific helpers must consume explicit plan data rather than a
-Core semantic loop carrier.
+The production lowering path materializes SDE plan data through CODIR codelets
+and then ARTS DB/EDT/epoch objects. Strategy-specific helpers must consume
+explicit plan data rather than a late ARTS semantic loop carrier.
 
 ### 9.1 Acquire rewriting helpers
 
@@ -335,19 +340,20 @@ Wavefront note:
 dekk carts build
 
 # Missing config must fail fast
-dekk carts compile input.mlir --pipeline=openmp-to-arts
+dekk carts compile input.mlir --pipeline=codir-to-arts
 
 # Inspect distribution attributes
-dekk carts compile gemm.mlir -O3 --arts-config arts.cfg --pipeline=openmp-to-arts
+dekk carts compile gemm.mlir -O3 --arts-config arts.cfg --pipeline=codir-to-arts
 
 # Multi-node counters
 # (example harness depends on your local benchmark setup)
 ```
 
 Expected checks:
-- SDE planning attrs are present before direct materialization when applicable.
+- SDE planning attrs are present before CODIR-to-ARTS materialization when
+  applicable.
 - Core `distribution_kind/pattern/version` attrs are present on concrete
-  DB/EDT/epoch objects after `openmp-to-arts` when the plan needs them.
+  DB/EDT/epoch objects after `codir-to-arts` when the plan needs them.
 - checksums unchanged for benchmark kernels
 - node/thread counters show non-zero work on remote nodes for distributed runs
 

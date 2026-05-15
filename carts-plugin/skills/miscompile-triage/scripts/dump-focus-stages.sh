@@ -8,7 +8,7 @@ fi
 
 input=$1
 outdir=$2
-stage_csv=${3:-openmp-to-arts,edt-transforms,create-dbs,db-opt,post-db-refinement,pre-lowering}
+stage_csv=${3:-sde-planning,sde-to-codir,codir-to-arts,edt-transforms,create-dbs,db-opt,post-db-refinement,pre-lowering}
 
 if [[ $# -ge 3 ]]; then
   shift 3

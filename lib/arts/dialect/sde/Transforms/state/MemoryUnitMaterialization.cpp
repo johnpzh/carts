@@ -68,6 +68,19 @@ static bool canMaterializePlannedOwnerSlices(sde::SdeSuIterateOp op) {
   return false;
 }
 
+static void demoteUnsupportedPhysicalStoragePlan(sde::SdeSuIterateOp op) {
+  if (!op || !hasPhysicalOwnerSlicePlan(op) ||
+      canMaterializePlannedOwnerSlices(op))
+    return;
+
+  // Physical storage attrs are a promise that the SDE/CODIR boundary can
+  // materialize token-local views. Keep logical scheduling intent, but do not
+  // export an unsupported DB layout to the residual raw CreateDbs bridge.
+  op.removePhysicalOwnerDimsAttr();
+  op.removePhysicalBlockShapeAttr();
+  op.removePhysicalHaloShapeAttr();
+}
+
 static void collectSchedulingUnitMemrefRoots(sde::SdeSuIterateOp op,
                                              SetVector<Value> &roots) {
   if (!op || !canMaterializePlannedOwnerSlices(op))
@@ -142,6 +155,9 @@ struct MemoryUnitMaterializationPass
     SetVector<Value> roots;
     module.walk([&](sde::SdeSuIterateOp op) {
       collectSchedulingUnitMemrefRoots(op, roots);
+    });
+    module.walk([&](sde::SdeSuIterateOp op) {
+      demoteUnsupportedPhysicalStoragePlan(op);
     });
 
     PatternRewriter rewriter(module.getContext());

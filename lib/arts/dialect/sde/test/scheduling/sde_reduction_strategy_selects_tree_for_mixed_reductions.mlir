@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_2t.cfg --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_2t.cfg --start-from sde-planning --pipeline sde-planning --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Verify that loop-uniform multi-reduction selection falls back to tree when
 // the preserved reduction kinds are mixed and not all atomic-capable.

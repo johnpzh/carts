@@ -1,6 +1,6 @@
-// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
-// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=LOCAL
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=LOCAL
 
 // Verify that SDE authors an owner-compute distribution advisory for a stencil
 // loop, and that boundary materialization consumes the advisory at the lowering
@@ -25,21 +25,17 @@
 // SDE-NOT: {{plan[A-Z]}}
 // SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition
 
-// ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.epoch attributes {
+// ARTS: arts.edt <task>
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
-// ARTS-SAME: {{.*}}planHaloShape = [1, 1]
-// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [16, 16]
-// ARTS-SAME: {{.*}}planOwnerDims = [0, 1]
-// ARTS-SAME: {{.*}}planPhysicalBlockShape = [16, 16]
+// ARTS-SAME: {{.*}}stencil_owner_dims = [0, 1]
+// ARTS-NOT: planPhysicalBlockShape
 // ARTS: arts.edt <task>
 // ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
-// ARTS-SAME: {{.*}}planHaloShape = [1, 1]
-// ARTS-SAME: {{.*}}planLogicalWorkerSlice = [16, 16]
-// ARTS-SAME: {{.*}}planOwnerDims = [0, 1]
-// ARTS-SAME: {{.*}}planPhysicalBlockShape = [16, 16]
+// ARTS-SAME: {{.*}}stencil_owner_dims = [0, 1]
+// ARTS-NOT: planPhysicalBlockShape
 // ARTS-NOT: sde.
 
 // LOCAL-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //

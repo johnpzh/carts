@@ -14,6 +14,7 @@
 
 #include "arts/dialect/core/Transforms/db/DbLayoutPlan.h"
 #include "arts/utils/LoweringContractUtils.h"
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/ValueRange.h"
@@ -32,6 +33,15 @@ FailureOr<DbPhysicalLayoutPlan> resolvePhysicalDbLayoutPlan(Operation *planSourc
                                                      ValueRange elementSizes,
                                                      OpBuilder &builder,
                                                      Location loc);
+
+/// Resolve explicit owner-dimension and physical-block-shape attrs into a
+/// concrete DB rewrite plan for an allocation with the provided logical element
+/// extents. This is for dialect boundaries that have SDE/CODIR-authored plan
+/// attrs before an ARTS op exists to carry the generic plan attributes.
+FailureOr<DbPhysicalLayoutPlan>
+resolvePhysicalDbLayoutPlan(ArrayAttr ownerDimsAttr, ArrayAttr blockShapeAttr,
+                            ValueRange elementSizes, OpBuilder &builder,
+                            Location loc);
 
 /// Return true when a read task's owner layout names the same source owner
 /// dimensions but uses a different physical block shape. This is a layout

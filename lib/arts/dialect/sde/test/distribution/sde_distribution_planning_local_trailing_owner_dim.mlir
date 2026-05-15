@@ -1,11 +1,10 @@
-// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_64t.cfg --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
-// RUN: not %carts-compile %s --O3 --arts-config %inputs_dir/arts_64t.cfg --start-from openmp-to-arts --pipeline create-dbs 2>&1 | %FileCheck %s --check-prefix=DB
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_64t.cfg --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_64t.cfg --start-from sde-planning --pipeline create-dbs --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=DB
 
-// Imperfect local stencil/update loops can be parallelized by Core when SDE
-// proves the physical storage layout: the local owner IV maps to the trailing
-// physical output dimension, and all output self-reads stay within that owner
-// slice. Until SDE/CODIR materializes token-local stencil views, that blocked
-// raw plan must fail at CreateDbs instead of being reindexed in ARTS.
+// Imperfect local stencil/update loops can carry owner-slice scheduling intent
+// when the local owner IV maps to the trailing physical output dimension, and
+// all output self-reads stay within that owner slice. CODIR-to-ARTS keeps the
+// plan on the task contract while CreateDbs keeps the raw allocation coarse.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
@@ -17,9 +16,14 @@
 // SDE-SAME: physicalOwnerDims = [2]
 // SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition
 
-// DB: error: SDE-authored physical DB layout reached CreateDbs as a raw memref
-// DB-SAME: SDE must materialize MU/token/codelet storage and token-local access rewrites before ARTS conversion
-// DB: sym_name = "main"
+// DB-LABEL: // -----// IR Dump After CreateDbs
+// DB: func.func @main
+// DB: arts.db_alloc
+// DB-SAME: <coarse>
+// DB-NOT: planPhysicalBlockShape
+// DB: arts.edt <task>
+// DB-SAME: planOwnerDims = [0, 1, 2]
+// DB-SAME: stencil_owner_dims = [0, 1, 2]
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main() {

@@ -198,7 +198,7 @@ def lit(
 
     Examples:
       carts lit
-      carts lit lib/arts/dialect/sde/test/openmp_to_arts_preserves_schedule_chunk.mlir
+      carts lit lib/carts/dialect/codir/test/transforms/codir-conversion-passes.mlir
       carts lit -v lib/arts/dialect/core/test
       carts lit -- --filter=db_lowering lib/arts/dialect/core/test
     """

@@ -225,18 +225,6 @@ def ArtsDepPattern
 def ArtsDepPatternAttr
     : Arts_I32EnumAttr<"dep_pattern", ArtsDepPattern>;
 
-/// Unit attribute to skip EDT verification during intermediate passes
-def NoVerifyAttr : AttrDef<ArtsDialect, "NoVerify"> {
-  let summary = "Skip verification for partially formed EDT";
-  let description = [{
-    Marks an EDT that should skip verification. This is used during
-    ConvertOpenMPToArts before CreateDbPass properly sets up dependencies
-    and block arguments. The attribute is removed after CreateDbPass.
-  }];
-  let mnemonic = "no_verify";
-  let assemblyFormat = "";
-}
-
 /// Marker on DbAcquireOp to preserve authoritative access-mode semantics.
 /// This only protects the acquire's in/out/inout mode from later
 /// re-inference/optimization. It does not by itself imply that the dependency

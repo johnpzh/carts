@@ -26,12 +26,11 @@ For the target per-dialect analysis and optimization ownership, see
   work; use `dekk carts ...` commands for regular compilation and testing.
 
 The JSON manifest includes both executable pipeline steps and dialect grouping
-metadata. `dialect_groups.current` names the compatibility groups implemented
-by the live stages. `dialect_groups.target` names the intended
-`sde -> codir -> arts -> arts-rt` boundary groups, including planned stage
-tokens such as `sde-to-codir` and `codir-to-arts` before they become runnable
-pipeline stops. These group records are descriptive; only `pipeline`,
-`start_from`, and `pipeline_sequence` list accepted stage tokens.
+metadata. `dialect_groups.current` names the groups implemented by the live
+stages. The codelet path now runs through `sde -> codir -> arts`: SDE performs
+planning, CODIR isolates codelets and token-local views, and ARTS materializes
+DB/EDT objects. These group records are descriptive; only `pipeline`,
+`start_from`, and `pipeline_sequence` list canonical stage tokens.
 
 ## Pipeline Order
 
@@ -39,15 +38,17 @@ Driver stages:
 
 1. `raise-memref-dimensionality`
 2. `initial-cleanup`
-3. `openmp-to-arts`
-4. `edt-transforms`
-5. `create-dbs`
-6. `db-opt`
-7. `post-db-refinement`
-8. `late-concurrency-cleanup`
-9. `epochs`
-10. `pre-lowering`
-11. `arts-to-llvm`
+3. `sde-planning`
+4. `sde-to-codir`
+5. `codir-to-arts`
+6. `edt-transforms`
+7. `create-dbs`
+8. `db-opt`
+9. `post-db-refinement`
+10. `late-concurrency-cleanup`
+11. `epochs`
+12. `pre-lowering`
+13. `arts-to-llvm`
 
 `--pipeline` also accepts the sentinel `complete`. `--start-from` accepts core
 stages only.
@@ -82,11 +83,11 @@ CSE(func)
 PolygeistCanonicalizeFor(func)
 ```
 
-### `openmp-to-arts`
+### `sde-planning`
 
-The complete current SDE lifecycle lives inside this stage. The target
-architecture will split this into SDE planning, SDE-to-CODIR materialization,
-CODIR verification, and CODIR-to-ARTS materialization.
+This stage covers OpenMP-to-SDE conversion and SDE planning only. It
+intentionally stops before codelet materialization; `sde-to-codir` owns the
+codelet boundary and `codir-to-arts` owns ARTS object materialization.
 
 ```text
 ConvertOpenMPToSde
@@ -103,9 +104,25 @@ IterationSpaceDecomposition
 BarrierElimination
 VerifySdeCpsPlan
 MemoryUnitMaterialization
-ConvertSdeToArts
+```
+
+### `sde-to-codir`
+
+```text
+ConvertSdeToCodir
+CodirCodeletOpt
+VerifyCodir
+```
+
+### `codir-to-arts`
+
+This stage materializes CODIR codelets as ARTS objects and then verifies that
+no SDE operations survived the boundary.
+
+```text
+ConvertCodirToArts
 VerifySdeLowered
-VerifyCoreObjectsOnly
+VerifyArtsObjectsOnly
 DeadCodeElimination
 CSE
 VerifyEdtCreated
@@ -171,7 +188,8 @@ Mem2Reg
 ```text
 PolygeistCanonicalize
 CreateEpochs
-EpochOpt (conditional)
+VerifyEpochCreated
+EpochOpt[scheduling] (conditional)
 PolygeistCanonicalize
 ```
 
@@ -187,6 +205,7 @@ CSE
 EdtLowering
 PolygeistCanonicalize
 CSE
+VerifyEdtLowered
 LICM
 DataPtrHoisting
 PolygeistCanonicalize
@@ -197,6 +216,7 @@ CSE
 EpochLowering
 PolygeistCanonicalize
 CSE
+VerifyEpochLowered
 VerifyPreLowered
 ```
 
@@ -214,28 +234,31 @@ Mem2Reg
 PolygeistCanonicalize
 ControlFlowSink
 PolygeistCanonicalize
+VerifyDbLowered
 VerifyLowered
 ```
 
 ## Stage Dependencies
 
 - `initial-cleanup` depends on `raise-memref-dimensionality`.
-- `openmp-to-arts` depends on `initial-cleanup`.
-- `edt-transforms` depends on `openmp-to-arts`.
-- `create-dbs` depends on `openmp-to-arts`.
+- `sde-planning` depends on `initial-cleanup`.
+- `sde-to-codir` depends on `sde-planning`.
+- `codir-to-arts` depends on `sde-to-codir`.
+- `edt-transforms` depends on `codir-to-arts`.
+- `create-dbs` depends on `codir-to-arts`.
 - `db-opt` depends on `create-dbs`.
-- `post-db-refinement` depends on `db-opt`.
+- `post-db-refinement` depends on `create-dbs`.
 - `late-concurrency-cleanup` depends on `post-db-refinement`.
+- `epochs` depends on `post-db-refinement`.
 - `pre-lowering` depends on `epochs` and `late-concurrency-cleanup`.
 - `arts-to-llvm` depends on `pre-lowering`.
 
 ## Ownership Notes
 
-- SDE inside `openmp-to-arts` owns semantic decomposition, `PatternAnalysis`,
+- SDE inside `sde-planning` owns semantic decomposition, `PatternAnalysis`,
   state planning, dependency/effect proofs, and physical DB layout policy.
-- CODIR is the planned isolated-codelet layer. It should own explicit deps,
-  params, token-local views, and codelet capture verification before ARTS EDT
-  creation.
+- CODIR is the active isolated-codelet layer. It owns explicit deps, params,
+  token-local views, and codelet capture verification before ARTS EDT creation.
 - `CreateDbs` is now only a coarse raw-memref bridge. It rejects blocked/tiled
   raw memrefs because SDE/CODIR must perform MU/token storage and access
   rewrites before ARTS.

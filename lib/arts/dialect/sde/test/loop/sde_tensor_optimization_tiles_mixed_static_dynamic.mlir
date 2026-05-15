@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Non-stencil elementwise and matmul loops stay on the scalar SDE path.
 // PatternAnalysis stamps the structured classification, but does not create
@@ -9,7 +9,7 @@
 // CHECK: sde.su_iterate
 // CHECK: memref.store
 // CHECK-NOT: linalg.generic
-// CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: func.func @main
 // CHECK: arts.edt <task>
 // CHECK: memref.store

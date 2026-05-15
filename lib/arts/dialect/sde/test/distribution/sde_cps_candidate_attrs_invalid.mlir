@@ -1,4 +1,4 @@
-// RUN: not %carts-compile %s --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts 2>&1 | %FileCheck %s
+// RUN: not %carts-compile %s --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts 2>&1 | %FileCheck %s
 
 // CHECK-COUNT-2: sde.cps candidate plan requires sde.cps_candidate_group_id, sde.cps_candidate_stage_index, sde.cps_candidate_stage_count, and sde.cps_candidate_requires_tokenized_dataflow together
 // CHECK: sde.cps_candidate_requires_tokenized_dataflow must be a unit attr

@@ -90,7 +90,7 @@ std::unique_ptr<Pass> createContractValidationPass(bool failOnError = false);
 /// Verification passes at lowering boundaries.
 std::unique_ptr<Pass> createVerifyEdtCreatedPass();
 std::unique_ptr<Pass> createVerifyEpochCreatedPass();
-std::unique_ptr<Pass> createVerifyCoreObjectsOnlyPass();
+std::unique_ptr<Pass> createVerifyArtsObjectsOnlyPass();
 std::unique_ptr<Pass> createVerifyPreLoweredPass();
 std::unique_ptr<Pass> createVerifyLoweredPass();
 std::unique_ptr<Pass> createVerifyEdtLoweredPass();

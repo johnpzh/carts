@@ -52,7 +52,11 @@ Both languages can use the same OpenMP constructs and memory layout patterns des
 
 ## OpenMP Pragma Support
 
-CARTS provides comprehensive support for OpenMP pragmas through the `convert_openmp_to_arts` compiler pass. The following OpenMP constructs are supported:
+CARTS provides comprehensive support for OpenMP pragmas through the staged
+compiler pipeline: `ConvertOpenMPToSde` captures source semantics,
+`ConvertSdeToCodir` isolates codelet deps/params, and `ConvertCodirToArts`
+materializes ARTS DB/EDT objects. The following OpenMP constructs are
+supported:
 
 ### 1. Parallel Regions
 
@@ -65,7 +69,8 @@ Basic parallel regions are fully supported.
 }
 ```
 
-**Conversion**: Converted to `arts.edt` with parallel execution and internode concurrency.
+**Conversion**: Planned in SDE, isolated through CODIR when codelet-shaped, and
+materialized as ARTS work/dependency objects by `codir-to-arts`.
 
 ### 2. Worksharing Loops
 
@@ -168,7 +173,9 @@ for (int i = 0; i < N; i++) {
 }
 ```
 
-**Conversion**: Both are converted to `arts.edt` with single execution and intranode concurrency.
+**Conversion**: Both are planned in SDE and must be materialized through the
+SDE/CODIR/ARTS boundary. `codir-to-arts` no longer runs a residual SDE-to-ARTS
+bridge; surviving SDE operations fail verification.
 
 ### 6. Synchronization Constructs
 

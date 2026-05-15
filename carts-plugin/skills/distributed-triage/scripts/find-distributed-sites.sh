@@ -7,7 +7,8 @@ git grep -n \
   -e 'DbDistributedOwnership' \
   -e 'DbDistributedEligibility' \
   -e 'DistributionPlanning' \
-  -e 'ConvertSdeToArts' \
+  -e 'ConvertSdeToCodir' \
+  -e 'ConvertCodirToArts' \
   -e 'distributed_db_init' \
   -e 'distributed_db_init_worker' \
   -e 'artsGetTotalNodes' \

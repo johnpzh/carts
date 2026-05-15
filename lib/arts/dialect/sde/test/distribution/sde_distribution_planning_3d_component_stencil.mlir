@@ -1,8 +1,9 @@
-// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
-// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 
-// SDE owns the physical shape for component stencils: distribute the three
-// spatial dimensions and leave the component dimension local in the storage
+// SDE owns the physical shape for component stencils: all semantic owner dims
+// remain in the stencil contract while the storage plan distributes the three
+// spatial dimensions and leaves the component dimension local in the physical
 // block.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
@@ -21,24 +22,18 @@
 // SDE-NOT: {{plan[A-Z]}}
 // SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition
 
-// ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.epoch attributes {
+// ARTS: arts.edt <task>
 // ARTS-SAME: depPattern = #arts.dep_pattern<cross_dim_stencil_3d>
-// ARTS-SAME: planHaloShape = [1, 1, 1]
-// ARTS-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_tile>
-// ARTS-SAME: planLogicalWorkerSlice = [4, 8, 8, 3]
-// ARTS-SAME: planOwnerDims = [0, 1, 2]
-// ARTS-SAME: planPhysicalBlockShape = [4, 8, 8, 3]
-// ARTS-SAME: stencil_block_shape = [4, 8, 8, 3]
 // ARTS-SAME: stencil_max_offsets = [1, 1, 1, 0]
 // ARTS-SAME: stencil_min_offsets = [-1, -1, -1, 0]
-// ARTS-SAME: stencil_owner_dims = [0, 1, 2]
+// ARTS-SAME: stencil_owner_dims = [0, 1, 2, 3]
+// ARTS-NOT: planPhysicalBlockShape
 // ARTS: arts.edt <task>
 // ARTS-SAME: arts.pattern_revision = 1 : i64
-// ARTS-SAME: planLogicalWorkerSlice = [4, 8, 8, 3]
-// ARTS-SAME: planOwnerDims = [0, 1, 2]
-// ARTS-SAME: planPhysicalBlockShape = [4, 8, 8, 3]
+// ARTS-SAME: stencil_owner_dims = [0, 1, 2, 3]
+// ARTS-NOT: planPhysicalBlockShape
 // ARTS-NOT: sde.
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {

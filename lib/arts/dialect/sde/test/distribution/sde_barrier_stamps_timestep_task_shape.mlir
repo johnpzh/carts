@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // SDE recognizes same-shape dependent elementwise stages as timestep waves.
 // Barrier analysis keeps them on advance_edt until the SDE CPS dataflow rewrite
@@ -16,14 +16,13 @@
 // CHECK: } {
 // CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
 // CHECK-SAME: repetitionStructure = #sde.repetition_structure<full_timestep>
-// CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: func.func @timestep_pair
-// CHECK: arts.epoch attributes {
+// CHECK: arts.edt <task>
 // CHECK-SAME: planAsyncStrategy = #arts.plan_async_strategy<advance_edt>
 // CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
 // CHECK: arts.edt <task>
 // CHECK-SAME: depPattern = #arts.dep_pattern<uniform>
-// CHECK-SAME: no_verify = #arts.no_verify
 // CHECK-SAME: planAsyncStrategy = #arts.plan_async_strategy<advance_edt>
 // CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
 // CHECK: arts.barrier

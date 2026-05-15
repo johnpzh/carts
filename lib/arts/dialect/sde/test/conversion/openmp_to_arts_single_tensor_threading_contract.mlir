@@ -1,13 +1,13 @@
 // Verify the memref-native pipeline for a scalar single+wsloop pattern:
 //   1. ConvertOpenMPToSde wraps su_iterate body in cu_region <parallel>
-//   2. ConvertSdeToArts preserves scalar single state on the
+//   2. ConvertCodirToArts preserves scalar single state on the
 //      user-visible alloca and lower the loop to Core task dispatch
 
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 \
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 \
 // RUN:   | awk '/IR Dump After ConvertOpenMPToSde/,/IR Dump After PatternAnalysis/' \
 // RUN:   | %FileCheck %s --check-prefix=OMP
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 \
-// RUN:   | awk '/IR Dump After ConvertSdeToArts/,/IR Dump After VerifySdeLowered/' \
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 \
+// RUN:   | awk '/IR Dump After ConvertCodirToArts/,/IR Dump After VerifySdeLowered/' \
 // RUN:   | %FileCheck %s --check-prefix=ARTS
 
 // Verify that:
@@ -28,17 +28,17 @@
 // OMP: arith.muli
 // OMP: memref.store
 
-// --- After ConvertSdeToArts ---
+// --- After ConvertCodirToArts ---
 // ARTS: func.func @main
-//   Single task keeps scalar state on the preserved alloca:
-// ARTS: arts.edt <single>
+//   Single region is inlined so scalar stack state remains in parent control
+//   flow instead of becoming an implicit EDT capture:
+// ARTS-NOT: arts.edt <single>
 // ARTS: memref.load %{{.*}}[] : memref<i32>
 // ARTS: arith.addi %{{.*}}, %{{.*}} : i32
 // ARTS: memref.store %{{.*}}, %{{.*}}[] : memref<i32>
 //   Barrier between single and loop:
 // ARTS: arts.barrier
 //   Parallel loop:
-// ARTS: arts.epoch
 // ARTS: arts.edt <task>
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {

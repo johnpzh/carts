@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Verify that Tiling tiles a stencil su_iterate when
 // accessMinOffsets/accessMaxOffsets are present. The tile size must be at

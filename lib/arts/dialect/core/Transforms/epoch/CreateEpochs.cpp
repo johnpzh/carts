@@ -38,6 +38,7 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LogicalResult.h"
 
 #include "arts/utils/Debug.h"
@@ -107,6 +108,18 @@ static bool containsEdtLaunch(Operation *op) {
   return found;
 }
 
+static bool isMovableBarrierSegmentOp(Operation *op) {
+  if (isa<DbAcquireOp, LoweringContractOp>(op))
+    return true;
+
+  // Scalar SSA helpers that feed only moved EDTs must move with the EDTs when
+  // the barrier segment is wrapped, otherwise the new epoch can be inserted
+  // before their definitions and break dominance. Keep this limited to
+  // regionless, side-effect-free ops; memory reads/writes and nested control
+  // remain outside unless they are already part of an EDT launch container.
+  return op->getNumRegions() == 0 && isMemoryEffectFree(op);
+}
+
 static void processBarrierOp(BarrierOp barrier) {
   ARTS_DEBUG("Processing BarrierOp");
   Block *block = barrier->getBlock();
@@ -115,6 +128,7 @@ static void processBarrierOp(BarrierOp barrier) {
 
   SmallVector<Operation *, 8> opsToMove;
   llvm::SmallDenseSet<Operation *, 8> opsToMoveSet;
+  Operation *epochInsertionOp = nullptr;
 
   auto barrierIt = Block::iterator(barrier.getOperation());
   auto segmentBegin = barrierIt;
@@ -130,6 +144,10 @@ static void processBarrierOp(BarrierOp barrier) {
     Operation *op = &*it;
     if (!containsEdtLaunch(op))
       continue;
+    if (!isa<EdtOp>(op) && op->getNumResults() != 0)
+      continue;
+    if (!epochInsertionOp)
+      epochInsertionOp = op;
     opsToMove.push_back(op);
     opsToMoveSet.insert(op);
   }
@@ -158,11 +176,13 @@ static void processBarrierOp(BarrierOp barrier) {
         continue;
       if (containsEdtLaunch(op))
         continue; // already handled
+      if (epochInsertionOp && op->isBeforeInBlock(epochInsertionOp))
+        continue;
       // Skip ops with side effects that we cannot safely reorder. db_acquire
-      // is a dep-tracking SSA producer and is safe to move alongside the
-      // EDTs that consume it; restrict the hoist to that specific op for
-      // now to avoid perturbing other patterns.
-      if (!isa<DbAcquireOp, LoweringContractOp>(op))
+      // and lowering contracts are dep-tracking SSA producers, and pure
+      // regionless scalar ops are safe to move alongside the EDTs that consume
+      // them.
+      if (!isMovableBarrierSegmentOp(op))
         continue;
       bool allUsersInside = true;
       for (Value result : op->getResults()) {
@@ -194,8 +214,7 @@ static void processBarrierOp(BarrierOp barrier) {
 
   /// Create epoch and move operations into it
   Location loc = barrier.getLoc();
-  Operation *insertionOp = opsToMove.front();
-  OpBuilder builder(block, Block::iterator(insertionOp));
+  OpBuilder builder(block, Block::iterator(epochInsertionOp));
   auto epochOp = EpochOp::create(builder, loc);
   auto &epochRegion = epochOp.getRegion();
   if (epochRegion.empty())

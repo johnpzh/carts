@@ -1,7 +1,7 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
-// SDE owns wavefront family identification. The final SDE plan is translated
-// only at ConvertSdeToArts.
+// SDE owns wavefront family identification. CODIR-to-ARTS preserves the
+// codelet plan as ARTS task orchestration.
 
 // CHECK-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // CHECK: func.func @wavefront
@@ -18,13 +18,12 @@
 // CHECK: func.func @wavefront
 // CHECK: sde.su_barrier
 // CHECK-SAME: barrierReason = #sde.barrier_reason<wavefront_frontier>
-// CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: func.func @wavefront
-// CHECK: arts.epoch attributes {
+// CHECK: arts.edt <task>
 // CHECK-SAME: depPattern = #arts.dep_pattern<wavefront_2d>
 // CHECK: arts.edt <task>
 // CHECK-SAME: depPattern = #arts.dep_pattern<wavefront_2d>
-// CHECK-SAME: no_verify = #arts.no_verify
 // CHECK: arts.barrier
 // CHECK-NOT: sde.
 

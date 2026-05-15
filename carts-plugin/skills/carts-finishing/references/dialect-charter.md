@@ -1,6 +1,9 @@
 # Dialect Charter
 
-The CARTS compiler has three dialects. Each owns a clear slice of compiler responsibility. Pass placement is decided against this charter; if a placement decision feels arbitrary, the charter is wrong (update it) or the pass is wrong (move it).
+The CARTS compiler is migrating around four dialect layers: SDE, CODIR, ARTS,
+and ARTS-RT. Each owns a clear slice of compiler responsibility. Pass
+placement is decided against this charter; if a placement decision feels
+arbitrary, the charter is wrong (update it) or the pass is wrong (move it).
 
 ## Source of truth
 
@@ -14,7 +17,7 @@ The authoritative documents are:
 
 This file is a fast-lookup distillation. If it disagrees with the docs above, the docs win — update this file to match.
 
-## The three charters
+## The four charters
 
 ### SDE (`sde`) — Semantic planning
 
@@ -27,16 +30,33 @@ This file is a fast-lookup distillation. If it disagrees with the docs above, th
 - Tile geometry, halo geometry (when stamped as a contract)
 - Vectorization hints
 
-**IR level:** memref + scf + transient `linalg.generic` / `tensor` carriers. Carriers are created during analysis and erased before SDE→ARTS conversion. No carriers escape the SDE window.
+**IR level:** memref + scf + transient `linalg.generic` / `tensor` carriers. Carriers are created during analysis and erased before CODIR/ARTS materialization. No carriers escape the SDE window.
 
 **Forbidden:**
 - Touching any `arts.*` op
 - Including any header from `core/Analysis` or `core/Transforms`
 - Baking ARTS-specific runtime semantics into decisions (decisions should be expressible as portable contracts)
 
-### Core (`arts.*`) — ARTS structural realization
+### CODIR (`codir.*`) — Codelet isolation
 
-**Owns:** structural realization of SDE contracts in ARTS-runtime-shaped IR.
+**Owns:** isolated codelet ABI between SDE planning and ARTS object creation.
+
+- Codelet boundaries with explicit deps and scalar params
+- Token-local memref views
+- Codelet-local verification and body isolation
+- Mechanical handoff to ARTS `db_acquire` and `edt`
+
+**IR level:** isolated codelet regions. No implicit captures from above.
+
+**Forbidden:**
+- Choosing source-level tiling or scheduling policy
+- Choosing ARTS runtime topology or depv layout
+- Recovering deps/params by scanning outer SSA uses
+
+### ARTS (`arts.*`) — Abstract runtime object realization
+
+**Owns:** structural realization of SDE/CODIR contracts as abstract ARTS
+objects.
 
 - DBs: alloc, partition, distributed-ownership marking, mode tightening, scratch elimination
 - EDTs: structural opt, ICM, distribution contract realization, orchestration
@@ -45,14 +65,15 @@ This file is a fast-lookup distillation. If it disagrees with the docs above, th
 - Epochs: creation, CPS scheduling, optimization
 - Contract attributes: encode SDE decisions for downstream consumption
 
-**IR level:** ARTS structural — regions, DBs, partitions, contracts. No tensor/linalg ops post-stage-3.
+**IR level:** ARTS structural: regions, DBs, partitions, contracts. No
+tensor/linalg carriers survive the SDE-to-CODIR / CODIR-to-ARTS boundary.
 
 **Forbidden:**
 - Re-deriving classifications SDE already stamped (Invariant 5)
 - Emitting `arts_rt.*` ops before stage 16/17
 - Performing semantic analysis from scratch (consume SDE contracts instead)
 
-### RT (`arts_rt.*`) — Runtime API mapping
+### ARTS-RT (`arts_rt.*`) — Runtime API mapping
 
 **Owns:** thin 1:1 mapping to ARTS C runtime calls + final low-level passes immediately before LLVM.
 
@@ -64,17 +85,17 @@ This file is a fast-lookup distillation. If it disagrees with the docs above, th
 
 **Forbidden:**
 - Any analysis or contract reading
-- Optimization passes that need to understand DB/EDT semantics (those belong in core)
+- Optimization passes that need to understand DB/EDT semantics (those belong in ARTS)
 
 ## Five hard invariants
 
 These are placement rules. If you are tempted to break one, update the charter first.
 
-1. **If a pass *decides*, it lives in SDE — or consumes an SDE contract from core.** No core pass should make a fresh classification decision.
+1. **If a pass *decides*, it lives in SDE — or consumes an SDE contract from ARTS.** No ARTS pass should make a fresh classification decision.
 
-2. **Cross-dialect op creation only at stage boundaries.** SDE→ARTS at stage 3 (ConvertSdeToArts), core→RT at stage 16/17 (EdtLowering / EpochLowering). No pass creates ops outside its dialect, except those boundary conversion passes.
+2. **Cross-dialect op creation only at stage boundaries.** SDE planning feeds CODIR at `sde-to-codir`; CODIR creates ARTS objects at `codir-to-arts`; any SDE op left after CODIR conversion fails verification. ARTS lowers to ARTS-RT in pre-lowering (`EdtLowering` / `EpochLowering`). No pass creates ops outside its dialect, except those boundary conversion passes.
 
-3. **RT has zero semantic deps on core/SDE.** RT passes only touch `arts_rt.*` ops. If an RT pass needs to inspect core semantics, the pass belongs in core.
+3. **ARTS-RT has zero semantic deps on ARTS/SDE.** ARTS-RT passes only touch `arts_rt.*` ops. If an ARTS-RT pass needs to inspect ARTS semantics, the pass belongs in ARTS.
 
 4. **SDE does not include any header from `core/Analysis/` or `core/Transforms/`.** Mechanical check; grep for it.
 
@@ -90,7 +111,7 @@ These do not block correctness but should be cleaned up in Phase 9. Cite when de
 | 2 | KernelTransforms re-detects elementwise/stencil/matmul (Invariant 5) | `lib/arts/dialect/core/Transforms/kernel/KernelTransforms.cpp` | Delete `ElementwisePipelinePattern` (redundant); refactor `StencilTilingNDPattern` and `MatmulReductionPattern` to consume SDE contracts. |
 | 3 | `RaiseMemRefDimensionality` is a Polygeist→ARTS conversion, lives in `core/Transforms/` (Invariant 1) | `lib/arts/dialect/core/Transforms/RaiseMemRefDimensionality.cpp` | Move to `core/Conversion/PolygeistToArts/`. |
 | 4 | DepTransforms creates `EpochOp`/`EdtOp` from re-detected wavefront/Jacobi patterns (Invariants 1 & 5) | `lib/arts/dialect/core/Transforms/dep/DepTransforms.cpp`, `core/Transforms/dep/Seidel2DWavefrontPattern.cpp` | Enhance `PatternAnalysis` and SDE dependency planning; refactor `DepTransforms` to consume lowered SDE contracts. |
-| 5 | Doc disagreement: `op-classification.md` says `arts.lowering_contract` and `arts.omp_dep` should migrate to SDE; `pass-placement.md` says the live pipeline keeps planning inside `openmp-to-arts`. | `docs/architecture/op-classification.md` vs `docs/architecture/pass-placement.md` | `pass-placement.md` is current; the migration is aspirational and tracked under violation #1. |
+| 5 | Doc disagreement: `op-classification.md` says `arts.lowering_contract` and `arts.omp_dep` should migrate to SDE; `pass-placement.md` says the live pipeline keeps planning inside `sde-planning`. | `docs/architecture/op-classification.md` vs `docs/architecture/pass-placement.md` | `pass-placement.md` is current; the migration is aspirational and tracked under violation #1. |
 
 ## Open questions (Phase 0 / task #1)
 

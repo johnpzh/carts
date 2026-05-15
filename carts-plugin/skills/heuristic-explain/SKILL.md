@@ -28,7 +28,7 @@ hardcoded thresholds — this skill makes those decisions transparent.
 dekk carts compile <file> --pipeline=post-db-refinement 2>/dev/null | grep 'partition_mode'
 
 # Dump IR after SDE planning/materialization to see distribution strategy
-dekk carts compile <file> --pipeline=openmp-to-arts 2>/dev/null | grep 'distribution_kind'
+dekk carts compile <file> --pipeline=sde-planning 2>/dev/null | grep 'distribution_kind'
 
 # Enable debug output for partitioning decisions
 dekk carts compile <file> --pipeline=post-db-refinement --arts-debug=db_transforms 2>&1
@@ -74,7 +74,7 @@ The compiler evaluates these rules **in order** — first match wins:
 
 | Threshold | Value | Location | Purpose |
 |-----------|-------|----------|---------|
-| kMaxOuterDBs | 1024 | PartitioningHeuristics.h:67 | Max partitions before coarse fallback |
+| kMaxOuterDBs | 1024 | PartitioningHeuristics.h:67 | Max partitions before coarse materialization |
 | kMaxDepsPerEDT | 8 | PartitioningHeuristics.h:68 | Per-EDT acquire threshold |
 | kMinInnerBytes | 64 | PartitioningHeuristics.h:69 | Minimum inner-rank byte size |
 
@@ -86,7 +86,8 @@ lib/arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.cpp     — H1 
 include/arts/dialect/core/Analysis/heuristics/DistributionHeuristics.h   — H2 data structures
 lib/arts/dialect/core/Analysis/heuristics/DistributionHeuristics.cpp     — H2 strategy selection
 lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp    — Core DB refinement controller
-lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp — SDE plan materializer
+lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp — SDE-to-CODIR materialization
+lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp — CODIR-to-ARTS materialization
 ```
 
 ## Instructions
@@ -95,7 +96,7 @@ When the user asks to explain a heuristic decision:
 
 1. Identify the focus: partitioning (H1) or distribution (H2)
 2. Compile with the relevant `--arts-debug` channel to capture decisions
-3. Dump IR at the decision stage (`openmp-to-arts`, `db-opt`, or `post-db-refinement`)
+3. Dump IR at the decision stage (`sde-planning`, `codir-to-arts`, `db-opt`, or `post-db-refinement`)
 4. Parse debug output for which heuristic rule fired
 5. Explain: what the rule checks, why it matched, what alternatives exist
 6. If the decision seems wrong, suggest: which input properties to change,

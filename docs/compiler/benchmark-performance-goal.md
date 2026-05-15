@@ -68,7 +68,7 @@ required, and which dataflow edges can be made asynchronous. SDE therefore
 owns:
 
 - structured classification: elementwise, elementwise pipeline, reduction,
-  matmul contraction, stencil, wavefront, timestep, and opaque fallback;
+  matmul contraction, stencil, wavefront, timestep, and opaque effects;
 - memory-effect summaries over source roots and memrefs;
 - owner dimensions, spatial dimensions, component dimensions, and batch
   dimensions;
@@ -211,9 +211,9 @@ Pass responsibility rule:
   machinery.
 - `ConvertSdeToCodir` should lower only the final SDE plan contract into
   explicit codelet deps, params, and token-local memref views.
-- `ConvertCodirToArts` should turn CODIR codelets into DB/acquire/EDT objects
-  directly. The current `ConvertSdeToArts` plus `CreateDbs` bridge is a
-  migration path for raw memrefs only.
+- `ConvertCodirToArts` turns CODIR codelets into DB/acquire/EDT objects
+  directly. `CreateDbs` remains only as a migration path for raw memrefs that
+  have not yet been promoted into MU/token/codelet storage.
 
 ### Required SDE analyses
 
@@ -251,7 +251,7 @@ Pass responsibility rule:
   control edges are deps, while scalar firstprivate-style captures are params.
 - **Token-local access shape:** verify that codelet load/store indices agree
   with the MU token-local view for ND, strided, and halo cases.
-- **No fallback markers:** reject CODIR codelets that require ARTS to rediscover
+- **No rediscovery markers:** reject CODIR codelets that require ARTS to rediscover
   DB roots, dependency windows, or implicit captures.
 
 ### Required ARTS analyses
@@ -449,7 +449,7 @@ until they are re-enabled or removed with a documented reason.
   codelet creation time.
 - Token-local memref rewrite: rewrite loads/stores to match MU token windows,
   including ND owner dims, strided accesses, and halo windows.
-- No tensor fallback: keep codelet deps at the memref/token level.
+- No tensor carrier path: keep codelet deps at the memref/token level.
 
 ### ARTS Tracks
 
@@ -563,7 +563,81 @@ Rejected evidence:
   whose stale CMake cache still had counters/metrics enabled with
   `profile-overhead.cfg`, causing systemic overhead.
 
-Last full-suite large/64 sweep:
+Current full-suite large/64 sweep:
+
+- Results:
+  `.carts/outputs/benchmarks-large-64-maintained-20260515/20260515_065122`
+- Command:
+  `dekk carts benchmarks run --size large --timeout 120 --threads 64 --nodes 1 --trace --results-dir .carts/outputs/benchmarks-large-64-maintained-20260515`
+- Revisions: CARTS `ce4e61e1`, carts-benchmarks `20db3fd`, ARTS `c777522`.
+- Counts: 23 configured/runnable entries, 11 passed, 12 failed, 0 skipped by
+  the runner, 0 startup outliers.
+- Geometric mean kernel speedup over the runner's reported passed set:
+  `1.73x`.
+- Failure class for all 12 failed CARTS entries: compile-time boundary
+  diagnostic, `SDE-authored physical DB layout reached CreateDbs as a raw
+  memref`. The failures are intentional boundary exposure, not an ARTS recovery
+  opportunity: SDE/CODIR must either materialize MU/token/codelet storage or
+  SDE must choose a coarse raw bridge for unsupported temporary cases.
+
+Focused follow-up for those 12 failed entries:
+
+- Results:
+  `.carts/outputs/benchmarks-raw-layout-demotion-12failures-final-20260515/20260515_072611`
+- Command:
+  `dekk carts benchmarks run ml-kernels/layernorm ml-kernels/pooling monte-carlo/ensemble polybench/atax polybench/bicg polybench/convolution-2d polybench/convolution-3d polybench/jacobi2d seissol/volume-integral specfem3d/stress specfem3d/velocity sw4lite/vel4sg-base --size large --timeout 120 --threads 64 --nodes 1 --trace --results-dir .carts/outputs/benchmarks-raw-layout-demotion-12failures-final-20260515`
+- Counts: 12 passed, 0 failed, 0 skipped, 0 startup outliers.
+- Geometric mean kernel speedup for the formerly failing slice: `0.92x`.
+- Result: the raw-layout boundary failure is fixed for the maintained
+  benchmark slice. Unsupported SDE physical storage attrs are demoted before
+  the raw `CreateDbs` bridge, and `CreateDbs` remains a guarded coarse-only
+  compatibility path.
+
+Current full-suite classes after applying the focused follow-up evidence:
+
+- `fast`: `ml-kernels/batchnorm`, `polybench/2mm`, `polybench/3mm`,
+  `polybench/convolution-3d`, `polybench/correlation`, `polybench/gemm`,
+  `ml-kernels/layernorm`, `monte-carlo/ensemble`, `specfem3d/stress`,
+  `specfem3d/velocity`, `sw4lite/rhs4sg-base`, `sw4lite/vel4sg-base`.
+- `competitive`: `kastors-jacobi/jacobi-for`,
+  `kastors-jacobi/poisson-for`, `ml-kernels/pooling`,
+  `polybench/bicg`, `seissol/volume-integral`.
+- `blocked`: `ml-kernels/activations`, `polybench/atax`,
+  `polybench/convolution-2d`, `polybench/jacobi2d`, `polybench/seidel-2d`,
+  `stream`.
+
+| Benchmark | CARTS status | ARTS kernel | OpenMP kernel | Speedup | Current class |
+|---|---|---:|---:|---:|---|
+| `kastors-jacobi/jacobi-for` | pass | `2.851506s` | `2.799465s` | `0.982x` | `competitive` |
+| `kastors-jacobi/poisson-for` | pass | `2.871034s` | `2.545666s` | `0.887x` | `competitive` |
+| `ml-kernels/activations` | pass | `0.783519s` | `0.510994s` | `0.652x` | `blocked`: SDE vector/elementwise fusion and launch-grain aggregation |
+| `ml-kernels/batchnorm` | pass | `1.751925s` | `2.030475s` | `1.159x` | `fast` |
+| `ml-kernels/layernorm` | pass | `3.054385s` | `3.439466s` | `1.126x` | `fast` |
+| `ml-kernels/pooling` | pass | `2.514656s` | `2.276672s` | `0.905x` | `competitive`: below fast gate; pool-window grain/vector follow-up |
+| `monte-carlo/ensemble` | pass | `3.751141s` | `4.271237s` | `1.139x` | `fast` |
+| `polybench/2mm` | pass | `0.854568s` | `5.763517s` | `6.744x` | `fast` |
+| `polybench/3mm` | pass | `0.630190s` | `4.930849s` | `7.824x` | `fast` |
+| `polybench/atax` | pass | `3.703683s` | `2.912109s` | `0.786x` | `blocked`: just outside competitive; vector/reduction grain follow-up |
+| `polybench/bicg` | pass | `3.006182s` | `2.927600s` | `0.974x` | `competitive`: vector/reduction grain follow-up |
+| `polybench/convolution-2d` | pass | `3.566706s` | `2.821604s` | `0.791x` | `blocked`: just outside competitive; stencil grain/halo materialization follow-up |
+| `polybench/convolution-3d` | pass | `1.790920s` | `2.298349s` | `1.283x` | `fast` |
+| `polybench/correlation` | pass | `0.652224s` | `1.174294s` | `1.800x` | `fast` |
+| `polybench/gemm` | pass | `0.515928s` | `6.224606s` | `12.065x` | `fast` |
+| `polybench/jacobi2d` | pass | `3.649347s` | `0.809262s` | `0.222x` | `blocked`: timestep/wavefront grain and relaunch overhead |
+| `polybench/seidel-2d` | pass | `5.374485s` | `4.263994s` | `0.793x` | `blocked`: just outside competitive; SDE timestep/wavefront grain |
+| `seissol/volume-integral` | pass | `0.252587s` | `0.243047s` | `0.962x` | `competitive` |
+| `specfem3d/stress` | pass | `1.781935s` | `2.308476s` | `1.295x` | `fast` |
+| `specfem3d/velocity` | pass | `1.537342s` | `1.763957s` | `1.147x` | `fast` |
+| `stream` | pass | `3.640324s` | `1.982662s` | `0.545x` | `blocked`: SDE vector bandwidth/fusion and task-grain aggregation |
+| `sw4lite/rhs4sg-base` | pass | `2.094772s` | `2.714645s` | `1.296x` | `fast` |
+| `sw4lite/vel4sg-base` | pass | `1.692642s` | `2.306044s` | `1.362x` | `fast` |
+
+Next fix: tune the remaining performance-only blocked entries. Keep
+`CreateDbs` guarded as coarse-only for raw memrefs. Expand M3 MU/token/CODIR
+materialization coverage for currently demoted stencil/reduction/nested-memref
+plans only when token-local rewrites exist.
+
+Superseded full-suite large/64 sweep:
 
 - Results:
   `.carts/outputs/benchmarks-large-64-release-fresh/20260514_132616`
@@ -576,11 +650,9 @@ Last full-suite large/64 sweep:
 - Counts: 23 runnable, 22 passed, 1 failed, 0 skipped, 1 timeout
   (`polybench/seidel-2d`), 0 runner-reported checksum failures.
 - Geometric mean kernel speedup: `0.32x`.
-- Use this sweep for the non-matrix rows until the next full-suite run. The
-  matrix-family rows are superseded by the current focused evidence below
-  because later SDE/ARTS changes materially changed `gemm`, `2mm`, and `3mm`.
+- Superseded by the 2026-05-15 maintained sweep above.
 
-Full-suite classes from that sweep, before the later matrix-family fixes:
+Full-suite classes from that older sweep, before the later matrix-family fixes:
 
 - `fast`: `kastors-jacobi/jacobi-for`,
   `kastors-jacobi/poisson-for`, `ml-kernels/pooling`,
@@ -589,20 +661,46 @@ Full-suite classes from that sweep, before the later matrix-family fixes:
 - `competitive`: `polybench/atax`, `polybench/bicg`,
   `seissol/volume-integral`.
 - `blocked`: `ml-kernels/activations`, `ml-kernels/batchnorm`,
-  `ml-kernels/layernorm`, `polybench/2mm`, `polybench/3mm`,
-  `polybench/convolution-2d`, `polybench/gemm`, `polybench/jacobi2d`,
-  `polybench/seidel-2d`, `specfem3d/stress`, `specfem3d/velocity`, `stream`,
-  `sw4lite/rhs4sg-base`, `sw4lite/vel4sg-base`.
+  `ml-kernels/layernorm`, `polybench/convolution-2d`,
+  `polybench/jacobi2d`, `polybench/seidel-2d`, `specfem3d/stress`,
+  `specfem3d/velocity`, `stream`, `sw4lite/rhs4sg-base`,
+  `sw4lite/vel4sg-base`.
 
-Working-tree checkpoint after removing DB-payload `memref.subview` creation:
+Current focused matrix-family evidence after CODIR materialization fixes:
+
+- `gemm` results:
+  `.carts/outputs/benchmarks-gemm-large-64-crossphase-guard-20260515/20260515_064151`
+- `2mm` and `3mm` results:
+  `.carts/outputs/benchmarks-2mm-3mm-large-64-crossphase-coarse-20260515/20260515_064040`
+- Commands:
+  `dekk carts benchmarks run polybench/gemm --size large --timeout 120 --threads 64 --nodes 1 --trace --results-dir .carts/outputs/benchmarks-gemm-large-64-crossphase-guard-20260515`
+  and
+  `dekk carts benchmarks run polybench/2mm polybench/3mm --size large --timeout 120 --threads 64 --nodes 1 --trace --results-dir .carts/outputs/benchmarks-2mm-3mm-large-64-crossphase-coarse-20260515`
+- All three benchmarks passed checksum verification.
+
+| Benchmark | ARTS kernel | OpenMP kernel | Speedup | Current reading |
+|---|---:|---:|---:|---|
+| `polybench/gemm` | `0.408783s` | `6.215503s` | `15.20x` | `fast`; row-strip DB materialization is restored on the SDE -> CODIR -> ARTS path. |
+| `polybench/2mm` | `0.853778s` | `5.554953s` | `6.51x` | `fast`; conservative cross-phase layout guard preserves correctness while avoiding the prior materialization failure. |
+| `polybench/3mm` | `0.691686s` | `4.905503s` | `7.09x` | `fast`; same guarded materialization policy as `2mm`. |
+
+The immediate coarse `4800 x 4800` GEMM regression is fixed. SDE still needs
+true M3 phase-local MU/token plans for chained contraction intermediates so the
+compiler can prove and materialize cross-phase reuse instead of relying on the
+temporary conservative bridge. The next performance gate is a maintained
+large/64 sweep plus focused `--runs 3` follow-up for any noisy or surprising
+matrix results.
+
+Superseded working-tree checkpoint after removing DB-payload `memref.subview`
+creation:
 
 - Results:
   `.carts/outputs/benchmarks-gemm-family-large-64-no-boundary-subview-20260514/20260514_231930`
 - Command:
   `dekk carts benchmarks run polybench/gemm polybench/2mm polybench/3mm --size large --timeout 120 --threads 64 --nodes 1 --trace --results-dir .carts/outputs/benchmarks-gemm-family-large-64-no-boundary-subview-20260514`
 - All three benchmarks passed checksum verification, but performance regressed.
-  This is the newest working-tree evidence and should be treated as the next
-  optimization starting point.
+  This checkpoint is retained as the shape-regression baseline that led to the
+  CODIR materialization fix.
 
 | Benchmark | ARTS kernel | OpenMP kernel | Speedup | Current reading |
 |---|---:|---:|---:|---|
@@ -611,9 +709,8 @@ Working-tree checkpoint after removing DB-payload `memref.subview` creation:
 | `polybench/3mm` | `26.141955s` | `4.973020s` | `0.190x` | Correctness clean; phase shape and token-local access remain blocked. |
 
 The no-subview checkpoint fixed a lowering crash, not the performance problem.
-The next session should compare its pipeline dumps against the earlier fast and
-median-fast matrix runs, then move the missing rewrite into SDE/CODIR rather
-than adding ARTS fallback policy.
+Its pipeline dumps showed the output DB had collapsed to one coarse block even
+though the SDE plan carried row-strip ownership.
 
 Earlier focused matrix-family evidence:
 
@@ -629,7 +726,7 @@ Earlier focused matrix-family evidence:
 | `polybench/2mm` | `7.890815s` | `5.584529s` | `0.708x` | `blocked`: chained-contraction/intermediate reuse |
 | `polybench/3mm` | `0.712718s` | `4.861729s` | `6.82x` | `fast` |
 
-Latest 3-run confirmation:
+Historical 3-run confirmation before the CODIR materialization fix:
 
 - Results:
   `.carts/outputs/benchmarks-gemm-family-large-64-confirm-20260514/20260514_183324`
@@ -648,10 +745,11 @@ Latest 3-run confirmation:
 
 Blocked owner groups:
 
-- SDE: dense chained-contraction planning (`2mm`, `3mm`). Latest repeated
-  evidence shows `gemm` is faster than OpenMP at median but noisy, while `2mm`
-  and `3mm` are blocked. Their intermediate/output DB reuse across producer and
-  consumer phases is still not represented as a complete SDE contraction plan.
+- SDE: dense chained-contraction phase planning. Focused `2mm` and `3mm` are
+  now fast and checksum-clean, but their cross-phase intermediate reuse is
+  still not represented as a complete M3 SDE contraction plan. Keep the current
+  coarse raw bridge for unproven cross-phase accesses until phase-local
+  MU/token plans can prove a narrower layout.
 - SDE: vector/reduction work aggregation (`activations`, `batchnorm`,
   `layernorm`, `stream`). These need SDE vector/reduction block planning and
   fusion before ARTS-RT launch overhead is meaningful.
@@ -726,20 +824,20 @@ Focused post-fix evidence:
   | `polybench/gemm` | `16.39s` | `6.38s` | `0.39x` | Resource-query refactor preserved the accepted row-strip shape; no 25% GEMM performance gain. |
   | `polybench/2mm` | `28.52s` | `5.59s` | `0.20x` | Slightly better than the previous accepted row-strip focused run, still blocked on input/intermediate reuse. |
   | `polybench/3mm` | `27.97s` | `4.96s` | `0.18x` | Slower than the previous accepted focused run; still blocked on phase-aware contraction planning. |
-- Current single-run matrix-family evidence:
+- Historical single-run matrix-family evidence:
   `.carts/outputs/benchmarks-gemm-family-large-64-current-20260514/20260514_181913`.
-  This run showed `gemm` and `3mm` can be fast on the current checkout, but it is
-  superseded for classification by the 3-run confirmation below because matrix
-  timings are noisy.
+  This run showed `gemm` and `3mm` could be fast before the later
+  materialization regression/fix sequence, but it is superseded for
+  classification by the current 2026-05-15 focused evidence above.
 
   | Benchmark | ARTS kernel | OpenMP kernel | Speedup | Current reading |
   |---|---:|---:|---:|---|
   | `polybench/gemm` | `0.589857s` | `6.223452s` | `10.55x` | Fast single run; later median remains fast but much slower. |
   | `polybench/2mm` | `7.890815s` | `5.584529s` | `0.708x` | Slower than OpenMP; focus on phase/intermediate reuse rather than hardcoded column constants. |
   | `polybench/3mm` | `0.712718s` | `4.861729s` | `6.82x` | Fast single run; not stable in the 3-run confirmation. |
-- Current 3-run matrix-family confirmation:
+- Historical 3-run matrix-family confirmation:
   `.carts/outputs/benchmarks-gemm-family-large-64-confirm-20260514/20260514_183324`.
-  All 9 executions passed checksum verification. Median results are:
+  All 9 executions passed checksum verification. Median results were:
 
   | Benchmark | Median ARTS kernel | Median OpenMP kernel | Median speedup | Current reading |
   |---|---:|---:|---:|---|
@@ -762,22 +860,25 @@ Focused post-fix evidence:
 Matmul root-cause update:
 
 - CARTS is not slow because GEMM is unrecognized anymore. The latest repeated
-  large/64 evidence before the no-subview boundary fix showed `gemm` could be
-  faster than OpenMP at median, but the newest working-tree checkpoint is
-  correctness-clean and slow. Treat stale "GEMM is unclassified" notes as
-  superseded, but do not claim a speedup until the current working tree has
-  repeated evidence.
-- The remaining matrix-chain problem is phase/intermediate reuse and stability.
-  SDE needs to model `2mm` (`tmp = A * B`, then
+  large/64 focused evidence shows `gemm`, `2mm`, and `3mm` are all faster than
+  OpenMP after CODIR-to-ARTS materialization restored the SDE-authored DB
+  layout where it is access-compatible. Treat stale "GEMM is unclassified" and
+  "matrix chain is blocked" notes as superseded for the current focused matrix
+  slice.
+- The remaining matrix-chain work is architectural rather than an immediate
+  benchmark block. SDE still needs to model `2mm` (`tmp = A * B`, then
   `D = tmp * C + beta * D`) and `3mm` (`E = A * B`, `F = C * D`, then
   `G = E * F`) as connected contraction phases with explicit intermediate DB
-  ownership, reuse windows, and task grain. Hardcoded column caps can make one
-  phase look fast while breaking another benchmark, so they are rejected.
+  ownership, reuse windows, and task grain. Until that M3 plan exists, the
+  bridge must keep unproven cross-phase intermediate accesses coarse.
+  Hardcoded column caps can make one phase look fast while breaking another
+  benchmark, so they are rejected.
 - A future general contraction optimizer should still avoid scalar row tasks
   when the SDE plan proves packed-panel reuse is legal. Without a full
   contraction plan, the generated direct-memory codelet can degrade into a scalar
   row task instead of a BLAS-style packed macro/micro-kernel.
-- Current large `gemm` codelet shape is effectively:
+- The large `gemm` direct-memory codelet shape observed during the
+  investigation was effectively:
   `row-tile -> row -> j-block -> k -> scalar accumulate/store` or, after the
   earlier `k-j` interchange path, `row -> k -> j-block -> load/store C`.
   Neither shape is the GotoBLAS/BLIS algorithm. One gives strided RHS access;
@@ -879,8 +980,8 @@ Next optimization task:
    producer/consumer phases, and add SDE phase-plan facts before changing tile
    constants.
 3. Introduce the CODIR plan: isolate codelets, make deps/params explicit at
-   creation time, and move token-local memref rewrites out of ARTS fallback
-   paths.
+   creation time, and move token-local memref rewrites out of ARTS
+   materialization paths.
 4. Replace any remaining scalar direct-memory contraction rewrite with an SDE
    contraction plan that can lower to macro tiles plus an `MR x NR` microkernel
    shape only after packed A/B or intermediate-panel reuse is proven.

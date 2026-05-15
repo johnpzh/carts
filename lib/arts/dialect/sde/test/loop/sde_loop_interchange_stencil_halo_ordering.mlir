@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Verify that LoopInterchange reorders inner stencil loops by halo width.
 // For a 3D stencil with asymmetric halos (dim 0: [-1,1]=2, dim 1: [-2,2]=4,

@@ -245,7 +245,8 @@ private:
   /// Parameter handling
   FailureOr<Value> packParams(Location loc, EdtEnvManager &envManager,
                               SmallVector<Type> &packTypes,
-                              SmallVectorImpl<Value> *packedValues = nullptr);
+                              SmallVectorImpl<Value> *packedValues = nullptr,
+                              bool preserveUndefParams = false);
 
   /// Region outlining
   LogicalResult
@@ -260,7 +261,8 @@ private:
 
   /// Clone EDT body operations with nested region remapping
   void cloneAndRemapEdtBody(Block &sourceBlock, OpBuilder &builder,
-                            IRMapping &valueMapping);
+                            IRMapping &valueMapping,
+                            const DenseMap<Value, Value> &moveValueMapping);
 
   /// Dep satisfaction
   LogicalResult insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
@@ -374,6 +376,26 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
   /// late in the pipeline; lowering must follow the final IR contract, not a
   /// potentially stale cached summary.
   EdtEnvManager envManager(edtOp);
+  for (Value captured : envManager.getCapturedValues()) {
+    Operation *defOp = captured.getDefiningOp();
+    if ((defOp && defOp->hasTrait<OpTrait::ConstantLike>()) ||
+        isUndefLikeOp(defOp))
+      continue;
+    if (isa_and_nonnull<memref::AllocaOp>(defOp))
+      continue;
+    if (!captured.getType().isIntOrIndexOrFloat()) {
+      if (isa<MemRefType>(captured.getType()))
+        continue;
+      return edtOp.emitError("EDT region captures value '")
+             << captured
+             << "' directly; pass it as an EDT dependency or param and use "
+                "the corresponding block argument";
+    }
+    return edtOp.emitError("EDT region captures scalar value '")
+           << captured
+           << "' directly; pass it as an EDT param and use the param block "
+              "argument";
+  }
   ArrayRef<Value> edtDeps = envManager.getDependencies();
 
   /// Normalize dependency slices before outlining so the packed parameters,
@@ -393,8 +415,9 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
     return edtOp.emitError("Failed to create outlined function");
 
   /// Pack parameters
-  FailureOr<Value> maybeParamPack =
-      packParams(loc, envManager, packTypes, &packedValues);
+  FailureOr<Value> maybeParamPack = packParams(
+      loc, envManager, packTypes, &packedValues,
+      /*preserveUndefParams=*/true);
   if (failed(maybeParamPack))
     return failure();
   Value paramPack = *maybeParamPack;
@@ -610,7 +633,8 @@ EdtLoweringPass::createOutlinedFunction(EdtOp edtOp,
 FailureOr<Value>
 EdtLoweringPass::packParams(Location loc, EdtEnvManager &envManager,
                             SmallVector<Type> &packTypes,
-                            SmallVectorImpl<Value> *packedValues) {
+                            SmallVectorImpl<Value> *packedValues,
+                            bool preserveUndefParams) {
   const auto &parameters = envManager.getParameters();
   const auto &deps = envManager.getDependencies();
   const auto &dbHandles = envManager.getDbHandles();
@@ -630,7 +654,9 @@ EdtLoweringPass::packParams(Location loc, EdtEnvManager &envManager,
   /// Pack user parameters first
   for (Value v : parameters) {
     /// Skip undef-like values - they can be recreated in the outlined body.
-    if (isUndefLikeOp(v.getDefiningOp()))
+    /// CODIR explicit ABI params are positional block arguments, so even
+    /// undef-like scalar slots must be preserved to keep arg mapping aligned.
+    if (!preserveUndefParams && isUndefLikeOp(v.getDefiningOp()))
       continue;
     valueToPackIndex.try_emplace(v, packValues.size());
     if (failed(appendPackValue(v)))
@@ -752,6 +778,7 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
                                                    depv);
 
   const auto &parameters = envManager.getParameters();
+  ValueRange explicitParams = edtOp.getParams();
   SmallVector<Value> unpackedParams, allParams;
   EdtParamUnpackOp paramUnpackOp = nullptr;
 
@@ -774,22 +801,40 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
 
   /// Build value mapping for cloning EDT body into outlined function
   IRMapping valueMapping;
+  DenseMap<Value, Value> moveValueMapping;
+  auto mapValue = [&](Value from, Value to) {
+    valueMapping.map(from, to);
+    moveValueMapping[from] = to;
+  };
 
   /// Map EDT args to placeholders so cloned ops don't reference outer values.
   for (auto [edtArg, placeholder] :
-       llvm::zip(edtBlock.getArguments(), depPlaceholders))
-    valueMapping.map(edtArg, placeholder);
+       llvm::zip(edtBlock.getArguments().take_front(originalDeps.size()),
+                 depPlaceholders))
+    mapValue(edtArg, placeholder);
+
+  if (explicitParams.size() > unpackedParams.size())
+    return edtOp.emitOpError()
+           << "explicit EDT params were not materialized in the parameter pack";
+  for (auto [index, param] : llvm::enumerate(explicitParams)) {
+    unsigned argIndex = originalDeps.size() + static_cast<unsigned>(index);
+    if (argIndex >= edtBlock.getNumArguments())
+      return edtOp.emitOpError()
+             << "explicit EDT param block argument #" << index
+             << " is missing";
+    mapValue(edtBlock.getArgument(argIndex), unpackedParams[index]);
+  }
 
   /// Also map original dependency values to placeholders to catch direct uses
   for (auto [originalDep, placeholder] :
        llvm::zip(originalDeps, depPlaceholders))
-    valueMapping.map(originalDep, placeholder);
+    mapValue(originalDep, placeholder);
 
   /// Clone constants and constant-like operations into the outlined function
   auto cloneConstantLike = [&](Value val) {
     if (Operation *defOp = val.getDefiningOp())
       if (defOp->hasTrait<OpTrait::ConstantLike>() || isUndefLikeOp(defOp))
-        valueMapping.map(val, builder.clone(*defOp)->getResult(0));
+        mapValue(val, builder.clone(*defOp)->getResult(0));
   };
 
   for (Value constant : envManager.getConstants())
@@ -798,16 +843,17 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
   for (Value freeVar : envManager.getCapturedValues())
     cloneConstantLike(freeVar);
 
-  /// Map parameters to their unpacked counterparts (skip undef - already
-  /// cloned)
+  /// Map parameters to their unpacked counterparts (skip implicit undef
+  /// captures; explicit EDT params stay positional and were packed).
   size_t unpackedIndex = 0;
   for (Value param : parameters) {
-    if (isUndefLikeOp(param.getDefiningOp())) {
+    if (isUndefLikeOp(param.getDefiningOp()) &&
+        !llvm::is_contained(explicitParams, param)) {
       cloneConstantLike(param);
       continue;
     }
     if (unpackedIndex < unpackedParams.size())
-      valueMapping.map(param, unpackedParams[unpackedIndex++]);
+      mapValue(param, unpackedParams[unpackedIndex++]);
   }
 
   /// Clone remaining captured values that are pure and regionless (e.g.,
@@ -822,6 +868,17 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
     if (!defOp)
       return success();
 
+    if (edtOp.getOperation()->isAncestor(defOp))
+      return success();
+
+    if (defOp->getNumRegions() != 0) {
+      emitError(loc, "cannot clone captured EDT value produced by "
+                     "region-holding operation; route scalar values through "
+                     "explicit EDT params")
+          << ": " << val;
+      return failure();
+    }
+
     if (visited.contains(defOp))
       return success();
     visited.insert(defOp);
@@ -833,7 +890,7 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
     Operation *cloned = builder.clone(*defOp, valueMapping);
     for (auto [oldRes, newRes] :
          llvm::zip(defOp->getResults(), cloned->getResults()))
-      valueMapping.map(oldRes, newRes);
+      mapValue(oldRes, newRes);
 
     /// When cloning a memref.alloca, also clone its external initialization
     /// stores so the outlined copy has the correct initial value. This handles
@@ -867,9 +924,9 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
     if (failed(cloneCaptured(captured)))
       return failure();
 
-  /// Clone EDT body operations into outlined function.
+  /// Move EDT body operations into the outlined function.
   builder.setInsertionPointToEnd(entryBlock);
-  cloneAndRemapEdtBody(edtBlock, builder, valueMapping);
+  cloneAndRemapEdtBody(edtBlock, builder, valueMapping, moveValueMapping);
 
   AC->create<func::ReturnOp>(loc);
 
@@ -1108,18 +1165,24 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
     if (dbAcquireOp)
       artsMode = dbAcquireOp.getMode();
 
-    /// Map ArtsMode to DbMode
+    /// Map ArtsMode to the runtime DB mode. Inout must stay RW; collapsing it
+    /// to write-only EW loses the dependency's read side and can expose stale
+    /// or uninitialized payload data to read-modify-write EDT bodies.
     /// Preserve explicit READ acquisitions (e.g., aggregator reading partials)
     /// even if the underlying allocation is WRITE-only. The allocation mode is
     /// only used to narrow (not widen) the access when the arts mode is not
     /// already read.
     DbMode dbMode = DbUtils::convertArtsModeToDbMode(artsMode);
-    if (allocForHint && dbMode != DbMode::read) {
+    int32_t runtimeDbMode =
+        artsMode == ArtsMode::inout ? kArtsRuntimeDbModeRw
+                                    : static_cast<int32_t>(dbMode);
+    if (allocForHint && dbMode != DbMode::read &&
+        artsMode != ArtsMode::inout) {
       DbMode allocMode = allocForHint.getDbMode();
       if (allocMode == DbMode::read || allocMode == DbMode::write)
         dbMode = allocMode;
+      runtimeDbMode = static_cast<int32_t>(dbMode);
     }
-    int32_t runtimeDbMode = static_cast<int32_t>(dbMode);
     if (dbMode == DbMode::write &&
         canUseUnorderedLocalWrite(dbAcquireOp, edtOp, AM)) {
       runtimeDbMode = kArtsRuntimeDbModeRw;
@@ -1209,45 +1272,37 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
 }
 
 ///===----------------------------------------------------------------------===///
-/// Clone EDT body operations with nested region remapping
+/// Move EDT body operations with nested region remapping
 ///
-/// Clones all operations from the EDT body into the outlined function while
+/// Moves all operations from the EDT body into the outlined function while
 /// recursively remapping operands in nested regions to use values from the
-/// provided IRMapping. This ensures operations with nested regions (like
-/// scf.for, arts.epoch) have their operands correctly updated.
+/// provided IRMapping. The original EDT is erased after lowering, so moving
+/// avoids recursively cloning large nested control-flow regions.
 ///===----------------------------------------------------------------------===///
 void EdtLoweringPass::cloneAndRemapEdtBody(Block &sourceBlock,
                                            OpBuilder &builder,
-                                           IRMapping &valueMapping) {
-  /// Lambda to recursively remap operands in nested regions
-  std::function<void(Operation *, IRMapping &)> remapNestedRegions =
-      [&remapNestedRegions](Operation *op, IRMapping &mapping) {
-        for (Region &region : op->getRegions()) {
-          for (Block &block : region) {
-            for (Operation &nestedOp : block) {
-              /// Remap each operand of the nested operation
-              for (OpOperand &operand : nestedOp.getOpOperands()) {
-                if (Value newValue = mapping.lookupOrNull(operand.get()))
-                  operand.set(newValue);
-              }
-              /// Recursively process nested regions
-              if (nestedOp.getNumRegions() > 0)
-                remapNestedRegions(&nestedOp, mapping);
-            }
-          }
-        }
-      };
+                                           IRMapping &valueMapping,
+                                           const DenseMap<Value, Value>
+                                               &moveValueMapping) {
+  Block *destBlock = builder.getInsertionBlock();
+  (void)valueMapping;
+  auto remapOperands = [&](Operation *op) {
+    for (const auto &it : moveValueMapping) {
+      Value oldValue = it.first;
+      Value newValue = it.second;
+      if (!oldValue || !newValue || oldValue == newValue ||
+          oldValue.getType() != newValue.getType())
+        continue;
+      op->replaceUsesOfWith(oldValue, newValue);
+      for (Region &region : op->getRegions())
+        replaceAllUsesInRegionWith(oldValue, newValue, region);
+    }
+  };
 
-  /// Clone operations and update mappings
   for (Operation &op :
        llvm::make_early_inc_range(sourceBlock.without_terminator())) {
-    Operation *clonedOp = builder.clone(op, valueMapping);
-    /// Update mapping with cloned results so later ops reference cloned values
-    for (auto [orig, clone] :
-         llvm::zip(op.getResults(), clonedOp->getResults()))
-      valueMapping.map(orig, clone);
-    /// Recursively remap operands in nested regions
-    remapNestedRegions(clonedOp, valueMapping);
+    remapOperands(&op);
+    op.moveBefore(destBlock, destBlock->end());
   }
 }
 

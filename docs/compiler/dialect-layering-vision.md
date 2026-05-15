@@ -197,29 +197,30 @@ boundaries. CODIR is the verifier-enforced staging point that makes this true.
 
 ## Current Flow
 
-The live implementation has not reached the target stack yet. Today the
-`openmp-to-arts` stage performs SDE planning and then calls `ConvertSdeToArts`
-directly:
+The live implementation now routes codelets through the target SDE/CODIR/ARTS
+split. The canonical `sde-planning` stage performs OpenMP-to-SDE conversion
+and SDE planning, then `sde-to-codir` and `codir-to-arts` handle the codelet
+boundary:
 
 ```text
 ConvertOpenMPToSde
 PatternAnalysis
 SDE transforms
 MemoryUnitMaterialization
-ConvertSdeToArts
+ConvertSdeToCodir
+VerifyCodir
+ConvertCodirToArts
 VerifySdeLowered
-VerifyCoreObjectsOnly
+VerifyArtsObjectsOnly
 ```
 
-The current boundary has two paths:
+The current boundary has one EDT-producing path:
 
-1. Canonical MU/CU form lowers directly: `sde.mu_data` or `sde.mu_alloc`
-   becomes `arts.db_alloc`, `sde.mu_token` becomes `arts.db_acquire`, and the
-   transitional `sde.cu_codelet` becomes `arts.edt`.
-2. Remaining raw-memref `su_iterate`/`cu_task` lowering is a compatibility
-   bridge for cases that do not yet have token/codelet-local form. It is
-   coarse-only; blocked/tiled physical-layout attrs must be consumed by
-   SDE/CODIR token-local rewrite before ARTS.
+1. Canonical MU/codelet form lowers through CODIR: `sde.cu_codelet` becomes
+   `codir.codelet`, CODIR deps become `arts.db_acquire`, and CODIR codelets
+   become `arts.edt`.
+2. Remaining SDE work is not materialized by ARTS. It must be represented as
+   CODIR codelets before `codir-to-arts`, or `VerifySdeLowered` rejects it.
 
 `CreateDbs` is currently the compatibility bridge for raw memrefs that have not
 yet been canonicalized into MU tokens and codelets. It may allocate a coarse

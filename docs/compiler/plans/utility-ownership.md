@@ -51,7 +51,7 @@ analysis API, or a pass-area support file.
 
 Before adding a helper to a pass:
 
-- [ ] Run the `carts-check-utils` skill or perform the equivalent search.
+- [ ] Run the `check-utils` skill or perform the equivalent search.
 - [ ] Search by behavior, not only by name.
 - [ ] Check existing shared utilities under `include/arts/utils` and
   `lib/arts/utils`.
@@ -78,29 +78,38 @@ When moving a helper out of a pass:
 - [ ] Use existing `AttrNames::*` constants and operation attribute helpers.
 - [ ] Add new attribute constants before using them in passes.
 - [ ] Keep textual dialect names aligned with the owning dialect:
-  `sde.*`, `codir.*`, `arts.*`, or `arts_rt.*`.
+  `sde.*`, `codir.*`, `arts.*`, or `arts_rt.*`. Folder names use the hyphenated
+  form (`arts-rt`); MLIR textual dialect names use the underscore form
+  (`arts_rt`).
+- [ ] Attribute name constants belong in the owning dialect's
+  `Utils/AttrNames.h`.
 
 ## Migration Phases
 
 ### Phase 1: Skill And Docs
 
-- [ ] Harden `carts-check-utils` so it triggers before pass-local helper work.
-- [ ] Link this plan from the master plan and plan index.
-- [ ] Add `Utils/` to the target folder plan.
-- [ ] Regenerate agent resources with `dekk carts skills generate`.
+Status: complete for the current guidance surface.
+
+- [x] Harden `check-utils` so it triggers before pass-local helper work.
+- [x] Link this plan from the master plan and plan index.
+- [x] Add `Utils/` to the target folder plan.
+- [x] Regenerate agent resources with `dekk carts skills generate`.
 
 Exit gate:
 
-- `carts-check-utils` describes the pass-local helper rule and dialect utility
+- `check-utils` describes the pass-local helper rule and dialect utility
   decision tree.
 
 ### Phase 2: Skeleton
 
-- [ ] Add `Utils/README.md` skeletons under each target dialect in
+Status: complete. The include/lib skeletons exist for SDE, CODIR, ARTS, and
+ARTS-RT; they are README-only and intentionally not wired into CMake yet.
+
+- [x] Add `Utils/README.md` skeletons under each target dialect in
   `include/carts/dialect`.
-- [ ] Add `Utils/README.md` skeletons under each target dialect in
+- [x] Add `Utils/README.md` skeletons under each target dialect in
   `lib/carts/dialect`.
-- [ ] Do not wire empty utility folders into CMake until a real helper moves.
+- [x] Do not wire empty utility folders into CMake until a real helper moves.
 
 Exit gate:
 
@@ -110,8 +119,14 @@ Exit gate:
 
 - [ ] Extract SDE memref/access helpers used by PatternAnalysis, tiling, and MU
   materialization.
-- [ ] Extract CODIR codelet capture and token-local view helpers when CODIR is
-  introduced.
+- [~] Extract CODIR codelet capture and token-local view helpers when CODIR is
+  introduced. Current completed slice: CODIR-only ABI predicates live in
+  `include/carts/dialect/codir/Utils/CodeletABIUtils.h` and
+  `lib/carts/dialect/codir/Utils/CodeletABIUtils.cpp`. SDE-dependent
+  task-dependency slice proof helpers (`hasCompleteMuDepSlice`, exact
+  subview/root-access proof collection, and related predicates) are scoped to
+  `lib/carts/dialect/codir/Conversion/SdeToCodir/TaskDepSliceUtils.*`, because
+  they are conversion logic rather than CODIR dialect utilities.
 - [ ] Extract ARTS DB/EDT/epoch helpers currently repeated in transforms.
 - [ ] Extract ARTS-RT pointer/packing helpers from lowering passes.
 
@@ -121,7 +136,7 @@ Exit gate:
 
 ### Phase 4: Cleanup
 
-- [ ] Delete dead compatibility helpers after direct dialect utilities exist.
+- [ ] Delete dead migration helpers after direct dialect utilities exist.
 - [ ] Retire stale `include/arts/utils` entries that now have dialect owners.
 - [ ] Keep only truly cross-dialect helpers in common CARTS support.
 
@@ -137,3 +152,7 @@ Exit gate:
 - `dekk carts skills status`
 - `dekk carts build` after real source moves
 - focused lit tests for the pass or dialect that consumed the utility
+- 2026-05-15 CODIR extraction evidence: `dekk carts build`, focused sliced
+  task-dependency CODIR/SDE lit tests, `dekk carts test` (163/163), and
+  `dekk carts test --suite e2e` (27/27) passed after
+  the first CODIR utility slice was wired.

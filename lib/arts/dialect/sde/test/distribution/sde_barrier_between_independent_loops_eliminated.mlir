@@ -1,5 +1,5 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 
 // Verify that BarrierElimination eliminates the barrier between two loops
 // with disjoint write/read sets under the carrier-authoritative model.
@@ -19,16 +19,24 @@
 // SDE: sde.su_barrier {barrierEliminated, barrierReason = #sde.barrier_reason<redundant>}
 // SDE: sde.su_iterate
 
-// After boundary materialization, the eliminated barrier is not emitted.
-// ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// After boundary materialization, the eliminated SDE barrier is not emitted.
+// Each non-nowait worksharing launch still carries its own completion barrier
+// so host control cannot proceed before the spawned EDTs finish.
+// ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // ARTS: func.func @main
 // ARTS: arts.edt <task>
-// ARTS-NOT: arts.barrier
+// ARTS: arts.barrier
+// ARTS-SAME: barrierReason = #arts.barrier_reason<required_memory>
 // ARTS: arts.edt <task>
+// ARTS: arts.barrier
+// ARTS-SAME: barrierReason = #arts.barrier_reason<required_memory>
 // ARTS-LABEL: func.func @write_only_successor_disjoint
 // ARTS: arts.edt <task>
-// ARTS-NOT: arts.barrier
+// ARTS: arts.barrier
+// ARTS-SAME: barrierReason = #arts.barrier_reason<required_memory>
 // ARTS: arts.edt <task>
+// ARTS: arts.barrier
+// ARTS-SAME: barrierReason = #arts.barrier_reason<required_memory>
 // ARTS-NOT: sde.
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f32, dense<32> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {

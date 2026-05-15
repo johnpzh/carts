@@ -235,10 +235,11 @@ void EdtUtils::classifyUserValues(ArrayRef<Value> userValues,
       }
     }
 
-    if (val.getType().isIntOrIndexOrFloat()) {
-      parameters.insert(val);
+    /// Direct scalar captures are not implicit parameters. Every scalar that
+    /// crosses an EDT boundary must be listed on `arts.edt params(...)` and
+    /// used through the corresponding block argument.
+    if (val.getType().isIntOrIndexOrFloat())
       continue;
-    }
 
     // Stack allocas for loop-local scratch remain clonable. Heap memref.alloc
     // handles are classified by traceCapturedDbHandle above.
@@ -276,11 +277,16 @@ void EdtUtils::analyzeCapturedValues(
 
 SmallVector<Value> EdtUtils::collectPackedValues(EdtOp edt) {
   llvm::SetVector<Value> capturedValues;
-  llvm::SetVector<Value> parameters;
+  llvm::SetVector<Value> uniqueParameters;
   llvm::SetVector<Value> constants;
   llvm::SetVector<Value> dbHandles;
-  EdtUtils::analyzeCapturedValues(edt, capturedValues, parameters, constants,
-                                  dbHandles);
+  SmallVector<Value> parameters;
+  for (Value param : edt.getParams())
+    parameters.push_back(param);
+  for (Value param : parameters)
+    uniqueParameters.insert(param);
+  EdtUtils::analyzeCapturedValues(edt, capturedValues, uniqueParameters,
+                                  constants, dbHandles);
 
   SmallVector<Value> packedValues;
   packedValues.reserve(parameters.size());

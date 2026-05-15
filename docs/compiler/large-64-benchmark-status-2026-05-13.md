@@ -1,5 +1,7 @@
 # CARTS Large-64 Benchmark Status - 2026-05-13
 
+> **Status (2026-05-15):** Numbers below are superseded by the 2026-05-14 large/64 evidence in [`benchmark-performance-goal.md`](./benchmark-performance-goal.md) (gemm 0.371x, 2mm 0.188x, 3mm 0.190x). This document is retained as historical evidence of the 2026-05-13 sweep.
+
 This note records the state after the ready-local dependency-buffer fix and
 the large-size, 64-thread, one-node benchmark sweep.
 
@@ -16,7 +18,7 @@ the large-size, 64-thread, one-node benchmark sweep.
   This fixes generated declarations such as `arts_calloc(i64, i64)` instead of
   the broken `arts_calloc(i8, i8)`.
 - The `carts-debug` skill documents LLDB discovery, empty-core checks, and
-  signal-only `strace` fallback for stack-guard faults.
+  signal-only `strace` diagnostics for stack-guard faults.
 
 The key compiler contract remains: user dynamic arrays should not be captured
 as EDT parameters. They should flow through DB dependencies. The heap-backed
@@ -104,9 +106,9 @@ performance as noisy until repeated median runs are collected.
 
    These remain the largest stencil outliers. Next steps:
 
-   - Inspect block layout choices and halo dependency shape. Whole-DB fallback
+   - Inspect block layout choices and halo dependency shape. Whole-DB bridging
      or over-wide dependencies will serialize otherwise parallel work.
-   - Verify that owner-slice and boundary plans stay in SDE/Core and are not
+   - Verify that owner-slice and boundary plans stay in SDE/arts (lib/arts/dialect/core/) and are not
      recovered late in RT.
    - Compare task counts and DB acquire counts against OpenMP loop partitioning.
    - Tighten the cost model so small halo work does not create too many EDTs.
@@ -146,7 +148,7 @@ performance as noisy until repeated median runs are collected.
 
 ## Debugging Notes
 
-LLDB was not available in this environment. The useful fallback was:
+LLDB was not available in this environment. The useful alternate diagnostic was:
 
 ```bash
 strace -ff -tt -e trace=signal -o .carts/outputs/<topic>/trace \

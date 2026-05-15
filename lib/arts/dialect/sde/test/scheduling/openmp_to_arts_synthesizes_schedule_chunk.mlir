@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Verify that ChunkOpt synthesizes a chunk size for a dynamic
 // loop when the source omitted one. With the default test config, 128

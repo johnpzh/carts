@@ -18,14 +18,14 @@ When an error surfaces at stage N, check the listed prior stages first.
 
 | Surface | Symptom text | Likely originating stages | First thing to check |
 |---|---|---|---|
-| Stage 3 (openmp-to-arts) | `SDE operation … survived past SDE-to-ARTS conversion` | `ConvertOpenMPToSde`, `RaiseToLinalg`, `RaiseToTensor`, `ConvertSdeToArts` | Did `ConvertSdeToArts` erase all transient linalg/tensor carriers? See `SdeToArtsPatterns.cpp` lines 520–610. |
+| Stage 5 (codir-to-arts) | `SDE operation ... survived past SDE lowering` | `ConvertOpenMPToSde`, `sde-planning`, `ConvertSdeToCodir` | Which SDE op did not become a CODIR codelet or explicit CODIR boundary object? |
 | Stage 3 | `cannot trace memref operand to its underlying allocation` | `RaiseMemrefToTensor`, `CreateDbs`, `RaiseMemRefDimensionality` | Memref-of-memref reaching CreateDbs from a heap allocation. |
 | Stage 5 (CreateDbs) | `un-normalizable nested memref pattern (element type is memref)` | `RaiseMemRefDimensionality`, `ConvertOpenMPToSde` | Polygeist producing `memref<?xmemref<?xT>>` from `int *A = malloc(N)`. Fix upstream. |
 | Stage 8 (DbPartitioning) | Stack overflow / infinite recursion in `copyArtsMetadataAttrs` | DbPartitioning metadata copy, rewriter loops | Add depth guard at `PartitioningHeuristics.cpp` near line 706 (Phase 2 work). |
 | Stage 8 (DbPartitioning) | Wrong answer; `fine_grained` silently downgraded to `coarse`, indices dropped | DbPartitioning memref-of-memref handling | Single-element wrapper DB instead of N-element data. The fix is upstream in CreateDbs (Phase 3), NOT in the partition heuristic. |
 | `post-db-refinement` | Stencil halo bounds wrong | SDE access-window plan, DB refinement contract rewrite | Confirm SDE stamped the right halo/window, then check whether DB refinement rewrote it. |
 | `pre-lowering` / `arts-to-llvm` | `arts.db_alloc` / `arts.edt` / `arts.epoch` survived to LLVM | DbLowering, EdtLowering, EpochLowering | A lowering was skipped. Check the owning lowering and any contract-validity gate that excluded this op. |
-| `pre-lowering` | `arts.db_acquire` references GUID that does not exist | DB refinement (GUID lost), SDE-to-Core materialization (dep routing), EpochLowering (CPS carry corruption) | Trace the GUID source. Did an intermediate pass erase it? |
+| `pre-lowering` | `arts.db_acquire` references GUID that does not exist | DB refinement (GUID lost), CODIR-to-ARTS materialization for codelet deps, EpochLowering (CPS carry corruption) | Trace the GUID source. Did an intermediate pass erase it? |
 | Stage 14 (EpochLowering) | CPS chain: wrong iteration counter or outer epoch GUID | `EpochOpt` CPS-8 carry re-analysis, `EpochLowering` propagation | Check `CPSParamPerm` and `CPSIterCounterParamIdx` post-EpochOpt. |
 | Stage 14 | `CPS advance: rebuilt continuation pack with N schema holes` | `EpochOpt` carry analysis, intermediate EDT fusion, `EdtLowering` pack ordering | Carry arity changed between EpochOpt and EpochLowering. Zero-filled slots carry garbage. |
 | `post-db-refinement` (distributed) | Stencil halo not applied, internode acquire uses full range | SDE window contract mismatch, Core distributed ownership attr missing | Is `distributed` attr on the DB? Did Core select distributed ownership after consuming the SDE window contract? |
@@ -39,8 +39,8 @@ Each verification pass is a freeze point. If barrier X passes but barrier Y fail
 
 | Barrier | File | Asserts | Failure severity |
 |---|---|---|---|
-| `VerifySdeLowered` | `lib/arts/dialect/sde/Verify/VerifySdeLowered.cpp` | No `sde.*` ops survive stage 3. No transient linalg/tensor carriers survive the SDE/Core boundary. | Fatal |
-| `VerifyCoreObjectsOnly` | `lib/arts/dialect/core/Transforms/verify/VerifyCoreObjectsOnly.cpp` | No Core loop carrier or semantic parallel EDT survives stage 3. Core contains runtime-shaped EDT/DB/epoch objects plus implementation `scf.for`. | Fatal |
+| `VerifySdeLowered` | `lib/arts/dialect/sde/Verify/VerifySdeLowered.cpp` | No `sde.*` ops survive `codir-to-arts`. No transient linalg/tensor carriers survive the SDE-to-CODIR / CODIR-to-ARTS boundary. | Fatal |
+| `VerifyArtsObjectsOnly` | `lib/arts/dialect/core/Transforms/verify/VerifyArtsObjectsOnly.cpp` | No source semantic carrier survives `codir-to-arts`. ARTS contains runtime-shaped EDT/DB/epoch objects plus implementation `scf.for`. | Fatal |
 | `VerifyEdtCreated` | `lib/arts/dialect/core/Transforms/verify/VerifyEdtCreated.cpp` | At least one `arts.edt` exists post-OpenMP conversion. | Warning |
 | `VerifyDbLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyDbLowered.cpp` | No `arts.db_alloc` / `db_acquire` / `db_release` survive pre-lowering. | Fatal |
 | `VerifyEpochLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyEpochLowered.cpp` | No `arts.epoch` survives pre-lowering. All become `arts_rt.create_epoch` + `wait_on_epoch`. | Fatal |
@@ -52,11 +52,13 @@ Each verification pass is a freeze point. If barrier X passes but barrier Y fail
 
 Use to locate where to grep when triaging.
 
-- Stages 1–3 (SDE): `lib/arts/dialect/sde/Transforms/` + `sde/Conversion/OmpToSde/`
-- Stages 4–7 (EDT cleanup, CreateDbs): `lib/arts/dialect/core/Transforms/edt/`, `core/Transforms/db/CreateDbs.cpp`, `core/Transforms/RaiseMemRefDimensionality.cpp`
+- Stages 1–3 (frontend normalization + SDE planning): `lib/arts/dialect/sde/Transforms/` + `sde/Conversion/OmpToSde/`
+- Stage 4 (`sde-to-codir`): `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
+- Stage 5 (`codir-to-arts`): `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
+- Stages 6–8 (EDT cleanup, CreateDbs, DB opt): `lib/arts/dialect/core/Transforms/edt/`, `core/Transforms/db/CreateDbs.cpp`, `core/Transforms/RaiseMemRefDimensionality.cpp`
 - Stage 8 (DbPartitioning): `lib/arts/dialect/core/Transforms/db/DbPartitioning.cpp`, `core/Analysis/heuristics/PartitioningHeuristics.cpp`
 - Stages 9–10 (DB opt, post-distribution cleanup): `lib/arts/dialect/core/Transforms/db/`, `core/Transforms/edt/`
-- SDE/Core materialization: `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
+- CODIR-to-ARTS materialization: `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - SDE distribution/reduction planning: `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`, `lib/arts/dialect/sde/Transforms/effect/scheduling/ReductionStrategy.cpp`
 - Stage 13 (ConvertArtsToLLVM): `lib/arts/dialect/core/Conversion/ArtsToLLVM/`
 - Stage 14 (EpochLowering): `lib/arts/dialect/rt/Conversion/ArtsToRt/EpochLowering.cpp`
@@ -98,7 +100,7 @@ Core no longer has a dependency-marker operation. If a failure involves
 unmaterialized `sde.mu_dep`, missing DB acquires, or a raw memref body that was
 not localized, do not add new Core rediscovery logic. The originating issue is
 that SDE did not produce canonical `mu_data`/`mu_token`/`cu_codelet` form before
-the SDE/Core boundary.
+the SDE-to-CODIR / CODIR-to-ARTS boundary.
 
 **Lesson:** user dependency slices are SDE MU facts. Core may bind them to DBs,
 but it should not infer them by rescanning task bodies.

@@ -92,7 +92,7 @@ summaries for memref views and affine subregions:
 - same root, disjoint subviews should not force a barrier;
 - overlapping subviews should preserve ordering;
 - linalg DPS roots should carry per-output effect facts;
-- unknown effects should keep the current conservative fallback.
+- unknown effects should keep the current conservative guard.
 
 This precision is needed before aggressive barrier sinking, block pipeline
 fusion, and same-root dependency-window narrowing.
@@ -129,7 +129,9 @@ DistributionPlanning
 IterationSpaceDecomposition
 BarrierElimination
 VerifySdeCpsPlan
-ConvertSdeToArts
+MemoryUnitMaterialization
+ConvertSdeToCodir
+ConvertCodirToArts
 ```
 
 Two refinements are worth investigating:
@@ -148,7 +150,7 @@ Two refinements are worth investigating:
 - Physical plan stamping must not turn unknown or in-place self-read kernels
   into blocked storage families.
 - Memref-level vectorization planning and lowering must preserve plan
-  attributes until `ConvertSdeToArts`.
+  attributes until CODIR-to-ARTS materialization.
 
 ## Tests
 
@@ -156,8 +158,8 @@ Two refinements are worth investigating:
   worker slices.
 - Negative fusion tests for overlapping writes, unknown effects, and mismatched
   worker slices.
-- Reduction-mixed tests for local accumulation, tree fan-in, and atomic fallback.
-- 3D component stencil slab tests with halo-local reads and coarse fallback for
+- Reduction-mixed tests for local accumulation, tree fan-in, and atomic strategy.
+- 3D component stencil slab tests with halo-local reads and coarse bridging for
   unsafe component layouts.
 - Alias/subview tests proving same-root disjoint windows can skip barriers while
   overlapping windows preserve them.

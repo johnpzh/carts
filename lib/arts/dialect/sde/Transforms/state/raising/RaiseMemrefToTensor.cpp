@@ -522,7 +522,7 @@ struct RaiseMemrefToTensorPass
     // ---- Placement: mu_data anchors. ---------------------------------------
     //
     // Place mu_data at the start of the outermost cu_region containing the
-    // tasks so the SDE/Core materializer can keep memory anchors in the same
+    // tasks so SDE/CODIR materialization can keep memory anchors in the same
     // scheduling scope as the tasks that consume them.
     sde::SdeCuRegionOp outerRegion = getOutermostCuRegion(tasks.front());
     OpBuilder builder(func.getContext());

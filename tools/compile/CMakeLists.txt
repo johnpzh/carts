@@ -43,6 +43,7 @@ set(LIBS
   MLIRCartsSde
   MLIRArtsTransforms
   MLIRCartsCodir
+  MLIRCartsCodirConversion
   MLIRCartsCodirTransforms
   MLIRFuncAllExtensions
   MLIRPolygeist
@@ -91,6 +92,7 @@ set(LIBS
 target_link_libraries(carts-compile PRIVATE ${LIBS})
 add_dependencies(carts-compile MLIROpsIncGen MLIRRtOpsIncGen
                  MLIRSdeOpsIncGen MLIRCodirOpsIncGen MLIRArtsPassIncGen
+                 MLIRCartsCodirConversionPassIncGen
                  MLIRCartsCodirPassIncGen)
 
 if(CARTS_ENABLE_TESTS AND CARTS_TESTS_REQUIRE_INSTALLED_RUNNER)

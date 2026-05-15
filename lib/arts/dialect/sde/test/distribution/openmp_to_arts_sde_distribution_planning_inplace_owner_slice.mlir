@@ -1,10 +1,11 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
-// RUN: not %carts-compile %s --O3 --arts-config %arts_config --pipeline create-dbs 2>&1 | %FileCheck %s --check-prefix=DB
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline create-dbs --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=DB
 
 // In-place row-local kernels read and write the same root memref, but every
-// access stays within the owner row. SDE should still author an owner-slice
-// plan. Until SDE/CODIR materializes token-local reduction views, that blocked
-// raw plan must fail at CreateDbs instead of being reindexed in ARTS.
+// access stays within the owner row. SDE may author the owner-slice plan during
+// distribution planning. Until SDE/CODIR materializes token-local reduction
+// views, the unsupported physical storage attrs are demoted before the raw
+// CreateDbs bridge.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
@@ -19,9 +20,12 @@
 // SDE-SAME: physicalOwnerDims = [0]
 // SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition
 
-// DB: error: SDE-authored physical DB layout reached CreateDbs as a raw memref
-// DB-SAME: SDE must materialize MU/token/codelet storage and token-local access rewrites before ARTS conversion
-// DB: sym_name = "main"
+// DB-LABEL: // -----// IR Dump After CreateDbs
+// DB: func.func @main
+// DB-NOT: planOwnerDims
+// DB-NOT: planPhysicalBlockShape
+// DB-NOT: planHaloShape
+// DB-NOT: SDE-authored physical DB layout reached CreateDbs as a raw memref
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main() -> i32 {

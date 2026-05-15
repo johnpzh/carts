@@ -49,10 +49,10 @@ struct BlockLoopStripMiningPass
 
         /// Neighborhood-aware strip-mining can safely rewrite enclosing loops
         /// that carry block-neighborhood div/rem state into nested stencil
-        /// loops. Restrict only the legacy single-dimension block strip-miner
-        /// to innermost loops; otherwise patterns like Seidel keep their
-        /// expensive row-boundary carry math because the relevant loop is not
-        /// the innermost point loop.
+        /// loops. Restrict only the single-dimension block strip-miner to
+        /// innermost loops; otherwise patterns like Seidel keep their expensive
+        /// row-boundary carry math because the relevant loop is not the
+        /// innermost point loop.
         if (auto neighborhoodInfo = analyzeNeighborhoodLoop(loop, domInfo)) {
           if (stripMineNeighborhoodLoop(loop, *neighborhoodInfo)) {
             ARTS_DEBUG("Applied neighborhood-aware block strip-mining to loop");

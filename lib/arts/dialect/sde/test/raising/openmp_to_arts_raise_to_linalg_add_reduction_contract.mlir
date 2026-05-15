@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_64t.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_64t.cfg --start-from sde-planning --pipeline sde-planning --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Verify that reduction-only loops stay scalar at the SDE layer. The
 // su_iterate itself owns the reduction dimension; raising a full-domain

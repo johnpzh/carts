@@ -29,7 +29,8 @@ Use this checklist after compilation succeeds but the produced program fails at 
 ## Codepaths Worth Reading
 
 - `lib/arts/dialect/core/Conversion/ArtsToLLVM/ConvertArtsToLLVM.cpp`
-- `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
+- `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
+- `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - `lib/arts/dialect/rt/Conversion/ArtsToRt/EdtLowering.cpp`
 - `lib/arts/dialect/rt/Conversion/ArtsToRt/EpochLowering.cpp`
 - `external/arts/` runtime code when compiler-generated structure looks correct

@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // CHECK-LABEL: // -----// IR Dump After ConvertOpenMPToSde (convert-openmp-to-sde) //----- //
 // CHECK: func.func @main
@@ -8,18 +8,19 @@
 // CHECK: %[[DONE1:.*]] = sde.control_token : !sde.completion
 // CHECK: sde.su_barrier(%[[DONE0]], %[[DONE1]] : !sde.completion, !sde.completion)
 
-// CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: func.func @main
 // CHECK-NOT: sde.control_token
 // CHECK-NOT: sde.su_barrier
 // CHECK: arts.barrier
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
-  func.func @main(%A: memref<2xi32>) {
+  func.func @main() -> i32 {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %v0 = arith.constant 7 : i32
     %v1 = arith.constant 11 : i32
+    %A = memref.alloc() : memref<2xi32>
     omp.parallel {
       omp.task {
         memref.store %v0, %A[%c0] : memref<2xi32>
@@ -32,6 +33,8 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<i64, dense<64> : 
       omp.taskwait
       omp.terminator
     }
-    return
+    %result = memref.load %A[%c1] : memref<2xi32>
+    memref.dealloc %A : memref<2xi32>
+    return %result : i32
   }
 }

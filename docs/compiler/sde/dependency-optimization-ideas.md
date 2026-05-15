@@ -4,7 +4,7 @@
 
 SDE dependency optimization covers structural loop transforms, elementwise
 fusion legality, structured memory effects, barriers, timestep stamps, and
-dependency-window intent before `ConvertSdeToArts`.
+dependency-window intent before `convert-sde-to-codir`.
 
 Current pieces:
 
@@ -95,7 +95,7 @@ correct and profiling shows launch/CPS overhead dominates.
 ## Pass Grouping Proposal
 
 Dependency planning should run after loop/tile shape is stable enough to reason
-about windows, and before `ConvertSdeToArts`:
+about windows, and before `convert-sde-to-codir`:
 
 ```text
 PatternAnalysis
@@ -108,7 +108,9 @@ DistributionPlanning
 IterationSpaceDecomposition
 BarrierElimination or PhaseGraphPlanning
 VerifySdeCpsPlan
-ConvertSdeToArts
+MemoryUnitMaterialization
+ConvertSdeToCodir
+ConvertCodirToArts
 ```
 
 If `IterationSpaceDecomposition` changes the scheduling-unit shape, phase graph
@@ -133,5 +135,6 @@ construction should run after decomposition. If decomposition moves earlier,
 - `3mm`-style phase graph tests proving independent first phases are not
   serialized.
 - Taskwait preservation tests.
-- SDE-to-Core tests proving eliminated barriers do not emit downstream
-  synchronization, and preserved or narrowed phase edges remain visible to Core.
+- SDE-to-CODIR and CODIR-to-ARTS tests proving eliminated barriers do not emit
+  downstream synchronization, and preserved or narrowed phase edges remain
+  visible to ARTS.

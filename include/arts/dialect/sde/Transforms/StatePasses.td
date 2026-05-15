@@ -27,9 +27,9 @@ def MemoryUnitMaterialization
   let summary = "Materialize SDE shared memrefs as memory units";
   let description = [{
     Rewrites shared memref allocations used by SDE scheduling units into
-    `sde.mu_alloc` storage before the SDE/Core boundary. This pass is
+    `sde.mu_alloc` storage before the SDE/CODIR/ARTS boundary. This pass is
     intentionally SDE-local: it creates target-neutral MU storage declarations
-    and leaves conversion to Core DB objects to `ConvertSdeToArts`.
+    and leaves conversion to ARTS DB objects to CODIR-to-ARTS lowering.
 
     Physical layout and owner-slice facts stay on the scheduling unit and are
     consumed at boundary conversion to form acquire windows for supported

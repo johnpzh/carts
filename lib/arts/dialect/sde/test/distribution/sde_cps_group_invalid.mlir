@@ -1,4 +1,4 @@
-// RUN: not %carts-compile %s --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts 2>&1 | %FileCheck %s
+// RUN: not %carts-compile %s --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts 2>&1 | %FileCheck %s
 
 // CHECK: sde.cps group 0 has 1 stage(s), expected 2
 // CHECK: sde.cps group 0 is missing sde.cps_stage_index 1

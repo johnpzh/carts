@@ -290,7 +290,7 @@ def SdeControlTokenOp
   let description = [{
     Produces an SDE-level completion token for task and wait control edges.
     The token is consumed by SDE synchronization surfaces such as
-    `sde.su_barrier` and is erased during SDE-to-Core materialization after
+    `sde.su_barrier` and is erased during CODIR-to-ARTS materialization after
     those control edges have been consumed.
   }];
 

@@ -9,7 +9,6 @@ dialect/                 MLIR dialects (IREE-style per-dialect structure)
     Conversion/
       ArtsToLLVM/        ConvertArtsToLLVM pass + core LLVM patterns
       ArtsToRt/          EDT/epoch lowering (core → rt conversion)
-      SdeToArts/         SDE-to-ARTS conversion patterns
     IR/                  Core dialect definition
     Transforms/          All passes + transform libraries (db/, edt/, loop/, kernel/, dep/)
   rt/                    THIN — dialect def + post-lowering optimizations

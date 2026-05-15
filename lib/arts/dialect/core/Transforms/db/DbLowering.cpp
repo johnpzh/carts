@@ -526,6 +526,23 @@ void DbLoweringPass::updateAcquireUsers(DbAcquireOp acquireOp, Value newGuid,
 
   blockArg.setType(newPtr.getType());
   eraseLoweringContracts(blockArg);
+
+  SmallVector<Value> edtElementSizes(elementSizes.begin(), elementSizes.end());
+  ValueRange edtParams = edtUser.getParams();
+  unsigned depCount = edtUser.getDependencies().size();
+  Block &edtBlock = edtUser.getBody().front();
+  for (Value &elementSize : edtElementSizes) {
+    for (auto [paramIndex, param] : llvm::enumerate(edtParams)) {
+      if (param != elementSize)
+        continue;
+      unsigned argIndex = depCount + static_cast<unsigned>(paramIndex);
+      if (argIndex < edtBlock.getNumArguments())
+        elementSize = edtBlock.getArgument(argIndex);
+      break;
+    }
+  }
+
+  elementSizes.assign(edtElementSizes.begin(), edtElementSizes.end());
   rewriteBlockUses(blockArg, blockArg);
   acquireOp->replaceAllUsesWith(newAcquireOp);
   opsToRemove.insert(acquireOp);

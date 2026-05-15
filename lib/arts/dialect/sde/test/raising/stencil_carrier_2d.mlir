@@ -1,7 +1,7 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Verify that a 2D 5-point Jacobi stencil stays memref-native and is classified
-// with nested-IV stencil metadata. After ConvertSdeToArts, the stencil contract
+// with nested-IV stencil metadata. After ConvertCodirToArts, the stencil contract
 // attributes (min/max offsets) are stamped.
 
 // CHECK-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
@@ -23,14 +23,12 @@
 // CHECK: arith.addf
 // CHECK: arith.addf
 
-// After ConvertSdeToArts: stencil contract with spatial metadata.
-// CHECK: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
-// CHECK: arts.epoch
+// After ConvertCodirToArts: stencil contract with spatial metadata.
+// CHECK: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
+// CHECK: arts.edt <task>
 // CHECK-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // CHECK-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_tile>
-// CHECK-SAME: planOwnerDims = [0, 1]
-// CHECK-SAME: planPhysicalBlockShape = [16, 32]
-// CHECK-SAME: stencil_block_shape = [16, 32]
+// CHECK-SAME: planLogicalWorkerSlice = [16, 32]
 // CHECK-SAME: stencil_max_offsets = [1, 1]
 // CHECK-SAME: stencil_min_offsets = [-1, -1]
 // CHECK-SAME: stencil_owner_dims = [0, 1]

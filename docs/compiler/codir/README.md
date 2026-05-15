@@ -35,7 +35,7 @@ CODIR does not own:
 - physical owner-dim selection, tiling legality, or reduction strategy;
 - ARTS worker routes, node placement, DB GUIDs, depv layout, or runtime API
   calls;
-- fallback rediscovery of DB roots from raw memrefs.
+- rediscovery of DB roots from raw memrefs.
 
 ## Proposed IR Contract
 

@@ -1,5 +1,8 @@
 # Folder Reorganization Plan
 
+See [`dialect-stack-migration.md`](./dialect-stack-migration.md) for the
+conceptual driver/dialect split that this physical layout supports.
+
 ## Objective
 
 Make the source tree match the target dialect ownership:
@@ -96,7 +99,7 @@ split only when a utility's owner is clear:
 - CARTS semantic utilities move to `carts/support`.
 - SDE-only utilities move under `carts/dialect/sde`.
 - CODIR-only utilities move under `carts/dialect/codir`.
-- ARTS-machine utilities remain under `carts/dialect/arts` or `arts` support.
+- ARTS-machine utilities remain under `carts/dialect/arts` or `carts/support`.
 - Runtime ABI utilities move under `carts/dialect/arts-rt`.
 
 ## Naming Rules
@@ -141,6 +144,11 @@ Exit gate:
 
 ### Phase 1: CODIR First
 
+Status: the CODIR include/lib skeleton already exists at
+`include/carts/dialect/codir/IR/` and `lib/carts/dialect/codir/IR/`, with
+`convert-sde-to-codir`, `verify-codir`, and `convert-codir-to-arts` registered
+and wired into the default pipeline.
+
 Move the codelet-specific SDE code into the new CODIR folder before broad SDE
 renaming:
 
@@ -151,7 +159,7 @@ renaming:
 - codelet tests under `lib/arts/dialect/sde/test/codelet`
 
 Do not move tensor cleanup as-is. Convert it to memref/CODIR cleanup or delete
-it with the tensor fallback removal.
+it with tensor-carrier removal.
 
 Exit gate:
 
@@ -167,25 +175,26 @@ Create target conversion folders:
 - `lib/carts/dialect/arts/Conversion/ArtsToRt`
 - `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM`
 
-Keep the old direct `SdeToArts` path only as a compatibility bridge while
-tests migrate.
+The direct SDE-to-ARTS conversion is removed from the live source tree. SDE
+must cross the boundary through CODIR before ARTS materialization.
 
 Exit gate:
 
 - SDE-to-CODIR and CODIR-to-ARTS lit tests exist;
-- direct SDE-to-ARTS tests are renamed compatibility tests or removed.
+- direct-codelet tests are migrated to SDE-to-CODIR/CODIR-to-ARTS coverage or
+  removed.
 
 ### Phase 3: SDE Move
 
 Move SDE IR, analysis, transforms, and verification to
 `carts/dialect/sde`. Do this after codelet ownership has been split out, so SDE
-does not carry legacy codelet ABI files into its new home.
+does not carry removed codelet ABI files into its new home.
 
 Exit gate:
 
 - includes use `carts/dialect/sde/...` for moved files;
-- temporary forwarding headers exist only when needed and are marked as
-  migration-only.
+- moved public include paths are updated at the call sites; migration-only
+  forwarding headers are not part of the target layout.
 
 ### Phase 4: ARTS And ARTS-RT Move
 
@@ -218,8 +227,7 @@ Exit gate:
 ## CMake Strategy
 
 - Add new CMake subdirectories only when a real compilable slice moves.
-- Prefer forwarding compatibility targets for one milestone when moving a
-  public include path.
+- Update public include paths directly when moving a dialect slice.
 - Avoid one giant include rewrite. Move one dialect or conversion boundary at a
   time.
 - Keep generated TableGen target names stable until all users are migrated.

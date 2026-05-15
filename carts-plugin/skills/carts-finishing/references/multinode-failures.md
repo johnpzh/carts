@@ -67,7 +67,7 @@ halo/window contract is wrong; otherwise Core DB refinement should validate the
 
 **Symptom:** worker on node N hangs in init loop, or accesses uninitialized remote memory.
 
-**Root cause:** `EpochLowering` does not gate DB initialization on local ownership, or SDE/Core materialization did not express per-node initialization as task work.
+**Root cause:** `EpochLowering` does not gate DB initialization on local ownership, or SDE planning plus CODIR/ARTS materialization did not express per-node initialization as task work.
 
 **Fix usually belongs in:** `lib/arts/dialect/rt/Conversion/ArtsToRt/EpochLowering.cpp` — check the `distributed` attr; if set, gate init to the owning node only.
 

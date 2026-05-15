@@ -43,7 +43,7 @@ Important areas:
 
 - `Analysis/db`, `Analysis/edt`, `Analysis/loop`, `Analysis/heuristics`.
 - `Transforms/db`, `Transforms/edt`, `Transforms/epoch`, `Transforms/loop`.
-- `Conversion/SdeToArts`, `Conversion/ArtsToRt`, `Conversion/ArtsToLLVM`.
+- `Conversion/ArtsToRt`, `Conversion/ArtsToLLVM`.
 
 Use `AnalysisManager` accessors for DB/EDT/loop analyses. Do not reach into
 graphs directly from passes.
@@ -67,5 +67,5 @@ state, or partition ownership, it likely belongs in SDE or Core.
 ## TableGen Boundaries
 
 Edit dialect-specific files under `include/arts/dialect/*`. Old top-level
-`include/arts/Ops.td`, `Dialect.td`, `Attributes.td`, and `Types.td` are legacy
-forwarding files, not the place for new dialect definitions.
+`include/arts/Ops.td`, `Dialect.td`, `Attributes.td`, and `Types.td` are
+forwarding files only, not the place for new dialect definitions.

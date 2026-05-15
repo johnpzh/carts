@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_2t.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_2t.cfg --start-from sde-planning --pipeline sde-planning --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Verify that ReductionStrategy does not pick the atomic path for a
 // non-add reduction kind, even when the worker count is small.

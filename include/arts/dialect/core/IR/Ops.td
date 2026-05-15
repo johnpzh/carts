@@ -571,6 +571,7 @@ def DbNumElementsOp : Arts_Op<"db_num_elements", [Pure]> {
 /// arts.edt
 ///===----------------------------------------------------------------------===///
 def EdtOp : Arts_Op<"edt", [
+  AttrSizedOperandSegments,
   DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
   SingleBlockImplicitTerminator<"arts::YieldOp">, RecursiveMemoryEffects
 ]> {
@@ -589,14 +590,18 @@ def EdtOp : Arts_Op<"edt", [
 
     ### Block Arguments and Dependencies
 
-    The body block has one block argument per dependency. Each block argument
-    corresponds positionally to one entry in the `$dependencies` variadic
-    operand list:
+    The body block starts with one block argument per dependency. Each
+    dependency block argument corresponds positionally to one entry in the
+    `$dependencies` variadic operand list. Any explicit scalar params follow
+    the dependency block arguments and correspond positionally to `$params`:
 
     ```
-    arts.edt task intranode route(%r) (%acq0, %acq1 : memref<...>, memref<...>) {
-    ^bb0(%arg0: memref<...>, %arg1: memref<...>):
+    arts.edt task intranode route(%r)
+        (%acq0, %acq1 : memref<...>, memref<...>)
+        params(%p0 : index) {
+    ^bb0(%arg0: memref<...>, %arg1: memref<...>, %p0_arg: index):
       // %arg0 corresponds to %acq0, %arg1 corresponds to %acq1
+      // %p0_arg corresponds to %p0
       ...
       arts.yield
     }
@@ -608,20 +613,20 @@ def EdtOp : Arts_Op<"edt", [
 
     ### Invariants (enforced by verifier)
 
-    1. The number of block arguments must equal the number of dependencies.
+    1. The number of block arguments must equal dependencies + params.
     2. Every dependency must be defined by a `DbAcquireOp`.
-    3. MemRef-typed operands inside the body must be one of:
+    3. Every explicit param must be a scalar integer, index, or float value.
+    4. MemRef-typed operands inside the body must be one of:
        - A block argument of this EDT (backed by a DbAcquire).
        - Defined within the EDT body region itself.
        - An external `memref.alloca` (sunk into the EDT later in the pipeline).
        - A `DbAcquireOp` source handle (`sourceGuid` or `sourcePtr`)
          referencing an outer-scope datablock for nested view derivation.
-    4. External DbAcquire values must not be used directly inside the body;
+    5. External DbAcquire values must not be used directly inside the body;
        they must be passed as dependencies and accessed via block arguments.
-    5. Nested `EdtOp`s are skipped during verification (they verify
+    6. Nonconstant scalar captures must be explicit params for every EDT.
+    7. Nested `EdtOp`s are skipped during verification (they verify
        independently).
-    6. Setting `no_verify` bypasses all invariant checks (used during
-       intermediate pipeline steps where invariants are temporarily broken).
 
     ### Attributes
 
@@ -633,14 +638,11 @@ def EdtOp : Arts_Op<"edt", [
     - `route`: routing value (I32) for task placement.
     - `nowait` (optional): indicates the EDT does not require an epoch
       wrapper (typically used when the EDT is already inside an epoch).
-    - `no_verify` (optional): disables verifier checks for intermediate
-      pipeline states.
   }];
   let arguments = (ins
     EdtTypeAttr:$type,
     EdtConcurrencyAttr:$concurrency,
     I32:$route,
-    OptionalAttr<NoVerifyAttr>:$no_verify,
     OptionalAttr<UnitAttr>:$nowait,
     UnitAttr:$inPlaceSafe,
     UnitAttr:$inPlaceSharedState,
@@ -662,11 +664,15 @@ def EdtOp : Arts_Op<"edt", [
     OptionalAttr<I64Attr>:$planCostSliceWideningPressure,
     OptionalAttr<I64Attr>:$planCostExpectedLocalWork,
     OptionalAttr<I64Attr>:$planCostRelaunchAmortization,
-    Variadic<AnyMemRef>:$dependencies
+    Variadic<AnyMemRef>:$dependencies,
+    Variadic<AnyType>:$params
   );
   let regions = (region SizedRegion<1> : $body);
   let assemblyFormat = [{
-    $type $concurrency `route` `(` $route `)` (`(` $dependencies^ `)` `:` type($dependencies))? attr-dict-with-keyword
+    $type $concurrency `route` `(` $route `)`
+    (`(` $dependencies^ `)` `:` type($dependencies))?
+    (`params` `(` $params^ `:` type($params) `)`)?
+    attr-dict-with-keyword
     $body
   }];
   let skipDefaultBuilders = 1;
@@ -680,9 +686,20 @@ def EdtOp : Arts_Op<"edt", [
                : $dependencies)>,
     OpBuilder<(ins "EdtType"
                : $type, "EdtConcurrency"
+               : $concurrency, "ValueRange"
+               : $dependencies, "ValueRange"
+               : $params)>,
+    OpBuilder<(ins "EdtType"
+               : $type, "EdtConcurrency"
                : $concurrency, "Value"
                : $route, "ValueRange"
-               : $dependencies)>
+               : $dependencies)>,
+    OpBuilder<(ins "EdtType"
+               : $type, "EdtConcurrency"
+               : $concurrency, "Value"
+               : $route, "ValueRange"
+               : $dependencies, "ValueRange"
+               : $params)>
   ];
   let hasVerifier = 1;
   let extraClassDeclaration = [{

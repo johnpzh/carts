@@ -170,10 +170,23 @@ mlir::arts::resolvePhysicalDbLayoutPlan(Operation *planSource,
   if (!hasPhysicalDbLayoutPlan(planSource) || elementSizes.empty())
     return failure();
 
+  return resolvePhysicalDbLayoutPlan(getPlanOwnerDimsAttr(planSource),
+                                     getPlanPhysicalBlockShapeAttr(planSource),
+                                     elementSizes, builder, loc);
+}
+
+FailureOr<DbPhysicalLayoutPlan>
+mlir::arts::resolvePhysicalDbLayoutPlan(ArrayAttr ownerDimsAttr,
+                                        ArrayAttr blockShapeAttr,
+                                        ValueRange elementSizes,
+                                        OpBuilder &builder, Location loc) {
+  if (!ownerDimsAttr || !blockShapeAttr || elementSizes.empty())
+    return failure();
+
   std::optional<SmallVector<int64_t, 4>> ownerDims =
-      readI64ArrayAttr(getPlanOwnerDimsAttr(planSource));
+      readI64ArrayAttr(ownerDimsAttr);
   std::optional<SmallVector<int64_t, 4>> blockShape =
-      readI64ArrayAttr(getPlanPhysicalBlockShapeAttr(planSource));
+      readI64ArrayAttr(blockShapeAttr);
   if (!ownerDims || ownerDims->empty() || !blockShape || blockShape->empty())
     return failure();
 

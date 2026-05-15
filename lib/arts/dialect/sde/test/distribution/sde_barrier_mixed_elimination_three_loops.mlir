@@ -1,7 +1,7 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 \
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 \
 // RUN:   | awk '/IR Dump After BarrierElimination/,/IR Dump After LowerToMemref/' \
 // RUN:   | %FileCheck %s --check-prefix=SDE
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 
 // Verify mixed barrier elimination with three loops under the
 // carrier-authoritative model.
@@ -14,8 +14,8 @@
 // SDE: sde.su_barrier
 // SDE-NOT: arts.barrierEliminated
 
-// After ConvertSdeToArts: only the second barrier survives.
-// ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// After ConvertCodirToArts: only the second barrier survives.
+// ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // ARTS: func.func @main
 // Loop A:
 // ARTS: arts.edt <task>

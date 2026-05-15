@@ -1,8 +1,8 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=OPENMP
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=OPENMP
 
 // Verify the memref-native stencil classification path: PatternAnalysis
 // recovers the nested-IV stencil and keeps the scalar body as the owning
-// representation. After ConvertSdeToArts, the stencil contract attributes land
+// representation. After ConvertCodirToArts, the stencil contract attributes land
 // on ARTS orchestration.
 
 // OPENMP-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
@@ -19,13 +19,11 @@
 // OPENMP-SAME: pattern = #sde.pattern<stencil_tiling_nd>
 // OPENMP-SAME: spatialDims = [0, 1]
 // OPENMP-NOT: arts.for
-// OPENMP: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
-// OPENMP: arts.epoch
+// OPENMP: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
+// OPENMP: arts.edt <task>
 // OPENMP-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // OPENMP-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_tile>
-// OPENMP-SAME: planOwnerDims = [0, 1]
-// OPENMP-SAME: planPhysicalBlockShape = [16, 32]
-// OPENMP-SAME: stencil_block_shape = [16, 32]
+// OPENMP-SAME: planLogicalWorkerSlice = [16, 32]
 // OPENMP-SAME: stencil_max_offsets = [1, 1]
 // OPENMP-SAME: stencil_min_offsets = [-1, -1]
 // OPENMP-SAME: stencil_owner_dims = [0, 1]

@@ -1,5 +1,7 @@
 # Stencil Counter Analysis - 2026-05-13
 
+> **Terminology note (2026-05-15):** This document predates the four-layer rename. Read references to "Core" as the current `arts` dialect (source tree still under `lib/arts/dialect/core/`) and "RT" as `arts-rt` (source tree under `lib/arts/dialect/rt/`). Ownership claims should be interpreted against the four-layer split documented in [`master-plan.md`](./master-plan.md).
+
 This note records the current measurement state for the stencil-like CARTS
 benchmarks after fixing ARTS counter-profile plumbing. The focus is `large`,
 64 threads, and 1 local node.
@@ -139,7 +141,7 @@ belong in dependency slots.
 
 3. **Fix Core dependency-window preservation first.**
 
-   In direct materialization, resolve loop/acquire contracts before coarse-read fallback.
+   In direct materialization, resolve loop/acquire contracts before coarse-read bridging.
    Explicit stencil, block-halo, owner-dim, or `narrowable_dep` contracts should
    keep worker-local dependency windows unless an owner-mismatch proof forces a
    full read. `inferLoopLocalMode` and loop-IV access checks should scan both
@@ -172,7 +174,7 @@ belong in dependency slots.
    Add a TLS ready-local dependency descriptor scratch pool and a local
    ready-create fast path that avoids immediate route-table lookup after
    insertion. This is cleanup for high task counts; it should not compensate for
-   incorrect SDE/Core planning.
+   incorrect SDE/CODIR/ARTS planning.
 
 ## Next Implementation Slice
 

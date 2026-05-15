@@ -1,21 +1,19 @@
 add_mlir_dialect_library(MLIRCartsCodirTransforms
-  CodirBoundaryPlaceholders.cpp
+  CodirCodeletOpt.cpp
+  VerifyCodir.cpp
 
   ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/include/carts/dialect/codir/Transforms
+    ${PROJECT_SOURCE_DIR}/include/carts/dialect/codir/Utils
 
   DEPENDS
     MLIRCartsCodirPassIncGen
     MLIRCodirOpsIncGen
-    MLIROpsIncGen
-    MLIRSdeOpsIncGen
 
   LINK_LIBS PUBLIC
-    MLIRArithDialect
-    MLIRArts
-    MLIRCartsSde
     MLIRCartsCodir
+    MLIRCartsCodirUtils
     MLIRIR
-    MLIRMemRefDialect
     MLIRPass
+    MLIRSideEffectInterfaces
 )

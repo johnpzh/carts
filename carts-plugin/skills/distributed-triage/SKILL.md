@@ -1,6 +1,6 @@
 ---
 name: carts-distributed-triage
-description: Use when a failure only appears with `--distributed-db`, multiple nodes, SDE/Core distributed work materialization, or uneven remote work distribution.
+description: Use when a failure only appears with `--distributed-db`, multiple nodes, SDE/CODIR/ARTS distributed work materialization, or uneven remote work distribution.
 user-invocable: true
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<input-file | benchmark-path>]
@@ -29,12 +29,13 @@ Read these before patching anything:
 2. Reproduce with explicit node/thread/config inputs.
 3. Check whether `--distributed-db` is actually active in the failing path.
 4. Inspect IR around:
-   - `openmp-to-arts`
+   - `sde-planning`
+   - `codir-to-arts`
    - `post-db-refinement`
    - `pre-lowering`
 5. Check ownership constraints:
    - `distributed` marker present on eligible `DbAllocOp`
-   - SDE-authored distributed work and Core materialization contracts are present when required
+   - SDE planning contracts plus CODIR/ARTS materialization contracts are present when required
    - routed work and owner hints agree
 6. Inspect runtime artifacts:
    - `arts.log`, `omp.log`
@@ -60,7 +61,8 @@ dekk carts benchmarks run polybench/2mm \
 
 - `docs/heuristics/distribution.md`
 - `lib/arts/dialect/core/Transforms/db/DbDistributedOwnership.cpp`
-- `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
+- `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
+- `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - `lib/arts/dialect/core/Conversion/ArtsToLLVM/ConvertArtsToLLVM.cpp`
 - `lib/arts/codegen/Codegen.cpp`
 

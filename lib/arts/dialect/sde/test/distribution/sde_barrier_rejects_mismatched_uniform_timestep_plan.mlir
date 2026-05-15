@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Same trip counts are not enough to form a repeated timestep. The first
 // stage is owned by the batch dimension of B, while the second is owned by the
@@ -18,7 +18,7 @@
 // CHECK-SAME: physicalBlockShape = [1]
 // CHECK-NOT: asyncStrategy
 // CHECK-NOT: repetitionStructure
-// CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: func.func @mismatched_uniform_adjacent
 // CHECK: depPattern = #arts.dep_pattern<uniform>
 // CHECK-NOT: planAsyncStrategy

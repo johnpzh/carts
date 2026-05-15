@@ -57,7 +57,9 @@ static bool producesPointerLikeType(Operation *op) {
 /// Check if an operation is a load from a memref.
 /// These loads should be rematerialized to ensure proper dependency tracking
 /// in the CreateDbs pass.
-static bool loadsFromMemref(Operation *op) { return isa<memref::LoadOp>(op); }
+static bool loadsFromMemref(Operation *op) {
+  return isa<memref::LoadOp>(op);
+}
 
 /// Check if an operation uses any value that was rematerialized.
 /// This allows us to transitively rematerialize arithmetic operations

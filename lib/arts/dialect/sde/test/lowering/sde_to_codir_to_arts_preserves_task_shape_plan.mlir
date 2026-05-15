@@ -1,17 +1,15 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts \
+// RUN:   | %FileCheck %s --implicit-check-not=sde. --implicit-check-not=codir.codelet
 
-// SDE stamps runtime-neutral task-shape plan attrs. ConvertSdeToArts is the
-// boundary that translates them into Core ARTS plan attrs.
+// Runtime-neutral task-shape plan attrs reach ARTS through CODIR codelets.
 
-// CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
-// CHECK: func.func @main
-// CHECK: arts.epoch attributes {
-// CHECK-SAME: planAsyncStrategy = #arts.plan_async_strategy<advance_edt>
-// CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
-// CHECK: arts.edt <task>
-// CHECK-SAME: planAsyncStrategy = #arts.plan_async_strategy<advance_edt>
-// CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
-// CHECK-NOT: sde.
+// CHECK-LABEL: func.func @main
+// CHECK: arts.db_alloc
+// CHECK: arts.db_acquire[<out>]
+// CHECK: arts.edt <task> <intranode>
+// CHECK-SAME: params(
+// CHECK: arts.db_ref
+// CHECK: memref.store
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<8xi32>) {

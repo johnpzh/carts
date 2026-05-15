@@ -18,7 +18,7 @@ Rules:
 - Do not choose owner dims or tile sizes.
 - Do not allocate ARTS DBs or create ARTS EDTs.
 - Do not access runtime topology.
-- Do not use tensor cleanup as a fallback; codelet deps stay memref/token based.
+- Do not use tensor cleanup as a recovery path; codelet deps stay memref/token based.
 
 Exit facts for ARTS:
 

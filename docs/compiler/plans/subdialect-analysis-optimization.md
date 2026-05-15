@@ -32,7 +32,7 @@ single pass. Utility placement is governed by
 
 | Dialect | Analysis owns | Optimizations own |
 |---|---|---|
-| SDE | Source legality, memref roots/access maps, dependence windows, reductions, pattern facts, logical capacity. | Tiling, fusion, loop/order transforms, distribution intent, barrier/CPS planning, reduction strategy, MU materialization. |
+| SDE (see `PatternAnalysis`) | Source legality, memref roots/access maps, dependence windows, reductions, pattern facts, logical capacity. | Tiling, fusion, loop/order transforms, distribution intent, barrier/CPS planning, reduction strategy, MU materialization. |
 | CODIR | Codelet capture ABI, dep/param shape, token-local access, codelet-local effects. | Codelet-local canonicalization, scalar capture cleanup, token mode refinement, local invariant cleanup, dead dep/param removal. |
 | ARTS | DB/EDT/epoch graphs, acquire windows, dependency slots, resource binding, distributed ownership. | DB mode tightening, EDT/epoch orchestration, dependency slot refinement, contract validation, placement refinement. |
 | ARTS-RT | Runtime-call purity, packing shape, depv/pointer locality, alias facts, launch overhead accounting. | Runtime-call hoisting, packing cleanup, scalar replacement, pointer hoisting, alias metadata, LLVM-facing cleanup. |
@@ -75,10 +75,9 @@ docs/compiler/dialects/
     optimizations.md
 ```
 
-Existing compatibility docs under `docs/compiler/sde`, `docs/compiler/core`,
-and `docs/compiler/rt` should either link to this target layout or be folded
-into it during migration. Avoid duplicating the same ownership rules in many
-places.
+Existing docs under `docs/compiler/sde`, `docs/compiler/core`, and
+`docs/compiler/rt` should either link to this target layout or be folded into
+it during migration. Avoid duplicating the same ownership rules in many places.
 
 ## Migration Phases
 
@@ -86,7 +85,8 @@ places.
 
 - Add per-dialect analysis and optimization docs.
 - Link the master plan and dialect layering docs to the target docs index.
-- Mark old docs as compatibility/migration notes where needed.
+- Mark moved docs as migration notes only when they describe already-removed
+  source locations.
 
 Exit gate:
 
@@ -119,7 +119,7 @@ Exit gate:
 
 - Move transforms only after their owning analysis is in place.
 - Delete or split transforms that span multiple ownership layers.
-- Keep compatibility wrappers temporary and clearly named.
+- Delete moved wrappers instead of adding forwarding layers.
 
 Exit gate:
 

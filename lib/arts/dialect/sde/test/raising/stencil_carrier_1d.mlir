@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Verify that a 1D 3-point stencil B[i] = A[i-1] + A[i] + A[i+1] stays
 // memref-native and is classified with stencil access metadata. The scalar body
@@ -21,7 +21,7 @@
 // CHECK: arith.addf
 
 // After full pipeline: stencil contract stamped on Core task dispatch.
-// CHECK: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// CHECK: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: arts.edt
 // CHECK-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 

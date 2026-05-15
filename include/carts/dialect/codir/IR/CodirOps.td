@@ -6,32 +6,10 @@
 #ifndef CARTS_CODIR_OPS
 #define CARTS_CODIR_OPS
 
-include "carts/dialect/codir/IR/CodirDialect.td"
-include "mlir/IR/AttrTypeBase.td"
-include "mlir/IR/EnumAttr.td"
+include "carts/dialect/codir/IR/CodirAttrs.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-
-class CartsCodir_I32Enum<string name, string description,
-                         list<I32EnumAttrCase> cases>
-    : I32EnumAttr<name, description, cases> {
-  let cppNamespace = "::mlir::carts::codir";
-  let genSpecializedAttr = 0;
-}
-
-class CartsCodir_I32EnumAttr<string mnemonic, CartsCodir_I32Enum enumInfo>
-    : EnumAttr<CartsCodirDialect, enumInfo, mnemonic> {
-  let assemblyFormat = "`<` $value `>`";
-}
-
-def CodirAccessMode
-    : CartsCodir_I32Enum<"CodirAccessMode", "CODIR dependency access mode", [
-      I32EnumAttrCase<"read", 0, "read">,
-      I32EnumAttrCase<"write", 1, "write">,
-      I32EnumAttrCase<"readwrite", 2, "readwrite">
-    ]>;
-def AccessModeAttr : CartsCodir_I32EnumAttr<"access_mode", CodirAccessMode>;
 
 def CartsCodir_CodeletOp
     : CartsCodir_Op<"codelet", [
@@ -49,6 +27,25 @@ def CartsCodir_CodeletOp
 
   let arguments = (ins
     OptionalAttr<ArrayAttr>:$dep_modes,
+    OptionalAttr<UnitAttr>:$task_depend,
+    OptionalAttr<UnitAttr>:$ordered_task_depend,
+    OptionalAttr<UnitAttr>:$completion_barrier,
+    OptionalAttr<PatternAttr>:$pattern,
+    OptionalAttr<DistributionKindAttr>:$distribution_kind,
+    OptionalAttr<IterationTopologyAttr>:$iteration_topology,
+    OptionalAttr<RepetitionStructureAttr>:$repetition_structure,
+    OptionalAttr<AsyncStrategyAttr>:$async_strategy,
+    OptionalAttr<ArrayAttr>:$plan_owner_dims,
+    OptionalAttr<ArrayAttr>:$physical_owner_dims,
+    OptionalAttr<ArrayAttr>:$physical_block_shape,
+    OptionalAttr<ArrayAttr>:$logical_worker_slice,
+    OptionalAttr<ArrayAttr>:$physical_halo_shape,
+    OptionalAttr<ArrayAttr>:$access_min_offsets,
+    OptionalAttr<ArrayAttr>:$access_max_offsets,
+    OptionalAttr<ArrayAttr>:$spatial_dims,
+    OptionalAttr<ArrayAttr>:$write_footprint,
+    UnitAttr:$in_place_safe,
+    UnitAttr:$in_place_shared_state,
     Variadic<AnyType>:$deps,
     Variadic<AnyType>:$params
   );

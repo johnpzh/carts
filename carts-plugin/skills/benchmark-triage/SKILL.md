@@ -33,7 +33,7 @@ dekk carts triage-benchmark <suite/name> --size small --threads 2
 
 Optional narrowing to specific stages:
 ```bash
-dekk carts triage-benchmark <suite/name> --stages openmp-to-arts,post-db-refinement
+dekk carts triage-benchmark <suite/name> --stages sde-planning,codir-to-arts,post-db-refinement
 ```
 
 Only use stage names from `dekk carts pipeline --json`.
@@ -48,7 +48,7 @@ Only use stage names from `dekk carts pipeline --json`.
    - ARTS-only regression from a pipeline stage
    - Benchmark-side UB or invalid verification
    - Runtime/distributed lowering issue
-5. Read stage dumps in order: `openmp-to-arts` -> `edt-transforms` -> `create-dbs` -> `db-opt` -> `post-db-refinement` -> `late-concurrency-cleanup` -> `epochs` -> `pre-lowering` -> `arts-to-llvm`
+5. Read stage dumps in order: `sde-planning` -> `sde-to-codir` -> `codir-to-arts` -> `edt-transforms` -> `create-dbs` -> `db-opt` -> `post-db-refinement` -> `late-concurrency-cleanup` -> `epochs` -> `pre-lowering` -> `arts-to-llvm`
 
 If the regression is multi-node specific or depends on `--distributed-db`, switch to `carts-distributed-triage`.
 
@@ -64,7 +64,8 @@ dekk carts clang bench-omp.ll ... -o bench_omp
 
 - `docs/compiler/pipeline.md`, `docs/heuristics/partitioning.md`, `docs/heuristics/distribution.md`
 - `tools/compile/Compile.cpp`
-- `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
+- `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
+- `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
 - `lib/arts/dialect/sde/Transforms/effect/scheduling/ReductionStrategy.cpp`
 - `lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp`

@@ -45,6 +45,7 @@ class PipelineTokens:
 class PipelineManifestStep:
     name: str
     passes: List[str]
+    depends_on: List[str]
 
 
 @dataclass(frozen=True)
@@ -71,13 +72,25 @@ def _parse_manifest_steps_field(
             raise ValueError(f"each '{key}' entry must be an object")
         name = step_raw.get("name")
         passes = step_raw.get("passes", [])
+        depends_on = step_raw.get("dependsOn", [])
         if not isinstance(name, str):
             raise ValueError(f"manifest step field '{key}.name' must be a string")
         if not isinstance(passes, list) or not all(isinstance(p, str) for p in passes):
             raise ValueError(
                 f"manifest step field '{key}.passes' must be a list of strings"
             )
-        steps.append(PipelineManifestStep(name=name, passes=list(passes)))
+        if (
+            not isinstance(depends_on, list)
+            or not all(isinstance(dep, str) for dep in depends_on)
+        ):
+            raise ValueError(
+                f"manifest step field '{key}.dependsOn' must be a list of strings"
+            )
+        steps.append(PipelineManifestStep(
+            name=name,
+            passes=list(passes),
+            depends_on=list(dict.fromkeys(depends_on)),
+        ))
     return steps
 
 
@@ -155,6 +168,26 @@ def _parse_pipeline_manifest_payload(payload: str) -> PipelineManifest:
     )
 
 
+def _canonical_pipeline_token(
+    manifest: PipelineManifest, token: Optional[str]
+) -> Optional[str]:
+    if token is None:
+        return None
+    if token == "complete":
+        return token
+    if token in manifest.tokens.pipeline_sequence:
+        return token
+    return None
+
+
+def _accepted_pipeline_tokens(manifest: PipelineManifest) -> List[str]:
+    return list(manifest.tokens.pipeline)
+
+
+def _accepted_start_from_tokens(manifest: PipelineManifest) -> List[str]:
+    return list(manifest.tokens.start_from)
+
+
 def _pipeline_manifest_to_dict(manifest: PipelineManifest) -> Dict[str, object]:
     """Convert pipeline manifest dataclass into a JSON-serializable dict."""
     payload: Dict[str, object] = {
@@ -162,11 +195,19 @@ def _pipeline_manifest_to_dict(manifest: PipelineManifest) -> Dict[str, object]:
         "start_from": manifest.tokens.start_from,
         "pipeline_sequence": manifest.tokens.pipeline_sequence,
         "pipeline_steps": [
-            {"name": step.name, "passes": step.passes}
+            {
+                "name": step.name,
+                "passes": step.passes,
+                "dependsOn": step.depends_on,
+            }
             for step in manifest.steps
         ],
         "epilogue_steps": [
-            {"name": step.name, "passes": step.passes}
+            {
+                "name": step.name,
+                "passes": step.passes,
+                "dependsOn": step.depends_on,
+            }
             for step in manifest.epilogue_steps
         ],
     }
@@ -531,8 +572,9 @@ def pipeline(
     """Show pipeline steps and passes from carts-compile."""
     config = get_config()
     manifest = _get_pipeline_manifest(config)
+    canonical_pipeline = _canonical_pipeline_token(manifest, pipeline)
 
-    if pipeline and pipeline not in manifest.tokens.pipeline_sequence:
+    if pipeline and canonical_pipeline not in manifest.tokens.pipeline_sequence:
         print_error(f"Unknown pipeline step: '{pipeline}'")
         print_info("Available pipeline steps:")
         for token in manifest.tokens.pipeline_sequence:
@@ -550,9 +592,11 @@ def pipeline(
     table.add_column("Passes", style=Colors.STEP, justify="right")
     selected_pipelines = manifest.steps
     if pipeline:
-        selected_pipelines = [entry for entry in manifest.steps if entry.name == pipeline]
+        selected_pipelines = [
+            entry for entry in manifest.steps if entry.name == canonical_pipeline
+        ]
     for index, entry in enumerate(manifest.steps, start=1):
-        if pipeline and entry.name != pipeline:
+        if pipeline and entry.name != canonical_pipeline:
             continue
         table.add_row(str(index), entry.name, str(len(entry.passes)))
     console.print(table)
@@ -585,9 +629,6 @@ def compile_cmd(
         help="(.mlir input) write one output per pipeline step"),
     emit_llvm: bool = Option(
         False, "--emit-llvm", help="Emit LLVM IR output"),
-    partition_fallback: Optional[str] = Option(
-        None, "--partition-fallback",
-        help="Partition fallback strategy (coarse, fine)"),
     diagnose: bool = Option(
         False, FLAG_DIAGNOSE, help="Export diagnostic information"),
     diagnose_output: Optional[Path] = Option(
@@ -635,10 +676,10 @@ def compile_cmd(
         if all_pipelines:
             print_error("--all-pipelines is only supported for .mlir input")
             raise Exit(1)
-        if emit_llvm or partition_fallback or diagnose or diagnose_output:
+        if emit_llvm or diagnose or diagnose_output:
             print_error(
-                "--emit-llvm, --partition-fallback, and diagnose "
-                "options are not supported for .ll input (link-only)"
+                "--emit-llvm and diagnose options are not supported for .ll "
+                "input (link-only)"
             )
             raise Exit(1)
         if normalized_arts_debug or _has_flag(passthrough_args, FLAG_ARTS_DEBUG):
@@ -656,16 +697,18 @@ def compile_cmd(
 
     config = get_config()
     manifest = _get_pipeline_manifest(config)
-    if pipeline and pipeline not in manifest.tokens.pipeline:
+    accepted_pipeline_tokens = _accepted_pipeline_tokens(manifest)
+    accepted_start_from_tokens = _accepted_start_from_tokens(manifest)
+    if pipeline and pipeline not in accepted_pipeline_tokens:
         print_error(f"Unknown pipeline step: '{pipeline}'")
         print_info("Available pipeline steps:")
-        for pipeline_token in manifest.tokens.pipeline:
+        for pipeline_token in accepted_pipeline_tokens:
             console.print(f"  - {pipeline_token}")
         raise Exit(1)
-    if start_from and start_from not in manifest.tokens.start_from:
+    if start_from and start_from not in accepted_start_from_tokens:
         print_error(f"Unknown start-from pipeline step: '{start_from}'")
         print_info("Available start-from pipeline steps:")
-        for pipeline_token in manifest.tokens.start_from:
+        for pipeline_token in accepted_start_from_tokens:
             console.print(f"  - {pipeline_token}")
         raise Exit(1)
 
@@ -684,16 +727,15 @@ def compile_cmd(
                                    passthrough_args, optimize)
             return
         _compile_from_c(input_file, output, optimize, debug, pipeline,
-                        partition_fallback, diagnose, diagnose_output,
-                        normalized_arts_debug, passthrough_args)
+                        diagnose, diagnose_output, normalized_arts_debug,
+                        passthrough_args)
     else:
         if all_pipelines and (pipeline or start_from):
             print_error("--all-pipelines cannot be combined with --pipeline or --start-from")
             raise Exit(1)
         _compile_from_mlir(input_file, output, optimize, debug, pipeline,
                            all_pipelines, emit_llvm,
-                           partition_fallback, diagnose, diagnose_output,
-                           normalized_arts_debug,
+                           diagnose, diagnose_output, normalized_arts_debug,
                            start_from, passthrough_args)
 
 
@@ -707,7 +749,6 @@ def _compile_from_c(
     optimize: bool,
     debug: bool,
     pipeline: Optional[str],
-    partition_fallback: Optional[str],
     diagnose: bool,
     diagnose_output: Optional[Path],
     arts_debug: Optional[str],
@@ -733,8 +774,6 @@ def _compile_from_c(
     extra_link_args = _normalize_path_flags(parsed.link[:], invocation_cwd)
     cgeist_args = _normalize_path_flags(parsed.cgeist, invocation_cwd)
 
-    if partition_fallback:
-        extra_pipeline_args.append(f"{"--partition-fallback"}={partition_fallback}")
     if arts_debug:
         extra_pipeline_args.append(f"{FLAG_ARTS_DEBUG}={arts_debug}")
 
@@ -769,7 +808,6 @@ def _compile_from_mlir(
     pipeline: Optional[str],
     all_pipelines: bool,
     emit_llvm: bool,
-    partition_fallback: Optional[str] = None,
     diagnose: bool = False,
     diagnose_output: Optional[Path] = None,
     arts_debug: Optional[str] = None,
@@ -817,8 +855,6 @@ def _compile_from_mlir(
         cmd.append("-g")
     if pipeline:
         cmd.append(f"{FLAG_PIPELINE}={pipeline}")
-    if partition_fallback:
-        cmd.append(f"{"--partition-fallback"}={partition_fallback}")
     if diagnose:
         cmd.append(FLAG_DIAGNOSE)
     if diagnose_output:
@@ -1097,14 +1133,17 @@ _PASS_DUMP_HEADER_RE = re.compile(
 # (NOT a numeric index — the index is resolved at runtime so the layout
 # survives stage reordering / insertions).
 _DIALECT_BOUNDARIES: List[Tuple[str, str, List[Tuple[str, str]]]] = [
-    # OMP dialect → SDE dialect (inside the openmp-to-arts stage).
+    # OMP dialect → SDE dialect (inside the SDE planning stage).
     ("01_omp_to_sde", "sde",
-     [("openmp-to-arts", "ConvertOpenMPToSde")]),
-    # SDE dialect → ARTS core dialect (inside the openmp-to-arts stage).
-    ("02_sde_to_arts", "core",
-     [("openmp-to-arts", "ConvertSdeToArts")]),
+     [("sde-planning", "ConvertOpenMPToSde")]),
+    # SDE planning → CODIR codelet isolation.
+    ("02_sde_to_codir", "codir",
+     [("sde-to-codir", "ConvertSdeToCodir")]),
+    # CODIR codelet boundary → ARTS core objects.
+    ("03_codir_to_arts", "core",
+     [("codir-to-arts", "ConvertCodirToArts")]),
     # ARTS core → arts_rt runtime dialect (inside the pre-lowering stage).
-    ("03_arts_to_rt", "rt", [
+    ("04_arts_to_rt", "rt", [
         ("pre-lowering", "DbLowering"),
         ("pre-lowering", "EdtLowering"),
         ("pre-lowering", "EpochLowering"),
@@ -1323,26 +1362,31 @@ def _compile_all_pipelines(
             passes/
               01_raise-memref-dimensionality/
               02_initial-cleanup/
-              03_openmp-to-arts/             # passes up to ConvertSdeToArts
-          3_core/                            # ARTS core dialect work
+              03_sde-planning/               # SDE planning passes
+          3_codir/                           # codelet isolation work
             stages/
-              03_openmp-to-arts.mlir         # output is core (post conversion)
-              04_edt-transforms.mlir … 14_epochs.mlir
+              NN_sde-to-codir.mlir
             passes/
-              03_openmp-to-arts/             # passes from ConvertSdeToArts on
-              04_edt-transforms/ … 14_epochs/
-              15_pre-lowering/               # core passes before rt-lowering
-          4_rt/                              # arts_rt dialect + lowering
+              NN_sde-to-codir/
+          4_core/                            # ARTS core dialect work
             stages/
-              15_pre-lowering.mlir
-              16_arts-to-llvm.mlir
+              NN_codir-to-arts.mlir          # output is core (post conversion)
+              NN_edt-transforms.mlir … NN_epochs.mlir
             passes/
-              15_pre-lowering/               # rt-lowering passes onward
-              16_arts-to-llvm/
-          5_llvm/
+              NN_codir-to-arts/
+              NN_edt-transforms/ … NN_epochs/
+              NN_pre-lowering/               # core passes before rt-lowering
+          5_rt/                              # arts_rt dialect + lowering
+            stages/
+              NN_pre-lowering.mlir
+              NN_arts-to-llvm.mlir
+            passes/
+              NN_pre-lowering/               # rt-lowering passes onward
+              NN_arts-to-llvm/
+          6_llvm/
             <stem>.ll                        # final LLVM IR (--emit-llvm)
           boundaries/                        # dialect-conversion slices
-            01_omp_to_sde/ 02_sde_to_arts/ 03_arts_to_rt/
+            01_omp_to_sde/ 02_sde_to_codir/ 03_codir_to_arts/ 04_arts_to_rt/
           complete.mlir                      # final MLIR (after --O3 cleanup)
 
     Bucketing rules (all derived from ``_DIALECT_BOUNDARIES`` + the live
@@ -1352,10 +1396,9 @@ def _compile_all_pipelines(
       - Per-stage MLIR is placed in the phase its output IR belongs to
         (see ``_stage_phase_map``).
       - Per-pass dumps are placed by an execution-order cursor that flips on
-        boundary passes (see ``_phase_flip_passes``). A single stage may
-        therefore appear under two phase buckets when its passes straddle a
-        boundary (e.g. stage 3 spans 2_sde + 3_core because it contains both
-        ``ConvertOpenMPToSde`` and ``ConvertSdeToArts``).
+        boundary passes (see ``_phase_flip_passes``). The current codelet
+        boundary uses separate stages for SDE planning, CODIR isolation, and
+        ARTS materialization.
 
     For ``.mlir`` input the ``1_polygeist/`` phase is skipped (caller already
     has the pre-ARTS MLIR on disk).
@@ -1467,7 +1510,7 @@ def _compile_all_pipelines(
 
         # Phase 2c: per-pass IR dumps, routed to phase buckets by an
         # execution-order cursor that flips on boundary passes
-        # (ConvertSdeToArts → core; rt-lowering passes → rt). Each per-pass
+        # (ConvertCodirToArts → core; rt-lowering passes → rt). Each per-pass
         # dump is written to <phase>/passes/<NN>_<stage>/<MMM>_<Class>.mlir.
         # Stages whose passes straddle a boundary (3 and 15) appear under
         # two phase buckets — that's intentional and informative.
@@ -1533,7 +1576,8 @@ def _compile_all_pipelines(
         results.append((label, total_dumps > 0))
         progress.advance(task)
 
-        # Phase 2d: dialect-boundary view (OMP→SDE, SDE→ARTS, ARTS→RT).
+        # Phase 2d: dialect-boundary view (OMP→SDE, SDE→CODIR,
+        # CODIR→ARTS, ARTS→RT).
         # Materialized from the per-pass dumps we just wrote, by searching
         # across all phase buckets.
         progress.update(task, description="Phase 2: dialect boundaries")

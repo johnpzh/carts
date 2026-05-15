@@ -47,8 +47,9 @@ missing pass belongs in SDE/CODIR.
 
 ## Pipeline Spine
 
-Today this layer begins when `ConvertSdeToArts` crosses out of the SDE stage.
-The primary ARTS stages are:
+This layer begins at `codir-to-arts`, where CODIR codelets become ARTS DB/EDT
+objects. SDE operations must not survive into this layer. The primary ARTS
+stages are:
 
 ```text
 edt-transforms

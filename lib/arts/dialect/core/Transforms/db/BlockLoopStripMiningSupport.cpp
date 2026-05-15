@@ -659,9 +659,9 @@ bool finalizeNeighborhoodCandidate(scf::ForOp loop, NeighborhoodLoopInfo &info,
   }
   /// Neighborhood strip-mining is only profitable when the loop carries
   /// halo-style offsets around the block-local center. Center-only families
-  /// belong to the legacy block strip-miner or later hoisting; rewriting them
-  /// here just adds outer-loop structure without removing any neighborhood
-  /// localization work.
+  /// belong to the single-dimension block strip-miner or later hoisting;
+  /// rewriting them here just adds outer-loop structure without removing any
+  /// neighborhood localization work.
   if (!hasNonZeroNeighborhoodOffset(info)) {
     ARTS_DEBUG("Neighborhood candidate rejected: center-only family");
     return false;

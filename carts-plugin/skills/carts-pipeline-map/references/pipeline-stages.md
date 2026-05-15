@@ -14,15 +14,17 @@ pass names matter.
 
 1. `raise-memref-dimensionality`
 2. `initial-cleanup`
-3. `openmp-to-arts`
-4. `edt-transforms`
-5. `create-dbs`
-6. `db-opt`
-7. `post-db-refinement`
-8. `late-concurrency-cleanup`
-9. `epochs`
-10. `pre-lowering`
-11. `arts-to-llvm`
+3. `sde-planning`
+4. `sde-to-codir`
+5. `codir-to-arts`
+6. `edt-transforms`
+7. `create-dbs`
+8. `db-opt`
+9. `post-db-refinement`
+10. `late-concurrency-cleanup`
+11. `epochs`
+12. `pre-lowering`
+13. `arts-to-llvm`
 
 `--pipeline` also accepts the sentinel `complete`. `--start-from` accepts core
 stages only.
@@ -38,11 +40,12 @@ you are specifically fixing outdated docs.
 ## High-Value Drift Checks
 
 - `raise-memref-dimensionality` includes `ScalarForwarding`.
-- `openmp-to-arts` owns the complete SDE lifecycle and currently contains
-  tensor raising, iteration-space decomposition, codelet conversion, token mode
-  refinement, and `ConvertSdeToArts`.
-- `openmp-to-arts` owns SDE planning, direct SDE-to-Core materialization,
-  `VerifySdeLowered`, and `VerifyCoreObjectsOnly`.
+- `sde-planning` owns OpenMP-to-SDE conversion, pattern/distribution/reduction
+  planning, iteration-space decomposition, and MU materialization intent.
+- `sde-to-codir` owns codelet isolation, explicit deps/params, token-local
+  memref views, and `VerifyCodir`.
+- `codir-to-arts` owns CODIR-to-ARTS DB/acquire/EDT materialization and
+  rejects any surviving SDE operation.
 - `post-db-refinement` runs DB/EDT refinements and contract validation after
   DB mode tightening.
 - `pre-lowering` lowers Core DB/EDT/epoch objects to RT-shaped operations and

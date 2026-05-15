@@ -1,8 +1,8 @@
-// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_2t.cfg --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_2t.cfg --start-from sde-planning --pipeline sde-planning --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
-// Verify that RaiseToLinalg keeps the broader nested reduction case on the
-// fallback path: classification and strategy are preserved, but no transient
-// linalg carrier is materialized.
+// Verify that RaiseToLinalg keeps the broader nested reduction case memref
+// native: classification and strategy are preserved, but no transient linalg
+// carrier is materialized.
 
 // CHECK-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // CHECK: func.func @main

@@ -100,9 +100,8 @@ static bool isDepStructPointerLoad(LLVM::LoadOp loadOp) {
   int32_t penultimate = rawIndices[rawIndices.size() - 2];
   int32_t last = rawIndices.back();
 
-  /// The dependency pointer field moved from slot 2 in the legacy layout to
-  /// slot 1 in the current v2 layout. Accept both so the pass stays aligned
-  /// with older IR snapshots while recognizing the current lowering.
+  /// Current v2 lowering stores the dependency pointer field in slot 1. Slot 2
+  /// can still appear in archived IR snapshots consumed by debug tools.
   return penultimate == 0 && (last == 1 || last == 2);
 }
 

@@ -1,9 +1,8 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS --implicit-check-not=arts.atomic_add
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline sde-planning --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
 
 // Verify that SDE authors a target-neutral blocked distribution advisory for a
-// reduction loop with a strategy. ConvertSdeToArts materializes that plan as
-// concrete epoch/task IR with dependency-carried partial reduction DBs.
+// reduction loop with a strategy. Explicit reduction materialization before the
+// CODIR boundary is tracked in the migration plan.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
@@ -12,24 +11,7 @@
 // SDE: sde.su_iterate (%c0) to (%c128) step (%c1)
 // SDE-SAME: reduction_strategy(<atomic>)
 // SDE-SAME: classification(<reduction>)
-
-// ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
-// ARTS: func.func @main
-// ARTS: arts.db_alloc
-// ARTS-SAME: elementType(i32)
-// ARTS: arts.epoch
-// ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
-// ARTS: scf.for
-// ARTS: arts.db_acquire
-// ARTS: arts.edt <task> <intranode>
-// ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
-// ARTS: arts.db_ref
-// ARTS: scf.for
-// ARTS: arts.db_ref
-// ARTS: memref.store
-// ARTS: arts.db_free
-// ARTS-NOT: arts.for
-// ARTS-NOT: sde.
+// SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   omp.declare_reduction @add_i32 : i32 init {

@@ -13,7 +13,8 @@ shift 2
 mkdir -p "$outdir"
 
 stages=(
-  openmp-to-arts
+  sde-planning
+  codir-to-arts
   post-db-refinement
   pre-lowering
 )

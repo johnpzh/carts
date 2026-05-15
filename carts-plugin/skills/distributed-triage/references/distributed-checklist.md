@@ -14,9 +14,10 @@ Use this checklist when a workload fails only with multiple nodes or `--distribu
 
 Inspect these stage boundaries in order:
 
-1. `openmp-to-arts`
-2. `post-db-refinement`
-3. `pre-lowering`
+1. `sde-planning`
+2. `codir-to-arts`
+3. `post-db-refinement`
+4. `pre-lowering`
 
 Look for:
 

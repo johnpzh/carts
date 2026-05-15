@@ -6,7 +6,8 @@ cd "$(git rev-parse --show-toplevel)"
 git grep -n \
   -e 'triage-benchmark' \
   -e 'carts-benchmarks' \
-  -e 'ConvertSdeToArts' \
+  -e 'ConvertSdeToCodir' \
+  -e 'ConvertCodirToArts' \
   -e 'DistributionPlanning' \
   -e 'ReductionStrategy' \
   -e 'DbTransforms' \

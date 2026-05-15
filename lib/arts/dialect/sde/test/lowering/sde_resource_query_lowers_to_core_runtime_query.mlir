@@ -1,10 +1,9 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // SDE may express symbolic grain arithmetic with target-neutral resource
-// queries. ConvertSdeToArts is the boundary that binds the query to the ARTS
-// runtime mechanism.
+// queries. CODIR-to-ARTS binds those queries to the ARTS runtime mechanism.
 
-// CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: func.func @resource_query
 // CHECK: %[[WORKERS_I32:.*]] = arts.runtime_query <total_workers> -> i32
 // CHECK: %[[WORKERS:.*]] = arith.index_cast %[[WORKERS_I32]] : i32 to index

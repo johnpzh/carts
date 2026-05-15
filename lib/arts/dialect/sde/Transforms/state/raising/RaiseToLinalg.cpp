@@ -3,9 +3,9 @@
 ///
 /// Raises supported perfectly nested, affine `sde.su_iterate` bodies to
 /// transient `linalg.generic` carriers when the body is structurally
-/// compatible. The pass also stamps an SDE-owned loop classification on the
-/// source op so `ConvertSdeToArts` can recover contracts for loops that still
-/// stay on the classification-only fallback path.
+/// compatible. The pass stamps SDE-owned loop classification on the source op
+/// so later SDE planning and CODIR materialization preserve the semantic
+/// contract without rediscovering loop intent downstream.
 ///
 /// Recognized patterns:
 ///   - elementwise : all-parallel iterators, identity/permutation maps

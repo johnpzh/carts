@@ -1,9 +1,9 @@
-// RUN: not %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline sde-to-codir --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
 
 // SDE owns task-dependency pattern classification. A two-dimensional task nest
 // with one element out-dependency and two element in-dependencies on the same
-// source is stamped as a wavefront. Until SDE lowers task deps into
-// mu_token/codelet form, the SDE/Core boundary rejects the raw deps.
+// source is stamped as a wavefront. CODIR then owns the task/codelet boundary
+// and preserves that classification on the codelet contract.
 
 // SDE-LABEL: // -----// IR Dump After ConvertOpenMPToSde (convert-openmp-to-sde) //----- //
 // SDE: func.func @task_wavefront
@@ -15,7 +15,11 @@
 // SDE-SAME: size[
 // SDE: sde.cu_task deps(
 // SDE: } {pattern = #sde.pattern<wavefront_2d>}
-// SDE: has unmaterialized sde.mu_dep at the SDE/Core boundary
+// SDE-LABEL: // -----// IR Dump After ConvertSdeToCodir (convert-sde-to-codir) //----- //
+// SDE: codir.codelet deps(
+// SDE-SAME: : memref<?xi32>
+// SDE-SAME: dep_modes = [#codir.access_mode<readwrite>, #codir.access_mode<readwrite>, #codir.access_mode<readwrite>, #codir.access_mode<readwrite>]
+// SDE-SAME: pattern = #codir.pattern<wavefront_2d>
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @task_wavefront(%A: memref<?xi32>, %N: index) {

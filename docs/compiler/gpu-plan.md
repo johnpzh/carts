@@ -1,5 +1,16 @@
 # GPU Support Plan: NVIDIA + AMD
 
+## Dialect Ownership
+
+GPU work maps onto the four-layer split (`Polygeist -> sde -> codir -> arts -> arts-rt -> LLVM`) as follows:
+
+- **SDE**: GPU eligibility detection, target hint authoring, and MU/CU/SU planning for GPU codelets (trip count, footprint, embarrassingly-parallel proofs, GPU target attrs).
+- **CODIR**: GPU codelet isolation (deps/params/body) following the same `IsolatedFromAbove` ABI rules as CPU codelets; thread-indexing ops live in the codelet body.
+- **ARTS**: `arts.gpu_edt` and any GPU-specific DB/EDT/epoch objects, including `gpu_launch_config` attributes and DB transfer orchestration.
+- **ARTS-RT**: GPU runtime ABI (kernel-launch packing, device-pointer handling, `arts_edt_create_gpu` lowering). The source tree currently exposes these layers under `lib/arts/dialect/core/` (`arts`) and `lib/arts/dialect/rt/` (`arts-rt`) during the in-progress rename.
+
+The pass tables below describe the concrete passes that implement each layer's GPU responsibilities.
+
 ## How ARTS GPU Actually Works
 
 Understanding this is the prerequisite for everything else.

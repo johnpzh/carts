@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Jacobi benchmark loops lower as adjacent SDE stages in an outer timestep
 // loop, with the second phase guarded by the timestep IV rather than separated
@@ -23,7 +23,7 @@
 // CHECK-SAME: pattern = #sde.pattern<stencil_tiling_nd>
 // CHECK-NOT: asyncStrategy
 // CHECK-NOT: repetitionStructure
-// CHECK-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: func.func @jacobi_if_guarded_pair
 // CHECK: depPattern = #arts.dep_pattern<stencil_tiling_nd>
 // CHECK-NOT: planAsyncStrategy

@@ -16,7 +16,8 @@ Read `references/multinode.md` before debugging distributed behavior.
    ```
 3. Inspect distributed stages:
    ```bash
-   dekk carts compile <file> -O3 --arts-config <cfg> --pipeline=openmp-to-arts
+   dekk carts compile <file> -O3 --arts-config <cfg> --pipeline=sde-planning
+   dekk carts compile <file> -O3 --arts-config <cfg> --pipeline=codir-to-arts
    dekk carts compile <file> -O3 --arts-config <cfg> --pipeline=post-db-refinement
    dekk carts compile <file> -O3 --arts-config <cfg> --pipeline=pre-lowering
    ```

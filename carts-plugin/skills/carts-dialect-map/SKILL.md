@@ -1,6 +1,6 @@
 ---
 name: carts-dialect-map
-description: Use when locating CARTS dialect code, tracing SDE/Core/RT op lifecycle, choosing where a compiler change belongs, or checking dialect boundary invariants.
+description: Use when locating CARTS dialect code, tracing SDE/CODIR/ARTS/ARTS-RT op lifecycle, choosing where a compiler change belongs, or checking dialect boundary invariants.
 ---
 
 # CARTS Dialect Map

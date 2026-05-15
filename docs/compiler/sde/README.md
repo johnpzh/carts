@@ -34,7 +34,7 @@ optimizations are listed in
 
 ## Current SDE Spine
 
-The live SDE pass order is inside `openmp-to-arts`:
+The live SDE pass order is inside `sde-planning`:
 
 ```text
 ConvertOpenMPToSde
@@ -51,24 +51,14 @@ IterationSpaceDecomposition
 BarrierElimination
 VerifySdeCpsPlan
 MemoryUnitMaterialization
-ConvertSdeToArts
-VerifySdeLowered
-VerifyCoreObjectsOnly
-DeadCodeElimination
-CSE
-VerifyEdtCreated
 ```
 
 Use `dekk carts pipeline --json` and `tools/compile/Compile.cpp` as the source
 of truth when pass order matters.
 
-The target spine splits the boundary:
+The live boundary then continues through CODIR and ARTS:
 
 ```text
-ConvertOpenMPToSde
-PatternAnalysis
-SDE transforms
-MemoryUnitMaterialization
 ConvertSdeToCodir
 VerifyCodir
 ConvertCodirToArts
@@ -132,13 +122,13 @@ token-local views, and body rewrites. `ConvertCodirToArts` then turns that
 explicit codelet contract into DB storage, DB acquires, EDTs, synchronization,
 distribution, dependency-pattern, and resource-query contracts.
 
-For the current migration state, `ConvertSdeToArts` still performs direct
-materialization and `CreateDbs` may still bridge legacy raw-memref
-`su_iterate` form using SDE physical plan attrs. There is no ARTS
-dependency-marker op. Task dependency declarations that remain as `sde.mu_dep`
-at the boundary are rejected; SDE must turn those facts into memref-level MU
-tokens and CODIR codelets before ARTS. `arts` and `arts-rt` may materialize or
-validate that lowered contract, but they must not invent partition policy late.
+For the current migration state, `CreateDbs` may still bridge ordinary raw
+memrefs that have not been promoted into MU/token/codelet storage. There is no
+ARTS dependency-marker op. Task dependency declarations that remain as
+`sde.mu_dep` at the boundary are rejected; SDE must turn those facts into
+memref-level MU tokens and CODIR codelets before ARTS. `arts` and `arts-rt` may
+materialize or validate that lowered contract, but they must not invent
+partition policy late.
 
 ## Heuristic Analysis Spine
 
@@ -168,12 +158,12 @@ after CPS/barrier planning and before the dialect boundary, so downstream
 materialization can lower MU storage directly to DB storage instead of making
 ARTS rediscover those roots from raw memrefs.
 
-For simple owner-slice plans, the current SDE/ARTS boundary consumes the SDE
-classification and owner-slice facts directly: it creates block-partitioned
-acquires and keeps task bodies on full MU payload coordinates. Direct
-MU/token/codelet lowering follows the same rule: `mu_alloc` lowers to DB
-storage, `mu_token` lowers to `db_acquire`, and slice offsets are folded into
-the cloned memref indices instead of creating `memref.subview` on DB payloads.
+For simple owner-slice plans, the current SDE/CODIR/ARTS boundary consumes the
+SDE classification and owner-slice facts directly: it creates
+block-partitioned acquires and keeps task bodies on explicit CODIR-local
+payload coordinates. MU storage may lower to DB storage at the CODIR-to-ARTS
+boundary, but codelet-shaped token work must route through CODIR before ARTS
+materializes `db_acquire`/`edt` objects.
 More complex ND, halo, and strided cases still require the full SDE
 token/CODIR rewrite before their raw-memref bridge paths can be retired.
 
@@ -181,9 +171,10 @@ token/CODIR rewrite before their raw-memref bridge paths can be retired.
 
 The optimization direction is memref-native. MU allocation should allocate
 memrefs, MU tokens should carry memref access windows, and codelet deps should
-stay at the memref/token level. Tensor raising/lowering paths are legacy
-support and should be removed after the memref MU/token/CODIR path covers task
-deps, reductions, codelet-local state, and all maintained benchmark cases.
+stay at the memref/token level. Tensor raising/lowering paths are non-default
+transitional implementation and should be removed after the memref
+MU/token/CODIR path covers task deps, reductions, codelet-local state, and all
+maintained benchmark cases.
 
 Candidate removal targets include:
 
@@ -192,15 +183,16 @@ Candidate removal targets include:
 - `LowerToMemref`
 - tensor-only codelet cleanup utilities
 
-Do not keep a tensor path as a fallback once the memref path is complete.
+Do not keep a tensor carrier path once the memref path is complete.
 
 ## Verification Rule
 
 Every new optimization needs:
 
-- SDE lit coverage for positive planning and negative fallback.
-- CODIR/ARTS coverage proving direct MU/token/codelet lowering for tiled paths;
-  `CreateDbs` may cover only coarse raw memrefs during the transition.
+- SDE lit coverage for positive planning and negative boundary diagnostics.
+- CODIR/ARTS coverage proving MU storage and token-local codelet materialization
+  for tiled paths; `CreateDbs` may cover only coarse raw memrefs during the
+  transition.
 - Focused large/64 benchmark evidence for the affected family.
 - `dekk carts test`, plus e2e or benchmark sweeps when shared lowering,
   analysis, or runtime shape changes.

@@ -26,8 +26,8 @@
 /// Responsibility split:
 /// - SDE chooses structured patterns, task grain, owner dimensions, physical
 ///   block shapes, and task element slices.
-/// - The target SDE path emits MU tokens/codelets that lower directly to DB
-/// ops.
+/// - The target SDE/CODIR path emits explicit MU storage and codelet
+///   deps/params that materialize to DB/EDT ops before this raw bridge.
 /// - CreateDbs materializes only remaining coarse raw EDT memref captures into
 ///   Core DB ops. Tiled/block-local access rewriting is an SDE MU/token
 ///   responsibility and must not be rediscovered here.
@@ -392,9 +392,6 @@ void CreateDbsPass::cleanupAndFinalize() {
   for (Operation *op : opsToRemove)
     removalMgr.markForRemoval(op);
   removalMgr.removeAllMarked(module, /*recursive=*/true);
-
-  /// Re-enable verifier on all EDT ops after structural rewrites complete.
-  module.walk([](EdtOp edt) { edt.removeNoVerifyAttr(); });
 
   DominanceInfo domInfo(module);
   arts::simplifyIR(module, domInfo);
@@ -931,15 +928,15 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
   ARTS_DEBUG(" - Creating DbAcquire operations for "
              << externalDeps.size() << " external dependencies");
 
-  /// Accumulate dependency operands to set on the EDT. Direct SDE MU/token
-  /// lowering may have already wired DB-backed dependencies before this pass;
-  /// preserve those while appending dependencies that this raw bridge
-  /// materializes from ordinary memrefs.
+  /// Accumulate dependency operands to set on the EDT. CODIR-to-ARTS lowering
+  /// may have already wired DB-backed dependencies before this pass; preserve
+  /// those while appending dependencies that this raw bridge materializes from
+  /// ordinary memrefs.
   SmallVector<Value> dependencyOperands(edt.getDependencies().begin(),
                                         edt.getDependencies().end());
 
-  /// One raw bridge acquire per allocation per EDT. Canonical SDE tokens
-  /// already lower directly in ConvertSdeToArts and do not reach this path.
+  /// One raw bridge acquire per allocation per EDT. Canonical SDE tokens are
+  /// consumed by the CODIR boundary and do not reach this path.
   DenseSet<Operation *> processedAllocs;
 
   /// For each external value, create acquire and release operations

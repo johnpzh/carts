@@ -46,7 +46,7 @@ for f in /tmp/stages/*.mlir; do
 done
 ```
 
-## 16 Core Pipeline Stages (Canonical Order)
+## 13 Core Pipeline Stages (Canonical Order)
 
 Canonical source: `tools/compile/Compile.cpp` (`getStageRegistry()` + pass arrays).
 Additional epilogue stages (`post-o3-opt`, `llvm-ir-emission`) run
@@ -56,27 +56,29 @@ conditionally when requested.
 |---|-------|-----------------|
 | 1 | raise-memref-dimensionality | Are memrefs normalized? |
 | 2 | initial-cleanup | Is dead code removed? |
-| 3 | openmp-to-arts | OMP → SDE → ARTS conversion correct? (contains the full SDE lifecycle — RaiseToLinalg, LoopInterchange, DistributionPlanning, ConvertSdeToArts, etc.) |
-| 4 | edt-transforms | Is EDT structure optimized? |
-| 5 | create-dbs | Are DataBlock allocations created? |
-| 6 | db-opt | Are DB access modes correct? |
-| 7 | post-db-refinement | Are contracts validated and DB/EDT refinements correct? |
-| 8 | late-concurrency-cleanup | Is hoisting/sinking correct? |
-| 9 | epochs | Are epochs created correctly? |
-| 10 | pre-lowering | Are EDTs/DBs/epochs lowered to RT calls? |
-| 11 | arts-to-llvm | Is final LLVM IR correct? |
+| 3 | sde-planning | Did OMP become the right SDE plan? |
+| 4 | sde-to-codir | Are SDE codelets isolated with explicit CODIR deps/params? |
+| 5 | codir-to-arts | Did CODIR materialize the intended ARTS DB/acquire/EDT objects? |
+| 6 | edt-transforms | Is EDT structure optimized? |
+| 7 | create-dbs | Are coarse raw DataBlock allocations created only where allowed? |
+| 8 | db-opt | Are DB access modes correct? |
+| 9 | post-db-refinement | Are contracts validated and DB/EDT refinements correct? |
+| 10 | late-concurrency-cleanup | Is hoisting/sinking correct? |
+| 11 | epochs | Are epochs created correctly? |
+| 12 | pre-lowering | Are EDTs/DBs/epochs lowered to RT calls? |
+| 13 | arts-to-llvm | Is final LLVM IR correct? |
 
 ## Bisection Strategy by Symptom
 
 | Symptom | Start Checking At |
 |---------|------------------|
-| Wrong array values | create-dbs (5), db-opt (6), then post-db-refinement (7) |
-| Missing parallelism | openmp-to-arts (3), then edt-transforms (4) |
-| Deadlock/hang | epochs (9), then pre-lowering (10) |
-| Wrong loop bounds | openmp-to-arts (3), then late-concurrency-cleanup (8) |
-| Missing DB | create-dbs (5), then db-opt (6) |
-| Pattern/semantic issue | openmp-to-arts (3) — inspect SDE sub-passes via `--arts-debug=<pass>` |
-| LLVM crash | arts-to-llvm (11), then pre-lowering (10) |
+| Wrong array values | codir-to-arts (5), create-dbs (7), db-opt (8), then post-db-refinement (9) |
+| Missing parallelism | sde-planning (3), sde-to-codir (4), codir-to-arts (5), then edt-transforms (6) |
+| Deadlock/hang | epochs (11), then pre-lowering (12) |
+| Wrong loop bounds | sde-planning (3), then late-concurrency-cleanup (10) |
+| Missing DB | codir-to-arts (5), create-dbs (7), then db-opt (8) |
+| Pattern/semantic issue | sde-planning (3) — inspect SDE sub-passes via `--arts-debug=<pass>` |
+| LLVM crash | arts-to-llvm (13), then pre-lowering (12) |
 
 ## What to Look for in Diffs
 

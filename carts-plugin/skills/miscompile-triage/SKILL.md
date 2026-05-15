@@ -42,7 +42,7 @@ Read these before guessing:
 4. Bisect the pipeline.
    - Use `dekk carts pipeline --json` for the stage list.
    - Use `dekk carts compile <file>.mlir --pipeline=<stage>` and `--all-pipelines -o DIR/`.
-   - Focus on: `openmp-to-arts` -> `edt-transforms` -> `create-dbs` -> `db-opt` -> `post-db-refinement` -> `pre-lowering`.
+   - Focus on: `sde-planning` -> `sde-to-codir` -> `codir-to-arts` -> `edt-transforms` -> `create-dbs` -> `db-opt` -> `post-db-refinement` -> `pre-lowering`.
 5. Inspect semantic contracts before low-level codegen.
    - `dekk carts compile <file> --diagnose --diagnose-output diag.json -O3`
    - Check `LoweringContractInfo`, `distribution_*`, partition modes, full-range vs coarse, and `preserve_access_mode`.
@@ -66,7 +66,8 @@ For benchmark kernels, also consult `carts-benchmark-triage`.
 - `docs/heuristics/partitioning.md`
 - `docs/heuristics/distribution.md`
 - `tools/compile/Compile.cpp`
-- `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
+- `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
+- `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - `lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp`
 - `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
 - `lib/arts/dialect/sde/Transforms/effect/scheduling/ReductionStrategy.cpp`

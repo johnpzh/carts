@@ -81,7 +81,6 @@ createBarrierEliminationPass(SDECostModel *costModel = nullptr);
 // --- Conversion passes ---
 std::unique_ptr<Pass>
 createConvertOpenMPToSdePass(SDECostModel *costModel = nullptr);
-std::unique_ptr<Pass> createConvertSdeToArtsPass();
 
 // --- Verification ---
 std::unique_ptr<Pass> createVerifySdeCpsPlanPass();

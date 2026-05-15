@@ -60,7 +60,7 @@ def DeadCodeElimination : Pass<"arts-dce", "mlir::ModuleOp"> {
     - Removes allocas with no remaining uses
     - Runs SymbolDCE for dead functions and globals
 
-    This is particularly useful after openmp-to-arts conversion where OMP
+    This is particularly useful after OpenMP-to-SDE conversion where OMP
     dependency proxy allocas become unused.
   }];
   let dependentDialects = ["::mlir::memref::MemRefDialect"];
@@ -290,8 +290,8 @@ def BlockLoopStripMining : Pass<"block-stripmine", "mlir::func::FuncOp"> {
   let summary = "Strip-mine block-partitioned loops to remove div/rem overhead";
   let description = [{Matches block-partitioned loop indexing patterns and
                       rewrites them into block-local loops that reuse db_ref.
-                      The legacy path handles innermost 1-D div/rem loops,
-                      while the neighborhood-aware path can also rewrite
+                      The 1-D path handles innermost div/rem loops, while the
+                      neighborhood-aware path can also rewrite
                       enclosing stencil loops that carry block-neighbor
                       indexing state.}];
   let dependentDialects = [
@@ -344,18 +344,17 @@ def VerifyEpochCreated : Pass<"verify-epoch-created", "mlir::ModuleOp"> {
   let constructor = "mlir::arts::createVerifyEpochCreatedPass()";
 }
 
-def VerifyCoreObjectsOnly : Pass<"verify-core-objects-only", "mlir::ModuleOp"> {
-  let summary = "Verify the SDE/Core boundary contains only Core ARTS objects";
+def VerifyArtsObjectsOnly : Pass<"verify-arts-objects-only", "mlir::ModuleOp"> {
+  let summary = "Verify the CODIR-to-ARTS boundary contains only ARTS objects";
   let description = [{
     Rejects IR that violates the target dialect layering contract: no residual
-    SDE operations may remain at the SDE/Core boundary after direct
-    materialization.
+    SDE or OpenMP operations may remain after CODIR-to-ARTS materialization.
   }];
   let dependentDialects = [
     "::mlir::arts::ArtsDialect",
     "::mlir::carts::sde::CartsSdeDialect"
   ];
-  let constructor = "mlir::arts::createVerifyCoreObjectsOnlyPass()";
+  let constructor = "mlir::arts::createVerifyArtsObjectsOnlyPass()";
 }
 
 def VerifyPreLowered : Pass<"verify-pre-lowered", "mlir::ModuleOp"> {

@@ -1,5 +1,5 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline openmp-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 
 // Verify that two consecutive elementwise loops with disjoint write-sets
 // are fused into a single elementwise_pipeline loop under the
@@ -17,10 +17,10 @@
 // SDE: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) nowait classification(<elementwise_pipeline>) {
 // SDE-NOT: classification(<elementwise>)
 
-// After ConvertSdeToArts: single fused Core task dispatch with both computations.
-// ARTS-LABEL: // -----// IR Dump After ConvertSdeToArts (convert-sde-to-arts) //----- //
+// After ConvertCodirToArts: single fused Core task dispatch with both computations.
+// ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.epoch
+// ARTS: arts.edt <task>
 // ARTS: arts.edt <task>
 // ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: depPattern = #arts.dep_pattern<elementwise_pipeline>

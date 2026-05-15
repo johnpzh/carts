@@ -4,7 +4,8 @@ Primary files for distributed ownership and multi-node routing:
 
 - `docs/heuristics/distribution.md`
 - `lib/arts/dialect/core/Transforms/DbDistributedOwnership.cpp`
-- `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
+- `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
+- `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
 - `lib/arts/dialect/core/Conversion/ArtsToLLVM/ConvertArtsToLLVM.cpp`
 - `lib/arts/codegen/Codegen.cpp`

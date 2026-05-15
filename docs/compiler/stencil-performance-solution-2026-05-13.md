@@ -1,5 +1,7 @@
 # Stencil Performance Solution - 2026-05-13
 
+> **Terminology note (2026-05-15):** This document predates the four-layer rename. Read references to "Core" as the current `arts` dialect (source tree still under `lib/arts/dialect/core/`) and "RT" as `arts-rt` (source tree under `lib/arts/dialect/rt/`). Ownership claims should be interpreted against the four-layer split documented in [`master-plan.md`](./master-plan.md).
+
 This note records the proposed production path for making the stencil-like
 benchmark family performance-credible at `large`, 64 threads, and 1 node after
 the correctness-clean sweep in
@@ -9,10 +11,11 @@ The fixes below keep the dialect boundary explicit:
 
 - SDE owns stencil recognition, legality proofs, owner dimensions, halo/window
   contracts, task grain, barrier/timestep intent, and physical layout policy.
-- Core owns ARTS DB/EDT/dependency/epoch materialization and may refine the
-  SDE-authored plan without inventing OpenMP semantics.
-- RT/runtime owns low-level launch and dependency descriptor overhead only after
-  the SDE/Core task shape is correct.
+- CODIR/ARTS own codelet isolation plus ARTS DB/EDT/dependency/epoch
+  materialization and may refine the SDE-authored plan without inventing
+  OpenMP semantics.
+- ARTS-RT/runtime owns low-level launch and dependency descriptor overhead only
+  after the SDE/CODIR/ARTS task shape is correct.
 
 ## Evidence
 
@@ -69,8 +72,8 @@ This is the key shape problem:
 
 2. **Core can widen or drop stencil windows before lowering.**
 
-   direct materialization can compute coarse read-only fallback before
-   combining the full loop contract, and the fallback can skip contract
+   direct materialization can compute a coarse read-only bridge before
+   combining the full loop contract, and the coarse bridge can skip contract
    projection. Rank-mismatch paths can preserve parent full ranges for read-only
    acquires instead of worker-local stencil windows.
 
@@ -128,7 +131,7 @@ dekk carts benchmarks run polybench/jacobi2d polybench/convolution-2d \
 These are the lowest-risk production fixes because they preserve existing SDE
 contracts instead of changing stencil semantics.
 
-1. **Resolve contracts before coarse-read fallback in direct materialization.**
+1. **Resolve contracts before coarse-read bridging in direct materialization.**
 
    Move loop/acquire contract resolution ahead of `forceCoarseReadOnlyDep`.
    Explicit stencil, block-halo, owner-dim, or `narrowable_dep` contracts must
@@ -161,7 +164,7 @@ contracts instead of changing stencil semantics.
    `partition_indices_segments`. Stencil reads with offsets/sizes-only segment
    metadata must not collapse to one logical entry.
 
-6. **Narrow tiny-table coarse fallback.**
+6. **Narrow tiny-table coarse bridging.**
 
    Keep true coefficient tables coarse, but do not treat every small stencil
    allocation as a table. Data DBs with owner/halo contracts should still get
@@ -202,8 +205,10 @@ SDE should promote the inner spatial loop dimensions into the owner-task plan:
 - reject in-place Seidel-style self-read unless a wavefront plan proves
   legality.
 
-Core should then materialize exactly that plan through `CreateDbs` and direct
-SDE-to-Core materialization; it should not rediscover stencil geometry.
+CODIR/ARTS should then materialize exactly that plan through the
+`sde-to-codir` and `codir-to-arts` boundary, using the coarse `CreateDbs`
+bridge only for residual raw memref compatibility; ARTS should not rediscover
+stencil geometry.
 
 Expected impact:
 

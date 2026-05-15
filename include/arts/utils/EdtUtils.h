@@ -152,21 +152,26 @@ public:
 ///===----------------------------------------------------------------------===//
 
 /// Manages EDT environment classification: captured values are partitioned
-/// into scalar parameters, constants, pointer-bearing DB handles, and
-/// dependencies. This is the canonical helper for passes that reason about
-/// what an EDT captures from its enclosing scope.
+/// into explicit scalar parameters, constants, pointer-bearing DB handles, and
+/// dependencies. Direct scalar captures are not recovered here; they must
+/// already be listed on `arts.edt params(...)`.
 class EdtEnvManager {
 public:
   EdtEnvManager(EdtOp edtOp) : edtOp(edtOp) { analyze(); }
 
   void analyze() {
-    EdtUtils::analyzeCapturedValues(edtOp, capturedValues, parameters,
+    llvm::SetVector<Value> uniqueParameters;
+    for (Value param : edtOp.getParams())
+      parameters.push_back(param);
+    for (Value param : parameters)
+      uniqueParameters.insert(param);
+    EdtUtils::analyzeCapturedValues(edtOp, capturedValues, uniqueParameters,
                                     constants, dbHandles);
     for (Value operand : edtOp.getDependencies())
       deps.insert(operand);
   }
 
-  ArrayRef<Value> getParameters() const { return parameters.getArrayRef(); }
+  ArrayRef<Value> getParameters() const { return parameters; }
   ArrayRef<Value> getConstants() const { return constants.getArrayRef(); }
   ArrayRef<Value> getCapturedValues() const {
     return capturedValues.getArrayRef();
@@ -180,7 +185,8 @@ public:
 
 private:
   EdtOp edtOp;
-  SetVector<Value> capturedValues, parameters, constants, deps, dbHandles;
+  SmallVector<Value> parameters;
+  SetVector<Value> capturedValues, constants, deps, dbHandles;
   DenseMap<Value, unsigned> valueToPackIndex;
 };
 

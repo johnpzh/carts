@@ -12,7 +12,8 @@ High-value files by failure class.
 ## Miscompile / Semantic Drift
 
 - `lib/arts/dialect/sde/Transforms/CollectMetadata.cpp`
-- `lib/arts/dialect/core/Conversion/SdeToArts/SdeToArtsPatterns.cpp`
+- `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
+- `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - `lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp`
 - `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
 - `lib/arts/utils/LoweringContractUtils.cpp`

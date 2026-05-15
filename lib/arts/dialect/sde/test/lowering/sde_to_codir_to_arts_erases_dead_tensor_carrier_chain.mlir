@@ -1,7 +1,7 @@
-// RUN: not %carts-compile %s --O3 --arts-config %arts_config --start-from openmp-to-arts --pipeline openmp-to-arts 2>&1 | %FileCheck %s
+// RUN: not %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts 2>&1 | %FileCheck %s
 
-// Tensor-carrier cleanup is retired with the tensor fallback. The legacy
-// carrier op must stay unavailable instead of reaching SDE/Core lowering.
+// The removed tensor-carrier op must stay unavailable instead of reaching
+// CODIR-to-ARTS lowering.
 
 // CHECK: error: custom op 'sde.mu_memref_to_tensor' is unknown
 

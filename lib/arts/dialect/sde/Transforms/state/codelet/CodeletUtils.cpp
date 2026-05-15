@@ -82,6 +82,11 @@ static bool planExternalValue(Value value,
     return true;
   }
 
+  if (isDirectCaptureType(value.getType())) {
+    addDirectCapture(value, plan);
+    return true;
+  }
+
   Operation *defOp = value.getDefiningOp();
   if (defOp && isMemoryEffectFree(defOp)) {
     DenseSet<Value> visiting;
@@ -92,11 +97,6 @@ static bool planExternalValue(Value value,
       addPureExternal(value, plan);
       return true;
     }
-  }
-
-  if (isDirectCaptureType(value.getType())) {
-    addDirectCapture(value, plan);
-    return true;
   }
 
   return false;

@@ -21,23 +21,28 @@ by `dekk carts pipeline --json`.
 
 Important current names:
 
-- `openmp-to-arts` contains SDE planning and `ConvertSdeToArts`.
-- `create-dbs` runs the raw-memref compatibility DB bridge.
+- `sde-planning` is the canonical stage name for OpenMP-to-SDE conversion and
+  SDE planning.
+- `sde-to-codir` materializes SDE codelet plans as isolated CODIR codelets.
+- `codir-to-arts` materializes CODIR codelets as ARTS DB/EDT objects and
+  rejects any SDE operation that survived `sde-to-codir`.
+- `create-dbs` runs remaining raw-memref DB materialization. Core raw DB
+  indexers have been removed; only coarse whole-storage materialization
+  remains while direct CODIR coverage is completed.
 - `pre-lowering` contains DB, EDT, and epoch lowering.
 - Source paths still use `lib/arts/dialect/core`, `lib/arts/dialect/sde`, and
   `lib/arts/dialect/rt`.
 - Target source paths are staged under `include/carts/dialect/...` and
   `lib/carts/dialect/...`. CODIR is the first build-visible target dialect
   skeleton: `codir.codelet` and `codir.yield` parse and verify in the
-  `carts/dialect/codir` tree. The placeholder `convert-sde-to-codir`,
-  `verify-codir`, and `convert-codir-to-arts` passes are registered for focused
-  pass-pipeline tests. `verify-codir` owns the first CODIR-only operand-shape
-  checks: deps are memory dependencies with one access-mode entry per dep,
-  params are scalar values, block args mirror deps then params, and yielded
-  values are scalar. Lowering behavior still routes through the current direct
-  SDE-to-ARTS compatibility conversion, but `convert-sde-to-codir` has focused
-  `sde.cu_codelet` smoke conversions for whole-storage MU tokens and sliced
-  token-local views represented as CODIR dep memrefs.
+  `carts/dialect/codir` tree. The `convert-sde-to-codir`,
+  `codir-codelet-opt`, `verify-codir`, and `convert-codir-to-arts` passes are
+  in the default staged pipeline.
+  `verify-codir` owns CODIR-only operand-shape checks: deps are memory
+  dependencies with one access-mode entry per dep, params are scalar values,
+  block args mirror deps then params, and yielded values are scalar. Production
+  codelet lowering no longer routes directly from SDE to ARTS: `sde.cu_codelet`
+  is consumed by CODIR before ARTS DB acquire and EDT creation.
 
 ## Target Contract
 
@@ -66,11 +71,11 @@ Exit gate:
 
 ### Phase 2: CODIR Skeleton
 
-- Add minimal CODIR dialect registration.
-- Add placeholder pass declarations for SDE-to-CODIR, CODIR verification, and
-  CODIR-to-ARTS.
-- Keep behavior identical by routing unsupported paths through the current
-  direct conversion until real CODIR lowering exists.
+Status: complete.
+
+- Minimal CODIR dialect registration is present.
+- SDE-to-CODIR, CODIR verification, and CODIR-to-ARTS passes are registered.
+- Focused CODIR parsing, verification, and boundary smoke tests exist.
 
 Exit gate:
 
@@ -80,19 +85,26 @@ Exit gate:
 
 ### Phase 3: Boundary Split
 
-- Move transitional `sde.cu_codelet` lowering through CODIR.
-- Split `ConvertSdeToArts` into:
-  - SDE-to-CODIR plan materialization;
-  - CODIR-to-ARTS object materialization.
-- Rename verification entry points conceptually:
-  - `VerifyCodir`;
-  - `VerifyArtsObjectsOnly`.
+Status: production codelet path complete; residual cleanup active.
+
+- The default codelet route is now `sde-planning`, `sde-to-codir`, then
+  `codir-to-arts`.
+- `convert-sde-to-codir` consumes `sde.cu_codelet` and materializes explicit
+  CODIR dependencies, scalar params, and token-local memref views.
+- `codir-codelet-opt` performs CODIR-owned cleanup of isolated codelet bodies
+  after token-local rematerialization and before `verify-codir`.
+- `convert-codir-to-arts` lowers CODIR deps and codelet bodies to ARTS
+  `db_acquire` and `edt` objects.
+- Direct SDE-to-ARTS lowering is no longer part of the live compiler pipeline.
+  Codelet-shaped work must pass through `convert-sde-to-codir` and
+  `convert-codir-to-arts`; leftovers are boundary errors.
+- `VerifyCodir` and `VerifyArtsObjectsOnly` are wired around the boundary.
 
 Exit gate:
 
 - focused codelet tests pass through the split;
-- existing SDE-to-ARTS tests are either migrated or explicitly marked as
-  compatibility tests.
+- codelet tests cover SDE-to-CODIR and CODIR-to-ARTS; historical SDE-to-ARTS
+  tests are removed or rewritten as strict boundary negative tests.
 
 ### Phase 4: Source Namespace Cleanup
 
@@ -102,8 +114,7 @@ Exit gate:
 
 Exit gate:
 
-- no stale docs or generated resources refer to old conceptual ownership except
-  when describing current source-tree compatibility.
+- no stale docs or generated resources refer to old conceptual ownership.
 
 ## Risks
 

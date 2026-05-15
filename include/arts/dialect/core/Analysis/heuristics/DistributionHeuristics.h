@@ -7,8 +7,8 @@
 /// distribution-strategy selection, worker-topology defaults, and loop
 /// coarsening hints.
 ///
-/// Lowering-time SSA/runtime materialization for those policies is performed by
-/// the SDE-to-Core materializer.
+/// Lowering-time SSA/runtime materialization for those policies is performed
+/// across the SDE-to-CODIR and CODIR-to-ARTS materialization boundary.
 ///
 ///===----------------------------------------------------------------------===///
 /// Strategies
