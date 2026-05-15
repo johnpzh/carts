@@ -202,6 +202,12 @@ Important current facts:
 | [`performance-large64.md`](./plans/performance-large64.md) | Recover and stabilize benchmark performance at large/64. | Maintained benchmarks are correctness-clean and classified as fast, competitive, or blocked with owner. |
 | [`verification-release.md`](./plans/verification-release.md) | Keep every migration phase testable and reversible by evidence. | Each milestone has focused lit, pipeline, e2e, and benchmark evidence. |
 
+For the M6 post-restructuring validation+optimization loop see the
+[M6](#m6-post-restructuring-validation--optimization-loop) milestone section
+below; it consumes evidence from `performance-large64.md` and routes each
+performance gap through the four-layer ownership model defined in
+[`benchmark-performance-goal.md`](./benchmark-performance-goal.md).
+
 ## Dependency Graph
 
 ```text
@@ -221,6 +227,11 @@ CODIR + EDT isolation
         |
         v
 Memref MU/CU/SU rewrite       (consumes codir.codelet body)
+        |
+        v
+Post-restructuring validation+optimization loop (M6)   (consumes M5 evidence,
+                                                        attributes perf gaps
+                                                        to owning dialect)
         |
         v
 ARTS materialization cleanup
@@ -247,7 +258,7 @@ The graph allows local implementation in parallel, but not semantic shortcuts:
 ### Milestone Index
 
 Top-level work queue. Each `M` corresponds to a Milestone section below. The
-Implementation Task Board (sections A–G) cross-cuts these by component and
+Implementation Task Board (sections A–H) cross-cuts these by component and
 each Task Board bullet is tagged with the milestones it advances.
 
 Status legend: `[x]` complete; `[~]` partial; `[ ]` not started.
@@ -299,6 +310,15 @@ Status legend: `[x]` complete; `[~]` partial; `[ ]` not started.
   checksum parity after SDE demotes unsupported physical storage attrs before
   the raw `CreateDbs` bridge. Remaining work is performance-only: several
   entries are still slower than the large/64 performance gate.
+- [ ] M6: post-restructuring validation + optimization loop. Drives the
+  remaining performance work to convergence using the four-layer ownership
+  model now that the M1 path/namespace/library refactor is in place. Re-run
+  samples + benchmarks, triage failures to the owning dialect (SDE / CODIR /
+  ARTS / ARTS-RT), apply the fix in that dialect, and iterate until every
+  maintained benchmark is fast or competitive (or blocked-with-owner-and-next-
+  action). Cross-references M5 perf evidence and
+  [`benchmark-performance-goal.md`](./benchmark-performance-goal.md) for the
+  per-dialect optimization decision tree.
 - Cross-cutting:
   - [ ] Verification gates ([`verification-release.md`](./plans/verification-release.md))
     track every milestone with focused lit, pipeline, e2e, and benchmark
@@ -524,6 +544,176 @@ Exit gate:
 - each benchmark is classified as fast, competitive, or blocked with an owning
   layer and next action.
 
+### M6: Post-Restructuring Validation + Optimization Loop
+
+Goal: prove the M1 restructuring (path rename, namespace migration, util
+hierarchy, library split) preserved end-to-end behavior, then drive every
+maintained sample and benchmark to a known-good state by attributing each
+remaining gap to its owning dialect (SDE / CODIR / ARTS / ARTS-RT) and
+fixing it there.
+
+This is a structured loop. The validation in **Phase A** is a one-shot
+sanity sweep that runs everything once. The fix-up in **Phases B-E** walks
+the inventory **one benchmark at a time** so each landing diff has a single
+attribution, a focused lit regression, and a benchmark rerun proving the
+gain. It cross-cuts M3 (memref/MU/CU/SU coverage) and M5 (large/64 perf
+gates) by giving those workstreams an explicit owning-dialect tag and a
+ranked work queue.
+
+**Inventory (all 27 samples and all 23 benchmarks must reach exit gate).**
+
+Samples (`dekk carts examples list` — runs via
+`dekk carts test --suite e2e`):
+
+```
+concurrent, convolution, deps, dotproduct, gemm, matrix, matrixmul,
+mixed_access, mixed_orientation, parallel, smith-waterman, stencil, task,
+array/chunks, array/deps,
+cholesky/dynamic, cholesky/static,
+jacobi/deps, jacobi/for,
+parallel_for/<entries>,
+reduction/<entries>,
+task_dep/<entries>,
+worksharing/<entries>
+```
+
+Benchmarks (`dekk carts benchmarks list`):
+
+```
+stream,
+kastors-jacobi/jacobi-for, kastors-jacobi/poisson-for,
+ml-kernels/activations, ml-kernels/batchnorm, ml-kernels/layernorm,
+ml-kernels/pooling,
+monte-carlo/ensemble,
+polybench/2mm, polybench/3mm, polybench/atax, polybench/bicg,
+polybench/convolution-2d, polybench/convolution-3d, polybench/correlation,
+polybench/gemm, polybench/jacobi2d, polybench/seidel-2d,
+seissol/volume-integral,
+specfem3d/stress, specfem3d/velocity,
+sw4lite/rhs4sg-base, sw4lite/vel4sg-base
+```
+
+The exit gate requires every entry on both lists to be classified `fast`,
+`competitive`, or `blocked-with-owner-and-next-action`. No entry is allowed
+to remain unattributed at milestone close.
+
+**Phase A — Validate (one-shot sanity sweep).**
+
+Run the full inventory once against HEAD to establish a post-restructuring
+baseline. Do not start any optimization work until Phase A is recorded.
+
+1. Lit suite: `dekk carts test` (must stay 163/163 vs the M1 baseline).
+2. Compile-and-run samples: `dekk carts test --suite e2e` (must stay 27/27).
+3. Maintained benchmark sweep, all 23 entries at once:
+   `dekk carts benchmarks run --size large --threads 64 --nodes 1 --trace
+   --results-dir .carts/outputs/benchmarks-m6-<YYYYMMDD>/`. (`benchmarks run`
+   with no entry-list defaults to the maintained sweep.)
+4. Distributed smoke test: the smallest benchmark that exercises
+   `--distributed-db` plus one multinode example, to confirm the namespace
+   migration didn't break the ownership-marking path.
+5. Refresh the classification table in
+   [`performance-large64.md`](./plans/performance-large64.md) with the new
+   sweep date, result directory, and per-entry status.
+
+**Phase B-E — Address one benchmark (or sample) at a time.**
+
+After Phase A, build a ranked work queue from the classification table.
+Order: highest-leverage first (a fix in a shared SDE/CODIR/ARTS pass that
+covers a benchmark family beats a one-off tweak). Then loop, picking ONE
+entry per iteration:
+
+1. **B (triage)**: capture per-stage IR for that one entry via
+   `dekk carts compile <input> --all-pipelines --diagnose
+   --diagnose-output ...`. If the entry FAILS, bisect to the first
+   divergent stage. If the entry PASSES but is slow, stage-diff against
+   the closest fast control.
+
+2. **C (attribute)**: map the divergent stage to the owning dialect using
+   the table below, and state the divergent fact in one sentence (e.g. "DB
+   shape `1x[4800x4800]` instead of `64x[75x4800]`").
+
+   Stage → dialect mapping:
+   - `raise-memref-dimensionality`, `initial-cleanup`, `sde-planning` → SDE
+   - `sde-to-codir` → SDE/CODIR boundary
+   - `codir-to-arts` → CODIR/ARTS boundary
+   - `edt-transforms`, `create-dbs`, `db-opt`, `post-db-refinement`,
+     `late-concurrency-cleanup`, `epochs` → ARTS
+   - `pre-lowering`, `arts-to-llvm`, `post-o3-opt`, `llvm-ir-emission` →
+     ARTS-RT
+
+   Per-dialect ownership for performance decisions:
+   - **SDE** owns partition shape (`physicalBlockShape`,
+     `physicalOwnerDims`), tiling, reductions (atomic vs tree vs
+     local-accumulate), halo / window shape, scheduling intent (auto /
+     runtime / static / dynamic chunk), timestep / wavefront grain, and
+     MU/CU/SU plan completeness.
+   - **CODIR** owns codelet isolation quality, dep-slice extraction
+     (whole-token vs sliced), token-local rewrite coverage, and
+     scalar-param rematerialization decisions.
+   - **ARTS** owns DB granularity (coarse vs row-strip vs block), EDT count
+     per epoch, epoch shape (continuation vs barrier), dependency-slot
+     mechanics, amortization eligibility, and distribution placement.
+   - **ARTS-RT** owns runtime-call overhead, packing / unpacking,
+     CPS / finish-EDT continuation lowering, scalar replacement,
+     GUID-range opt, alias-scope generation, and vectorization hints.
+
+3. **D (fix)**: land the change in the owning dialect's pass or `Utils/`.
+   Use `check-utils` before adding any helper. Cover the new behavior with
+   a focused lit at the earliest stable IR stage. Re-run that one
+   benchmark with `dekk carts benchmarks run <name> --size large --threads
+   64 --trace ...` to prove the speedup. Run `dekk carts test` to confirm
+   no other lit regressed.
+
+4. **E (record + advance)**: update that entry's row in
+   `performance-large64.md` (new class + speedup + result dir + commit
+   hash). Then move to the next entry in the queue. Do not batch multiple
+   entries into one diff; one entry at a time keeps attribution honest and
+   lets the rule "the fix lives in the owning dialect" stay enforceable.
+
+When a single fix moves multiple benchmarks in the same family
+(e.g. an SDE timestep/wavefront improvement helps `polybench/jacobi2d`,
+`polybench/seidel-2d`, and `polybench/atax` together), still re-run each
+affected benchmark independently and update each row in the classification
+table.
+
+**Existing performance evidence to consume rather than re-run blindly.**
+
+- M5 maintained sweep:
+  `.carts/outputs/benchmarks-large-64-maintained-20260515/20260515_065122`
+  (23 entries, 11 passed, 12 failed).
+- M5 raw-layout-demotion follow-up (those 12 now pass checksum-clean):
+  `.carts/outputs/benchmarks-raw-layout-demotion-12failures-final-20260515/20260515_072611`.
+- Matrix-family fast results: see M5 section above.
+- Per-benchmark classification table:
+  [`performance-large64.md`](./plans/performance-large64.md).
+
+The expected leading work queue based on M5 evidence (re-rank after Phase
+A re-validates against the post-restructuring tree):
+
+1. SDE timestep/wavefront family (`polybench/jacobi2d` lead, then
+   `polybench/seidel-2d`, `polybench/atax`, `polybench/convolution-2d`).
+2. SDE reduction/vector family (`stream`, `ml-kernels/activations`).
+3. SDE/CODIR stencil halo materialization
+   (`polybench/convolution-3d`, `seissol/volume-integral`,
+   `specfem3d/{stress,velocity}`, `sw4lite/vel4sg-base`).
+4. ARTS task-grain aggregation (`monte-carlo/ensemble`,
+   `ml-kernels/{layernorm,pooling}`, `polybench/bicg`).
+5. ARTS-RT runtime-call cleanup ONLY after every entry above is fast or
+   competitive — runtime ABI work is not allowed to mask upstream policy
+   gaps.
+
+Exit gate:
+
+- `dekk carts test` 163/163 + `dekk carts test --suite e2e` 27/27 after the
+  loop converges.
+- Every entry in the inventory (27 samples + 23 benchmarks) is `fast`,
+  `competitive`, or `blocked` with an owning dialect AND a documented next
+  action. No unattributed entries.
+- The classification table in `performance-large64.md` is dated within one
+  week of the milestone close.
+- `benchmark-performance-goal.md` references the latest sweep result
+  directory.
+
 ## Immediate Next Session
 
 M1 (folder/utility hierarchy) and M2 (CODIR isolation) are closed. The full
@@ -537,7 +727,19 @@ transform libraries. C++ namespaces are unified under
 `sde-planning -> sde-to-codir -> codir-to-arts`; any direct SDE-to-ARTS/codelet
 wording in docs, skills, or tests is stale unless it is in a removal note.
 
-The unblocked slices ranked by leverage are:
+The next session should start with **M6 Phase A** — a one-shot re-run of
+`dekk carts test` (163/163 baseline), `dekk carts test --suite e2e` (27/27
+baseline, covers all 27 samples), and the full 23-entry maintained
+benchmark sweep at once via
+`dekk carts benchmarks run --size large --threads 64 --nodes 1 --trace
+--results-dir .carts/outputs/benchmarks-m6-<YYYYMMDD>/`. Then refresh the
+classification table in
+[`performance-large64.md`](./plans/performance-large64.md).
+
+After Phase A, walk **Phases B-E one entry at a time** through the ranked
+queue (Section H). Do not batch multiple benchmarks into one diff; one
+benchmark per landing keeps the owning-dialect attribution honest. The
+unblocked slices ranked by leverage are:
 
 1. **Passed-but-slow groups.** Boundary failures are fixed for the formerly
    blocked 12-case large/64 slice. Use `polybench/jacobi2d` as the lead
@@ -693,7 +895,7 @@ pick the next concrete slice; use the Milestones to confirm exit gates.
 - [~] (cross-cutting) Each milestone closes only when the gate matrix in
   [`verification-release.md`](./plans/verification-release.md) is green for
   the affected slice. Current migration evidence includes `dekk carts build`,
-  `dekk carts test` (166/166), `dekk carts test --suite e2e` (27/27),
+  `dekk carts test` (163/163), `dekk carts test --suite e2e` (27/27),
   `dekk carts skills generate`, `dekk carts skills status`, `git diff --check`,
   and focused M3/M4 lit coverage.
 - [~] (cross-cutting) Add focused lit, pipeline-dump, e2e, and benchmark
@@ -701,6 +903,49 @@ pick the next concrete slice; use the Milestones to confirm exit gates.
   intentional fixtures. Current benchmark evidence covers the matrix-family
   task-shape fix and the maintained large/64 raw-layout boundary follow-up;
   passed-but-slow benchmark tuning remains open.
+
+### H. Post-Restructuring Validation Loop
+
+Tracks the M6 validation+optimization cycle. Phase A is a one-shot
+sanity sweep; Phases B-E walk the inventory one entry at a time so each
+landing diff has a single owning-dialect attribution.
+
+**Phase A — one-shot post-restructuring sweep:**
+
+- [ ] (M6 Phase A) Re-run `dekk carts test` against HEAD; confirm 163/163
+  lit parity with the M1 baseline. File a regression task in section B for
+  any divergence.
+- [ ] (M6 Phase A) Re-run `dekk carts test --suite e2e` against HEAD;
+  confirm 27/27 e2e parity covering all samples in `dekk carts examples
+  list`. File a regression task in section B for any divergence.
+- [ ] (M6 Phase A) Re-run the full maintained benchmark sweep at once with
+  `dekk carts benchmarks run --size large --threads 64 --nodes 1 --trace
+  --results-dir .carts/outputs/benchmarks-m6-<YYYYMMDD>/` covering all 23
+  entries. Record per-entry status.
+- [ ] (M6 Phase A) Run one distributed smoke test (`--distributed-db`) and
+  one multinode example to verify the namespace migration didn't break the
+  ownership-marking path.
+- [ ] (M6 Phase A) Refresh the classification table in
+  [`performance-large64.md`](./plans/performance-large64.md) with the new
+  sweep date, result directory, and per-entry status.
+
+**Phases B-E — one entry per iteration (do not batch):**
+
+- [ ] (M6 B-E) For each iteration, pick ONE entry from the ranked queue:
+  capture `--all-pipelines` stage dumps under `.carts/sessions/<topic>/`,
+  bisect to the first divergent stage (Phase B), attribute it to SDE /
+  CODIR / ARTS / ARTS-RT per the decision tree in
+  [`benchmark-performance-goal.md`](./benchmark-performance-goal.md)
+  (Phase C), land the fix in the owning dialect with a focused lit
+  regression and a benchmark rerun proving the speedup (Phase D), then
+  update that entry's row in `performance-large64.md` (Phase E).
+- [ ] (M6 E) When a single dialect-level fix moves multiple benchmarks in
+  the same family, still re-run each affected entry independently and
+  update each row in the classification table.
+- [ ] (M6 E) Repeat the iteration until every entry in the inventory (27
+  samples + 23 benchmarks) is `fast`, `competitive`, or `blocked` with an
+  owning dialect AND a documented next action. The milestone is closed
+  only when there are zero unattributed entries.
 
 ## Rules
 

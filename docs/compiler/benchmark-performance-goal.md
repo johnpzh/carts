@@ -40,14 +40,14 @@ Layer references:
   ownership.
 - [`plans/performance-large64.md`](./plans/performance-large64.md): focused
   large/64 execution plan.
-- [`sde/`](./sde/): runtime-agnostic semantic planning, memref layout policy,
-  state, dependencies, and effects.
-- [`codir/`](./codir/): planned isolated-codelet layer with explicit deps and
-  params.
-- [`core/`](./core/): current source-tree home for the `arts`
-  DB/EDT/dependency/epoch materialization and orchestration layer.
-- [`rt/`](./rt/): current source-tree home for `arts-rt` low-level runtime-call
-  lowering and overhead cleanup.
+- [`dialects/sde/`](./dialects/sde/): runtime-agnostic semantic planning,
+  memref layout policy, state, dependencies, and effects.
+- [`dialects/codir/`](./dialects/codir/): planned isolated-codelet layer with
+  explicit deps and params.
+- [`dialects/arts/`](./dialects/arts/): `arts` DB/EDT/dependency/epoch
+  materialization and orchestration layer.
+- [`dialects/arts-rt/`](./dialects/arts-rt/): `arts-rt` low-level
+  runtime-call lowering and overhead cleanup.
 - [`pipeline.md`](./pipeline.md): live stage order and pass ownership notes.
 
 ## Current Dialect Structure And Responsibilities
