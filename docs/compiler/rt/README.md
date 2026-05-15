@@ -1,18 +1,24 @@
-# ARTS RT Optimization Notes
+# ARTS-RT Optimization Notes
 
-This directory is the compiler-facing home for RT lowering and low-level
-runtime-call optimization planning. RT is not a semantic planning layer. It
-receives a DB/EDT/epoch shape chosen by SDE and Core, then lowers and tightens
-the runtime-call representation.
+This directory is the compiler-facing home for `arts-rt` lowering and low-level
+runtime-call optimization planning. The source tree still uses `rt/`, but the
+conceptual layer is `arts-rt`. It is not a semantic planning layer. It receives
+a DB/EDT/epoch shape chosen by SDE/CODIR/ARTS, then lowers and tightens the
+runtime-call representation.
 
 For the target dialect split, see
-[`../dialect-layering-vision.md`](../dialect-layering-vision.md). RT should
-only lower runtime API shape after SDE has chosen logical work and Core has
-bound that work to ARTS EDT/DB/Epoch objects.
+[`../dialect-layering-vision.md`](../dialect-layering-vision.md). `arts-rt`
+should only lower runtime API shape after SDE has chosen logical work, CODIR
+has isolated codelets, and ARTS has bound that work to EDT/DB/Epoch objects.
+The target per-dialect docs live under
+[`../dialects/arts-rt/`](../dialects/arts-rt/). ARTS-RT-owned analyses are
+listed in [`../dialects/arts-rt/analysis.md`](../dialects/arts-rt/analysis.md),
+and ARTS-RT-owned optimizations are listed in
+[`../dialects/arts-rt/optimizations.md`](../dialects/arts-rt/optimizations.md).
 
 ## Boundary
 
-RT owns:
+ARTS-RT owns:
 
 - `arts_rt` runtime-call-shaped IR.
 - EDT launch, parameter packing, state packing, and dependency slot wiring.
@@ -22,17 +28,18 @@ RT owns:
 - Low-level cleanup such as data pointer hoisting, scalar replacement, GUID
   range call optimization, runtime query hoisting, and LLVM-facing metadata.
 
-RT must not own:
+ARTS-RT must not own:
 
 - OpenMP semantics.
-- Tensor partition policy.
+- Memref partition policy.
 - Physical DB layout selection.
 - EDT distribution policy.
-- Epoch topology decisions that depend on SDE/Core semantic proofs.
+- Epoch topology decisions that depend on SDE/CODIR/ARTS semantic proofs.
 
 ## Pipeline Spine
 
-RT-shaped work appears in the end of `pre-lowering` and in `arts-to-llvm`:
+ARTS-RT-shaped work appears in the end of `pre-lowering` and in
+`arts-to-llvm`:
 
 ```text
 pre-lowering:
@@ -55,13 +62,13 @@ arts-to-llvm:
   VerifyLowered
 ```
 
-`DbLowering` remains Core-owned, but it feeds the RT-shaped EDT and epoch
+`DbLowering` remains ARTS-owned, but it feeds the ARTS-RT-shaped EDT and epoch
 lowering pipeline.
 
 ## Optimization Focus
 
-Pursue RT work only after SDE/Core have produced the intended DB/EDT/epoch
-shape and traces still show low-level overhead:
+Pursue ARTS-RT work only after SDE/CODIR/ARTS have produced the intended
+DB/EDT/epoch shape and traces still show low-level overhead:
 
 - launch and CPS/continuation overhead;
 - dependency slot packing and window-local `dep_gep`/DB pointer access;
@@ -71,10 +78,10 @@ shape and traces still show low-level overhead:
 - LLVM alias and vectorization metadata.
 
 If the trace still shows coarse DBs, wrong task grain, missing wavefront shape,
-or missing physical layout, the fix belongs in SDE or Core first.
+or missing physical layout, the fix belongs in SDE, CODIR, or ARTS first.
 
 ## Verification
 
-RT changes need focused tests under `lib/arts/dialect/rt/test/` or the relevant
-Core lowering tests, then benchmark traces that isolate launch, dependency, CPS,
-or runtime-call overhead.
+ARTS-RT changes need focused tests under `lib/arts/dialect/rt/test/` or the
+relevant ARTS lowering tests, then benchmark traces that isolate launch,
+dependency, CPS, or runtime-call overhead.

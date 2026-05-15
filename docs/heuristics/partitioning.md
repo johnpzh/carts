@@ -87,14 +87,15 @@ Partitioning is intentionally split into roles. The rule is:
 - SDE `PatternAnalysis`, tiling, and distribution planning decide policy while
   source/tensor facts are visible.
 - Core acquire/alloc analyses validate and refine the already-authored DB shape.
-- `CreateDbs` bridges raw memrefs by materializing SDE-authored layout and slice
-  facts.
-- Raw-memref indexers execute the already-chosen layout
+- `CreateDbs` bridges only coarse raw memrefs that have not reached direct
+  MU/token materialization.
+- Blocked/tiled raw memrefs are rejected at Core; SDE/CODIR must rewrite those
+  accesses into token-local memref coordinates before ARTS.
 
 Flow of responsibility:
 
-  SDE plan attrs -> CreateDbs -> DbPhysicalLayoutPlan -> raw-memref indexers
-  (policy)          (bridge)     (materialized shape)    (mechanical rewrite)
+  SDE MU/token plan -> CODIR codelet view rewrite -> ARTS DB/acquire objects
+  (policy)           (mechanical memref rewrite)    (abstract object graph)
 
 What each layer owns:
 
@@ -104,11 +105,11 @@ What each layer owns:
 - DbAllocNode: aggregation across acquires for one allocation.
 - SDE `PatternAnalysis`/distribution/tiling passes: policy. They prove owner
   dims, task grain, access windows, and physical block shape before Core.
-- `CreateDbs`: bridge. It converts SDE-authored plan attrs and remaining raw
-  external EDT memref captures into `DbPhysicalLayoutPlan`, `arts.db_alloc`,
-  and `arts.db_acquire`. It must not receive task dependency declarations.
-- Raw-memref indexers: execution. They localize legacy memref loads/stores
-  using `PartitionInfo + DbPhysicalLayoutPlan`; they do not choose policy.
+- `CreateDbs`: temporary coarse bridge. It may create a whole-storage
+  `arts.db_alloc`/`arts.db_acquire` for direct raw memref load/store uses, but
+  it must not consume blocked/tiled SDE layout plans.
+- SDE/CODIR token-local rewrite: execution for tiled layouts. It localizes
+  memref loads/stores using the approved pattern/MU plan before Core.
 
 Important implementation detail:
 - `DbAllocNode` stores direct child acquires in the DB graph.
@@ -1053,15 +1054,14 @@ Example access A[i,j,k]:
 - Coordination + plan: DbPartitioning
 - Mode reconciliation: local controller logic in `DbPartitioning`
 - Block sizing + chosen dims: `DbBlockPlanResolver`
-- Layout materialization: `CreateDbs` from SDE-authored attrs and
-  `DbPhysicalLayoutPlan`
-- Index localization for raw memref fallback: `DbBlockIndexer` /
-  `DbElementWiseIndexer`
+- Layout materialization: direct SDE/CODIR-to-ARTS lowering for MU storage and
+  tokens; `CreateDbs` only for remaining coarse raw memrefs.
+- Index localization for tiled layouts: SDE/CODIR token-local memref rewrite.
 - ESD runtime semantics: byte-slice deps (`artsRecordDepAt`) + pointer signaling
 
 This keeps semantics explicit: SDE pattern analysis and distribution planning
-decide layout and task slices; SDE/Core materialization creates DB/acquire
-objects; the remaining raw-memref indexers only localize compatibility bodies;
-and the runtime implements the ESD transport.
+decide layout and task slices; SDE/CODIR materialization rewrites token-local
+accesses; ARTS creates DB/acquire objects; and the runtime implements the ESD
+transport.
 
 ---

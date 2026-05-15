@@ -31,11 +31,16 @@ runtime.
 
 ## Compiler Shape
 
-CARTS has three project dialect layers:
+CARTS is migrating toward four project dialect layers:
 
-- SDE (`sde`) - semantic decomposition, tensor/state scheduling, codelets.
-- Core ARTS (`arts`) - EDT, DB, epoch, partitioning, and analysis IR.
-- Runtime (`arts_rt`) - flat runtime-facing bridge before LLVM lowering.
+- SDE (`sde`) - source semantics, PatternAnalysis, MU/CU/SU planning, memref
+  tiling/access windows, reductions, and target-neutral scheduling intent.
+- CODIR (`codir`) - isolated codelets, explicit deps/params, token-local
+  memref views, and codelet-local verification.
+- ARTS (`arts`) - abstract DB, EDT, epoch, dependency-slot, placement, and
+  distributed ownership objects.
+- ARTS-RT (`arts_rt`) - runtime ABI, packing, pointer lowering, and
+  LLVM-facing cleanup.
 
 The canonical pipeline is defined in `tools/compile/Compile.cpp`. When docs or
 skills disagree with the compiler, the live compiler manifest wins.
@@ -45,10 +50,14 @@ skills disagree with the compiler, the live compiler manifest wins.
 - Prefer production fixes over band-aids. Understand the root cause, the
   owning dialect, and the runtime/compiler contract before patching symptoms.
 - Before changing compiler IR, state the function and limits of the affected
-  dialect layer. SDE owns OpenMP semantics and scheduling intent; Core owns
-  ARTS orchestration and analyses; RT owns lowering-ready runtime shape.
+  dialect layer. SDE owns OpenMP semantics and scheduling intent; CODIR owns
+  codelet isolation; ARTS owns abstract orchestration and analyses; ARTS-RT
+  owns lowering-ready runtime shape.
 - Do not hide correctness behind later cleanup passes, incidental pass order,
   fixture churn, or duplicated local helpers.
+- Before adding a helper to a pass, use `carts-check-utils`. Reusable helpers
+  belong in the narrowest owning dialect `Utils/` area or an owning analysis
+  API; keep helpers pass-local only when they are genuinely one-pass logic.
 
 ## Development Artifacts
 

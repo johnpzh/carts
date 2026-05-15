@@ -35,8 +35,10 @@ before commit, PR review, or final task completion.
    Use `carts-check-utils` when a helper, predicate, string utility, IR query,
    or attribute helper was added or changed.
 6. Put shared behavior in the narrowest correct home:
-   - pass-local only when truly local to one transform;
-   - dialect utility when it expresses a dialect invariant;
+   - pass-local only when truly local to one transform and not useful to a
+     verifier, analysis, conversion, or sibling pass;
+   - dialect `Utils/` when it expresses a dialect invariant or reusable
+     dialect-local builder/query/predicate;
    - `include/arts/utils/` and `lib/arts/utils/` when broadly meaningful;
    - analysis APIs when the logic belongs to DB/EDT/loop/cache/metadata state.
 7. Re-check CARTS boundaries:

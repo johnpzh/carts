@@ -5,9 +5,14 @@ If this file disagrees with the compiler source or `dekk carts pipeline --json`,
 the live compiler wins.
 
 For layer-specific optimization planning, see [`sde/`](./sde/),
-[`core/`](./core/), and [`rt/`](./rt/). For the split that removed the Core
-loop carrier and keeps SDE/Core/RT responsibilities separate, see
-[`dialect-layering-vision.md`](./dialect-layering-vision.md).
+[`codir/`](./codir/), [`core/`](./core/), and [`rt/`](./rt/). For the target
+`sde -> codir -> arts -> arts-rt` split and the current migration status, see
+[`dialect-layering-vision.md`](./dialect-layering-vision.md). For execution
+order and subplans, see [`master-plan.md`](./master-plan.md).
+For the staged source-folder migration, see
+[`plans/folder-reorganization.md`](./plans/folder-reorganization.md).
+For the target per-dialect analysis and optimization ownership, see
+[`dialects/`](./dialects/).
 
 ## CLI Introspection
 
@@ -18,7 +23,7 @@ loop carrier and keeps SDE/Core/RT responsibilities separate, see
 
 ## Pipeline Order
 
-Core stages:
+Driver stages:
 
 1. `raise-memref-dimensionality`
 2. `initial-cleanup`
@@ -67,7 +72,9 @@ PolygeistCanonicalizeFor(func)
 
 ### `openmp-to-arts`
 
-The complete SDE lifecycle lives inside this stage.
+The complete current SDE lifecycle lives inside this stage. The target
+architecture will split this into SDE planning, SDE-to-CODIR materialization,
+CODIR verification, and CODIR-to-ARTS materialization.
 
 ```text
 ConvertOpenMPToSde
@@ -214,9 +221,14 @@ VerifyLowered
 
 - SDE inside `openmp-to-arts` owns semantic decomposition, `PatternAnalysis`,
   state planning, dependency/effect proofs, and physical DB layout policy.
-- `CreateDbs` materializes remaining raw-memref DB layouts from SDE-authored
-  plan attrs. It should not invent data partition policy that was visible to
-  SDE.
-- Core owns DB/EDT/epoch orchestration and analysis-backed refinement.
-- RT-facing lowering belongs in `pre-lowering` and `arts-to-llvm`, after the
-  compiler has already chosen the DB and task shape.
+- CODIR is the planned isolated-codelet layer. It should own explicit deps,
+  params, token-local views, and codelet capture verification before ARTS EDT
+  creation.
+- `CreateDbs` is now only a coarse raw-memref bridge. It rejects blocked/tiled
+  raw memrefs because SDE/CODIR must perform MU/token storage and access
+  rewrites before ARTS.
+- `arts` owns DB/EDT/epoch orchestration and analysis-backed refinement. The
+  current source tree still calls this area `core/`.
+- `arts-rt` lowering belongs in `pre-lowering` and `arts-to-llvm`, after the
+  compiler has already chosen the DB and task shape. The current source tree
+  still calls this area `rt/`.

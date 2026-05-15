@@ -1,6 +1,6 @@
 ---
 name: carts-check-utils
-description: Use before adding helper or utility functions to pass files, when writing static helpers, or when reviewing PRs for duplicated functions.
+description: Use before adding helper or utility functions to pass files, when writing static helpers, when deciding Utils/Support placement, or when reviewing PRs for duplicated functions or pass-local utility sprawl.
 user-invocable: true
 allowed-tools: Read, Grep, Glob, Bash, Agent
 argument-hint: <function-name-or-description>
@@ -10,13 +10,14 @@ parameters:
     gather: "Name or short description of the function you want to add (e.g., 'isOneLikeValue', 'check if value is constant zero', 'hoist loop invariant op')"
 ---
 
-# CARTS Utility Duplication Check
+# CARTS Utility Ownership Check
 
 ## Purpose
 
 **MANDATORY pre-flight check** before adding any new static helper or utility
-function to a pass file. This skill searches the entire shared utility surface
-to prevent duplicating existing functionality.
+function to a pass file. This skill searches the shared utility surface,
+selects the narrowest owning dialect utility home, and prevents duplicating
+existing functionality.
 
 ## The Problem
 
@@ -26,6 +27,37 @@ Historical audit found:
   2 locations, `hasWorkAfterInParentBlock` in 2, `isUndefLikeOp` in 3)
 - **60+ static helpers** in pass files that belong in shared utilities
 - **180+ static functions** in pass files, many reimplementing existing utils
+
+## Pass-Local Helper Rule
+
+A helper may stay `static` in a pass file only when all are true:
+
+- It is used by exactly one pass implementation.
+- It does not express a dialect invariant.
+- It does not duplicate an existing helper by name or behavior.
+- It is not needed by a verifier, analysis, conversion, or sibling pass.
+- Extracting it would make the code harder to read.
+
+If any item is false, move it to the owning dialect `Utils/`, an owning
+analysis API, or a pass-area support file. Do not create a new "Utils" helper
+inside a pass just because it is convenient during the first implementation.
+
+## Target Dialect Utility Homes
+
+New utility surfaces should follow the target layout:
+
+| Helper kind | Preferred home |
+|-------------|----------------|
+| SDE source semantics, memref access maps, SDE patterns, MU/CU/SU planning | `include/carts/dialect/sde/Utils` + `lib/carts/dialect/sde/Utils` |
+| CODIR codelet isolation, dep/param ABI, token-local views | `include/carts/dialect/codir/Utils` + `lib/carts/dialect/codir/Utils` |
+| ARTS DB/EDT/epoch object mechanics, dependency slots, placement/resource helpers | `include/carts/dialect/arts/Utils` + `lib/carts/dialect/arts/Utils` |
+| ARTS-RT runtime ABI packing, depv layout, runtime-call/pointer helpers | `include/carts/dialect/arts-rt/Utils` + `lib/carts/dialect/arts-rt/Utils` |
+| Cross-dialect compiler helpers with no dialect semantics | `include/carts/support` + `lib/carts/support` |
+| Current-tree compatibility helpers | nearest existing `include/arts/utils`, `lib/arts/utils`, or pass-area `*Support` file |
+
+If a target `Utils/` folder exists only as a skeleton, do not wire it into
+CMake for an empty helper. Add the real utility in the same patch that first
+uses it, with focused tests for the owning pass.
 
 ## Shared Utility Locations (Search These FIRST)
 
@@ -62,6 +94,15 @@ Historical audit found:
 | `DbPartitioningSupport.cpp` | Partition planning predicates |
 | `DataPtrHoistingSupport.cpp` | Pointer hoisting patterns |
 | `EpochOptSupport.cpp` | CPS chain predicates |
+
+### Target Skeletons
+
+Also search target locations when working in the new layout:
+
+- `include/carts/dialect/*/Utils`
+- `lib/carts/dialect/*/Utils`
+- `include/carts/support`
+- `lib/carts/support`
 
 ## Search Strategy
 
@@ -111,6 +152,8 @@ When asked to check if a utility function already exists:
 
 1. **Parse the request** — understand what the function does, not just its name
 2. **Search shared utilities** — run parallel Grep searches across:
+   - `include/carts/dialect/*/Utils` and `lib/carts/dialect/*/Utils`
+   - `include/carts/support` and `lib/carts/support` if present
    - `include/arts/utils/` (headers)
    - `lib/arts/utils/` (implementations)
    - `include/arts/dialect/core/Analysis/` (analysis headers)
@@ -120,15 +163,24 @@ When asked to check if a utility function already exists:
 5. **Report findings**:
    - If found: show the canonical location, signature, and how to use it
    - If similar: show the closest match and explain the difference
-   - If not found: confirm it's safe to add, and suggest the best location:
-     - Generic value/type helpers → `Utils.h`
+   - If not found: confirm whether it is truly pass-local. If not, suggest the
+     best location:
+     - Generic value/type helpers → common CARTS support or current `Utils.h`
      - DB-specific → `DbUtils.h`
      - EDT-specific → `EdtUtils.h`
      - Loop-specific → `LoopUtils.h`
      - Loop invariance → `LoopInvarianceUtils.h`
      - Block access patterns → `BlockedAccessUtils.h`
      - Pattern classification → `PatternSemantics.h`
+     - SDE-only semantic/access planning → SDE `Utils/`
+     - CODIR codelet/token-local ABI → CODIR `Utils/`
+     - ARTS DB/EDT/epoch mechanics → ARTS `Utils/`
+     - ARTS-RT runtime ABI mechanics → ARTS-RT `Utils/`
      - Pass-specific but shared within pass area → `*Support.cpp`
      - Truly pass-specific → keep as static in the pass file
-6. **Check attribute strings** — if the function uses attribute names, verify it
+6. **Require a placement decision** — state one of:
+   - "Use existing helper at `<path>`."
+   - "Extract to `<dialect>/Utils` because `<reason>`."
+   - "Keep pass-local because all pass-local rule items are true."
+7. **Check attribute strings** — if the function uses attribute names, verify it
    uses `AttrNames::` constants, not hardcoded strings

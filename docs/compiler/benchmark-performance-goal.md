@@ -7,34 +7,47 @@ against OpenMP at `large`, 64 threads, and 1 node by keeping decisions in the
 right dialect layer.
 
 SDE is runtime-agnostic. It must prove legality and author the semantic plan:
-tensor/vector partitions, tiling, reductions, halo/window shapes, logical task
-grain, barrier intent, and timestep or wavefront structure for matrix/tensor
-outputs, vector/reduction kernels, 3D component stencils, and time-stepped
-kernels. When SDE needs symbolic execution capacity, it uses
+memref partitions, tiling, reductions, halo/window shapes, logical task grain,
+barrier intent, and timestep or wavefront structure for matrix outputs,
+vector/reduction kernels, 3D component stencils, and time-stepped kernels. When
+SDE needs symbolic execution capacity, it uses
 `sde.resource_query <logical_workers>` rather than an ARTS runtime query.
 
-Core is ARTS-machine-aware. It must preserve and refine the chosen
-DB/EDT/dependency/epoch shape, and use Core analyses to orchestrate work
-without inventing tensor partition policy late. Canonical MU/token/codelet form
-may lower directly to DBs/acquires/EDTs at the SDE boundary. `CreateDbs` remains
-the raw-memref compatibility bridge: it consumes SDE-authored layouts and
-dependency slices, but it should not choose tensor owner dimensions, tile
-geometry, or dependency-window legality. Core is the boundary that binds
-`sde.resource_query` and SDE plan contracts to `arts.runtime_query`, ARTS
-worker counts, DB granularity, EDT counts, and dependency-slot mechanics.
+CODIR is the planned codelet layer. It must consume the SDE MU/CU/SU plan and
+produce isolated codelets with explicit deps, params, token-local memref views,
+and no implicit captures from above.
 
-RT is the low-level runtime-call lowering layer. It should optimize launch,
-CPS/continuation, dependency-slot, packing, scalar replacement, GUID/runtime
-call, and LLVM-facing overhead only after the SDE/Core shape is correct and
-traces still show those mechanics as the bottleneck.
+`arts` is ARTS-machine-aware. It must preserve and refine the chosen
+DB/EDT/dependency/epoch shape and use ARTS analyses to orchestrate work without
+inventing memref partition policy late. Canonical MU/token/CODIR form should
+lower directly to DBs/acquires/EDTs. `CreateDbs` remains only a raw-memref
+compatibility bridge: it consumes SDE-authored layouts and dependency slices,
+but it should not choose owner dimensions, tile geometry, or dependency-window
+legality. `arts` is the boundary that binds `sde.resource_query` and SDE plan
+contracts to `arts.runtime_query`, ARTS worker counts, DB granularity, EDT
+counts, and dependency-slot mechanics.
+
+`arts-rt` is the low-level runtime-call lowering layer. It should optimize
+launch, CPS/continuation, dependency-slot, packing, scalar replacement,
+GUID/runtime call, and LLVM-facing overhead only after the SDE/CODIR/ARTS shape
+is correct and traces still show those mechanics as the bottleneck.
 
 Layer references:
 
-- [`sde/`](./sde/): runtime-agnostic semantic planning, physical DB layout
-  policy, state, dependencies, and effects.
-- [`core/`](./core/): ARTS-machine-aware DB/EDT/dependency/epoch
-  materialization and orchestration.
-- [`rt/`](./rt/): low-level runtime-call lowering and overhead cleanup.
+- [`master-plan.md`](./master-plan.md): top-level migration and performance
+  sequence.
+- [`dialects/`](./dialects/): target per-dialect analysis and optimization
+  ownership.
+- [`plans/performance-large64.md`](./plans/performance-large64.md): focused
+  large/64 execution plan.
+- [`sde/`](./sde/): runtime-agnostic semantic planning, memref layout policy,
+  state, dependencies, and effects.
+- [`codir/`](./codir/): planned isolated-codelet layer with explicit deps and
+  params.
+- [`core/`](./core/): current source-tree home for the `arts`
+  DB/EDT/dependency/epoch materialization and orchestration layer.
+- [`rt/`](./rt/): current source-tree home for `arts-rt` low-level runtime-call
+  lowering and overhead cleanup.
 - [`pipeline.md`](./pipeline.md): live stage order and pass ownership notes.
 
 ## Current Dialect Structure And Responsibilities
@@ -55,8 +68,8 @@ required, and which dataflow edges can be made asynchronous. SDE therefore
 owns:
 
 - structured classification: elementwise, elementwise pipeline, reduction,
-  matmul/tensor contraction, stencil, wavefront, timestep, and opaque fallback;
-- memory-effect summaries over source roots, carrier tensors, and memrefs;
+  matmul contraction, stencil, wavefront, timestep, and opaque fallback;
+- memory-effect summaries over source roots and memrefs;
 - owner dimensions, spatial dimensions, component dimensions, and batch
   dimensions;
 - target-neutral physical layout and grain intent through `physicalOwnerDims`,
@@ -89,25 +102,45 @@ The latest CPS contract follows this rule. `BarrierElimination` marks full-times
 explicit control boundary. Adjacent candidates are not allowed to be attrs-only:
 SDE inserts a completion token and a token-consuming timestep barrier before it
 stamps the group. `VerifySdeCpsPlan` rejects candidate pairs without that
-SDE-authored control edge. Core and RT may lower or optimize the resulting
+SDE-authored control edge. ARTS and ARTS-RT may lower or optimize the resulting
 continuation mechanics, but they do not decide whether the CPS dataflow is
 legal.
 
-### Core: ARTS orchestration dialect
+### CODIR: codelet dialect
 
-Core starts after the SDE semantic plan is authored. It knows ARTS objects and
-runtime topology, but it should treat SDE physical layout and dependency-window
-policy as input, not as a place to invent tensor partitioning. Core owns:
+CODIR is the planned layer between SDE and `arts`. It receives the SDE plan and
+turns it into isolated codelets. CODIR owns:
 
-- converting SDE plan attributes into Core `arts.plan.*`, dependency pattern,
+- `IsolatedFromAbove` codelet bodies;
+- explicit memory deps, control deps, scalar params, and yielded values;
+- token-local memref views and body access rewrites;
+- scalar capture normalization;
+- verification that every external value used by a codelet is represented at
+  creation time as a dep or param.
+
+CODIR must not own OpenMP semantics, owner-dim selection, ARTS placement,
+DB/EDT creation, runtime topology, or raw-memref DB rediscovery.
+
+The EDT isolation requirement starts here. By the time a codelet lowers to an
+ARTS EDT, its dependency list and parameter list must be complete. `EdtLowering`
+should be a mechanical ABI lowering pass, not a capture-recovery pass.
+
+### ARTS: orchestration dialect
+
+ARTS starts after the SDE semantic plan has been authored and CODIR has isolated
+codelets. It knows ARTS objects and runtime topology, but it should treat SDE
+physical layout and CODIR dependency-window policy as input, not as a place to
+invent memref partitioning. ARTS owns:
+
+- converting SDE/CODIR plan attributes into `arts.plan.*`, dependency pattern,
   distribution kind, and stencil/layout contracts;
 - lowering `sde.resource_query <logical_workers>` into the concrete ARTS
-  runtime query or static worker materialization selected by the Core/runtime
+  runtime query or static worker materialization selected by the ARTS/runtime
   configuration;
 - materializing SDE CPS, barrier, async, and repeated-timestep plans into ARTS
   EDT/epoch/control structure without changing their legality policy;
-- preserving direct MU/token DB materialization when present, or mechanically
-  creating the chosen physical DB layout in `CreateDbs` for raw memrefs;
+- preserving direct MU/token DB materialization when present, with `CreateDbs`
+  limited to coarse raw memrefs during the transition;
 - preserving planned DB/EDT/dependency/epoch shape while splitting or refining
   ARTS mechanics;
 - validating plan consistency, owner dims, block shapes, halo bounds, and
@@ -116,31 +149,33 @@ policy as input, not as a place to invent tensor partitioning. Core owns:
   structure, and distributed ownership from the already-authored plan;
 - reporting proof gaps when SDE did not provide enough information.
 
-Core may refine an ARTS object graph, but any refinement must be a mechanical
-consequence of the SDE plan or an ARTS-machine constraint. If Core has to guess
-which tensor dimension to block, which reduction strategy to use, or whether a
-stencil, timestep, or CPS chain is owner-slice/dataflow safe, the fix belongs
-in SDE. If SDE starts naming ARTS topology directly, the fix is to move that
-binding to Core and leave only logical-capacity intent in SDE.
+ARTS may refine an ARTS object graph, but any refinement must be a mechanical
+consequence of the SDE/CODIR plan or an ARTS-machine constraint. If ARTS has to
+guess which memref dimension to block, which reduction strategy to use, or
+whether a stencil, timestep, or CPS chain is owner-slice/dataflow safe, the fix
+belongs in SDE or CODIR. If SDE starts naming ARTS topology directly, the fix is
+to move that binding to ARTS and leave only logical-capacity intent in SDE.
 
-### RT: runtime-call lowering dialect
+### ARTS-RT: runtime-call lowering dialect
 
-RT is the lowering-ready bridge. It sees flat runtime calls, launch metadata,
-dependency descriptors, GUIDs, DB pointers, continuation plumbing, and LLVM
-facing scalar values. RT owns:
+ARTS-RT is the lowering-ready bridge. It sees flat runtime calls, launch
+metadata, dependency descriptors, GUIDs, DB pointers, continuation plumbing,
+and LLVM-facing scalar values. ARTS-RT owns:
 
-- lowering Core DB/EDT/epoch/dependency objects to runtime calls;
+- lowering ARTS DB/EDT/epoch/dependency objects to runtime calls;
 - launch and continuation overhead cleanup after task shape is correct;
 - dependency-slot indexing, local dependency-window access, and dep/db pointer
   hoisting;
 - temporary descriptor allocation, packing, scalar replacement, alias metadata,
   vectorization hints, and runtime-call hoisting;
-- preserving the memory model and dependency semantics authored by SDE/Core.
+- preserving the memory model and dependency semantics authored by
+  SDE/CODIR/ARTS.
 
-RT must not compensate for missing SDE/Core shape by recovering tensor policy
-late. A late RT fast path is acceptable only after traces show that SDE/Core
-already produced the intended DB/EDT/dependency structure and the remaining
-bottleneck is runtime-call mechanics. In particular, RT may reduce
+ARTS-RT must not compensate for missing SDE/CODIR/ARTS shape by recovering
+memref policy late. A late ARTS-RT fast path is acceptable only after traces
+show that SDE/CODIR/ARTS already produced the intended DB/EDT/dependency
+structure and the remaining bottleneck is runtime-call mechanics. In
+particular, ARTS-RT may reduce
 continuation and dependency-call overhead, but CPS legality, stage grouping,
 and carry tokenization remain SDE responsibilities.
 
@@ -152,42 +187,44 @@ changes are justified only when compiler output already satisfies the contract
 and traces show a runtime implementation bottleneck or a missing runtime API.
 
 The reference success path is the current convolution-2d result: SDE authors the
-physical tensor partition, the boundary materializes or bridges the matching DB
-shape, RT lowering uses local dependency-window indices, and the benchmark
+physical memref partition, the boundary materializes or bridges the matching DB
+shape, ARTS-RT lowering uses local dependency-window indices, and the benchmark
 passes against the OpenMP checksum.
 
 ## Performance Heuristic And Analysis Set
 
-Every benchmark optimization must start by naming the SDE proof, the Core
-materialization check, and the RT/runtime evidence. The goal is not to add more
-heuristics everywhere; it is to make each heuristic live in the earliest layer
-where it can be proven.
+Every benchmark optimization must start by naming the SDE proof, the CODIR
+isolation check, the ARTS materialization check, and the ARTS-RT/runtime
+evidence. The goal is not to add more heuristics everywhere; it is to make each
+heuristic live in the earliest layer where it can be proven.
 
 Pass responsibility rule:
 
 - `PatternAnalysis` stamps approved `sde.pattern` and structured memref facts.
-  It does not stamp Core attrs and it does not pass raw analysis objects across
+  It does not stamp ARTS attrs and it does not pass raw analysis objects across
   the dialect boundary.
 - SDE structural/effect passes consume those approved SDE facts to decide
   interchange, tiling, fusion, chunking, reduction strategy, distribution
   intent, barriers, and CPS candidates.
 - SDE may emit `sde.resource_query <logical_workers>` when symbolic arithmetic
-  needs a logical execution capacity. Core lowers that query to ARTS runtime
+  needs a logical execution capacity. ARTS lowers that query to ARTS runtime
   machinery.
-- `ConvertSdeToArts` lowers only the final SDE plan contract. Canonical
-  MU/token/codelet form becomes DB/acquire/EDT directly; raw-memref fallback
-  carries explicit dependency slices for `CreateDbs` to bridge mechanically.
+- `ConvertSdeToCodir` should lower only the final SDE plan contract into
+  explicit codelet deps, params, and token-local memref views.
+- `ConvertCodirToArts` should turn CODIR codelets into DB/acquire/EDT objects
+  directly. The current `ConvertSdeToArts` plus `CreateDbs` bridge is a
+  migration path for raw memrefs only.
 
 ### Required SDE analyses
 
 - **Structured loop summary:** classify the loop family, iterator roles,
   output roots, read/write roots, static shape, affine access maps, and unknown
-  effects before lowering to Core.
+  effects before lowering to CODIR/ARTS.
 - **Owner-slice independence:** prove that each planned owner slice writes
   disjoint output elements and that in-place reads either stay inside the owner
   slice or are covered by a halo/window plan.
 - **Physical layout synthesis:** choose owner dims, block shape, halo shape,
-  logical worker slice, component locality, and task topology from tensor shape,
+  logical worker slice, component locality, and task topology from memref shape,
   access footprint, abstract logical capacity, and minimum useful work per
   task.
 - **Reduction strategy selection:** choose local accumulate, tree, or atomic
@@ -198,7 +235,7 @@ Pass responsibility rule:
   only where dependence edges or OpenMP semantics require them.
 - **Timestep/wavefront planning:** identify repeated stencil stages,
   alternating buffers, in-place update hazards, and wavefront frontiers before
-  Core sees flat ARTS work.
+  ARTS sees flat ARTS work.
 - **CPS/dataflow planning:** identify repeated-stage candidates, insert
   required SDE control tokens and barriers, verify candidate completeness, and
   rewrite scalar/data/control carries before stamping final `cps_chain` plans.
@@ -206,7 +243,18 @@ Pass responsibility rule:
   launch/dependency overhead, and prevent underpartitioning when a coarse DB
   serializes independent output slices.
 
-### Required Core analyses
+### Required CODIR checks
+
+- **Codelet isolation:** verify that codelet bodies are isolated from above and
+  use only declared deps, params, local values, and values derived from them.
+- **Dep/param ABI shape:** verify that memrefs, mutable state, MU tokens, and
+  control edges are deps, while scalar firstprivate-style captures are params.
+- **Token-local access shape:** verify that codelet load/store indices agree
+  with the MU token-local view for ND, strided, and halo cases.
+- **No fallback markers:** reject CODIR codelets that require ARTS to rediscover
+  DB roots, dependency windows, or implicit captures.
+
+### Required ARTS analyses
 
 - **Plan-to-DB validation:** verify that every SDE physical layout becomes the
   exact direct DB allocation or raw-memref bridge `DbAllocOp` block shape and
@@ -218,17 +266,17 @@ Pass responsibility rule:
   and continuations for each benchmark family and flag shapes that contradict
   the SDE plan.
 - **CPS materialization accounting:** verify that SDE CPS candidates/final
-  stages lower to the expected ARTS control/continuation shape without Core
+  stages lower to the expected ARTS control/continuation shape without ARTS
   inventing new dataflow legality.
 - **Distributed ownership refinement:** map planned owner blocks to nodes and
-  routes without changing tensor partition policy.
-- **Proof-gap diagnostics:** warn or fail tests when Core had to fall back to
+  routes without changing memref partition policy.
+- **Proof-gap diagnostics:** warn or fail tests when ARTS had to fall back to
   whole-DB acquires, unblocked DBs, global dep indexes, or unplanned barriers.
 
-### Required RT/runtime analyses
+### Required ARTS-RT/runtime analyses
 
 - **Launch overhead profile:** measure EDT create, ready-local create,
-  continuation, and epoch finish/wait costs only after Core task counts look
+  continuation, and epoch finish/wait costs only after ARTS task counts look
   right.
 - **Dependency-slot locality:** confirm `dep_gep` and DB pointer access are
   local to the planned dependency window, not global block ids.
@@ -241,11 +289,11 @@ Pass responsibility rule:
 
 ### Benchmark-family heuristic matrix
 
-| Family | SDE policy | Core check | RT/runtime follow-up |
+| Family | SDE policy | CODIR/ARTS check | ARTS-RT/runtime follow-up |
 |---|---|---|---|
-| Elementwise and ML vector kernels | Fuse compatible stages, choose coarse vector blocks, keep pure libm scalar calls effect-free, preserve vectorization hints. | Direct MU/token lowering or `CreateDbs` bridge must allocate blocked output DBs and avoid whole-DB dependency windows. | Hoist dep/db pointers, shrink pack/unpack, confirm launch overhead is not dominating. |
+| Elementwise and ML vector kernels | Fuse compatible stages, choose coarse vector blocks, keep pure libm scalar calls effect-free, preserve vectorization hints. | Direct MU/token lowering must allocate blocked output DBs and avoid whole-DB dependency windows; `CreateDbs` is coarse-only. | Hoist dep/db pointers, shrink pack/unpack, confirm launch overhead is not dominating. |
 | Row/column reductions (`atax`, `bicg`, `layernorm`, `batchnorm`) | Distinguish per-output reductions from OpenMP scalar reductions; choose owner rows/channels and local accumulate/tree/atomic strategy. | Materialize partial/output DBs according to SDE owner dims, with no serialized global update unless SDE chose atomic. | Reduce continuation and dependency overhead after reduction DB shape is correct. |
-| Matmul and chained tensor contractions (`gemm`, `2mm`, `3mm`) | Classify contractions in SDE, preserve reduction locality, and choose physical owner dims from proven DB reuse. Direct-memory matmul keeps row-strip ownership until SDE can also tile A/B/intermediate DBs; 2D output ownership is only valid when it does not duplicate coarse input sweeps. | Intermediate/output DBs must reflect the SDE owner plan. Core must preserve row-strip or 2D tiling exactly and must not invent tensor partitioning. | Optimize launch/dep overhead only after task count and block reuse match the SDE tile plan. |
+| Matmul and chained contractions (`gemm`, `2mm`, `3mm`) | Classify contractions in SDE, preserve reduction locality, and choose physical owner dims from proven DB reuse. Direct-memory matmul keeps row-strip ownership until SDE/CODIR can also tile A/B/intermediate DBs and rewrite token-local accesses. 2D output ownership is only valid when it does not duplicate coarse input sweeps. | CODIR codelets must expose explicit A/B/C deps and params with token-local access; ARTS intermediate/output DBs must reflect the SDE owner plan and must not invent memref partitioning. | Optimize launch/dep overhead only after task count and block reuse match the SDE tile plan. |
 | Stencils and timesteps (`jacobi2d`, `seidel-2d`, `fdtd-2d`, KaStORS) | Author halo/window shape, alternating-buffer or wavefront structure, barrier/timestep intent, and CPS candidate/final stage plans. | Acquires must use bounded neighbor windows and local dependency slots; CPS/barrier plans must lower from SDE-authored control edges. | Optimize ready-local create, continuation calls, and dep window indexing after halo/CPS shape is correct. |
 | 3D component stencils (`specfem3d`, `sw4lite`) | Separate spatial, component, and batch dimensions; keep component dimension local when it improves reuse. | DB blocks must reflect spatial slabs plus local components. | Use traces to reduce launch/acquire overhead without changing slab policy. |
 | Irregular/task suites (`monte-carlo`, `stream`, future graph/task workloads) | Stamp only proven independent chunks; document unsupported irregular policy instead of guessing. | Preserve explicit task/DB contracts and diagnose unplanned coarse synchronization. | Runtime scheduler/counter work is allowed only when compiler shape is already credible. |
@@ -257,11 +305,15 @@ Before a performance result is considered meaningful:
 1. The benchmark must compile and pass checksum parity against OpenMP.
 2. The SDE stage dump must show the intended semantic plan or explicitly show
    why the benchmark is blocked.
-3. The Core dump must show the SDE physical layout materialized directly from
-   MU tokens or bridged by `CreateDbs` from explicit SDE dependency slices.
-4. Runtime traces must agree with the intended task count, DB count, dependency
+3. The CODIR dump must show isolated codelets with complete deps, params, and
+   token-local accesses, or explicitly show why the case is still on the
+   migration bridge.
+4. The ARTS dump must show the SDE physical layout materialized directly from
+   MU tokens/CODIR deps or bridged by `CreateDbs` from explicit SDE dependency
+   slices.
+5. Runtime traces must agree with the intended task count, DB count, dependency
    count, and epoch shape.
-5. Only then may RT/runtime overhead changes be used to improve speed.
+6. Only then may ARTS-RT/runtime overhead changes be used to improve speed.
 
 ## Acceptance Criteria
 
@@ -272,8 +324,9 @@ Before a performance result is considered meaningful:
   useful process contracts are carried forward, stale command names are removed,
   and generated agent resources are refreshed with `dekk carts skills generate`.
 - The source tree is organized around the live command model, current `samples/`
-  layout, and SDE/Core/RT dialect ownership. Stale docs, dead workflow layers,
-  and nonfunctional generated scaffolding are removed instead of preserved.
+  layout, and target SDE/CODIR/ARTS/ARTS-RT dialect ownership. Stale docs, dead
+  workflow layers, and nonfunctional generated scaffolding are removed instead
+  of preserved.
 - Every benchmark in the maintained suite compiles with `dekk carts compile`.
 - Every benchmark run reports checksum parity against its OpenMP baseline.
 - Every benchmark has an explicit performance classification:
@@ -281,15 +334,18 @@ Before a performance result is considered meaningful:
   - `competitive`: ARTS kernel time is within 1.25x of OpenMP.
   - `blocked`: a named compiler/runtime limitation prevents a fair result.
 - No optimization changes the memory model or program semantics.
-- DB partitioning decisions are made at SDE level when tensor structure is known.
+- DB partitioning decisions are made at SDE level when memref structure is
+  known.
 - SDE may reshape `sde.su_iterate` loop steps, inner loops, and
   scheduling-unit topology when the legality proof lives at that level.
 - Direct MU/token lowering should create the chosen physical DB/acquire shape
   when available; `CreateDbs` should do so only for remaining raw memrefs.
-- Core passes may refine ARTS DB/EDT/dependency/epoch structure, but must not
-  invent tensor partition policy late.
-- RT passes may optimize runtime-call shape only after SDE/Core produce the
-  intended DB/EDT/epoch structure.
+- CODIR must isolate codelets and make deps/params explicit before EDT
+  creation.
+- ARTS passes may refine ARTS DB/EDT/dependency/epoch structure, but must not
+  invent memref partition policy late.
+- ARTS-RT passes may optimize runtime-call shape only after SDE/CODIR/ARTS
+  produce the intended DB/EDT/epoch structure.
 - Every runnable sample is swept through the user-facing examples flow or the
   equivalent e2e tests before benchmark conclusions are considered final.
 - All runnable benchmarks are swept with `--size large --threads 64 --nodes 1`
@@ -342,8 +398,9 @@ Before a performance result is considered meaningful:
 6. **Simplify before fixing forward**
    - Run the `carts-simplify` checklist on every nontrivial patch.
    - Prefer the earliest semantically correct layer: SDE for program structure
-     and policy, Core for DB/EDT/epoch orchestration, RT for runtime-shaped
-     lowering, and runtime only for actual runtime contract gaps.
+     and policy, CODIR for codelet isolation and dep/param ABI, ARTS for
+     DB/EDT/epoch orchestration, ARTS-RT for runtime-shaped lowering, and
+     runtime only for actual runtime contract gaps.
 
 ## Benchmark Scope
 
@@ -366,8 +423,8 @@ until they are re-enabled or removed with a documented reason.
 
 ### SDE Tracks
 
-- Tensor partition planning: derive owner dims, block shape, halo, and iteration
-  topology before `ConvertSdeToArts`.
+- Memref partition planning: derive owner dims, block shape, halo, and
+  iteration topology before SDE-to-CODIR materialization.
 - Distribution shaping: rewrite `sde.su_iterate` loop steps, inner loop
   nests, and scheduling-unit topology when SDE can prove legality. SDE should
   not merely stamp late contracts if the loop shape itself must change for good
@@ -384,20 +441,30 @@ until they are re-enabled or removed with a documented reason.
 - Reduction planning: select local accumulate, tree, or atomic strategy from
   cost and semantics before ARTS lowering.
 
-### Core Tracks
+### CODIR Tracks
+
+- Codelet isolation: move transitional `sde.cu_codelet` responsibilities into a
+  CARTS-owned CODIR dialect with `IsolatedFromAbove` verification.
+- Dep/param ABI: make every memory/control edge and scalar capture explicit at
+  codelet creation time.
+- Token-local memref rewrite: rewrite loads/stores to match MU token windows,
+  including ND owner dims, strided accesses, and halo windows.
+- No tensor fallback: keep codelet deps at the memref/token level.
+
+### ARTS Tracks
 
 - DB materialization: prefer direct MU/token DB creation; keep `CreateDbs` as
   the raw-memref bridge where planned physical DBs are created mechanically.
-- EDT shape: preserve planned block reads/writes through direct SDE-to-Core
-  materialization and Core EDT/DB refinement.
+- EDT shape: preserve planned block reads/writes through direct CODIR-to-ARTS
+  materialization and ARTS EDT/DB refinement.
 - Epoch structure: remove unnecessary epoch barriers and continuation overhead
   after SDE legality has been preserved.
 - Dependency lowering: make runtime dependency slots local to the dependency
   window; avoid global block ids in `dep_gep`.
-- Analysis facade: use DB/EDT/loop/epoch analyses for Core refinement instead of
-  duplicating SDE dependence logic in local helpers.
+- Analysis facade: use DB/EDT/loop/epoch analyses for ARTS refinement instead
+  of duplicating SDE/CODIR dependence logic in local helpers.
 
-### RT Tracks
+### ARTS-RT Tracks
 
 - Launch overhead: reduce EDT creation, CPS continuation, and epoch finish/wait
   mechanics only after task shape is correct.
@@ -477,8 +544,9 @@ After the full sweep, record a compact current-results summary here with:
 - runnable, passed, failed, skipped, timeout, and checksum-failure counts;
 - geometric mean speedup when the runner reports it;
 - `fast`, `competitive`, and `blocked` benchmark groups;
-- one bottleneck owner for each blocked group: SDE, Core, RT, runtime, or
-  benchmark-scope/tooling.
+- one bottleneck owner for each blocked group: SDE, CODIR, ARTS, ARTS-RT,
+  runtime, or benchmark-scope/tooling. Core and RT may appear only when
+  referring to current source-tree paths or older evidence.
 
 If a result is noisy, borderline, surprisingly fast, or unexpectedly slow, run a
 focused 3-run follow-up into a separate `.carts/outputs/...` directory and
@@ -509,8 +577,8 @@ Last full-suite large/64 sweep:
   (`polybench/seidel-2d`), 0 runner-reported checksum failures.
 - Geometric mean kernel speedup: `0.32x`.
 - Use this sweep for the non-matrix rows until the next full-suite run. The
-  matrix-family rows are superseded by the current focused evidence below because
-  later SDE/Core changes materially changed `gemm`, `2mm`, and `3mm`.
+  matrix-family rows are superseded by the current focused evidence below
+  because later SDE/ARTS changes materially changed `gemm`, `2mm`, and `3mm`.
 
 Full-suite classes from that sweep, before the later matrix-family fixes:
 
@@ -526,7 +594,28 @@ Full-suite classes from that sweep, before the later matrix-family fixes:
   `polybench/seidel-2d`, `specfem3d/stress`, `specfem3d/velocity`, `stream`,
   `sw4lite/rhs4sg-base`, `sw4lite/vel4sg-base`.
 
-Current focused matrix-family evidence:
+Working-tree checkpoint after removing DB-payload `memref.subview` creation:
+
+- Results:
+  `.carts/outputs/benchmarks-gemm-family-large-64-no-boundary-subview-20260514/20260514_231930`
+- Command:
+  `dekk carts benchmarks run polybench/gemm polybench/2mm polybench/3mm --size large --timeout 120 --threads 64 --nodes 1 --trace --results-dir .carts/outputs/benchmarks-gemm-family-large-64-no-boundary-subview-20260514`
+- All three benchmarks passed checksum verification, but performance regressed.
+  This is the newest working-tree evidence and should be treated as the next
+  optimization starting point.
+
+| Benchmark | ARTS kernel | OpenMP kernel | Speedup | Current reading |
+|---|---:|---:|---:|---|
+| `polybench/gemm` | `16.851228s` | `6.257675s` | `0.371x` | Correctness clean; performance shape is not acceptable. |
+| `polybench/2mm` | `30.755523s` | `5.777342s` | `0.188x` | Correctness clean; chained contraction still lacks SDE/CODIR phase reuse. |
+| `polybench/3mm` | `26.141955s` | `4.973020s` | `0.190x` | Correctness clean; phase shape and token-local access remain blocked. |
+
+The no-subview checkpoint fixed a lowering crash, not the performance problem.
+The next session should compare its pipeline dumps against the earlier fast and
+median-fast matrix runs, then move the missing rewrite into SDE/CODIR rather
+than adding ARTS fallback policy.
+
+Earlier focused matrix-family evidence:
 
 - Results:
   `.carts/outputs/benchmarks-gemm-family-large-64-current-20260514/20260514_181913`
@@ -565,13 +654,13 @@ Blocked owner groups:
   consumer phases is still not represented as a complete SDE contraction plan.
 - SDE: vector/reduction work aggregation (`activations`, `batchnorm`,
   `layernorm`, `stream`). These need SDE vector/reduction block planning and
-  fusion before RT launch overhead is meaningful.
+  fusion before ARTS-RT launch overhead is meaningful.
 - SDE: timestep/wavefront and in-place update planning (`jacobi2d`,
   `seidel-2d`). `seidel-2d` timed out in ARTS.
-- SDE/Core: stencil and component-slab materialization
+- SDE/ARTS: stencil and component-slab materialization
   (`convolution-2d`, `specfem3d/*`, `sw4lite/*`). SDE must prove the slab/halo
   plan and the boundary must show direct MU/token materialization or
-  `CreateDbs` consumption of explicit SDE slices before RT/runtime work is
+  `CreateDbs` consumption of explicit SDE slices before ARTS-RT/runtime work is
   considered.
 
 Implemented matmul optimization:
@@ -594,7 +683,7 @@ Focused post-fix evidence:
 
 - Rejected 2D owner heuristic run:
   `.carts/outputs/benchmarks-gemm-large-64-sde-matmul-fix/20260514_134730`.
-  SDE stamped `owner_tile_2d` for `gemm`, Core created a `64 x 8` output DB
+  SDE stamped `owner_tile_2d` for `gemm`, ARTS created a `64 x 8` output DB
   grid, and performance regressed to `0.10x` (`62.90s` ARTS kernel vs `6.23s`
   OpenMP). This proves 2D direct-memory output ownership is not valid without
   matching input DB tiling/reuse.
@@ -602,7 +691,7 @@ Focused post-fix evidence:
   `.carts/outputs/benchmarks-gemm-large-64-sde-matmul-rowstrip/20260514_135116`.
   `gemm` passes verification with `16.35s` ARTS kernel vs `6.20s` OpenMP,
   `0.38x`. This restored the clean-sweep performance while keeping the SDE
-  matmul classification and Core matmul contract, but it is no longer the latest
+  matmul classification and ARTS matmul contract, but it is no longer the latest
   matrix-family baseline.
 - Historical row-strip chained-contraction run:
   `.carts/outputs/benchmarks-matmul-chain-large-64-sde-matmul-rowstrip/20260514_135154`.
@@ -673,10 +762,11 @@ Focused post-fix evidence:
 Matmul root-cause update:
 
 - CARTS is not slow because GEMM is unrecognized anymore. The latest repeated
-  large/64 evidence shows `gemm` is faster than OpenMP at median, but it also
-  shows high run-to-run variance. Treat stale "GEMM is unclassified" notes as
-  superseded, but do not claim a double-digit `gemm` speedup without repeated
-  evidence.
+  large/64 evidence before the no-subview boundary fix showed `gemm` could be
+  faster than OpenMP at median, but the newest working-tree checkpoint is
+  correctness-clean and slow. Treat stale "GEMM is unclassified" notes as
+  superseded, but do not claim a speedup until the current working tree has
+  repeated evidence.
 - The remaining matrix-chain problem is phase/intermediate reuse and stability.
   SDE needs to model `2mm` (`tmp = A * B`, then
   `D = tmp * C + beta * D`) and `3mm` (`E = A * B`, `F = C * D`, then
@@ -692,7 +782,7 @@ Matmul root-cause update:
   earlier `k-j` interchange path, `row -> k -> j-block -> load/store C`.
   Neither shape is the GotoBLAS/BLIS algorithm. One gives strided RHS access;
   the other makes every reduction step touch output memory. The optimized
-  shape needs an SDE-approved tensor contraction plan with:
+  shape needs an SDE-approved memref contraction plan with:
   `M/N/K macro tiles`, packed or panelized `A/B` reuse, and a small
   register-blocked microkernel that accumulates an `MR x NR` C tile before
   writing output.
@@ -700,8 +790,8 @@ Matmul root-cause update:
   matmul rewrite. SDE should state the contraction, ownership, block sizes,
   and packing/layout intent. Generic code motion belongs after codelet
   materialization, where DB acquires, memref views, alias scopes, and concrete
-  loop bodies are visible. The best owner is a codelet/RT-level LICM/hoisting
-  pass before LLVM lowering, with Core only preserving SDE plan metadata while
+  loop bodies are visible. The best owner is a CODIR or ARTS-RT LICM/hoisting
+  pass before LLVM lowering, with ARTS only preserving SDE plan metadata while
   materializing DBs.
 - Rejected local experiments from this investigation:
   - Matmul-specialized invariant hoist in SDE:
@@ -752,11 +842,12 @@ Research-backed direction:
   `phase reuse` for chained contractions. This remains SDE plan metadata.
   SDE may use `sde.resource_query <logical_workers>` to size symbolic grain,
   but it must not materialize ARTS workers or runtime calls.
-- The boundary should materialize the final SDE plan as DBs and task/codelet
-  structure: output tile DBs, packed-panel scratch or DBs when cross-task reuse
-  is legal, phase-local intermediate DBs for `2mm`/`3mm`, and concrete ARTS
-  worker/query binding from SDE logical-resource queries in Core.
-- RT/codelet lowering should run generic LICM, scalar replacement, loop
+- SDE-to-CODIR should materialize the final SDE plan as isolated codelet
+  structure with explicit deps, params, and token-local views. CODIR-to-ARTS
+  should then create output tile DBs, packed-panel scratch or DBs when
+  cross-task reuse is legal, phase-local intermediate DBs for `2mm`/`3mm`, and
+  concrete ARTS worker/query binding from SDE logical-resource queries.
+- CODIR/ARTS-RT lowering should run generic LICM, scalar replacement, loop
   vectorization, and alias/noalias cleanup on the already-materialized codelet.
   These passes must be pattern-agnostic; matmul-specific legality stays in SDE.
 
@@ -771,27 +862,33 @@ Professional pass split for the contraction work:
   2D owner tiling when packed panels/intermediate reuse are not available.
 - `DistributionPlanning`: convert the chosen tile plan into SDE distribution
   intent and logical grain. It should not rederive matmul legality.
-- `ConvertSdeToArts` and the raw-memref bridge: bind the SDE plan to ARTS DBs,
-  EDTs, dependency windows, and runtime resource queries.
-- RT/codelet passes: generic loop/codelet cleanup only after the Core shape is
-  correct.
+- `ConvertSdeToCodir`: isolate codelets, make deps/params explicit, and rewrite
+  token-local memref accesses.
+- `ConvertCodirToArts` and the temporary raw-memref bridge: bind the SDE/CODIR
+  plan to ARTS DBs, EDTs, dependency windows, and runtime resource queries.
+- CODIR/ARTS-RT passes: generic loop/codelet cleanup only after the ARTS shape
+  is correct.
 
 Next optimization task:
 
-1. Diagnose `2mm` and `3mm` as multi-phase contractions: confirm whether
+1. Start from the no-subview working-tree checkpoint and compare pipeline dumps
+   against the earlier fast and median-fast matrix runs. Identify where the
+   current shape loses locality or task grain.
+2. Diagnose `2mm` and `3mm` as multi-phase contractions: confirm whether
    intermediates (`tmp`, `E`, `F`) are physically owned and reused between
    producer/consumer phases, and add SDE phase-plan facts before changing tile
    constants.
-2. Stabilize matrix benchmark evidence with repeated runs because current
-   single-run `gemm` timings show high variance despite checksum parity.
-3. Replace any remaining scalar direct-memory contraction rewrite with an SDE
+3. Introduce the CODIR plan: isolate codelets, make deps/params explicit at
+   creation time, and move token-local memref rewrites out of ARTS fallback
+   paths.
+4. Replace any remaining scalar direct-memory contraction rewrite with an SDE
    contraction plan that can lower to macro tiles plus an `MR x NR` microkernel
    shape only after packed A/B or intermediate-panel reuse is proven.
-4. Add a generic codelet/RT invariant-hoist check, but do not make it matmul
+5. Add a generic CODIR/ARTS-RT invariant-hoist check, but do not make it matmul
    aware. Its lit coverage should show a loop-invariant load moving out of an
    inner codelet loop after DB/memref materialization.
-5. Move to the vector/reduction group (`batchnorm`, `layernorm`, `stream`) if
-   packed contraction planning requires a larger Core DB contract change.
+6. Move to the vector/reduction group (`batchnorm`, `layernorm`, `stream`) if
+   packed contraction planning requires a larger ARTS DB contract change.
 
 ## Done Definition
 
@@ -801,4 +898,4 @@ A benchmark is done when it has:
 - a recorded performance class,
 - a documented compiler bottleneck if not `fast`,
 - stable lit or pipeline coverage for the optimization that made it work,
-- no late ARTS policy decision that should belong to SDE.
+- no late ARTS policy decision that should belong to SDE or CODIR.
