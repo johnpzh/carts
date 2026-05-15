@@ -47,9 +47,19 @@ lib/carts/    {                dialect/{sde,codir,arts,arts-rt}/, passes/, utils
 
 `utils/` contains CARTS-shared utilities; each dialect's `Utils/` contains its
 private utilities (see [`utility-ownership.md`](./plans/utility-ownership.md)).
-CMake targets follow the same naming: `MLIRCartsArts`, `MLIRCartsArtsRt`,
-`MLIRCartsSde`, `MLIRCartsCodir{,Conversion,Transforms,Utils}`, and the
-umbrella `MLIRCartsTransforms`. Build + 163/163 lit + 27/27 e2e green.
+
+**C++ namespaces:** unified under `mlir::carts`. `mlir::carts::sde`,
+`mlir::carts::arts`, `mlir::carts::arts_rt`, `mlir::carts::codir`. The legacy
+`mlir::arts` (which used to mean both the project umbrella AND the ARTS
+dialect) is gone.
+
+**CMake targets:** `MLIRCartsArts`, `MLIRCartsArtsRt`, `MLIRCartsSde`,
+`MLIRCartsCodir{,Conversion,Transforms,Utils}` for dialect IR; per-dialect
+pass libraries `MLIRCartsSdeTransforms`, `MLIRCartsArtsTransforms`,
+`MLIRCartsArtsRtTransforms`; thin umbrella `MLIRCartsTransforms` aggregates
+the three.
+
+Build + 163/163 lit + 27/27 e2e green.
 
 The current implementation uses the production codelet path:
 
@@ -249,15 +259,15 @@ Status legend: `[x]` complete; `[~]` partial; `[ ]` not started.
   lives under `include/carts/{dialect/{sde,codir,arts,arts-rt}, passes, utils,
   Dialect.h}` and `lib/carts/` mirrors it. Subdir `core/` was renamed to
   `arts/`; `rt/` to `arts-rt/`. CMake targets renamed to `MLIRCartsArts`,
-  `MLIRCartsArtsRt`, `MLIRCartsTransforms` (umbrella). Utility hierarchy is
-  reclassified: shared utils stay in `carts/utils/`, dialect-specific utils
-  live under each dialect's `Utils/`. See
+  `MLIRCartsArtsRt`, `MLIRCartsTransforms` (umbrella) plus per-dialect
+  transform libraries `MLIRCartsSdeTransforms`, `MLIRCartsArtsTransforms`,
+  `MLIRCartsArtsRtTransforms` (split from the former monolith). Utility
+  hierarchy is reclassified: shared utils stay in `carts/utils/`,
+  dialect-specific utils live under each dialect's `Utils/`. C++ namespaces
+  are unified: `mlir::carts::{sde,arts,arts_rt,codir}` (no more ambiguous
+  `mlir::arts` for both project umbrella and ARTS dialect). See
   [`folder-reorganization.md`](./plans/folder-reorganization.md) and
   [`utility-ownership.md`](./plans/utility-ownership.md) for details.
-  Deferred follow-on: C++ namespace migration (`mlir::arts::*` is still the
-  ARTS-and-project-umbrella namespace; intentionally unchanged so generated
-  symbol names stay stable) and splitting `MLIRCartsTransforms` into per-dialect
-  pass libraries.
 - [x] M2: CODIR isolation enforced and codelet ownership migrated onto the
   `sde-planning -> sde-to-codir -> codir-to-arts` path; direct
   SDE-to-ARTS codelet lowering is gone.
@@ -521,7 +531,9 @@ top-level path migration landed on 2026-05-15: `include/arts/` and `lib/arts/`
 no longer exist; the source tree lives under `include/carts/` and `lib/carts/`
 with subdialects `sde`, `arts` (was `core`), `arts-rt` (was `rt`), and `codir`.
 Utilities are reclassified by ownership. CMake targets are renamed to the
-`MLIRCarts*` prefix. The live route remains
+`MLIRCarts*` prefix and the umbrella pass library is split into per-dialect
+transform libraries. C++ namespaces are unified under
+`mlir::carts::{sde,arts,arts_rt,codir}`. The live route remains
 `sde-planning -> sde-to-codir -> codir-to-arts`; any direct SDE-to-ARTS/codelet
 wording in docs, skills, or tests is stale unless it is in a removal note.
 
@@ -543,11 +555,6 @@ The unblocked slices ranked by leverage are:
   is deleted. Highest-priority correctness gaps are explicit OpenMP reduction
   materialization before CODIR and opaque full-memref call handling inside
   token-local codelets.
-4. **Optional cleanup follow-ons (deferred from the M1 path migration):**
-   migrate C++ namespaces to a unified `mlir::carts::{sde,arts,arts_rt,codir}`
-   layout (currently the SDE/ARTS/ARTS-RT dialects still nest under
-   `mlir::arts::*`); split `MLIRCartsTransforms` into per-dialect pass
-   libraries. Both are mechanical and produce no behavior change.
 
 Use [`utility-ownership.md`](./plans/utility-ownership.md) and the
 `check-utils` skill before adding or moving helper code in any of the above

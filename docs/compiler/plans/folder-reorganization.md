@@ -130,16 +130,17 @@ The legacy `include/arts/` and `lib/arts/` umbrellas no longer exist. The
 CMake target names follow the same pattern: `MLIRCartsArts`, `MLIRCartsArtsRt`,
 `MLIRCartsSde`, `MLIRCartsCodir*`, and the umbrella `MLIRCartsTransforms`.
 
-Pending follow-on work tracked here:
+Both follow-on items are also complete:
 
-- C++ namespace migration (`mlir::arts::*` and `mlir::arts::rt::*` → unified
-  `mlir::carts::arts::*` and `mlir::carts::arts_rt::*`) is intentionally
-  deferred so generated symbol names stay stable. TableGen `cppNamespace`
-  strings still use the legacy roots.
-- Splitting `MLIRCartsTransforms` into per-dialect pass libraries
-  (`MLIRCartsSdeTransforms`, `MLIRCartsArtsTransforms`,
-  `MLIRCartsArtsRtTransforms`) is deferred — the umbrella library still works,
-  just isn't dialect-scoped.
+- **C++ namespace migration**: `mlir::arts::*` → `mlir::carts::arts::*`;
+  `mlir::arts::sde::*` → `mlir::carts::sde::*`; `mlir::arts::rt::*` →
+  `mlir::carts::arts_rt::*`. TableGen `cppNamespace` strings track the new
+  roots. The legacy `mlir::arts` namespace (which was ambiguous between
+  project umbrella and ARTS dialect) is gone.
+- **`MLIRCartsTransforms` split**: now an umbrella that aggregates
+  `MLIRCartsSdeTransforms`, `MLIRCartsArtsTransforms`, and
+  `MLIRCartsArtsRtTransforms`. New consumers may link a single per-dialect
+  library; existing consumers keep working through the umbrella name.
 
 ## Migration Phases
 
