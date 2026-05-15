@@ -37,7 +37,21 @@ SDE/CODIR have enough information to say those things directly.
 _Snapshot as of 2026-05-15. Refresh whenever a milestone closes or the live
 pipeline changes._
 
-The current implementation now uses the production codelet path:
+**Source layout:** Migration to the unified `carts/` tree is complete.
+`include/arts/` and `lib/arts/` no longer exist. Headers and sources live at:
+
+```text
+include/carts/{Dialect.h, dialect/{sde,codir,arts,arts-rt}/, passes/, utils/}
+lib/carts/    {                dialect/{sde,codir,arts,arts-rt}/, passes/, utils/}
+```
+
+`utils/` contains CARTS-shared utilities; each dialect's `Utils/` contains its
+private utilities (see [`utility-ownership.md`](./plans/utility-ownership.md)).
+CMake targets follow the same naming: `MLIRCartsArts`, `MLIRCartsArtsRt`,
+`MLIRCartsSde`, `MLIRCartsCodir{,Conversion,Transforms,Utils}`, and the
+umbrella `MLIRCartsTransforms`. Build + 163/163 lit + 27/27 e2e green.
+
+The current implementation uses the production codelet path:
 
 ```text
 SDE planning -> CODIR codelet isolation -> CODIR-to-ARTS DB/EDT materialization
@@ -168,9 +182,9 @@ Important current facts:
 
 | Subplan | Purpose | Primary Exit Gate |
 |---|---|---|
-| [`folder-reorganization.md`](./plans/folder-reorganization.md) | Establish the physical `carts/dialect/{sde,codir,arts,arts-rt}` source layout and staged move order. | Target folders exist and each physical move has focused build/test gates. |
+| [`folder-reorganization.md`](./plans/folder-reorganization.md) | Establish the physical `carts/dialect/{sde,codir,arts,arts-rt}` source layout and staged move order. | **Done** as of 2026-05-15: all moves landed; build + 163/163 lit tests green. |
 | [`subdialect-analysis-optimization.md`](./plans/subdialect-analysis-optimization.md) | Give each subdialect local analysis and optimization ownership. | No dialect relies on hidden analysis objects from another dialect. |
-| [`utility-ownership.md`](./plans/utility-ownership.md) | Give each dialect its own utility surface and prevent pass-local utility sprawl. | New helpers land in the narrowest owning dialect `Utils/` (or `carts/support` for cross-dialect needs) or carry a pass-local justification. |
+| [`utility-ownership.md`](./plans/utility-ownership.md) | Give each dialect its own utility surface and prevent pass-local utility sprawl. | **Done for the cross-dialect blob** as of 2026-05-15. Pass-local SDE/ARTS-RT extractions remain as a watch item. New helpers land in the narrowest owning dialect `Utils/` (or `carts/utils` for shared needs) or carry a pass-local justification. |
 | [`dialect-stack-migration.md`](./plans/dialect-stack-migration.md) | Split the conceptual and driver stack into SDE, CODIR, ARTS, and ARTS-RT. | The driver runs SDE -> CODIR -> ARTS; any surviving SDE op fails the boundary. |
 | [`codir-edt-isolation.md`](./plans/codir-edt-isolation.md) | Make codelet deps/params explicit, guarantee CODIR isolation from above, then lower mechanically to `arts.edt`. | `verify-codir` rejects implicit captures and `EdtLowering` consumes the explicit dep/param ABI without recovery code. |
 | [`memref-mu-token-rewrite.md`](./plans/memref-mu-token-rewrite.md) | Make tiling real by rewriting MU, CU, and SU together at memref level. | ND/strided owner slices lower through token-local codelets without tensor-carrier paths. |
@@ -230,13 +244,20 @@ Status legend: `[x]` complete; `[~]` partial; `[ ]` not started.
 
 - [x] M0: baseline recorded (see [Current Checkpoint](#current-checkpoint));
   refresh after each milestone closes.
-- [~] M1: target folder/dialect skeleton visible. CODIR skeleton, manifest
-  stage tokens, executable default stage descriptors, and per-dialect
-  `Utils/README.md` skeletons are wired. CODIR conversion implementation now
-  lives under explicit `Conversion/SdeToCodir` and `Conversion/CodirToArts`
-  folders, while CODIR-local verification/optimization remains under
-  `Transforms/`. Remaining: physical file moves for the other dialect layers
-  and additional utility extractions as owning dialects become clear.
+- [x] M1: target folder/dialect skeleton in place. The full physical layout
+  migration is complete. `include/arts/` and `lib/arts/` are gone; everything
+  lives under `include/carts/{dialect/{sde,codir,arts,arts-rt}, passes, utils,
+  Dialect.h}` and `lib/carts/` mirrors it. Subdir `core/` was renamed to
+  `arts/`; `rt/` to `arts-rt/`. CMake targets renamed to `MLIRCartsArts`,
+  `MLIRCartsArtsRt`, `MLIRCartsTransforms` (umbrella). Utility hierarchy is
+  reclassified: shared utils stay in `carts/utils/`, dialect-specific utils
+  live under each dialect's `Utils/`. See
+  [`folder-reorganization.md`](./plans/folder-reorganization.md) and
+  [`utility-ownership.md`](./plans/utility-ownership.md) for details.
+  Deferred follow-on: C++ namespace migration (`mlir::arts::*` is still the
+  ARTS-and-project-umbrella namespace; intentionally unchanged so generated
+  symbol names stay stable) and splitting `MLIRCartsTransforms` into per-dialect
+  pass libraries.
 - [x] M2: CODIR isolation enforced and codelet ownership migrated onto the
   `sde-planning -> sde-to-codir -> codir-to-arts` path; direct
   SDE-to-ARTS codelet lowering is gone.
@@ -310,9 +331,12 @@ Tasks:
   are executable default stages and exposed by
   `--print-pipeline-manifest-json`.
 - [x] Add `Utils/` folders for each dialect next to `IR/`, `Analysis/`,
-  `Transforms/`, `Conversion/`, and `Verify/`.
-- [ ] Start moving files into the `carts/dialect/...` target layout only for
-  the dialect slice being implemented.
+  `Transforms/`, `Conversion/`, and `Verify/`. All four are now populated
+  with real headers (not README-only).
+- [x] Move all source into the `carts/dialect/...` target layout. The legacy
+  `include/arts/` and `lib/arts/` umbrellas are gone. `core/` → `arts/`,
+  `rt/` → `arts-rt/`. CARTS-shared utils sit at `carts/utils/`;
+  dialect-specific utils sit under each dialect's `Utils/`.
 - [x] Wire executable stage descriptors that run `convert-sde-to-codir`,
   `verify-codir`, and `convert-codir-to-arts` inside the default pipeline.
 - [x] Remove direct SDE-to-ARTS lowering from the live compiler pipeline. Keep
@@ -492,12 +516,15 @@ Exit gate:
 
 ## Immediate Next Session
 
-M2 production migration is now closed for the codelet path: SDE codelets route
-through CODIR before ARTS, and direct `sde.cu_codelet` lowering has been
-removed from the live pipeline.
-The live route is `sde-planning -> sde-to-codir -> codir-to-arts`; any direct
-SDE-to-ARTS/codelet wording in docs, skills, or tests is stale unless it is in
-a removal note.
+M1 (folder/utility hierarchy) and M2 (CODIR isolation) are closed. The full
+top-level path migration landed on 2026-05-15: `include/arts/` and `lib/arts/`
+no longer exist; the source tree lives under `include/carts/` and `lib/carts/`
+with subdialects `sde`, `arts` (was `core`), `arts-rt` (was `rt`), and `codir`.
+Utilities are reclassified by ownership. CMake targets are renamed to the
+`MLIRCarts*` prefix. The live route remains
+`sde-planning -> sde-to-codir -> codir-to-arts`; any direct SDE-to-ARTS/codelet
+wording in docs, skills, or tests is stale unless it is in a removal note.
+
 The unblocked slices ranked by leverage are:
 
 1. **Passed-but-slow groups.** Boundary failures are fixed for the formerly
@@ -516,6 +543,11 @@ The unblocked slices ranked by leverage are:
   is deleted. Highest-priority correctness gaps are explicit OpenMP reduction
   materialization before CODIR and opaque full-memref call handling inside
   token-local codelets.
+4. **Optional cleanup follow-ons (deferred from the M1 path migration):**
+   migrate C++ namespaces to a unified `mlir::carts::{sde,arts,arts_rt,codir}`
+   layout (currently the SDE/ARTS/ARTS-RT dialects still nest under
+   `mlir::arts::*`); split `MLIRCartsTransforms` into per-dialect pass
+   libraries. Both are mechanical and produce no behavior change.
 
 Use [`utility-ownership.md`](./plans/utility-ownership.md) and the
 `check-utils` skill before adding or moving helper code in any of the above
@@ -546,22 +578,34 @@ pick the next concrete slice; use the Milestones to confirm exit gates.
 ### B. Folder And Utility Ownership
 
 - [x] (M1) Add or verify `Utils/` folders for SDE, CODIR, ARTS, and ARTS-RT.
-- [~] (M1, M2) Move reusable helpers from passes into the earliest owning
-  dialect's `Utils/` surface (`check-utils` skill). CODIR-only codelet ABI
-  predicates are in `carts/dialect/codir/Utils/CodeletABIUtils`; SDE-dependent
-  task-dependency slice proof helpers are scoped to
-  `carts/dialect/codir/Conversion/SdeToCodir` instead of CODIR utilities. SDE,
-  ARTS, and ARTS-RT extractions remain.
+  All four dialects now have populated `Utils/` directories with real headers
+  and CMake wiring (no longer README-only).
+- [x] (M1, M2) Move reusable helpers from passes into the earliest owning
+  dialect's `Utils/` surface (`check-utils` skill). The cross-dialect blob
+  formerly in `include/carts/utils/` is reclassified: ARTS-only headers
+  (DbUtils, EdtUtils, IdRegistry, LocationMetadata, LoweringContractUtils,
+  PartitionPredicates, BlockedAccessUtils, MetadataAttrNames, MetadataEnums,
+  ARTSCostModel, RuntimeConfig) moved to `carts/dialect/arts/Utils/`;
+  ARTS-RT-only LoopInvarianceUtils moved to `carts/dialect/arts-rt/Utils/`;
+  SDE-only SDECostModel moved to `carts/dialect/sde/Utils/`. CODIR ABI
+  predicates already lived in `carts/dialect/codir/Utils/`. Remaining:
+  pass-local SDE memref/access helpers and ARTS-RT pointer/packing helpers
+  stay pass-local until a second consumer appears.
 - [ ] (cross-cutting) Keep pass-local static helpers only when they are
   genuinely local to one pass and not a dialect invariant.
-- [~] (M1, M2) Delete duplicated local helpers after extraction. The former
+- [x] (M1, M2) Delete duplicated local helpers after extraction. The former
   mixed CODIR boundary implementation has been split into
   `Conversion/SdeToCodir/SdeToCodir.cpp`,
   `Conversion/CodirToArts/CodirToArts.cpp`, `Transforms/VerifyCodir.cpp`, and
-  `Transforms/CodirCodeletOpt.cpp`; broader duplicate cleanup remains.
-- [~] (M1) Update include paths and CMake in small, buildable slices. CODIR
-  `Utils`, `Transforms`, and `Conversion` CMake wiring is live; other dialect
-  utility libraries remain README-only until their first real extraction.
+  `Transforms/CodirCodeletOpt.cpp`. Cross-dialect dedupe pass on 2026-05-15
+  removed several duplicate utilities (ConversionUtils.h shadow index helpers,
+  the byte-identical PolygeistToSde `materializeDependView`).
+- [x] (M1) Update include paths and CMake in small, buildable slices. The
+  full top-level path rename (`include/arts/` → `include/carts/`, `core/` →
+  `arts/`, `rt/` → `arts-rt/`) and per-dialect Utils/ wiring landed; lit/test
+  paths and `tools/scripts/test.py` follow. Library targets renamed to
+  `MLIRCartsArts`, `MLIRCartsArtsRt`, `MLIRCartsTransforms` (with matching
+  PassIncGen targets).
 
 ### C. CODIR Boundary
 

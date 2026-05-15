@@ -4,15 +4,15 @@ This document mirrors the pipeline order defined in `tools/compile/Compile.cpp`.
 If this file disagrees with the compiler source or `dekk carts pipeline --json`,
 the live compiler wins.
 
-For layer-specific optimization planning, see [`sde/`](./sde/),
-[`codir/`](./codir/), [`core/`](./core/), and [`rt/`](./rt/). For the target
-`sde -> codir -> arts -> arts-rt` split and the current migration status, see
+For per-dialect documentation (analysis, optimizations, READMEs), see
+[`dialects/sde/`](./dialects/sde/), [`dialects/codir/`](./dialects/codir/),
+[`dialects/arts/`](./dialects/arts/), and
+[`dialects/arts-rt/`](./dialects/arts-rt/). For the target
+`sde -> codir -> arts -> arts-rt` split, see
 [`dialect-layering-vision.md`](./dialect-layering-vision.md). For execution
 order and subplans, see [`master-plan.md`](./master-plan.md).
-For the staged source-folder migration, see
+For the source-folder migration (complete as of 2026-05-15), see
 [`plans/folder-reorganization.md`](./plans/folder-reorganization.md).
-For the target per-dialect analysis and optimization ownership, see
-[`dialects/`](./dialects/).
 
 ## CLI Introspection
 
@@ -262,8 +262,8 @@ VerifyLowered
 - `CreateDbs` is now only a coarse raw-memref bridge. It rejects blocked/tiled
   raw memrefs because SDE/CODIR must perform MU/token storage and access
   rewrites before ARTS.
-- `arts` owns DB/EDT/epoch orchestration and analysis-backed refinement. The
-  current source tree still calls this area `core/`.
+- `arts` owns DB/EDT/epoch orchestration and analysis-backed refinement
+  (source: `lib/carts/dialect/arts/`).
 - `arts-rt` lowering belongs in `pre-lowering` and `arts-to-llvm`, after the
-  compiler has already chosen the DB and task shape. The current source tree
-  still calls this area `rt/`.
+  compiler has already chosen the DB and task shape (source:
+  `lib/carts/dialect/arts-rt/`).

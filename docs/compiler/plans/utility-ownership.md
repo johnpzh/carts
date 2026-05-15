@@ -115,30 +115,43 @@ Exit gate:
 
 - Target folders show where utilities belong without changing build behavior.
 
-### Phase 3: First Real Extractions
+### Phase 3: First Real Extractions — Done for cross-dialect blob
 
-- [ ] Extract SDE memref/access helpers used by PatternAnalysis, tiling, and MU
-  materialization.
-- [~] Extract CODIR codelet capture and token-local view helpers when CODIR is
-  introduced. Current completed slice: CODIR-only ABI predicates live in
-  `include/carts/dialect/codir/Utils/CodeletABIUtils.h` and
-  `lib/carts/dialect/codir/Utils/CodeletABIUtils.cpp`. SDE-dependent
-  task-dependency slice proof helpers (`hasCompleteMuDepSlice`, exact
-  subview/root-access proof collection, and related predicates) are scoped to
-  `lib/carts/dialect/codir/Conversion/SdeToCodir/TaskDepSliceUtils.*`, because
-  they are conversion logic rather than CODIR dialect utilities.
-- [ ] Extract ARTS DB/EDT/epoch helpers currently repeated in transforms.
-- [ ] Extract ARTS-RT pointer/packing helpers from lowering passes.
+The previously-monolithic `include/carts/utils/` has been reclassified by
+ownership:
+
+- [x] CODIR ABI predicates live in `include/carts/dialect/codir/Utils/`
+  (`CodeletABIUtils`). SDE-dependent task-dependency slice proof helpers stay
+  scoped to `lib/carts/dialect/codir/Conversion/SdeToCodir/TaskDepSliceUtils.*`
+  because they are conversion logic, not CODIR dialect utilities.
+- [x] ARTS-only utilities moved to `include/carts/dialect/arts/Utils/`:
+  DbUtils, EdtUtils, IdRegistry, LocationMetadata, LoweringContractUtils,
+  PartitionPredicates, BlockedAccessUtils, MetadataAttrNames, MetadataEnums,
+  ARTSCostModel (was utils/costs/), RuntimeConfig (was utils/machine/).
+- [x] ARTS-RT-only utility moved to `include/carts/dialect/arts-rt/Utils/`:
+  LoopInvarianceUtils.
+- [x] SDE-only utility moved to `include/carts/dialect/sde/Utils/`:
+  SDECostModel.
+- [ ] Pass-local SDE memref/access helpers used by PatternAnalysis, tiling,
+  and MU materialization remain to be extracted to SDE Utils when a second
+  caller appears. Today they sit inside their pass file or under
+  `Analysis/AffineAccessUtils.h`.
+- [ ] Pass-local ARTS-RT pointer/packing helpers in lowering passes remain
+  pass-local until a second consumer appears.
 
 Exit gate:
 
 - No newly added helper is duplicated across pass files.
 
-### Phase 4: Cleanup
+### Phase 4: Cleanup — Done for the major blob
 
-- [ ] Delete dead migration helpers after direct dialect utilities exist.
-- [ ] Retire stale `include/carts/utils` entries that now have dialect owners.
-- [ ] Keep only truly cross-dialect helpers in common CARTS support.
+- [x] Stale `include/carts/utils/{costs,machine}/` subdirs removed; ARTSCostModel
+  and RuntimeConfig now live in their owning dialect's Utils/.
+- [x] CARTS-shared `include/carts/utils/` is now scoped: Debug, LoopUtils,
+  OperationAttributes, PassInstrumentation, RemovalUtils, StencilAttributes,
+  Utils, ValueAnalysis, plus benchmarks/ and testing/. Every entry is verifiably
+  used across 2+ subdialects or is project-wide infrastructure.
+- [ ] Watch for new pass-local duplicates as compiler work continues.
 
 Exit gate:
 

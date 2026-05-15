@@ -114,35 +114,41 @@ split only when a utility's owner is clear:
 - Do not use `arts_sde` or `arts_sde.dep_family` style names for new facts.
   Use `sde.pattern`, `sde.dep_family`, or the owning dialect's equivalent.
 
-## Current Compatibility Layout
+## Migration Status
 
-The current tree maps to the target as follows:
+The physical layout migration is **complete**. The source tree now matches
+the target exactly:
 
-| Current path | Target path | Notes |
-|---|---|---|
-| `include/carts/dialect/sde` | `include/carts/dialect/sde` | Move after CODIR split starts. |
-| `lib/carts/dialect/sde` | `lib/carts/dialect/sde` | SDE should lose final codelet ABI ownership during this move. |
-| `lib/carts/dialect/sde/Transforms/state/codelet` | `lib/carts/dialect/codir` | Split into CODIR where the code owns isolation/deps/params. |
-| `include/carts/dialect/core` | `include/carts/dialect/arts` | Rename "core" to ARTS once behavior is stable. |
-| `lib/carts/dialect/core` | `lib/carts/dialect/arts` | Keep ARTS-machine object logic here. |
-| `include/carts/dialect/rt` | `include/carts/dialect/arts-rt` | Runtime ABI bridge. |
-| `lib/carts/dialect/rt` | `lib/carts/dialect/arts-rt` | Runtime-call lowering and cleanup. |
+```text
+include/carts/{Dialect.h, dialect/{sde,codir,arts,arts-rt}/, passes/, utils/}
+lib/carts/    {                dialect/{sde,codir,arts,arts-rt}/, passes/, utils/}
+```
+
+The legacy `include/arts/` and `lib/arts/` umbrellas no longer exist. The
+"core" subdirectory was renamed to `arts`; "rt" was renamed to `arts-rt`.
+
+CMake target names follow the same pattern: `MLIRCartsArts`, `MLIRCartsArtsRt`,
+`MLIRCartsSde`, `MLIRCartsCodir*`, and the umbrella `MLIRCartsTransforms`.
+
+Pending follow-on work tracked here:
+
+- C++ namespace migration (`mlir::arts::*` and `mlir::arts::rt::*` → unified
+  `mlir::carts::arts::*` and `mlir::carts::arts_rt::*`) is intentionally
+  deferred so generated symbol names stay stable. TableGen `cppNamespace`
+  strings still use the legacy roots.
+- Splitting `MLIRCartsTransforms` into per-dialect pass libraries
+  (`MLIRCartsSdeTransforms`, `MLIRCartsArtsTransforms`,
+  `MLIRCartsArtsRtTransforms`) is deferred — the umbrella library still works,
+  just isn't dialect-scoped.
 
 ## Migration Phases
 
-### Phase 0: Skeleton And Docs
+### Phase 0: Skeleton And Docs — Done
 
-Create the target folders and document ownership. Do not wire them into CMake
-until at least one real dialect slice moves.
+Target folders exist; dialect docs live under `docs/compiler/dialects/`; master
+plan and dialect docs point to this subplan.
 
-Exit gate:
-
-- target folders exist;
-- dialect docs exist under `docs/compiler/dialects/`;
-- master plan and dialect docs point to this subplan;
-- `git diff --check` passes.
-
-### Phase 1: CODIR First
+### Phase 1: CODIR First — Done
 
 Status: the CODIR include/lib skeleton already exists at
 `include/carts/dialect/codir/IR/` and `lib/carts/dialect/codir/IR/`, with
@@ -166,63 +172,42 @@ Exit gate:
 - CODIR tests own codelet isolation;
 - SDE tests own MU/CU/SU planning only.
 
-### Phase 2: Boundary Conversions
+### Phase 2: Boundary Conversions — Done
 
-Create target conversion folders:
+CODIR conversion folders live under
+`lib/carts/dialect/codir/Conversion/{SdeToCodir,CodirToArts}`; the direct
+SDE-to-ARTS conversion is gone from the live source tree.
 
-- `lib/carts/dialect/sde/Conversion/SdeToCodir`
-- `lib/carts/dialect/codir/Conversion/CodirToArts`
-- `lib/carts/dialect/arts/Conversion/ArtsToRt`
-- `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM`
+### Phase 3: SDE Move — Done
 
-The direct SDE-to-ARTS conversion is removed from the live source tree. SDE
-must cross the boundary through CODIR before ARTS materialization.
+SDE IR, analysis, transforms, verify, and conversion all live under
+`include/carts/dialect/sde/` and `lib/carts/dialect/sde/`. All `#include`s use
+`carts/dialect/sde/...`. No forwarding headers remain.
 
-Exit gate:
+### Phase 4: ARTS And ARTS-RT Move — Done
 
-- SDE-to-CODIR and CODIR-to-ARTS lit tests exist;
-- direct-codelet tests are migrated to SDE-to-CODIR/CODIR-to-ARTS coverage or
-  removed.
+`core/` → `arts/` and `rt/` → `arts-rt/` for both `include/` and `lib/`. ARTS
+object materialization and ARTS-RT runtime ABI lowering live in physically
+separate trees. ARTS depends on the arts-rt dialect for the boundary lowering
+in `Conversion/ArtsToRt/`; that dependency is intentional.
 
-### Phase 3: SDE Move
+### Phase 5: Utility Cleanup — Done
 
-Move SDE IR, analysis, transforms, and verification to
-`carts/dialect/sde`. Do this after codelet ownership has been split out, so SDE
-does not carry removed codelet ABI files into its new home.
+Utilities are reclassified by the earliest owning layer:
 
-Exit gate:
-
-- includes use `carts/dialect/sde/...` for moved files;
-- moved public include paths are updated at the call sites; migration-only
-  forwarding headers are not part of the target layout.
-
-### Phase 4: ARTS And ARTS-RT Move
-
-Move current `core` to `arts` and current `rt` to `arts-rt` once direct
-materialization is stable.
-
-Exit gate:
-
-- no new source path contains `core` except historical comments or release
-  notes;
-- ARTS object materialization and ARTS-RT runtime ABI lowering are physically
-  separate.
-
-### Phase 5: Utility Cleanup
-
-Move utilities to the earliest owning layer:
-
-- value/equivalence helpers to common CARTS support;
-- memref/SDE analysis helpers to SDE;
-- codelet capture helpers to CODIR;
-- DB/EDT/epoch helpers to ARTS;
-- runtime pointer/packing helpers to ARTS-RT.
-
-Exit gate:
-
-- no pass-local utility duplicates a common helper;
-- every reusable helper has the narrowest owning dialect utility home;
-- no SDE utility references ARTS runtime topology.
+- CARTS-shared (used by 2+ dialects or project-wide): `lib/carts/utils/` —
+  Debug, LoopUtils, OperationAttributes, PassInstrumentation, RemovalUtils,
+  StencilAttributes, Utils, ValueAnalysis, benchmarks, testing.
+- SDE-only: `lib/carts/dialect/sde/Utils/` — SDECostModel, plus the existing
+  pass-area `Analysis/` headers (AffineAccessUtils, SdeAnalysisUtils,
+  StructuredOpAnalysis) which intentionally stay under Analysis/ since they
+  back the SDE structured-op analysis.
+- CODIR-only: `lib/carts/dialect/codir/Utils/` — CodeletABIUtils.
+- ARTS-only: `lib/carts/dialect/arts/Utils/` — DbUtils, EdtUtils, IdRegistry,
+  LocationMetadata, LoweringContractUtils, PartitionPredicates,
+  BlockedAccessUtils, MetadataAttrNames, MetadataEnums, ARTSCostModel,
+  RuntimeConfig.
+- ARTS-RT-only: `lib/carts/dialect/arts-rt/Utils/` — LoopInvarianceUtils.
 
 ## CMake Strategy
 
