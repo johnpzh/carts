@@ -7,7 +7,7 @@ GPU work maps onto the four-layer split (`Polygeist -> sde -> codir -> arts -> a
 - **SDE**: GPU eligibility detection, target hint authoring, and MU/CU/SU planning for GPU codelets (trip count, footprint, embarrassingly-parallel proofs, GPU target attrs).
 - **CODIR**: GPU codelet isolation (deps/params/body) following the same `IsolatedFromAbove` ABI rules as CPU codelets; thread-indexing ops live in the codelet body.
 - **ARTS**: `arts.gpu_edt` and any GPU-specific DB/EDT/epoch objects, including `gpu_launch_config` attributes and DB transfer orchestration.
-- **ARTS-RT**: GPU runtime ABI (kernel-launch packing, device-pointer handling, `arts_edt_create_gpu` lowering). The source tree currently exposes these layers under `lib/arts/dialect/core/` (`arts`) and `lib/arts/dialect/rt/` (`arts-rt`) during the in-progress rename.
+- **ARTS-RT**: GPU runtime ABI (kernel-launch packing, device-pointer handling, `arts_edt_create_gpu` lowering). The source tree currently exposes these layers under `lib/carts/dialect/arts/` (`arts`) and `lib/carts/dialect/arts-rt/` (`arts-rt`) during the in-progress rename.
 
 The pass tables below describe the concrete passes that implement each layer's GPU responsibilities.
 
@@ -237,7 +237,7 @@ set_source_files_properties(${GPU_SOURCES} PROPERTIES LANGUAGE HIP)
 
 ## Phase 2: Port GPU Compiler Passes to main
 
-**Scope**: `lib/arts/passes/`, `include/arts/`
+**Scope**: `lib/carts/passes/`, `include/carts/`
 
 The GPU pass stack exists on the `gpu` branch. These must land on `main` first.
 
@@ -245,10 +245,10 @@ The GPU pass stack exists on the `gpu` branch. These must land on `main` first.
 
 | Pass | File | Role |
 |---|---|---|
-| `GpuEligibilityAnalysis` | `lib/arts/passes/opt/general/GpuEligibilityAnalysis.cpp` | Marks SDE-planned work eligible for GPU offload (trip count + footprint + embarrassingly parallel check) |
-| `GpuWorkMaterialization` | `lib/arts/passes/transforms/GpuWorkMaterialization.cpp` | Outlines the planned body to `arts.gpu_edt` with `gpu::ThreadIdOp`/`gpu::BlockIdOp` thread indexing; sets DB modes to `gpu_read`/`gpu_write` |
-| `GpuEdtLowering` | `lib/arts/passes/transforms/GpuEdtLowering.cpp` | `arts.gpu_edt` → `arts.edt<task><intranode>` + `gpu_launch_config` attribute |
-| `GpuCodegen` | `lib/arts/passes/transforms/GpuCodegen.cpp` | Validation: fails if any `arts.gpu_edt` remains |
+| `GpuEligibilityAnalysis` | `lib/carts/passes/opt/general/GpuEligibilityAnalysis.cpp` | Marks SDE-planned work eligible for GPU offload (trip count + footprint + embarrassingly parallel check) |
+| `GpuWorkMaterialization` | `lib/carts/passes/transforms/GpuWorkMaterialization.cpp` | Outlines the planned body to `arts.gpu_edt` with `gpu::ThreadIdOp`/`gpu::BlockIdOp` thread indexing; sets DB modes to `gpu_read`/`gpu_write` |
+| `GpuEdtLowering` | `lib/carts/passes/transforms/GpuEdtLowering.cpp` | `arts.gpu_edt` → `arts.edt<task><intranode>` + `gpu_launch_config` attribute |
+| `GpuCodegen` | `lib/carts/passes/transforms/GpuCodegen.cpp` | Validation: fails if any `arts.gpu_edt` remains |
 
 Also port from `gpu` branch:
 
@@ -353,14 +353,14 @@ MOD   Makefile                                            (-DARTS_USE_GPU=ON)
 ### Phase 2 — GPU compiler passes (port from gpu branch)
 
 ```
-NEW   lib/arts/passes/Analysis/GpuEligibilityAnalysis.cpp
-NEW   lib/arts/passes/transforms/GpuWorkMaterialization.cpp
-NEW   lib/arts/passes/transforms/GpuEdtLowering.cpp
-NEW   lib/arts/passes/transforms/GpuCodegen.cpp
-MOD   include/arts/passes/Passes.td
-MOD   include/arts/passes/Passes.h
-MOD   include/arts/ArtsOps.td                    (arts.gpu_edt, arts.gpu_memcpy)
-MOD   lib/arts/passes/transforms/ConvertArtsToLLVM.cpp
+NEW   lib/carts/passes/Analysis/GpuEligibilityAnalysis.cpp
+NEW   lib/carts/passes/transforms/GpuWorkMaterialization.cpp
+NEW   lib/carts/passes/transforms/GpuEdtLowering.cpp
+NEW   lib/carts/passes/transforms/GpuCodegen.cpp
+MOD   include/carts/passes/Passes.td
+MOD   include/carts/passes/Passes.h
+MOD   include/carts/ArtsOps.td                    (arts.gpu_edt, arts.gpu_memcpy)
+MOD   lib/carts/passes/transforms/ConvertArtsToLLVM.cpp
 MOD   tools/compile/Compile.cpp                  (GPU pass pipeline)
 ```
 

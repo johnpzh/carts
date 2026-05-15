@@ -1,6 +1,6 @@
 # Stencil Performance Solution - 2026-05-13
 
-> **Terminology note (2026-05-15):** This document predates the four-layer rename. Read references to "Core" as the current `arts` dialect (source tree still under `lib/arts/dialect/core/`) and "RT" as `arts-rt` (source tree under `lib/arts/dialect/rt/`). Ownership claims should be interpreted against the four-layer split documented in [`master-plan.md`](./master-plan.md).
+> **Terminology note (2026-05-15):** This document predates the four-layer rename. Read references to "Core" as the current `arts` dialect (source tree still under `lib/carts/dialect/arts/`) and "RT" as `arts-rt` (source tree under `lib/carts/dialect/arts-rt/`). Ownership claims should be interpreted against the four-layer split documented in [`master-plan.md`](./master-plan.md).
 
 This note records the proposed production path for making the stencil-like
 benchmark family performance-credible at `large`, 64 threads, and 1 node after
@@ -277,10 +277,10 @@ owner-tile work:
 5. Run:
 
 ```bash
-dekk carts lit lib/arts/dialect/core/test/task_loop_scalar_control_dep_keeps_stencil_parallelism.mlir
-dekk carts lit lib/arts/dialect/core/test/task_loop_read_only_owner_mismatch_keeps_parallelism.mlir
-dekk carts lit lib/arts/dialect/core/test/task_loop_aligned_bounds_unconditional.mlir
-dekk carts lit lib/arts/dialect/core/test/task_loop_db_alignment_normalizes_nonunit_step.mlir
+dekk carts lit lib/carts/dialect/arts/test/task_loop_scalar_control_dep_keeps_stencil_parallelism.mlir
+dekk carts lit lib/carts/dialect/arts/test/task_loop_read_only_owner_mismatch_keeps_parallelism.mlir
+dekk carts lit lib/carts/dialect/arts/test/task_loop_aligned_bounds_unconditional.mlir
+dekk carts lit lib/carts/dialect/arts/test/task_loop_db_alignment_normalizes_nonunit_step.mlir
 dekk carts lit tests/e2e/parallel_for_stencil.c
 dekk carts lit tests/e2e/stencil.c
 dekk carts lit tests/e2e/jacobi_for.c

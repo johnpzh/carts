@@ -93,7 +93,7 @@ Every dialect also has its own `Utils/` area. The utility placement contract is
 in [`utility-ownership.md`](./utility-ownership.md).
 
 Use `include/carts/support` and `lib/carts/support` later for compiler-wide
-utilities that are not ARTS-specific. Existing `include/arts/utils` should be
+utilities that are not ARTS-specific. Existing `include/carts/utils` should be
 split only when a utility's owner is clear:
 
 - CARTS semantic utilities move to `carts/support`.
@@ -120,13 +120,13 @@ The current tree maps to the target as follows:
 
 | Current path | Target path | Notes |
 |---|---|---|
-| `include/arts/dialect/sde` | `include/carts/dialect/sde` | Move after CODIR split starts. |
-| `lib/arts/dialect/sde` | `lib/carts/dialect/sde` | SDE should lose final codelet ABI ownership during this move. |
-| `lib/arts/dialect/sde/Transforms/state/codelet` | `lib/carts/dialect/codir` | Split into CODIR where the code owns isolation/deps/params. |
-| `include/arts/dialect/core` | `include/carts/dialect/arts` | Rename "core" to ARTS once behavior is stable. |
-| `lib/arts/dialect/core` | `lib/carts/dialect/arts` | Keep ARTS-machine object logic here. |
-| `include/arts/dialect/rt` | `include/carts/dialect/arts-rt` | Runtime ABI bridge. |
-| `lib/arts/dialect/rt` | `lib/carts/dialect/arts-rt` | Runtime-call lowering and cleanup. |
+| `include/carts/dialect/sde` | `include/carts/dialect/sde` | Move after CODIR split starts. |
+| `lib/carts/dialect/sde` | `lib/carts/dialect/sde` | SDE should lose final codelet ABI ownership during this move. |
+| `lib/carts/dialect/sde/Transforms/state/codelet` | `lib/carts/dialect/codir` | Split into CODIR where the code owns isolation/deps/params. |
+| `include/carts/dialect/core` | `include/carts/dialect/arts` | Rename "core" to ARTS once behavior is stable. |
+| `lib/carts/dialect/core` | `lib/carts/dialect/arts` | Keep ARTS-machine object logic here. |
+| `include/carts/dialect/rt` | `include/carts/dialect/arts-rt` | Runtime ABI bridge. |
+| `lib/carts/dialect/rt` | `lib/carts/dialect/arts-rt` | Runtime-call lowering and cleanup. |
 
 ## Migration Phases
 
@@ -156,7 +156,7 @@ renaming:
 - `state/codelet/ConvertToCodelet.cpp`
 - `state/codelet/ScalarForwarding.cpp` if it remains codelet-bound
 - `state/codelet/TokenModeRefinement.cpp`
-- codelet tests under `lib/arts/dialect/sde/test/codelet`
+- codelet tests under `lib/carts/dialect/sde/test/codelet`
 
 Do not move tensor cleanup as-is. Convert it to memref/CODIR cleanup or delete
 it with tensor-carrier removal.

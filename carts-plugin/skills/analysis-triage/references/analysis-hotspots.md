@@ -4,9 +4,9 @@ Start here when the symptom depends on pass order, graph freshness, or stale met
 
 ## Core APIs
 
-- `include/arts/dialect/core/Analysis/AnalysisDependencies.h`
-- `include/arts/dialect/core/Analysis/AnalysisManager.h`
-- `lib/arts/dialect/core/Analysis/AnalysisManager.cpp`
+- `include/carts/dialect/arts/Analysis/AnalysisDependencies.h`
+- `include/carts/dialect/arts/Analysis/AnalysisManager.h`
+- `lib/carts/dialect/arts/Analysis/AnalysisManager.cpp`
 
 ## High-Risk Docs
 

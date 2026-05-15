@@ -1,6 +1,6 @@
 # Stencil Counter Analysis - 2026-05-13
 
-> **Terminology note (2026-05-15):** This document predates the four-layer rename. Read references to "Core" as the current `arts` dialect (source tree still under `lib/arts/dialect/core/`) and "RT" as `arts-rt` (source tree under `lib/arts/dialect/rt/`). Ownership claims should be interpreted against the four-layer split documented in [`master-plan.md`](./master-plan.md).
+> **Terminology note (2026-05-15):** This document predates the four-layer rename. Read references to "Core" as the current `arts` dialect (source tree still under `lib/carts/dialect/arts/`) and "RT" as `arts-rt` (source tree under `lib/carts/dialect/arts-rt/`). Ownership claims should be interpreted against the four-layer split documented in [`master-plan.md`](./master-plan.md).
 
 This note records the current measurement state for the stencil-like CARTS
 benchmarks after fixing ARTS counter-profile plumbing. The focus is `large`,

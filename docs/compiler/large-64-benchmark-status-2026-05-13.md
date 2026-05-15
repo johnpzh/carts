@@ -108,7 +108,7 @@ performance as noisy until repeated median runs are collected.
 
    - Inspect block layout choices and halo dependency shape. Whole-DB bridging
      or over-wide dependencies will serialize otherwise parallel work.
-   - Verify that owner-slice and boundary plans stay in SDE/arts (lib/arts/dialect/core/) and are not
+   - Verify that owner-slice and boundary plans stay in SDE/arts (lib/carts/dialect/arts/) and are not
      recovered late in RT.
    - Compare task counts and DB acquire counts against OpenMP loop partitioning.
    - Tighten the cost model so small halo work does not create too many EDTs.

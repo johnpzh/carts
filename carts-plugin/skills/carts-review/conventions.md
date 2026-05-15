@@ -4,8 +4,8 @@
 
 Use centralized attribute names:
 
-- `include/arts/utils/OperationAttributes.h`
-- `include/arts/utils/StencilAttributes.h`
+- `include/carts/utils/OperationAttributes.h`
+- `include/carts/utils/StencilAttributes.h`
 
 Do not hardcode project attribute strings in pass logic.
 
@@ -41,10 +41,10 @@ rg -n '^static .*\\(' lib/arts include/arts --glob '*.cpp' --glob '*.h'
 
 ## File Placement
 
-- SDE semantics: `lib/arts/dialect/sde`.
-- Core DB/EDT/epoch/analysis: `lib/arts/dialect/core`.
-- Runtime-shaped lowering: `lib/arts/dialect/rt`.
-- Shared utilities: `include/arts/utils`, `lib/arts/utils`, or dialect-specific
+- SDE semantics: `lib/carts/dialect/sde`.
+- Core DB/EDT/epoch/analysis: `lib/carts/dialect/core`.
+- Runtime-shaped lowering: `lib/carts/dialect/rt`.
+- Shared utilities: `include/carts/utils`, `lib/carts/utils`, or dialect-specific
   support utilities when the helper is not globally meaningful.
 
 ## Review Traps

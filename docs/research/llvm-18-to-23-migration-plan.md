@@ -23,8 +23,8 @@ Upgrading LLVM 18 → 23 across CARTS + Polygeist requires **~3,100 breaking cal
 
 | Codebase | Files | Lines | Migration Effort |
 |----------|-------|-------|-----------------|
-| **CARTS passes** (`lib/arts/passes/`) | 50 .cpp | 25,098 | MEDIUM |
-| **CARTS transforms/utils** (`lib/arts/dialect/core/Transforms/`, `utils/`, etc.) | 79 .cpp | 32,109 | MEDIUM |
+| **CARTS passes** (`lib/carts/passes/`) | 50 .cpp | 25,098 | MEDIUM |
+| **CARTS transforms/utils** (`lib/carts/dialect/arts/Transforms/`, `utils/`, etc.) | 79 .cpp | 32,109 | MEDIUM |
 | **Polygeist passes** (`external/Polygeist/lib/`) | 24 .cpp + 11 others | 21,854 | HIGH |
 | **cgeist frontend** (`external/Polygeist/tools/cgeist/`) | 9 .cc files | ~20,000 | LOW (no Clang API breaks) |
 | **Total** | ~170 source files | ~99,000 | |
@@ -53,7 +53,7 @@ Upgrading LLVM 18 → 23 across CARTS + Polygeist requires **~3,100 breaking cal
 
 | Codebase | Breaking | Deprecation Warnings |
 |----------|----------|---------------------|
-| CARTS (`lib/arts/` + `include/arts/`) | 185 casts + 4 greedy + GEN_PASS (50 files) | 565 create |
+| CARTS (`lib/carts/` + `include/carts/`) | 185 casts + 4 greedy + GEN_PASS (50 files) | 565 create |
 | Polygeist (`lib/polygeist/`) | 224 casts + 21 greedy + GEN_PASS (23 files) | 693 create |
 | cgeist (`tools/cgeist/`) | 0 casts | 901 create |
 | Polygeist other | 1 listener | 0 |
@@ -69,7 +69,7 @@ LLVM 19 removed `Value.cast<T>()`, `Value.dyn_cast<T>()`, `Value.isa<T>()` in fa
 **Distribution**:
 | Location | `.cast<` | `.dyn_cast<` | `.isa<` | Total |
 |----------|---------|-------------|--------|-------|
-| CARTS `lib/arts/` | ~50 | ~70 | ~30 | ~151 |
+| CARTS `lib/carts/` | ~50 | ~70 | ~30 | ~151 |
 | Polygeist `lib/polygeist/` | ~60 | ~100 | ~64 | ~224 |
 | cgeist `tools/cgeist/` | 0 | 0 | 0 | 0 |
 | **Total** | ~110 | ~170 | ~94 | ~375 |
@@ -91,10 +91,10 @@ LLVM 23 changed from `builder.create<OpType>(loc, args...)` to `OpType::create(b
 **Distribution**:
 | Location | Sites |
 |----------|-------|
-| CARTS `lib/arts/` | 499 |
+| CARTS `lib/carts/` | 499 |
 | Polygeist `lib/polygeist/` | 693 |
 | cgeist `tools/cgeist/` | 901 |
-| CARTS `include/arts/` | ~2 |
+| CARTS `include/carts/` | ~2 |
 | **Total** | ~2,095 |
 
 **Note**: Not all `.create<` sites are `OpBuilder::create` — some are other template methods. The actual OpBuilder count after filtering is ~1,600.
@@ -112,8 +112,8 @@ LLVM 23 raises a **hard error** on `GEN_PASS_CLASSES`. Must use per-pass `GEN_PA
 **Files requiring changes**:
 | File | Status |
 |------|--------|
-| `include/arts/passes/PassDetails.h` | Uses `GEN_PASS_CLASSES` |
-| `lib/arts/passes/PassDetails.h` | Uses `GEN_PASS_CLASSES` (duplicate) |
+| `include/carts/passes/PassDetails.h` | Uses `GEN_PASS_CLASSES` |
+| `lib/carts/passes/PassDetails.h` | Uses `GEN_PASS_CLASSES` (duplicate) |
 | `external/Polygeist/lib/polygeist/Passes/PassDetails.h` | Uses `GEN_PASS_CLASSES` |
 | `external/Polygeist/tools/polymer/lib/Transforms/PassDetail.h` | Uses `GEN_PASS_CLASSES` |
 
@@ -138,7 +138,7 @@ Simple rename: `applyPatternsAndFoldGreedily` → `applyPatternsGreedily`
 **Distribution**:
 | Location | Sites |
 |----------|-------|
-| CARTS `lib/arts/` | 4 |
+| CARTS `lib/carts/` | 4 |
 | Polygeist `lib/polygeist/` | 21 |
 | **Total** | 25 |
 
@@ -151,7 +151,7 @@ LLVM 18→19 removed typed pointers (`LLVM::LLVMPointerType::get(elementType)` �
 **Distribution**:
 | Location | Sites | Notes |
 |----------|-------|-------|
-| CARTS `lib/arts/codegen/Codegen.cpp` | 1 | Single `LLVMPointerType` |
+| CARTS `lib/carts/codegen/Codegen.cpp` | 1 | Single `LLVMPointerType` |
 | CARTS passes | 11 | `LLVMPointerType` references |
 | Polygeist `ConvertPolygeistToLLVM.cpp` | 28 | HIGHEST effort |
 | Polygeist other passes | ~11 | |
@@ -204,12 +204,12 @@ This means `ConvertOpenMPToArts.cpp` calls to `op.getLowerBound()`, `op.getUpper
 **Files affected**:
 | File | OMP refs | Notes |
 |------|----------|-------|
-| `lib/arts/passes/transforms/ConvertOpenMPToArts.cpp` | 42 | 11 patterns, all OMP op names |
-| `lib/arts/passes/opt/general/RaiseMemRefDimensionality.cpp` | 12 | `omp::TaskOp`, dependencies |
-| `lib/arts/passes/opt/general/HandleDeps.cpp` | 7 | OMP dep handling |
-| `lib/arts/utils/Utils.cpp` | 4 | OMP utilities |
-| `lib/arts/utils/LoopUtils.cpp` | 1 | |
-| `lib/arts/dialect/core/Analysis/metadata/MetadataRegistry.cpp` | 1 | |
+| `lib/carts/passes/transforms/ConvertOpenMPToArts.cpp` | 42 | 11 patterns, all OMP op names |
+| `lib/carts/passes/opt/general/RaiseMemRefDimensionality.cpp` | 12 | `omp::TaskOp`, dependencies |
+| `lib/carts/passes/opt/general/HandleDeps.cpp` | 7 | OMP dep handling |
+| `lib/carts/utils/Utils.cpp` | 4 | OMP utilities |
+| `lib/carts/utils/LoopUtils.cpp` | 1 | |
+| `lib/carts/dialect/arts/Analysis/metadata/MetadataRegistry.cpp` | 1 | |
 | **Polygeist** `OpenMPOpt.cpp` | ~10 | WsLoopOp patterns |
 | **Polygeist** `ConvertPolygeistToLLVM.cpp` | ~5 | omp::ParallelOp, WsLoopOp |
 
@@ -281,13 +281,13 @@ Only 1 site. Signature changed to `notifyBlockInserted(Block*, Region*, Region::
 ### 2.12 CMake / TableGen Updates (Category 12)
 
 **TableGen**:
-- `include/arts/passes/Passes.td`: May need `-name` argument update for `mlir_tablegen`
+- `include/carts/passes/Passes.td`: May need `-name` argument update for `mlir_tablegen`
 - OpenMP dialect `.td` files come with the LLVM submodule update
-- CARTS dialect `.td` files (`include/arts/`) — need audit for any deprecated TableGen features
+- CARTS dialect `.td` files (`include/carts/`) — need audit for any deprecated TableGen features
 
 **CMake**:
-- `include/arts/passes/CMakeLists.txt`: `mlir_tablegen(Passes.h.inc -gen-pass-decls -name Arts)` — should still work
-- `lib/arts/passes/CMakeLists.txt`: `add_mlir_dialect_library(MLIRArtsTransforms ...)` — function may have changed signature
+- `include/carts/passes/CMakeLists.txt`: `mlir_tablegen(Passes.h.inc -gen-pass-decls -name Arts)` — should still work
+- `lib/carts/passes/CMakeLists.txt`: `add_mlir_dialect_library(MLIRArtsTransforms ...)` — function may have changed signature
 - MLIR CMake library names may have changed (e.g., `MLIROpenMPToLLVM` → check LLVM 23 equivalents)
 - `external/Polygeist/CMakeLists.txt`: Submodule path for `llvm-project`
 
@@ -384,14 +384,14 @@ After the upgrade:
 
 | File | Lines | Changes Needed |
 |------|-------|----------------|
-| `include/arts/passes/PassDetails.h` | 31 | GEN_PASS_DEF migration |
-| `lib/arts/passes/PassDetails.h` | 30 | GEN_PASS_DEF migration |
+| `include/carts/passes/PassDetails.h` | 31 | GEN_PASS_DEF migration |
+| `lib/carts/passes/PassDetails.h` | 30 | GEN_PASS_DEF migration |
 | `external/Polygeist/lib/polygeist/Passes/PassDetails.h` | 39 | GEN_PASS_DEF migration |
 | All 50 CARTS pass .cpp files | 25,098 | GEN_PASS_DEF per file |
 | All 24 Polygeist pass .cpp files | 21,854 | GEN_PASS_DEF per file |
 | `external/Polygeist/lib/polygeist/Passes/ConvertPolygeistToLLVM.cpp` | 3,388 | 28 typed ptr + 156 create + 27 casts |
-| `lib/arts/passes/transforms/ConvertArtsToLLVM.cpp` | 1,829 | 7 create + 3 casts + LLVM dialect changes |
-| `lib/arts/passes/transforms/ConvertOpenMPToArts.cpp` | 824 | 42 OMP refs + 22 create + 1 cast |
+| `lib/carts/passes/transforms/ConvertArtsToLLVM.cpp` | 1,829 | 7 create + 3 casts + LLVM dialect changes |
+| `lib/carts/passes/transforms/ConvertOpenMPToArts.cpp` | 824 | 42 OMP refs + 22 create + 1 cast |
 
 ### Tier 2: High-Impact (many changes but mostly mechanical)
 
@@ -401,8 +401,8 @@ After the upgrade:
 | `external/Polygeist/tools/cgeist/Lib/CGStmt.cc` | ~2,500 | 193 create + 5 typed ptrs |
 | `external/Polygeist/tools/cgeist/Lib/CGCall.cc` | ~3,000 | 199 create |
 | `external/Polygeist/lib/polygeist/Ops.cpp` | ~2,500 | 139 casts + 98 create |
-| `lib/arts/passes/opt/db/DbPartitioning.cpp` | 2,495 | 18 create |
-| `lib/arts/passes/opt/general/RaiseMemRefDimensionality.cpp` | 1,798 | 28 casts + 10 create + 12 OMP |
+| `lib/carts/passes/opt/db/DbPartitioning.cpp` | 2,495 | 18 create |
+| `lib/carts/passes/opt/general/RaiseMemRefDimensionality.cpp` | 1,798 | 28 casts + 10 create + 12 OMP |
 
 ### Tier 3: Low-Impact (few changes each)
 

@@ -15,16 +15,16 @@ Run the CARTS test suite. Run `dekk carts test --help` and `dekk carts lit --hel
 ```bash
 dekk carts test                                     # Run contract tests
 dekk carts test --suite all -v                      # All tests, verbose
-dekk carts lit lib/arts/dialect/core/test/my_test.mlir  # Single test
-dekk carts lit -v lib/arts/dialect/sde/test/           # Directory, verbose
-dekk carts lit -- --filter=pattern lib/arts/dialect/    # Filter by pattern
+dekk carts lit lib/carts/dialect/arts/test/my_test.mlir  # Single test
+dekk carts lit -v lib/carts/dialect/sde/test/           # Directory, verbose
+dekk carts lit -- --filter=pattern lib/carts/dialect/    # Filter by pattern
 ```
 
 ## Test Organization
 
-- `lib/arts/dialect/sde/test/` — SDE dialect lit tests (stages 1-2)
-- `lib/arts/dialect/core/test/` — Core dialect lit tests (stages 3-16)
-- `lib/arts/dialect/rt/test/` — RT dialect lit tests (stages 17-18)
+- `lib/carts/dialect/sde/test/` — SDE dialect lit tests (stages 1-2)
+- `lib/carts/dialect/arts/test/` — Core dialect lit tests (stages 3-16)
+- `lib/carts/dialect/arts-rt/test/` — RT dialect lit tests (stages 17-18)
 - `tests/cli/` — CLI flag tests
 - `tests/verify/` — Cross-dialect verifier tests
 - `samples/` — Integration tests (end-to-end compile + run)
@@ -48,10 +48,10 @@ Key patterns:
 
 ```bash
 # Run with verbose output to see FileCheck diff
-dekk carts lit -v lib/arts/dialect/core/test/failing_test.mlir
+dekk carts lit -v lib/carts/dialect/arts/test/failing_test.mlir
 
 # Run the command manually to inspect full output
-dekk carts compile lib/arts/dialect/core/test/failing_test.mlir --pipeline=<stage>
+dekk carts compile lib/carts/dialect/arts/test/failing_test.mlir --pipeline=<stage>
 ```
 
 ## Instructions

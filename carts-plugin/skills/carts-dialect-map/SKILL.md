@@ -11,8 +11,10 @@ analysis, or test belongs.
 ## Boundary Rule
 
 - SDE: OpenMP semantic decomposition and runtime-agnostic scheduling/state.
-- Core: DB/EDT/epoch orchestration and compiler analyses.
-- RT: runtime-call-shaped IR before LLVM.
+- CODIR: isolated codelet bodies with explicit deps/params and codelet-local
+  verification.
+- ARTS: DB/EDT/epoch orchestration and compiler analyses.
+- ARTS-RT: runtime-call-shaped IR before LLVM lowering.
 
 Production fixes require understanding the function and limits of the dialect
 being changed. Do not patch a symptom in a downstream dialect when the semantic
@@ -27,5 +29,5 @@ owner is upstream.
 5. State the dialect contract and what that dialect must not own.
 6. Add tests in the owning dialect test directory.
 
-Do not put new semantics in RT just because a runtime call is nearby; RT is for
-lowering-ready runtime shape.
+Do not put new semantics in ARTS-RT just because a runtime call is nearby;
+ARTS-RT is for lowering-ready runtime shape.

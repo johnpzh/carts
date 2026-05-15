@@ -29,33 +29,33 @@ AM->getDbAnalysis().getDbAcquireNode(acquire)  // Node lookup
 ```
 
 **Attribute names** — NEVER hardcode strings. Use centralized names from:
-- `include/arts/utils/OperationAttributes.h` (`AttrNames::Operation`)
-- `include/arts/utils/StencilAttributes.h` (`AttrNames::Operation::Stencil`)
+- `include/carts/utils/OperationAttributes.h` (`AttrNames::Operation`)
+- `include/carts/utils/StencilAttributes.h` (`AttrNames::Operation::Stencil`)
 
 **Naming** — DB passes: `Db` prefix. EDT passes: `Edt` prefix. LLVM style: 2-space indent, CamelCase types, camelCase variables.
 
 **Utility reuse** — before adding ANY new static helper function, run
 `/check-utils <function-name>` to verify it doesn't already exist in
-`include/arts/utils/` or `include/arts/dialect/core/Analysis/`. The codebase has 250+
+`include/carts/utils/` or `include/carts/dialect/arts/Analysis/`. The codebase has 250+
 shared utilities across 13 files. See `/refactor-utils` for the full catalog.
 
 ## Key Source Locations
 
-- Core transforms: `lib/arts/dialect/core/Transforms/`
-- ArtsToRt conversion: `lib/arts/dialect/core/Conversion/ArtsToRt/`
-- SDE transforms: `lib/arts/dialect/sde/Transforms/`
-- LLVM conversion: `lib/arts/dialect/core/Conversion/ArtsToLLVM/`
-- Analysis: `lib/arts/dialect/core/Analysis/`
-- Shared transforms: `lib/arts/dialect/core/Transforms/` (db/, dep/, edt/, loop/, kernel/)
+- Core transforms: `lib/carts/dialect/arts/Transforms/`
+- ArtsToRt conversion: `lib/carts/dialect/arts/Conversion/ArtsToRt/`
+- SDE transforms: `lib/carts/dialect/sde/Transforms/`
+- LLVM conversion: `lib/carts/dialect/arts/Conversion/ArtsToLLVM/`
+- Analysis: `lib/carts/dialect/arts/Analysis/`
+- Shared transforms: `lib/carts/dialect/arts/Transforms/` (db/, dep/, edt/, loop/, kernel/)
 - Pipeline setup: `tools/compile/Compile.cpp`
-- Pass declarations: `include/arts/passes/Passes.h` and `Passes.td`
+- Pass declarations: `include/carts/passes/Passes.h` and `Passes.td`
 
 ## Creating a New Pass
 
-1. Create source in the appropriate dialect directory (`lib/arts/dialect/{core,rt,sde}/Transforms/`)
-2. Add declaration in `include/arts/passes/Passes.h`
+1. Create source in the appropriate dialect directory (`lib/carts/dialect/{core,rt,sde}/Transforms/`)
+2. Add declaration in `include/carts/passes/Passes.h`
 3. Register in pipeline at appropriate stage in `tools/compile/Compile.cpp`
-4. Add lit test in the co-located `test/` directory (`lib/arts/dialect/{core,rt,sde}/test/`)
+4. Add lit test in the co-located `test/` directory (`lib/carts/dialect/{core,rt,sde}/test/`)
 5. `dekk carts format` then `dekk carts test --suite contracts`
 
 ## Thread Safety

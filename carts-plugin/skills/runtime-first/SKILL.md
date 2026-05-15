@@ -107,9 +107,9 @@ These are NON-NEGOTIABLE constraints from the ARTS distributed runtime:
 | `external/arts/include/artsDbFunctions.h` | DB lifecycle |
 | `external/arts/examples/cpu/cps_chain.c` | CPS chain pattern |
 | `external/arts/examples/cpu/stencil1d.c` | Stencil with halo exchange |
-| `lib/arts/dialect/core/Conversion/ArtsToLLVM/ConvertArtsToLLVM.cpp` | How compiler emits runtime calls |
-| `lib/arts/dialect/core/Conversion/ArtsToRt/EdtLowering.cpp` | EDT outlining and param packing |
-| `lib/arts/dialect/core/Conversion/ArtsToRt/EpochLowering.cpp` | Epoch/CPS lowering |
+| `lib/carts/dialect/arts/Conversion/ArtsToLLVM/ConvertArtsToLLVM.cpp` | How compiler emits runtime calls |
+| `lib/carts/dialect/arts/Conversion/ArtsToRt/EdtLowering.cpp` | EDT outlining and param packing |
+| `lib/carts/dialect/arts/Conversion/ArtsToRt/EpochLowering.cpp` | Epoch/CPS lowering |
 
 ## Anti-Patterns (What NOT to Do)
 

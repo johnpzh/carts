@@ -32,7 +32,7 @@ Use the narrowest correct home:
 | DB/EDT/epoch object helpers, dependency slots, ARTS placement/resource helpers | `carts/dialect/arts/Utils` |
 | Runtime ABI packing, depv layout, runtime-call/pointer helpers | `carts/dialect/arts-rt/Utils` |
 | Cross-dialect CARTS compiler helpers with no dialect semantics | `carts/support` |
-| Compatibility-only helpers for the current tree | Current `include/arts/utils` or nearest existing support file until moved |
+| Compatibility-only helpers for the current tree | Current `include/carts/utils` or nearest existing support file until moved |
 
 ## Pass-Local Helper Rule
 
@@ -53,8 +53,8 @@ Before adding a helper to a pass:
 
 - [ ] Run the `check-utils` skill or perform the equivalent search.
 - [ ] Search by behavior, not only by name.
-- [ ] Check existing shared utilities under `include/arts/utils` and
-  `lib/arts/utils`.
+- [ ] Check existing shared utilities under `include/carts/utils` and
+  `lib/carts/utils`.
 - [ ] Check current support files such as `*Support.cpp` and `*Support.h`.
 - [ ] Check the target dialect utility location if it already exists.
 - [ ] Decide the owning dialect and write that down in the patch notes or
@@ -137,7 +137,7 @@ Exit gate:
 ### Phase 4: Cleanup
 
 - [ ] Delete dead migration helpers after direct dialect utilities exist.
-- [ ] Retire stale `include/arts/utils` entries that now have dialect owners.
+- [ ] Retire stale `include/carts/utils` entries that now have dialect owners.
 - [ ] Keep only truly cross-dialect helpers in common CARTS support.
 
 Exit gate:

@@ -4,9 +4,9 @@
 
 Paths:
 
-- `include/arts/dialect/sde/IR/`
-- `lib/arts/dialect/sde/`
-- tests: `lib/arts/dialect/sde/test/`
+- `include/carts/dialect/sde/IR/`
+- `lib/carts/dialect/sde/`
+- tests: `lib/carts/dialect/sde/test/`
 
 Purpose: runtime-agnostic semantic decomposition for OpenMP regions, state,
 tensor/memref transitions, reductions, scheduling plans, codelets, and
@@ -23,49 +23,74 @@ Important transform areas:
 - `effect/` - scheduling, distribution, fusion/vectorization decisions.
 - `Verify/` - SDE boundary contracts.
 
-## Core ARTS Dialect: `arts`
+## CODIR Dialect: `codir`
 
 Paths:
 
-- `include/arts/dialect/core/IR/`
-- `lib/arts/dialect/core/`
-- tests: `lib/arts/dialect/core/test/`
+- `include/carts/dialect/codir/IR/`
+- `lib/carts/dialect/codir/`
+- tests: `lib/carts/dialect/codir/test/`
+
+Purpose: isolated codelet bodies with explicit dependencies, params, and
+codelet-local verification. Sits between SDE (which owns OpenMP semantics)
+and ARTS (which owns abstract orchestration).
+
+Limits: CODIR should not encode runtime ABI or planning heuristics. SDE
+hands codelets here for isolation; ARTS picks them up for orchestration.
+
+Important areas:
+
+- `IR/` - CodirDialect, CodirOps (codelet, dep slice).
+- `Conversion/SdeToCodir/`, `Conversion/CodirToArts/`.
+- `Transforms/` - CodirCodeletOpt, VerifyCodir.
+- `Utils/` - CodeletABIUtils.
+
+## ARTS Dialect: `arts`
+
+Paths:
+
+- `include/carts/dialect/arts/IR/`
+- `lib/carts/dialect/arts/`
+- tests: `lib/carts/dialect/arts/test/`
 
 Purpose: high-level ARTS orchestration IR: EDTs, DBs, epochs, implementation
 `scf.for` loops inside tasks/dispatch, barriers, atomics, runtime queries, and
 lowering contracts.
 
-Limits: Core should not become a runtime ABI shim or a place to patch frontend
-semantic loss. It should own orchestration invariants and analysis-backed
-decisions.
+Limits: ARTS should not become a runtime ABI shim or a place to patch
+frontend semantic loss. It should own orchestration invariants and
+analysis-backed decisions.
 
 Important areas:
 
 - `Analysis/db`, `Analysis/edt`, `Analysis/loop`, `Analysis/heuristics`.
 - `Transforms/db`, `Transforms/edt`, `Transforms/epoch`, `Transforms/loop`.
 - `Conversion/ArtsToRt`, `Conversion/ArtsToLLVM`.
+- `Utils/` - DbUtils, EdtUtils, IdRegistry, LocationMetadata,
+  LoweringContractUtils, PartitionPredicates, BlockedAccessUtils,
+  ARTSCostModel, RuntimeConfig.
 
 Use `AnalysisManager` accessors for DB/EDT/loop analyses. Do not reach into
 graphs directly from passes.
 
-## Runtime Dialect: `arts_rt`
+## ARTS-RT Dialect: `arts_rt`
 
 Paths:
 
-- `include/arts/dialect/rt/`
-- `lib/arts/dialect/rt/`
-- tests: `lib/arts/dialect/rt/test/`
+- `include/carts/dialect/arts-rt/`
+- `lib/carts/dialect/arts-rt/`
+- tests: `lib/carts/dialect/arts-rt/test/`
 
 Purpose: flat runtime-facing bridge before LLVM. Runtime ops model epoch
 creation/wait, EDT launch, param pack/unpack, dependency records, DB acquire/GEP,
 state pack/unpack, dep bind/forward, and call-friendly values.
 
-Limits: RT should not introduce new high-level semantics, scheduling policy, or
-analysis decisions. If a fix requires understanding OpenMP intent, DB/EDT graph
-state, or partition ownership, it likely belongs in SDE or Core.
+Limits: ARTS-RT should not introduce new high-level semantics, scheduling
+policy, or analysis decisions. If a fix requires understanding OpenMP intent,
+DB/EDT graph state, or partition ownership, it likely belongs in SDE, CODIR,
+or ARTS.
 
 ## TableGen Boundaries
 
-Edit dialect-specific files under `include/arts/dialect/*`. Old top-level
-`include/arts/Ops.td`, `Dialect.td`, `Attributes.td`, and `Types.td` are
-forwarding files only, not the place for new dialect definitions.
+Edit dialect-specific files under `include/carts/dialect/*`. Each dialect
+owns its own `IR/*.td` (Dialect, Ops, Attributes, Types) and `Transforms/Passes.td`.

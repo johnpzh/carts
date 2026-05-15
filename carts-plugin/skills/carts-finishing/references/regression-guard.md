@@ -8,7 +8,7 @@ Run in order. Stop at the first failure and investigate.
 
 1. **Recompile.** `dekk carts build` (full rebuild if the change touches common utilities or TableGen). Verify clean compile.
 
-2. **Per-dialect lit tests.** `dekk carts lit lib/arts/dialect/{sde,core,rt}/test/` filtered to the touched pass(es). All pass. Metadata-only fixtures may not exercise OpenMP conversion; do not treat that as a regression by itself.
+2. **Per-dialect lit tests.** `dekk carts lit lib/carts/dialect/{sde,core,rt}/test/` filtered to the touched pass(es). All pass. Metadata-only fixtures may not exercise OpenMP conversion; do not treat that as a regression by itself.
 
 3. **Pass-test suite.** `dekk carts test`. Full pass-test suite (fast). No new failures.
 
@@ -18,7 +18,7 @@ Run in order. Stop at the first failure and investigate.
 
 6. **Pipeline-stage IR sanity.** If the fix touches stage N, dump full pipeline: `dekk carts compile samples/<fixed-sample> --all-pipelines -o /tmp/pipelines/`. Run `grep -c "arts\." /tmp/pipelines/*/*.mlir` to spot op-count anomalies. No silent op drops.
 
-7. **Verify-barrier check.** Confirm the verification barrier above the fix still holds. `dekk carts lit lib/arts/dialect/*/test/ -filter=Verify<StageName>`.
+7. **Verify-barrier check.** Confirm the verification barrier above the fix still holds. `dekk carts lit lib/carts/dialect/*/test/ -filter=Verify<StageName>`.
 
 8. **Multinode spot-check** (if the fix touches SDE distribution planning, DB refinement, ownership, EDT materialization, EpochLowering, or CPS logic). `dekk carts compile samples/<fixed-sample> --distributed-db -O3 -o /tmp/mn && ARTS_CONFIG=samples/arts_multinode.cfg /tmp/mn`. No regression vs prior multinode baseline.
 

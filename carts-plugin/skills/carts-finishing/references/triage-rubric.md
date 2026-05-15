@@ -39,31 +39,31 @@ Each verification pass is a freeze point. If barrier X passes but barrier Y fail
 
 | Barrier | File | Asserts | Failure severity |
 |---|---|---|---|
-| `VerifySdeLowered` | `lib/arts/dialect/sde/Verify/VerifySdeLowered.cpp` | No `sde.*` ops survive `codir-to-arts`. No transient linalg/tensor carriers survive the SDE-to-CODIR / CODIR-to-ARTS boundary. | Fatal |
-| `VerifyArtsObjectsOnly` | `lib/arts/dialect/core/Transforms/verify/VerifyArtsObjectsOnly.cpp` | No source semantic carrier survives `codir-to-arts`. ARTS contains runtime-shaped EDT/DB/epoch objects plus implementation `scf.for`. | Fatal |
-| `VerifyEdtCreated` | `lib/arts/dialect/core/Transforms/verify/VerifyEdtCreated.cpp` | At least one `arts.edt` exists post-OpenMP conversion. | Warning |
-| `VerifyDbLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyDbLowered.cpp` | No `arts.db_alloc` / `db_acquire` / `db_release` survive pre-lowering. | Fatal |
-| `VerifyEpochLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyEpochLowered.cpp` | No `arts.epoch` survives pre-lowering. All become `arts_rt.create_epoch` + `wait_on_epoch`. | Fatal |
-| `VerifyEdtLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyEdtLowered.cpp` | No `arts.edt` survives pre-lowering. All lower to `arts_rt.edt_create` + pack. | Fatal |
-| `VerifyPreLowered` | `lib/arts/dialect/core/Transforms/verify/VerifyPreLowered.cpp` | IR ready for codegen. Param packs, dep routing, CPS attrs all consistent. | Fatal |
-| `VerifyLowered` | `lib/arts/dialect/rt/Transforms/VerifyLowered.cpp` | No `arts.*` or `arts_rt.*` ops survive post-LLVM lowering. | Fatal |
+| `VerifySdeLowered` | `lib/carts/dialect/sde/Verify/VerifySdeLowered.cpp` | No `sde.*` ops survive `codir-to-arts`. No transient linalg/tensor carriers survive the SDE-to-CODIR / CODIR-to-ARTS boundary. | Fatal |
+| `VerifyArtsObjectsOnly` | `lib/carts/dialect/arts/Transforms/verify/VerifyArtsObjectsOnly.cpp` | No source semantic carrier survives `codir-to-arts`. ARTS contains runtime-shaped EDT/DB/epoch objects plus implementation `scf.for`. | Fatal |
+| `VerifyEdtCreated` | `lib/carts/dialect/arts/Transforms/verify/VerifyEdtCreated.cpp` | At least one `arts.edt` exists post-OpenMP conversion. | Warning |
+| `VerifyDbLowered` | `lib/carts/dialect/arts/Transforms/verify/VerifyDbLowered.cpp` | No `arts.db_alloc` / `db_acquire` / `db_release` survive pre-lowering. | Fatal |
+| `VerifyEpochLowered` | `lib/carts/dialect/arts/Transforms/verify/VerifyEpochLowered.cpp` | No `arts.epoch` survives pre-lowering. All become `arts_rt.create_epoch` + `wait_on_epoch`. | Fatal |
+| `VerifyEdtLowered` | `lib/carts/dialect/arts/Transforms/verify/VerifyEdtLowered.cpp` | No `arts.edt` survives pre-lowering. All lower to `arts_rt.edt_create` + pack. | Fatal |
+| `VerifyPreLowered` | `lib/carts/dialect/arts/Transforms/verify/VerifyPreLowered.cpp` | IR ready for codegen. Param packs, dep routing, CPS attrs all consistent. | Fatal |
+| `VerifyLowered` | `lib/carts/dialect/arts-rt/Transforms/VerifyLowered.cpp` | No `arts.*` or `arts_rt.*` ops survive post-LLVM lowering. | Fatal |
 
 ## Stage-to-file map
 
 Use to locate where to grep when triaging.
 
-- Stages 1–3 (frontend normalization + SDE planning): `lib/arts/dialect/sde/Transforms/` + `sde/Conversion/OmpToSde/`
+- Stages 1–3 (frontend normalization + SDE planning): `lib/carts/dialect/sde/Transforms/` + `sde/Conversion/OmpToSde/`
 - Stage 4 (`sde-to-codir`): `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
 - Stage 5 (`codir-to-arts`): `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
-- Stages 6–8 (EDT cleanup, CreateDbs, DB opt): `lib/arts/dialect/core/Transforms/edt/`, `core/Transforms/db/CreateDbs.cpp`, `core/Transforms/RaiseMemRefDimensionality.cpp`
-- Stage 8 (DbPartitioning): `lib/arts/dialect/core/Transforms/db/DbPartitioning.cpp`, `core/Analysis/heuristics/PartitioningHeuristics.cpp`
-- Stages 9–10 (DB opt, post-distribution cleanup): `lib/arts/dialect/core/Transforms/db/`, `core/Transforms/edt/`
+- Stages 6–8 (EDT cleanup, CreateDbs, DB opt): `lib/carts/dialect/arts/Transforms/edt/`, `core/Transforms/db/CreateDbs.cpp`, `core/Transforms/RaiseMemRefDimensionality.cpp`
+- Stage 8 (DbPartitioning): `lib/carts/dialect/arts/Transforms/db/DbPartitioning.cpp`, `core/Analysis/heuristics/PartitioningHeuristics.cpp`
+- Stages 9–10 (DB opt, post-distribution cleanup): `lib/carts/dialect/arts/Transforms/db/`, `core/Transforms/edt/`
 - CODIR-to-ARTS materialization: `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
-- SDE distribution/reduction planning: `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`, `lib/arts/dialect/sde/Transforms/effect/scheduling/ReductionStrategy.cpp`
-- Stage 13 (ConvertArtsToLLVM): `lib/arts/dialect/core/Conversion/ArtsToLLVM/`
-- Stage 14 (EpochLowering): `lib/arts/dialect/rt/Conversion/ArtsToRt/EpochLowering.cpp`
-- Stage 15 (EdtLowering): `lib/arts/dialect/rt/Conversion/ArtsToRt/EdtLowering.cpp`
-- Stage 16 (RtToLLVM): `lib/arts/dialect/rt/Conversion/RtToLLVM/RtToLLVMPatterns.cpp`
+- SDE distribution/reduction planning: `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`, `lib/carts/dialect/sde/Transforms/effect/scheduling/ReductionStrategy.cpp`
+- Stage 13 (ConvertArtsToLLVM): `lib/carts/dialect/arts/Conversion/ArtsToLLVM/`
+- Stage 14 (EpochLowering): `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EpochLowering.cpp`
+- Stage 15 (EdtLowering): `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLowering.cpp`
+- Stage 16 (RtToLLVM): `lib/carts/dialect/arts-rt/Conversion/RtToLLVM/RtToLLVMPatterns.cpp`
 - Multinode-conditional passes: `DbDistributedOwnership`, `DbDistributedEligibility`, SDE distribution planning, Core DB refinement
 
 ## Anti-patterns from prior fixes

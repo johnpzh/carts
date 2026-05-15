@@ -152,11 +152,11 @@ writing your own CARTS programs.
 
 ```
 carts/
-  include/arts/        C++ headers (dialect, passes, utilities)
-  lib/arts/            Core MLIR dialect, analysis, and passes
+  include/carts/        C++ headers (dialect, passes, utilities)
+  lib/carts/            Core MLIR dialect, analysis, and passes
   tools/               CLI entry point (carts_cli.py) and scripts
   tools/compile/       C++ compilation driver (carts-compile)
-  lib/arts/dialect/*/test/ MLIR regression tests (FileCheck)
+  lib/carts/dialect/*/test/ MLIR regression tests (FileCheck)
   tests/e2e/          End-to-end C/C++ compile-and-run tests
   samples/            Example C/C++ programs
   external/            Vendored deps (ARTS, Polygeist, LLVM)

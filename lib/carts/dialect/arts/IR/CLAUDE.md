@@ -1,4 +1,4 @@
-# dialect/core/IR/ — Core ARTS Dialect Implementation
+# dialect/arts/IR/ — ARTS Dialect Implementation
 
 ## Layout
 
@@ -8,12 +8,12 @@ Dialect.cpp            ArtsDialect::initialize() + verifiers + builders
 
 ## TableGen Files
 
-The core dialect's TableGen definitions live at `include/arts/dialect/core/IR/`:
+The ARTS dialect's TableGen definitions live at `include/carts/dialect/arts/IR/`:
 
 ```
-include/arts/dialect/core/IR/
-  Dialect.td         TableGen dialect definition
-  Ops.td             Op definitions (core ops only; 14 rt ops in arts_rt)
+include/carts/dialect/arts/IR/
+  Dialect.td         Dialect definition
+  Ops.td             Op definitions (ARTS ops; ARTS-RT ops live in dialect/arts-rt/IR/)
   Attributes.td      Attribute definitions
   Types.td           Type definitions
 ```
@@ -21,17 +21,12 @@ include/arts/dialect/core/IR/
 Generated files appear at the corresponding build path:
 
 ```
-build/include/arts/dialect/core/IR/
-  Ops.h.inc          Generated op declarations
-  Ops.cpp.inc        Generated op definitions
-  OpsDialect.h.inc   Generated dialect class
-  OpsAttributes.h.inc  Generated attribute classes
-  OpsTypes.h.inc     Generated type classes
+build/include/carts/dialect/arts/IR/
+  Ops.h.inc, Ops.cpp.inc                  Op declarations / definitions
+  OpsDialect.h.inc                        Dialect class
+  OpsAttributes.h.inc                     Attribute classes
+  OpsTypes.h.inc                          Type classes
 ```
 
-Forwarding headers at `include/arts/` (Dialect.td, Ops.td, Attributes.td,
-Types.td) redirect to the new paths for backward compatibility with the
-135+ consumer files that include via the old `arts/Ops.h.inc` paths.
-
-The public header `include/arts/Dialect.h` includes from the new generated
-paths in `build/include/arts/dialect/core/IR/`.
+The public header `include/carts/Dialect.h` includes the generated headers
+from `build/include/carts/dialect/arts/IR/`.

@@ -66,9 +66,9 @@ dekk carts clang bench-omp.ll ... -o bench_omp
 - `tools/compile/Compile.cpp`
 - `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
 - `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
-- `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
-- `lib/arts/dialect/sde/Transforms/effect/scheduling/ReductionStrategy.cpp`
-- `lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp`
+- `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
+- `lib/carts/dialect/sde/Transforms/effect/scheduling/ReductionStrategy.cpp`
+- `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp`
 - `external/carts-benchmarks/common/carts.mk`
 
 ## Hand-off

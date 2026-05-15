@@ -53,7 +53,7 @@ New utility surfaces should follow the target layout:
 | ARTS DB/EDT/epoch object mechanics, dependency slots, placement/resource helpers | `include/carts/dialect/arts/Utils` + `lib/carts/dialect/arts/Utils` |
 | ARTS-RT runtime ABI packing, depv layout, runtime-call/pointer helpers | `include/carts/dialect/arts-rt/Utils` + `lib/carts/dialect/arts-rt/Utils` |
 | Cross-dialect compiler helpers with no dialect semantics | `include/carts/support` + `lib/carts/support` |
-| Current-tree compatibility helpers | nearest existing `include/arts/utils`, `lib/arts/utils`, or pass-area `*Support` file |
+| Current-tree compatibility helpers | nearest existing `include/carts/utils`, `lib/carts/utils`, or pass-area `*Support` file |
 
 If a target `Utils/` folder exists only as a skeleton, do not wire it into
 CMake for an empty helper. Add the real utility in the same patch that first
@@ -61,7 +61,7 @@ uses it, with focused tests for the owning pass.
 
 ## Shared Utility Locations (Search These FIRST)
 
-### Core Utilities (`include/arts/utils/` + `lib/arts/utils/`)
+### Core Utilities (`include/carts/utils/` + `lib/carts/utils/`)
 
 | File | Category | Key Functions |
 |------|----------|---------------|
@@ -78,7 +78,7 @@ uses it, with focused tests for the owning pass.
 | `OperationAttributes.h` | Attr Names | `AttrNames::Operation::*` — ALL attribute string constants |
 | `StencilAttributes.h` | Stencil Attrs | `AttrNames::Operation::Stencil::*` + getter/setter helpers |
 
-### Analysis Utilities (`include/arts/dialect/core/Analysis/`)
+### Analysis Utilities (`include/carts/dialect/arts/Analysis/`)
 
 | File | Category | Key Functions |
 |------|----------|---------------|
@@ -108,7 +108,7 @@ Also search target locations when working in the new layout:
 
 When checking for an existing function, search by **behavior** not just name:
 
-1. **Exact name match**: `Grep` for the function name across `include/arts/` and `lib/arts/utils/`
+1. **Exact name match**: `Grep` for the function name across `include/carts/` and `lib/carts/utils/`
 2. **Semantic match**: Search for keywords describing what the function does:
    - "is zero" / "isZero" / "zero constant" for zero-checking
    - "hoist" / "invariant" / "loop invariant" for hoisting helpers
@@ -154,12 +154,12 @@ When asked to check if a utility function already exists:
 2. **Search shared utilities** — run parallel Grep searches across:
    - `include/carts/dialect/*/Utils` and `lib/carts/dialect/*/Utils`
    - `include/carts/support` and `lib/carts/support` if present
-   - `include/arts/utils/` (headers)
-   - `lib/arts/utils/` (implementations)
-   - `include/arts/dialect/core/Analysis/` (analysis headers)
-   - `lib/arts/dialect/core/Analysis/` (analysis implementations)
+   - `include/carts/utils/` (headers)
+   - `lib/carts/utils/` (implementations)
+   - `include/carts/dialect/arts/Analysis/` (analysis headers)
+   - `lib/carts/dialect/arts/Analysis/` (analysis implementations)
 3. **Search pass support files** — check `*Support.cpp` and `*Support.h` files
-4. **Search for duplicates** — look for the function name in all of `lib/arts/`
+4. **Search for duplicates** — look for the function name in all of `lib/carts/`
 5. **Report findings**:
    - If found: show the canonical location, signature, and how to use it
    - If similar: show the closest match and explain the difference

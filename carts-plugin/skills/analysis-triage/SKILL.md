@@ -48,9 +48,9 @@ Read these before editing invalidation behavior:
 
 ## Key Files
 
-- `include/arts/dialect/core/Analysis/AnalysisDependencies.h`
-- `include/arts/dialect/core/Analysis/AnalysisManager.h`
-- `lib/arts/dialect/core/Analysis/AnalysisManager.cpp`
+- `include/carts/dialect/arts/Analysis/AnalysisDependencies.h`
+- `include/carts/dialect/arts/Analysis/AnalysisManager.h`
+- `lib/carts/dialect/arts/Analysis/AnalysisManager.cpp`
 - `docs/compiler/phase-ordering-semantics.md`
 - `docs/plans/phase-ordering-design.md`
 - `docs/audits/2026-04-02-analysis-dependency-investigation.md`

@@ -119,7 +119,7 @@ Cannon and SUMMA remain viable future paths once collective-like orchestration i
 
 Current core fallback/materialization policy is implemented in
 `DistributionHeuristics::selectDistributionKind`
-(`lib/arts/dialect/core/Analysis/heuristics/DistributionHeuristics.cpp`).
+(`lib/carts/dialect/arts/Analysis/heuristics/DistributionHeuristics.cpp`).
 The intended source of truth is still SDE-selected distribution intent.
 
 Selection order matters:
@@ -165,7 +165,7 @@ validate SDE contracts rather than redefine semantic pattern family.
 
 ### 4.3 Access-pattern unification
 
-- Shared utility: `AccessPatternAnalysis` (`include/arts/dialect/core/Analysis/AccessPatternAnalysis.h`, `lib/arts/dialect/core/Analysis/AccessPatternAnalysis.cpp`)
+- Shared utility: `AccessPatternAnalysis` (`include/carts/dialect/arts/Analysis/AccessPatternAnalysis.h`, `lib/carts/dialect/arts/Analysis/AccessPatternAnalysis.cpp`)
 - DB graph nodes and DB analysis both use the same bounds logic.
 
 ## 5. Pipeline Architecture
@@ -189,9 +189,9 @@ memref work that has not yet become canonical MU token/codelet form.
 
 Key files:
 - `tools/compile/Compile.cpp`
-- `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
+- `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
 - `lib/carts/dialect/codir/Transforms/CodirBoundary.cpp`
-- `lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp`
+- `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp`
 
 Useful stop points:
 
@@ -211,7 +211,7 @@ Goal:
 Current implementation:
 - `DbAllocOp` supports a `distributed` marker attribute.
 - Pass: `DbDistributedOwnershipPass`
-  (`lib/arts/dialect/core/Transforms/db/DbDistributedOwnership.cpp`).
+  (`lib/carts/dialect/arts/Transforms/db/DbDistributedOwnership.cpp`).
 - Pipeline placement: Core DB refinement after SDE distribution planning
   (gated by `--distributed-db` in `carts-compile`).
 - `--distributed-db` relies on SDE-authored work units and Core DB ownership

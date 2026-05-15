@@ -88,41 +88,41 @@ SDE planning ops are created in `sde-planning`; codelet ops are consumed by
 
 ### Find where an op is created
 ```bash
-grep -rn 'create<.*OpName>' lib/arts/ --include='*.cpp'
-grep -rn 'builder\.create<.*OpName>' lib/arts/ --include='*.cpp'
+grep -rn 'create<.*OpName>' lib/carts/ --include='*.cpp'
+grep -rn 'builder\.create<.*OpName>' lib/carts/ --include='*.cpp'
 ```
 
 ### Find where an op is consumed/matched
 ```bash
-grep -rn 'isa<.*OpName>\|dyn_cast<.*OpName>\|cast<.*OpName>' lib/arts/ --include='*.cpp'
+grep -rn 'isa<.*OpName>\|dyn_cast<.*OpName>\|cast<.*OpName>' lib/carts/ --include='*.cpp'
 ```
 
 ### Find where an op is erased/replaced
 ```bash
-grep -rn 'replaceOp\|eraseOp' lib/arts/ --include='*.cpp' | grep -i 'OpName'
+grep -rn 'replaceOp\|eraseOp' lib/carts/ --include='*.cpp' | grep -i 'OpName'
 ```
 
 ### Find conversion patterns for an op
 ```bash
-grep -rn 'OpName.*Pattern\|convert.*OpName' lib/arts/ --include='*.cpp'
+grep -rn 'OpName.*Pattern\|convert.*OpName' lib/carts/ --include='*.cpp'
 ```
 
 ## Key Source Locations
 
 ### Dialect Definitions
 ```
-include/arts/dialect/core/IR/Ops.td          # ARTS op definitions
-include/arts/dialect/rt/IR/RtOps.td          # ARTS-RT op definitions
-include/arts/dialect/sde/IR/SdeOps.td        # SDE op definitions
+include/carts/dialect/arts/IR/Ops.td          # ARTS op definitions
+include/carts/dialect/arts-rt/IR/RtOps.td          # ARTS-RT op definitions
+include/carts/dialect/sde/IR/SdeOps.td        # SDE op definitions
 include/carts/dialect/codir/IR/CodirOps.td   # CODIR op definitions
 ```
 
 ### Conversion Passes
 ```
 lib/carts/dialect/codir/Transforms/          # SDE → CODIR → ARTS boundary
-lib/arts/dialect/core/Conversion/ArtsToRt/   # ARTS → ARTS-RT
-lib/arts/dialect/rt/Conversion/RtToLLVM/     # ARTS-RT → LLVM
-lib/arts/dialect/core/Conversion/ArtsToLLVM/ # ARTS → LLVM cleanup/remaining
+lib/carts/dialect/arts/Conversion/ArtsToRt/   # ARTS → ARTS-RT
+lib/carts/dialect/arts-rt/Conversion/RtToLLVM/     # ARTS-RT → LLVM
+lib/carts/dialect/arts/Conversion/ArtsToLLVM/ # ARTS → LLVM cleanup/remaining
 ```
 
 ## Instructions

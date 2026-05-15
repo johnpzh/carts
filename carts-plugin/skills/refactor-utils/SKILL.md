@@ -17,7 +17,7 @@ duplicate-helper backlog.
 2. Choose the narrowest correct home:
    - pass-local for logic used by one transform only;
    - dialect utility when it expresses a dialect invariant;
-   - `include/arts/utils/` and `lib/arts/utils/` for broadly shared behavior;
+   - `include/carts/utils/` and `lib/carts/utils/` for broadly shared behavior;
    - analysis APIs when the logic belongs to DB/EDT/loop/cache/metadata state.
 3. Add or move the declaration and implementation.
 4. Update every call site with `rg`.

@@ -2,8 +2,8 @@
 
 ## Project Structure
 
-- `lib/arts/` - Core MLIR dialect implementation
-- `include/arts/` - Public headers
+- `lib/carts/` - Core MLIR dialect implementation
+- `include/carts/` - Public headers
 - `tools/` - User-facing scripts and utilities
   - `carts_cli.py` - Main compiler CLI entry point (wrapped/activated by dekk)
   - `compile/` - C++ compilation driver (`carts-compile`)
@@ -33,7 +33,7 @@ dekk carts build --arts --debug 3      # Build ARTS with full debug logging
 # Testing
 dekk carts compile simple.cpp -o simple # Full compilation pipeline
 dekk carts test                        # Run all tests
-dekk carts lit lib/arts/dialect/core/test/<file>.mlir # Run focused lit regressions
+dekk carts lit lib/carts/dialect/arts/test/<file>.mlir # Run focused lit regressions
 dekk carts lit --suite contracts       # Run the maintained contracts suite
 make check-doc-flags                   # Validate docs flags against carts-compile options
 
@@ -99,7 +99,7 @@ Follow LLVM conventions:
 
 ## Testing Guidelines
 
-1. **MLIR regression tests** → `lib/arts/dialect/<dialect>/test/`
+1. **MLIR regression tests** → `lib/carts/dialect/<dialect>/test/`
    - Use the nearby lit style and FileCheck patterns
    - Cover new ops/passes with positive and negative cases
 

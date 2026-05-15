@@ -49,7 +49,7 @@ Phases are ordered to minimize attribution noise:
 
 **Stop condition:** the 8 affected samples (concurrent, jacobi/for, mixed_access, mixed_orientation, parallel_for/{loops,reduction,single}, rows/chunks) transition from crash to legible diagnostic. Regression-guard passes.
 
-**Action:** edit `lib/arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.cpp` near line 706. Add a depth counter + assertion when `copyArtsMetadataAttrs` recurses past a sane depth.
+**Action:** edit `lib/carts/dialect/arts/Analysis/heuristics/PartitioningHeuristics.cpp` near line 706. Add a depth counter + assertion when `copyArtsMetadataAttrs` recurses past a sane depth.
 
 **Why now:** turns 8 crashes into diagnostics. Helps validate that phase 3 fixes the right thing.
 
@@ -63,9 +63,9 @@ Phases are ordered to minimize attribution noise:
 
 **Actions:**
 
-1. Edit `lib/arts/dialect/core/Transforms/db/CreateDbs.cpp` `createDbAcquire()` to recognize heap-allocated arrays (`int *A = malloc(N*sizeof(int))` → `memref<?xmemref<?xT>>`) and produce N-element DBs of T instead of 1-element DBs holding a pointer.
+1. Edit `lib/carts/dialect/arts/Transforms/db/CreateDbs.cpp` `createDbAcquire()` to recognize heap-allocated arrays (`int *A = malloc(N*sizeof(int))` → `memref<?xmemref<?xT>>`) and produce N-element DBs of T instead of 1-element DBs holding a pointer.
 
-2. Edit `lib/arts/dialect/core/Transforms/RaiseMemRefDimensionality.cpp` to handle `memref<?xmemref<?>>` as a first-class heap-array pattern (covers the 3 samples that fail at stage 4 before reaching CreateDbs: dotproduct, parallel_for/stencil, stencil).
+2. Edit `lib/carts/dialect/arts/Transforms/RaiseMemRefDimensionality.cpp` to handle `memref<?xmemref<?>>` as a first-class heap-array pattern (covers the 3 samples that fail at stage 4 before reaching CreateDbs: dotproduct, parallel_for/stencil, stencil).
 
 3. **Critical (anti-pattern 1):** the fix is in shape normalization. Do NOT touch `DbPartitioning::downgrade_to_coarse` or any partition-mode-selection heuristic. That layer is responding correctly to the wrong input shape; fixing it there would silently mask the issue.
 

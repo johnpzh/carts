@@ -26,15 +26,15 @@ Every codelet and EDT has a complete creation-time interface:
 
 Relevant current files and areas:
 
-- `include/arts/dialect/sde/IR/SdeOps.td`
-- `lib/arts/dialect/sde/Transforms/state/codelet/`
+- `include/carts/dialect/sde/IR/SdeOps.td`
+- `lib/carts/dialect/sde/Transforms/state/codelet/`
 - `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
 - `lib/carts/dialect/codir/Transforms/VerifyCodir.cpp`
 - `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
-- `lib/arts/dialect/core/Conversion/ArtsToRt/EdtLowering.cpp` (current
+- `lib/carts/dialect/arts/Conversion/ArtsToRt/EdtLowering.cpp` (current
   source-tree path; target lives under the renamed `arts` dialect tree)
-- `include/arts/utils/EdtUtils.h`
-- `lib/arts/dialect/core/Transforms/verify/VerifyEdtCreated.cpp` (current
+- `include/carts/utils/EdtUtils.h`
+- `lib/carts/dialect/arts/Transforms/verify/VerifyEdtCreated.cpp` (current
   source-tree path; target lives under the renamed `arts` dialect tree)
 
 ## Current CODIR Shape

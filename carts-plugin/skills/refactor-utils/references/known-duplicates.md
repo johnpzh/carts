@@ -5,47 +5,47 @@ Last updated: 2026-04-10 (audit rev 2)
 ## Tier 1: Exact Duplicates
 
 ### `isOneLikeValue` / `isOneLike`
-- **Location 1**: `lib/arts/dialect/core/Conversion/ArtsToRt/EdtLowering.cpp:128` (static)
-- **Location 2**: `lib/arts/dialect/core/Analysis/db/DbAnalysis.cpp:1534` (lambda in `hasSingleSize`)
+- **Location 1**: `lib/carts/dialect/arts/Conversion/ArtsToRt/EdtLowering.cpp:128` (static)
+- **Location 2**: `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp:1534` (lambda in `hasSingleSize`)
 - **Implementation**: Checks `ValueAnalysis::isOneConstant()`, then pattern-matches `add(1, sub(x,x))` and `add(1, sub(min(a,b), a))`
 - **Both are 100% identical** except parameter naming
-- **Target**: `ValueAnalysis::isOneLikeValue()` in `include/arts/utils/ValueAnalysis.h`
+- **Target**: `ValueAnalysis::isOneLikeValue()` in `include/carts/utils/ValueAnalysis.h`
 
 ### `hasWorkAfterInParentBlock`
-- **Location 1**: `lib/arts/dialect/core/Conversion/OmpToArts/ConvertOpenMPToArts.cpp:86`
-- **Location 2**: `lib/arts/dialect/sde/Transforms/ConvertOpenMPToSde.cpp:79`
+- **Location 1**: `lib/carts/dialect/arts/Conversion/OmpToArts/ConvertOpenMPToArts.cpp:86`
+- **Location 2**: `lib/carts/dialect/sde/Transforms/ConvertOpenMPToSde.cpp:79`
 - **Implementation**: Walks remaining ops in parent block checking for non-terminator work
 - **Target**: `Utils.h`
 
 ### `isPureOp`
-- **Location 1**: `lib/arts/dialect/core/Transforms/kernel/StencilTilingNDPattern.cpp:80`
-- **Location 2**: `lib/arts/dialect/core/Transforms/PatternDiscovery.cpp:152`
+- **Location 1**: `lib/carts/dialect/arts/Transforms/kernel/StencilTilingNDPattern.cpp:80`
+- **Location 2**: `lib/carts/dialect/arts/Transforms/PatternDiscovery.cpp:152`
 - **Implementation**: Checks isa<> for memory ops, calls MemoryEffectOpInterface
 - **Related**: `isSideEffectFreeArithmeticLikeOp()` in `Utils.h` (similar but narrower)
 - **Target**: `Utils.h` as `isPureOp()` (broader than existing)
 
 ### `sortStoresInProgramOrder`
-- **Location 1**: `lib/arts/dialect/core/Transforms/EdtStructuralOpt.cpp`
-- **Location 2**: `lib/arts/dialect/core/Transforms/EdtAllocaSinking.cpp`
+- **Location 1**: `lib/carts/dialect/arts/Transforms/EdtStructuralOpt.cpp`
+- **Location 2**: `lib/carts/dialect/arts/Transforms/EdtAllocaSinking.cpp`
 - **Implementation**: Sorts memref::StoreOps by block position
 - **Target**: `Utils.h`
 
 ### `findHoistTarget`
-- **Location 1**: `lib/arts/dialect/rt/Transforms/RuntimeCallOpt.cpp:48` (for func::CallOp)
-- **Location 2**: `lib/arts/dialect/rt/Transforms/DataPtrHoistingSupport.cpp:1376` (for Operation*)
+- **Location 1**: `lib/carts/dialect/arts-rt/Transforms/RuntimeCallOpt.cpp:48` (for func::CallOp)
+- **Location 2**: `lib/carts/dialect/arts-rt/Transforms/DataPtrHoistingSupport.cpp:1376` (for Operation*)
 - **Implementation**: Finds highest enclosing loop where all operands are loop-invariant
 - **Note**: Different signatures but same algorithm
 - **Target**: `LoopInvarianceUtils.h` (template or overloads)
 
 ### `getMemoryAccessInfo`
-- **Location 1**: `lib/arts/dialect/rt/Transforms/DataPtrHoistingSupport.cpp:604`
-- **Location 2**: `lib/arts/utils/DbUtils.cpp:855` (CANONICAL)
+- **Location 1**: `lib/carts/dialect/arts-rt/Transforms/DataPtrHoistingSupport.cpp:604`
+- **Location 2**: `lib/carts/utils/DbUtils.cpp:855` (CANONICAL)
 - **Action**: Replace DataPtrHoistingSupport's version with `DbUtils::getMemoryAccessInfo()`
 
 ### `isUndefLikeOp` / undef string check **(NEW — found 2026-04-10 rev 2)**
-- **Location 1**: `lib/arts/dialect/core/Conversion/ArtsToRt/EdtLowering.cpp:120` (static `isUndefLikeOp`)
-- **Location 2**: `lib/arts/utils/EdtUtils.cpp:258` (inline check `== "llvm.mlir.undef"`)
-- **Location 3**: `lib/arts/dialect/core/Transforms/EpochOptCpsChain.cpp:450` (inline check `== "llvm.mlir.undef"`)
+- **Location 1**: `lib/carts/dialect/arts/Conversion/ArtsToRt/EdtLowering.cpp:120` (static `isUndefLikeOp`)
+- **Location 2**: `lib/carts/utils/EdtUtils.cpp:258` (inline check `== "llvm.mlir.undef"`)
+- **Location 3**: `lib/carts/dialect/arts/Transforms/EpochOptCpsChain.cpp:450` (inline check `== "llvm.mlir.undef"`)
 - **Implementation**: All check if an op is an undef-like value (llvm.mlir.undef, polygeist.undef, arts.undef)
 - **Note**: EdtLowering's version is broadest (checks 3 names), other 2 only check llvm.mlir.undef
 - **Target**: `Utils.h` as `isUndefLikeOp()` (consolidate all 3 name checks)

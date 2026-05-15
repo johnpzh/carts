@@ -230,7 +230,7 @@ The design corresponding to this flow is captured in this guide.
 ### 3.1 Allocation-Level Heuristics (H1.1-H1.6)
 
 This is the current intent (see
-`lib/arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.cpp` and the
+`lib/carts/dialect/arts/Analysis/heuristics/PartitioningHeuristics.cpp` and the
 `DbHeuristics` wrapper):
 
 - H1.1: Read-only + single-node + no partition capability -> Coarse

@@ -81,11 +81,11 @@ The compiler evaluates these rules **in order** — first match wins:
 ## Key Source Files
 
 ```
-include/arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.h  — H1 data structures
-lib/arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.cpp     — H1 evaluation chain
-include/arts/dialect/core/Analysis/heuristics/DistributionHeuristics.h   — H2 data structures
-lib/arts/dialect/core/Analysis/heuristics/DistributionHeuristics.cpp     — H2 strategy selection
-lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp    — Core DB refinement controller
+include/carts/dialect/arts/Analysis/heuristics/PartitioningHeuristics.h  — H1 data structures
+lib/carts/dialect/arts/Analysis/heuristics/PartitioningHeuristics.cpp     — H1 evaluation chain
+include/carts/dialect/arts/Analysis/heuristics/DistributionHeuristics.h   — H2 data structures
+lib/carts/dialect/arts/Analysis/heuristics/DistributionHeuristics.cpp     — H2 strategy selection
+lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp    — Core DB refinement controller
 lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp — SDE-to-CODIR materialization
 lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp — CODIR-to-ARTS materialization
 ```

@@ -39,7 +39,7 @@ before commit, PR review, or final task completion.
      verifier, analysis, conversion, or sibling pass;
    - dialect `Utils/` when it expresses a dialect invariant or reusable
      dialect-local builder/query/predicate;
-   - `include/arts/utils/` and `lib/arts/utils/` when broadly meaningful;
+   - `include/carts/utils/` and `lib/carts/utils/` when broadly meaningful;
    - analysis APIs when the logic belongs to DB/EDT/loop/cache/metadata state.
 7. Re-check CARTS boundaries:
    - no hardcoded project attribute strings in pass logic;

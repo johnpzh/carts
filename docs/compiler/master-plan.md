@@ -133,7 +133,7 @@ Important current facts:
   a boundary error because SDE/CODIR must own the token-local access rewrite.
 - The tensor raising/lowering passes (`RaiseMemrefToTensor`, `RaiseToTensor`,
   `LowerToMemref`) are no longer in any live pass list, but the source still
-  lives under `lib/arts/dialect/sde/Transforms/state/raising/`. M3
+  lives under `lib/carts/dialect/sde/Transforms/state/raising/`. M3
   source-level removal is still pending. The M3 target is memref-native MU
   tokens and codelet deps. (Note: `RaiseMemRefDimensionality` in the
   `raise-memref-dimensionality` stage is a separate pass that is part of the

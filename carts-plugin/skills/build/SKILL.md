@@ -25,7 +25,7 @@ Common workflows:
 
 | Flag | What it builds | When to use |
 |------|---------------|-------------|
-| (none) | CARTS compiler only | After changing `lib/arts/` or `include/arts/` |
+| (none) | CARTS compiler only | After changing `lib/carts/` or `include/carts/` |
 | `--arts` | ARTS runtime | After changing `external/arts/` |
 | `--polygeist` | Polygeist frontend | After changing `external/Polygeist/` |
 | `--llvm` | LLVM/MLIR | After changing `external/Polygeist/llvm-project/` |

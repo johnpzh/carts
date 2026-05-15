@@ -23,8 +23,8 @@ If the rubric here does not match, escalate to `carts-distributed-triage` with t
 **Root cause:** `DbDistributedOwnership` in Core DB refinement did not mark the DB, or the eligibility check is too conservative.
 
 **Fix usually belongs in:**
-- `lib/arts/dialect/core/Transforms/db/DbDistributedEligibility.cpp` (eligibility rules — too restrictive)
-- `lib/arts/dialect/core/Transforms/db/DbDistributedOwnership.cpp` (attribute stamping — never reached)
+- `lib/carts/dialect/arts/Transforms/db/DbDistributedEligibility.cpp` (eligibility rules — too restrictive)
+- `lib/carts/dialect/arts/Transforms/db/DbDistributedOwnership.cpp` (attribute stamping — never reached)
 
 ### 2. Distributed window mismatch
 
@@ -49,7 +49,7 @@ halo/window contract is wrong; otherwise Core DB refinement should validate the
 
 **Root cause:** Core DB refinement computed a halo for local-only operation and did not widen for distributed neighbors.
 
-**Fix usually belongs in:** `lib/arts/dialect/core/Transforms/db/DbTransformsPass.cpp` or the DB refinement helper that stamps the window. When marking a DB distributed, validate that halo bounds cover all transitive neighbors. See `docs/compiler/ownership-proof-gaps.md` §2.3 for the full proof obligation.
+**Fix usually belongs in:** `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` or the DB refinement helper that stamps the window. When marking a DB distributed, validate that halo bounds cover all transitive neighbors. See `docs/compiler/ownership-proof-gaps.md` §2.3 for the full proof obligation.
 
 ### 4. GUID coherence (same data, different handles on nodes)
 
@@ -69,7 +69,7 @@ halo/window contract is wrong; otherwise Core DB refinement should validate the
 
 **Root cause:** `EpochLowering` does not gate DB initialization on local ownership, or SDE planning plus CODIR/ARTS materialization did not express per-node initialization as task work.
 
-**Fix usually belongs in:** `lib/arts/dialect/rt/Conversion/ArtsToRt/EpochLowering.cpp` — check the `distributed` attr; if set, gate init to the owning node only.
+**Fix usually belongs in:** `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EpochLowering.cpp` — check the `distributed` attr; if set, gate init to the owning node only.
 
 ### 6. Polygeist memref→pointer conversions across nodes
 
@@ -89,7 +89,7 @@ halo/window contract is wrong; otherwise Core DB refinement should validate the
 
 **Root cause:** `EpochOpt` CPS-8 carry re-analysis, or `EpochLowering` propagation, did not account for mixed local/distributed deps.
 
-**Fix usually belongs in:** `lib/arts/dialect/rt/Conversion/ArtsToRt/EpochLowering.cpp` — validate `CPSDepRouting` layout against actual carry arity; cross-check the `distributed` attr on each referenced DB.
+**Fix usually belongs in:** `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EpochLowering.cpp` — validate `CPSDepRouting` layout against actual carry arity; cross-check the `distributed` attr on each referenced DB.
 
 ## Diagnosis approach
 

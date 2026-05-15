@@ -30,8 +30,8 @@ Important current names:
   indexers have been removed; only coarse whole-storage materialization
   remains while direct CODIR coverage is completed.
 - `pre-lowering` contains DB, EDT, and epoch lowering.
-- Source paths still use `lib/arts/dialect/core`, `lib/arts/dialect/sde`, and
-  `lib/arts/dialect/rt`.
+- Source paths still use `lib/carts/dialect/core`, `lib/carts/dialect/sde`, and
+  `lib/carts/dialect/rt`.
 - Target source paths are staged under `include/carts/dialect/...` and
   `lib/carts/dialect/...`. CODIR is the first build-visible target dialect
   skeleton: `codir.codelet` and `codir.yield` parse and verify in the

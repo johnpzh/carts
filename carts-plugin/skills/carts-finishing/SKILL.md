@@ -51,10 +51,10 @@ When invoked (default action `next`):
 |---|---|---|
 | 0 (task #1) | decision | Use `AskUserQuestion` for the 5 open charter questions in `references/dialect-charter.md` "Open questions". Save answers under `docs/architecture/charter-decisions.md`. |
 | 1 (#2) | baseline | Run `dekk carts test`, `dekk carts test --suite e2e`, `dekk carts benchmarks run --size small`. Snapshot to `.results/baseline-YYYY-MM-DD.json`. Add multinode lit rule per `references/phase-plan.md` Phase 1. |
-| 2 (#3) | targeted-fix | Edit `lib/arts/dialect/core/Analysis/heuristics/PartitioningHeuristics.cpp` near line 706. Add depth guard. Test against the 8 affected samples. |
-| 3 (#4) | targeted-fix | Edit `lib/arts/dialect/core/Transforms/db/CreateDbs.cpp` (and possibly `RaiseMemRefDimensionality.cpp`). The fix is in shape normalization, NOT in DbPartitioning. See `references/triage-rubric.md` anti-pattern #1. |
+| 2 (#3) | targeted-fix | Edit `lib/carts/dialect/arts/Analysis/heuristics/PartitioningHeuristics.cpp` near line 706. Add depth guard. Test against the 8 affected samples. |
+| 3 (#4) | targeted-fix | Edit `lib/carts/dialect/arts/Transforms/db/CreateDbs.cpp` (and possibly `RaiseMemRefDimensionality.cpp`). The fix is in shape normalization, NOT in DbPartitioning. See `references/triage-rubric.md` anti-pattern #1. |
 | 4 (#5) | per-item iteration | One sample at a time. Use the per-item workflow below. |
-| 5 (#6) | targeted-fix | Edit `lib/arts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp:74-92`. Add `hasEnoughDistributedWork()` gates for elementwise/matmul/reduction. |
+| 5 (#6) | targeted-fix | Edit `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp:74-92`. Add `hasEnoughDistributedWork()` gates for elementwise/matmul/reduction. |
 | 6 (#7) | per-item iteration | One sample at a time, multinode. See `references/multinode-failures.md` before opening any file. |
 | 7 (#8) | baseline | Re-run benchmark suite single-node. Document each regression vs the 2026-03-11 snapshot. |
 | 8 (#9) | per-item iteration | One benchmark at a time, multinode. Same workflow as Phase 6. |
