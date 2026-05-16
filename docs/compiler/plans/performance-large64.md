@@ -234,6 +234,12 @@ Priorities:
 - block vector outputs and inputs where legal;
 - distinguish scalar reductions from per-output reductions;
 - fuse compatible elementwise stages before task creation;
+- do not narrow the `ml-kernels/activations` host fallback until SDE/CODIR has
+  a production vector/libm elementwise plan. A 2026-05-16 selected-only
+  activation fallback probe preserved checksums but regressed local 64-thread
+  kernels to `33.751227s`/`33.735766s` CARTS versus `0.507816s`/`0.521629s`
+  OpenMP before the run was stopped:
+  `.carts/outputs/host-openmp-activations-narrow-20260516/20260516_174420`.
 - choose local accumulate, tree, or atomic strategy in SDE.
 
 ### Stencils And Timesteps

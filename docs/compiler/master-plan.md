@@ -700,6 +700,14 @@ table.
 - Matrix-family fast results: see M5 section above.
 - Per-benchmark classification table:
   [`performance-large64.md`](./plans/performance-large64.md).
+- Activation fallback narrowing probe:
+  `.carts/outputs/host-openmp-activations-narrow-20260516/20260516_174420`.
+  The selected-only transcendental host fallback attempt preserved checksums
+  but regressed local 64-thread `ml-kernels/activations` badly before the run
+  was stopped after two iterations: CARTS kernels were `33.751227s` and
+  `33.735766s` versus OpenMP `0.507816s` and `0.521629s`. Keep the current
+  whole-module activation fallback until the SDE/CODIR elementwise path has a
+  production vector/libm plan.
 
 The remaining work queue is now post-M6 quality work:
 

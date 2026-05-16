@@ -759,6 +759,11 @@ Superseded owner groups from earlier sweeps:
 - SDE: vector/reduction work aggregation. `activations`, `batchnorm`,
   `layernorm`, and `stream` are now classified, but richer SDE vector/reduction
   block plans remain useful for replacing host fallback and improving margins.
+  A 2026-05-16 selected-only activation fallback probe under
+  `.carts/outputs/host-openmp-activations-narrow-20260516/20260516_174420`
+  preserved checksums but regressed local 64-thread kernels to about `33.74s`
+  CARTS versus `0.51s` OpenMP, so activation fallback removal must wait for a
+  real SDE/CODIR elementwise vector/libm plan.
 - SDE: timestep/wavefront and in-place update planning. `jacobi2d` and
   `seidel-2d` are now fast through the host OpenMP fallback; tokenized
   repeated-stencil execution remains future work.
