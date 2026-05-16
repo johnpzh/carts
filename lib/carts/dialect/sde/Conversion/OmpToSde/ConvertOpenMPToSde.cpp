@@ -401,8 +401,9 @@ static unsigned markHostOpenMPIslands(ModuleOp module) {
   });
   collectHostOpenMPElementwiseBundleParallels(module, fallbackParallels);
   collectHostOpenMPRepeatedStreamingBundleParallels(module, fallbackParallels);
+  if (fallbackParallels.empty())
+    return 0;
 
-  llvm::DenseSet<Operation *> markedParallels;
   llvm::DenseSet<Operation *> markedOps;
   unsigned marked = 0;
   auto markIfOpenMP = [&](Operation *op) {
@@ -414,15 +415,12 @@ static unsigned markHostOpenMPIslands(ModuleOp module) {
     ++marked;
   };
 
-  for (omp::ParallelOp parallel : fallbackParallels) {
-    if (!markedParallels.insert(parallel.getOperation()).second)
-      continue;
-    markIfOpenMP(parallel.getOperation());
-    parallel->walk([&](Operation *op) {
-      if (op != parallel.getOperation())
-        markIfOpenMP(op);
-    });
-  }
+  // Host OpenMP fallback controls must execute outside the ARTS runtime. Running
+  // selected host OpenMP islands from an ARTS main EDT serializes/pins the OMP
+  // team on current benchmark hosts and turns STREAM-like controls into a
+  // false performance failure. Keep the whole benchmark module on the host
+  // until the owning SDE/CODIR plan can replace the fallback entirely.
+  module.walk([&](Operation *op) { markIfOpenMP(op); });
   return marked;
 }
 

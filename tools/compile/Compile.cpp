@@ -37,6 +37,7 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "polygeist/Dialect.h"
 #include "polygeist/Ops.h"
 #include "polygeist/Passes/Passes.h"
@@ -363,9 +364,10 @@ static const std::array<llvm::StringLiteral, 6> kPostO3OptPasses = {
     "LICM",
     "CSE",
     "PolygeistCanonicalize"};
-static const std::array<llvm::StringLiteral, 14> kLLVMIREmissionPasses = {
+static const std::array<llvm::StringLiteral, 15> kLLVMIREmissionPasses = {
     "CSE",
     "PolygeistCanonicalize",
+    "MaterializeArtsFunctionPointers",
     "ConvertOpenMPToLLVM",
     "ArithExpandOps",
     "ConvertSCFToCF",
@@ -785,6 +787,111 @@ static void markHostOpenMPBenchmarkMode(ModuleOp module) {
                          SymbolRefAttr::get(ctx, kMarkerFn), ValueRange{});
   }
 }
+
+static bool isArtsOutlinedEdtName(StringRef name) {
+  return name.starts_with("__arts_edt_");
+}
+
+static LogicalResult promoteOutlinedEdtToLLVMFunc(func::FuncOp funcOp,
+                                                  OpBuilder &builder) {
+  mlir::FunctionType funcType = funcOp.getFunctionType();
+  MLIRContext *ctx = funcOp.getContext();
+
+  mlir::Type resultType = LLVM::LLVMVoidType::get(ctx);
+  if (funcType.getNumResults() > 1)
+    return funcOp.emitError("cannot materialize ARTS EDT function pointer for "
+                            "multi-result function");
+  if (funcType.getNumResults() == 1) {
+    resultType = funcType.getResult(0);
+    if (!LLVM::isCompatibleType(resultType))
+      return funcOp.emitError("cannot materialize ARTS EDT function pointer "
+                              "before LLVM conversion for result type ")
+             << resultType;
+  }
+
+  SmallVector<mlir::Type, 8> inputTypes;
+  inputTypes.reserve(funcType.getNumInputs());
+  for (mlir::Type input : funcType.getInputs()) {
+    if (!LLVM::isCompatibleType(input))
+      return funcOp.emitError("cannot materialize ARTS EDT function pointer "
+                              "before LLVM conversion for argument type ")
+             << input;
+    inputTypes.push_back(input);
+  }
+
+  auto llvmType =
+      LLVM::LLVMFunctionType::get(resultType, inputTypes, /*isVarArg=*/false);
+  builder.setInsertionPoint(funcOp);
+  auto llvmFunc = LLVM::LLVMFuncOp::create(
+      builder, funcOp.getLoc(), funcOp.getName(), llvmType,
+      LLVM::Linkage::External, /*dsoLocal=*/false, LLVM::CConv::C);
+  cast<FunctionOpInterface>(llvmFunc.getOperation())
+      .setVisibility(funcOp.getVisibility());
+  llvmFunc.getBody().takeBody(funcOp.getBody());
+  SmallVector<func::ReturnOp, 4> returns;
+  llvmFunc.walk([&](func::ReturnOp ret) { returns.push_back(ret); });
+  for (func::ReturnOp ret : returns) {
+    builder.setInsertionPoint(ret);
+    LLVM::ReturnOp::create(builder, ret.getLoc(), ret.getOperands());
+    ret.erase();
+  }
+  funcOp.erase();
+  return success();
+}
+
+struct MaterializeArtsFunctionPointersPass
+    : public PassWrapper<MaterializeArtsFunctionPointersPass,
+                         OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(
+      MaterializeArtsFunctionPointersPass)
+
+  StringRef getArgument() const final {
+    return "carts-materialize-arts-function-pointers";
+  }
+
+  StringRef getDescription() const final {
+    return "Materialize ARTS EDT function pointer symbols before mixed "
+           "host-OpenMP LLVM emission";
+  }
+
+  void runOnOperation() final {
+    ModuleOp module = getOperation();
+    if (!hasResidualOpenMP(module))
+      return;
+
+    SmallVector<polygeist::GetFuncOp, 8> getFuncOps;
+    module.walk([&](polygeist::GetFuncOp op) {
+      if (isArtsOutlinedEdtName(op.getName()))
+        getFuncOps.push_back(op);
+    });
+    if (getFuncOps.empty())
+      return;
+
+    OpBuilder builder(module.getContext());
+    for (polygeist::GetFuncOp getFunc : getFuncOps) {
+      StringRef name = getFunc.getName();
+      if (!module.lookupSymbol<LLVM::LLVMFuncOp>(name)) {
+        auto funcOp = module.lookupSymbol<func::FuncOp>(name);
+        if (!funcOp) {
+          getFunc.emitError("ARTS EDT function pointer target was not found: ")
+              << name;
+          signalPassFailure();
+          return;
+        }
+        if (failed(promoteOutlinedEdtToLLVMFunc(funcOp, builder))) {
+          signalPassFailure();
+          return;
+        }
+      }
+
+      builder.setInsertionPoint(getFunc);
+      auto address = LLVM::AddressOfOp::create(builder, getFunc.getLoc(),
+                                               getFunc.getType(), name);
+      getFunc.getResult().replaceAllUsesWith(address.getResult());
+      getFunc.erase();
+    }
+  }
+};
 
 static bool isLLVMMemRefDescriptorLike(mlir::Type type) {
   auto structType = dyn_cast<LLVM::LLVMStructType>(type);
@@ -1208,6 +1315,7 @@ void buildAdditionalOptPipeline(OpPassManager &optPM) {
 void buildLLVMIREmissionPipeline(PassManager &pm, bool convertOpenMP) {
   pm.addPass(createCSEPass());
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
+  pm.addPass(std::make_unique<MaterializeArtsFunctionPointersPass>());
   if (convertOpenMP)
     pm.addPass(createConvertOpenMPToLLVMPass());
   pm.addPass(arith::createArithExpandOpsPass());
