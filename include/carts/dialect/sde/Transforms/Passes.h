@@ -63,8 +63,7 @@ std::unique_ptr<Pass> createScalarForwardingPass();
 std::unique_ptr<Pass> createMemoryUnitMaterializationPass();
 
 // --- Dep passes (structural transforms) ---
-std::unique_ptr<Pass> createPatternAnalysisPass(
-    SDECostModel *costModel = nullptr);
+std::unique_ptr<Pass> createPatternAnalysisPass();
 std::unique_ptr<Pass> createLoopInterchangePass();
 std::unique_ptr<Pass> createTilingPass(SDECostModel *costModel = nullptr);
 std::unique_ptr<Pass> createElementwiseFusionPass();
@@ -84,8 +83,7 @@ std::unique_ptr<Pass>
 createBarrierEliminationPass(SDECostModel *costModel = nullptr);
 
 // --- Conversion passes ---
-std::unique_ptr<Pass>
-createConvertOpenMPToSdePass(SDECostModel *costModel = nullptr);
+std::unique_ptr<Pass> createConvertOpenMPToSdePass();
 
 // --- Verification ---
 std::unique_ptr<Pass> createVerifySdeCpsPlanPass();

@@ -14,8 +14,6 @@ These helpers have canonical homes. Do not reintroduce local copies.
 |------|------------------|
 | one-like expression recognition | `ValueAnalysis::isOneLikeValue` |
 | trailing work in parent block | `hasWorkAfterInParentBlock` in `Utils.h` |
-| broad pure-op predicate | `isPureOp` in `Utils.h` |
-| store program order | `sortStoresInProgramOrder` in `Utils.h` |
 | loop hoist target | `findHoistTarget` in `LoopInvarianceUtils.h` |
 | DB memory access info | `DbUtils::getMemoryAccessInfo` |
 | undef-like op recognition | `isUndefLikeOp` in `Utils.h` |

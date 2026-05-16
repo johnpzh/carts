@@ -9,17 +9,12 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/OpenMP/OpenMPDialect.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OperationSupport.h"
-#include "mlir/Interfaces/CallInterfaces.h"
-#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/CSE.h"
 #include "mlir/Transforms/RegionUtils.h"
-#include <algorithm>
 #include <cassert>
 
 /// Debug
@@ -29,10 +24,7 @@ ARTS_DEBUG_SETUP(utils);
 
 namespace mlir {
 namespace carts::arts {
-
-///===----------------------------------------------------------------------===///
-/// Dominance Utilities
-///===----------------------------------------------------------------------===///
+namespace {
 
 bool hasFloatingPointType(Type type) {
   if (!type)
@@ -44,6 +36,12 @@ bool hasFloatingPointType(Type type) {
     return hasFloatingPointType(vectorType.getElementType());
   return false;
 }
+
+} // namespace
+
+///===----------------------------------------------------------------------===///
+/// Dominance Utilities
+///===----------------------------------------------------------------------===///
 
 bool operationTouchesFloatingPoint(Operation *op) {
   for (Value operand : op->getOperands()) {
@@ -94,15 +92,6 @@ Value createOneIndex(OpBuilder &builder, Location loc) {
   return createConstantIndex(builder, loc, 1);
 }
 
-Value createCeilDivUI(OpBuilder &builder, Location loc, Value numerator,
-                      Value denominator) {
-  Value one = createOneIndex(builder, loc);
-  Value adjusted = arith::AddIOp::create(
-      builder, loc, numerator,
-      arith::SubIOp::create(builder, loc, denominator, one));
-  return arith::DivUIOp::create(builder, loc, adjusted, denominator);
-}
-
 Value createCurrentNodeRoute(OpBuilder &builder, Location loc) {
   return arith::ConstantIntOp::create(builder, loc, kCurrentNodeRoute, 32);
 }
@@ -132,35 +121,6 @@ bool containsOmpOp(Operation *op) {
   });
   return found;
 }
-
-///===----------------------------------------------------------------------===///
-/// Operation Ordering Utilities
-///===----------------------------------------------------------------------===///
-
-Operation *getTopLevelFuncChild(Operation *op, func::FuncOp parentFunc) {
-  if (!op || !parentFunc)
-    return nullptr;
-
-  Operation *cursor = op;
-  while (cursor && cursor->getParentOp() != parentFunc)
-    cursor = cursor->getParentOp();
-  return cursor;
-}
-
-bool isOrderedAfter(Operation *anchor, Operation *candidate,
-                    func::FuncOp parentFunc) {
-  Operation *anchorTop = getTopLevelFuncChild(anchor, parentFunc);
-  Operation *candidateTop = getTopLevelFuncChild(candidate, parentFunc);
-  if (!anchorTop || !candidateTop)
-    return false;
-  if (anchorTop->getBlock() != candidateTop->getBlock())
-    return false;
-  return anchorTop->isBeforeInBlock(candidateTop);
-}
-
-///===----------------------------------------------------------------------===///
-/// ARTS Runtime Query Utilities
-///===----------------------------------------------------------------------===///
 
 bool isArtsRuntimeQuery(Value val) {
   if (!val)
@@ -241,19 +201,6 @@ MemRefType getElementMemRefType(Type elementType,
 }
 
 ///===----------------------------------------------------------------------===///
-/// String Utilities
-///===----------------------------------------------------------------------===///
-
-/// Sanitizes the given string by replacing dots and dashes with underscores,
-/// making it suitable for use as an identifier.
-std::string sanitizeString(StringRef s) {
-  std::string id = s.str();
-  std::replace(id.begin(), id.end(), '.', '_');
-  std::replace(id.begin(), id.end(), '-', '_');
-  return id;
-}
-
-///===----------------------------------------------------------------------===///
 /// Access Mode Utilities
 ///===----------------------------------------------------------------------===///
 
@@ -286,31 +233,6 @@ ArtsMode combineAccessModes(ArtsMode mode1, ArtsMode mode2) {
 /// Operation Replacement Utilities
 ///===----------------------------------------------------------------------===///
 
-/// Replaces uses of one value with another under dominance constraints,
-/// skipping the dominating operation.
-void replaceUses(Value from, Value to, DominanceInfo &domInfo,
-                 Operation *dominatingOp) {
-  /// Ensure that 'from' has a defining operation.
-  auto *definingOp = from.getDefiningOp();
-  if (!definingOp)
-    return;
-
-  /// Replace all uses of 'from' with 'to' if the user is dominated by the
-  /// defining operation of 'from'.
-  from.replaceUsesWithIf(to, [&](OpOperand &operand) {
-    if (operand.getOwner() == dominatingOp)
-      return false;
-    return domInfo.dominates(dominatingOp, operand.getOwner());
-  });
-}
-
-/// Replaces uses according to a mapping of values.
-void replaceUses(DenseMap<Value, Value> &rewireMap) {
-  for (auto &rewire : rewireMap)
-    rewire.first.replaceAllUsesWith(rewire.second);
-  rewireMap.clear();
-}
-
 /// Replaces uses of a value within a specific region.
 void replaceInRegion(Region &region, Value from, Value to) {
   from.replaceUsesWithIf(to, [&](OpOperand &operand) {
@@ -327,34 +249,6 @@ void replaceInRegion(Region &region, DenseMap<Value, Value> &rewireMap,
     rewireMap.clear();
 }
 
-///===----------------------------------------------------------------------===///
-/// Attribute Transfer Utilities
-///===----------------------------------------------------------------------===///
-
-void transferAttributes(Operation *src, Operation *dst,
-                        ArrayRef<StringRef> excludes) {
-  /// Build set of attributes to exclude
-  llvm::SmallDenseSet<StringRef> excludeSet;
-  /// Always exclude auto-generated MLIR attributes
-  excludeSet.insert("operandSegmentSizes");
-  excludeSet.insert("resultSegmentSizes");
-  /// Exclude builder-set attributes for ARTS ops
-  excludeSet.insert("mode");
-  /// Add any additional excludes
-  for (StringRef name : excludes)
-    excludeSet.insert(name);
-
-  /// Transfer all non-excluded attributes
-  for (NamedAttribute attr : src->getAttrs()) {
-    if (!excludeSet.contains(attr.getName().getValue()))
-      dst->setAttr(attr.getName(), attr.getValue());
-  }
-}
-
-///===----------------------------------------------------------------------===///
-/// OMP Mode Conversion Utilities
-///===----------------------------------------------------------------------===///
-
 bool isSideEffectFreeArithmeticLikeOp(Operation *op) {
   if (!op || op->hasTrait<OpTrait::IsTerminator>())
     return true;
@@ -368,20 +262,6 @@ bool isSideEffectFreeArithmeticLikeOp(Operation *op) {
              arith::ExtSIOp, arith::ExtUIOp, arith::ExtFOp, arith::TruncIOp,
              arith::TruncFOp, arith::SIToFPOp, arith::UIToFPOp, arith::FPToSIOp,
              arith::FPToUIOp>(op);
-}
-
-ArtsMode convertOmpMode(omp::ClauseTaskDepend mode) {
-  switch (mode) {
-  case omp::ClauseTaskDepend::taskdependin:
-    return ArtsMode::in;
-  case omp::ClauseTaskDepend::taskdependout:
-    return ArtsMode::out;
-  case omp::ClauseTaskDepend::taskdependinout:
-  case omp::ClauseTaskDepend::taskdependmutexinoutset:
-  case omp::ClauseTaskDepend::taskdependinoutset:
-    return ArtsMode::inout;
-  }
-  llvm_unreachable("Unknown OMP depend mode");
 }
 
 ///===----------------------------------------------------------------------===///
@@ -485,42 +365,6 @@ bool hasWorkAfterInParentBlock(Operation *op) {
     return true;
   }
   return false;
-}
-
-///===----------------------------------------------------------------------===///
-/// Pure Operation Detection Utilities
-///===----------------------------------------------------------------------===///
-
-bool isPureOp(Operation *op) {
-  if (!op)
-    return false;
-  if (isa<arts::YieldOp, memref::LoadOp, memref::StoreOp,
-          affine::AffineLoadOp, affine::AffineStoreOp, affine::AffineApplyOp,
-          scf::ForOp, scf::YieldOp, affine::AffineForOp, affine::AffineYieldOp>(
-          op))
-    return true;
-  if (isa<CallOpInterface>(op))
-    return false;
-  if (auto iface = dyn_cast<MemoryEffectOpInterface>(op))
-    return iface.hasNoEffect();
-  return op->getNumRegions() == 0;
-}
-
-///===----------------------------------------------------------------------===///
-/// Store Ordering Utilities
-///===----------------------------------------------------------------------===///
-
-void sortStoresInProgramOrder(MutableArrayRef<memref::StoreOp> stores) {
-  std::stable_sort(stores.begin(), stores.end(),
-                   [](memref::StoreOp lhs, memref::StoreOp rhs) {
-                     Operation *lhsOp = lhs.getOperation();
-                     Operation *rhsOp = rhs.getOperation();
-                     if (lhsOp == rhsOp)
-                       return false;
-                     if (lhsOp->getBlock() == rhsOp->getBlock())
-                       return lhsOp->isBeforeInBlock(rhsOp);
-                     return lhsOp < rhsOp;
-                   });
 }
 
 ///===----------------------------------------------------------------------===///

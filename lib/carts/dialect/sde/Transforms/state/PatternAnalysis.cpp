@@ -352,9 +352,7 @@ derivePattern(const sde::StructuredLoopSummary &summary,
 
 struct PatternAnalysisPass
     : public sde::impl::PatternAnalysisBase<PatternAnalysisPass> {
-  explicit PatternAnalysisPass(sde::SDECostModel *costModel = nullptr) {
-    (void)costModel;
-  }
+  using PatternAnalysisBase::PatternAnalysisBase;
 
   void runOnOperation() override {
     getOperation().walk([&](sde::SdeSuIterateOp op) {
@@ -481,9 +479,8 @@ struct PatternAnalysisPass
 
 namespace mlir::carts::sde {
 
-std::unique_ptr<Pass>
-createPatternAnalysisPass(sde::SDECostModel *costModel) {
-  return std::make_unique<PatternAnalysisPass>(costModel);
+std::unique_ptr<Pass> createPatternAnalysisPass() {
+  return std::make_unique<PatternAnalysisPass>();
 }
 
 } // namespace mlir::carts::sde

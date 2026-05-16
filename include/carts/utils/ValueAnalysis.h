@@ -173,21 +173,6 @@ public:
     return OpType::create(builder, loc, lhs, rhs);
   }
 
-  /// Trace min/select with partial operand fallback.
-  static Value
-  traceMinSIWithFallback(arith::MinSIOp minOp, Operation *insertBefore,
-                         OpBuilder &builder, Location loc,
-                         llvm::function_ref<Value(Value)> traceValueFn);
-  static Value
-  traceMinUIWithFallback(arith::MinUIOp minOp, Operation *insertBefore,
-                         OpBuilder &builder, Location loc,
-                         llvm::function_ref<Value(Value)> traceValueFn);
-  static Value
-  traceSelectWithFallback(arith::SelectOp selectOp, Operation *insertBefore,
-                          OpBuilder &builder, Location loc,
-                          llvm::function_ref<Value(Value)> traceValueFn,
-                          llvm::function_ref<Value(Value)> traceCondFn);
-
   ///===----------------------------------------------------------------------===///
   /// Value Cloning Utilities
   ///===----------------------------------------------------------------------===///

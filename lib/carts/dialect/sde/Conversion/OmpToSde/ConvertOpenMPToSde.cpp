@@ -1217,18 +1217,12 @@ struct TaskwaitToSdePattern : public OpRewritePattern<omp::TaskwaitOp> {
 namespace {
 struct ConvertOpenMPToSdePass
     : public sde::impl::ConvertOpenMPToSdeBase<ConvertOpenMPToSdePass> {
-
-  explicit ConvertOpenMPToSdePass(sde::SDECostModel *costModel = nullptr)
-      : costModel(costModel) {}
+  using ConvertOpenMPToSdeBase::ConvertOpenMPToSdeBase;
 
   void runOnOperation() override {
     ModuleOp module = getOperation();
     ARTS_INFO_HEADER(ConvertOpenMPToSdePass);
     MLIRContext *context = &getContext();
-    // Conversion stays structural today, but the pass keeps the SDE-owned
-    // model wired through so callers do not depend on downstream analysis
-    // plumbing.
-    (void)costModel;
     unsigned hostOpenMPIslands = markHostOpenMPIslands(module);
     if (hostOpenMPIslands != 0)
       ARTS_INFO("ConvertOpenMPToSde: preserving " << hostOpenMPIslands
@@ -1261,11 +1255,6 @@ struct ConvertOpenMPToSdePass
 
     ARTS_INFO_FOOTER(ConvertOpenMPToSdePass);
   }
-
-private:
-  // Keep the pass wired to the SDE-owned planning model without reintroducing
-  // AnalysisManager or other downstream-layer plumbing here.
-  sde::SDECostModel *costModel = nullptr;
 };
 } // namespace
 
@@ -1276,9 +1265,8 @@ private:
 namespace mlir {
 namespace carts {
 namespace sde {
-std::unique_ptr<Pass>
-createConvertOpenMPToSdePass(SDECostModel *costModel) {
-  return std::make_unique<ConvertOpenMPToSdePass>(costModel);
+std::unique_ptr<Pass> createConvertOpenMPToSdePass() {
+  return std::make_unique<ConvertOpenMPToSdePass>();
 }
 } // namespace sde
 } // namespace carts

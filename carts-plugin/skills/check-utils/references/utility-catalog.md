@@ -9,7 +9,7 @@ disagree.
 | Category | Canonical owner | Examples |
 |----------|-----------------|----------|
 | Value constants/folding/provenance | `include/carts/utils/ValueAnalysis.h` | `isZeroConstant`, `isOneConstant`, `tryFoldConstantIndex`, `sameValue`, `dependsOn`, `stripMemrefViewOps` |
-| Index builders/general IR helpers | `include/carts/utils/Utils.h` | `createConstantIndex`, `createZeroIndex`, `createOneIndex`, `dominatesOrInAncestor`, `replaceUses` |
+| Index builders/general IR helpers | `include/carts/utils/Utils.h` | `createConstantIndex`, `createZeroIndex`, `createOneIndex`, `dominatesOrInAncestor`, `replaceInRegion` |
 | Loop shape and IV helpers | `include/carts/utils/LoopUtils.h` | `isLoopInductionVar`, `getStaticTripCount`, `findNearestLoop`, `getLoopDepth` |
 | Loop invariance and hoisting | `include/carts/utils/LoopInvarianceUtils.h` | `isLoopInvariant`, `findHoistTarget`, `allOperandsDominate`, `isSafeDivRemToHoist` |
 | Deferred removal | `include/carts/utils/RemovalUtils.h` | `markForRemoval`, `removeAllMarked`, `replaceWithUndef` |
@@ -42,11 +42,10 @@ not loop-specific utilities.
 | Create zero/one index | `createZeroIndex()`, `createOneIndex()` | `Utils.h` |
 | Create arbitrary index constant | `createConstantIndex()` | `Utils.h` |
 | Check dominance with ancestor regions | `dominatesOrInAncestor()` | `Utils.h` |
-| Replace uses or values in a region | `replaceUses()`, `replaceInRegion()` | `Utils.h` |
+| Replace uses or values in a region | `replaceInRegion()` | `Utils.h` |
 | Detect trailing work in a block | `hasWorkAfterInParentBlock()` | `Utils.h` |
-| Sort stores in program order | `sortStoresInProgramOrder()` | `Utils.h` |
 | Detect undef-like ops | `isUndefLikeOp()` | `Utils.h` |
-| Check if op is pure enough for analysis | `isPureOp()` or `isSideEffectFreeArithmeticLikeOp()` | `Utils.h` |
+| Check if op is side-effect-free arithmetic-like | `isSideEffectFreeArithmeticLikeOp()` | `Utils.h` |
 | Check loop invariance | `isLoopInvariant()` | `LoopInvarianceUtils.h` |
 | Find loop hoist target | `findHoistTarget()` | `LoopInvarianceUtils.h` |
 | Check div/rem hoist safety | `isSafeDivRemToHoist()` | `LoopInvarianceUtils.h` |

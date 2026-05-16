@@ -1145,11 +1145,11 @@ void buildInitialCleanupPipeline(OpPassManager &optPM) {
 void buildSdePlanningPipeline(PassManager &pm,
                               arts::AnalysisManager *AM = nullptr) {
   sde::SDECostModel *costModel = AM ? &AM->getCostModel() : nullptr;
-  pm.addPass(sde::createConvertOpenMPToSdePass(costModel));
+  pm.addPass(sde::createConvertOpenMPToSdePass());
   // SDE pattern analysis first stamps approved memref/ND access facts. Dep
   // transforms then consume those SDE facts before effect passes make
   // scheduling decisions.
-  pm.addPass(sde::createPatternAnalysisPass(costModel));
+  pm.addPass(sde::createPatternAnalysisPass());
   pm.addPass(sde::createLoopInterchangePass());
   pm.addPass(sde::createTilingPass(costModel));
   pm.addPass(sde::createElementwiseFusionPass());
