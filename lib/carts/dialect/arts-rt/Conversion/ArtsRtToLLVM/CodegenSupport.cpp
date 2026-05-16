@@ -377,13 +377,22 @@ Value ArtsCodegen::getCurrentEdtGuid(Location loc) {
 Value ArtsCodegen::getTotalWorkers(Location loc) {
   bool staticWorkers = getRuntimeStaticWorkers(module);
   if (staticWorkers && runtimeConfig && runtimeConfig->hasValidThreads()) {
-    int runtimeWorkers = runtimeConfig->getRuntimeWorkersPerNode();
+    int runtimeWorkers = runtimeConfig->getRuntimeTotalWorkers();
     if (runtimeWorkers > 0)
       return createIntConstant(runtimeWorkers, Int32, loc);
   }
+
   func::FuncOp func =
       getOrCreateRuntimeFunction(ARTSRTL_arts_get_total_workers);
-  return create<func::CallOp>(loc, func, ArrayRef<Value>{}).getResult(0);
+  Value workersPerNode =
+      create<func::CallOp>(loc, func, ArrayRef<Value>{}).getResult(0);
+  if (runtimeConfig && runtimeConfig->hasValidNodeCount() &&
+      runtimeConfig->getNodeCount() <= 1)
+    return workersPerNode;
+
+  Value totalNodes = getTotalNodes(loc);
+  return create<arith::MulIOp>(loc, workersPerNode,
+                               castToInt(Int32, totalNodes, loc));
 }
 
 Value ArtsCodegen::getTotalNodes(Location loc) {

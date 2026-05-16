@@ -804,7 +804,7 @@ def RuntimeQueryOp : Arts_Op<"runtime_query", [Pure]> {
     The `arts.runtime_query` operation queries the ARTS runtime for information
     about the execution environment. The `kind` attribute selects what to query:
 
-    - `total_workers`: Total number of workers available.
+    - `total_workers`: Cluster-wide logical worker capacity.
     - `total_nodes`: Total number of nodes available.
     - `current_worker`: ID of the current worker executing this operation.
     - `current_node`: ID of the current node executing this operation.

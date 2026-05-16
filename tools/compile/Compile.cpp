@@ -147,8 +147,8 @@ static cl::opt<std::string> ArtsDebug(
 
 static cl::opt<bool> RuntimeStaticWorkers(
     "runtime-static-workers",
-    cl::desc("Fold runtime_query<total_workers> to the configured worker count "
-             "when the module embeds a valid ARTS config"),
+    cl::desc("Fold runtime_query<total_workers> to the configured cluster-wide "
+             "worker count when the module embeds a valid ARTS config"),
     cl::init(false));
 
 /// Distributed DB allocation enablement.
