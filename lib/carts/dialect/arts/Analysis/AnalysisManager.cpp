@@ -22,11 +22,8 @@ using namespace mlir;
 using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
-AnalysisManager::AnalysisManager(ModuleOp module, const std::string &configFile,
-                                 const std::string &metadataFile)
+AnalysisManager::AnalysisManager(ModuleOp module, const std::string &configFile)
     : module(module), configFile(configFile),
-      metadataFile(metadataFile.empty() ? ".carts-metadata.json"
-                                        : metadataFile),
       runtimeConfig(configFile) {}
 
 AnalysisManager::~AnalysisManager() {}
@@ -52,7 +49,6 @@ void AnalysisManager::invalidate() {
     stringAnalysis->invalidate();
   if (dbHeuristics)
     dbHeuristics->clearDecisions();
-  metadataCoverage = MetadataCoverage{};
   cachedDiagnosticJson.reset();
 }
 
@@ -119,23 +115,8 @@ bool AnalysisManager::invalidateFunction(func::FuncOp func) {
     loopAnalysis->invalidate();
   if (stringAnalysis)
     stringAnalysis->invalidate();
-  metadataCoverage = MetadataCoverage{};
   cachedDiagnosticJson.reset();
   return invalidated;
-}
-
-void AnalysisManager::print(llvm::raw_ostream &os) {
-  os << "AnalysisManager for module: "
-     << (module.getName() ? module.getName()->str() : "unnamed") << "\n";
-
-  for (auto func : module.getOps<func::FuncOp>()) {
-    os << "  Function: " << func.getName() << "\n";
-    bool hasDbGraph = dbAnalysis != nullptr;
-    bool hasEdtGraph = edtAnalysis != nullptr;
-    os << "    DB Graph: " << (hasDbGraph ? "Available" : "Not built") << "\n";
-    os << "    EDT Graph: " << (hasEdtGraph ? "Available" : "Not built")
-       << "\n";
-  }
 }
 
 void AnalysisManager::captureDiagnostics() {
@@ -289,14 +270,6 @@ void AnalysisManager::exportToJson(llvm::raw_ostream &os,
     }
     root["functions"] = std::move(functions);
 
-    if (metadataCoverage.hasData) {
-      Object coverage;
-      coverage["loops_analyzed"] = metadataCoverage.loopsAnalyzed;
-      coverage["loops_total"] = metadataCoverage.loopsTotal;
-      coverage["memrefs_analyzed"] = metadataCoverage.memrefsAnalyzed;
-      coverage["memrefs_total"] = metadataCoverage.memrefsTotal;
-      root["metadata_coverage"] = std::move(coverage);
-    }
     os << llvm::json::Value(std::move(root)) << "\n";
     return;
   }

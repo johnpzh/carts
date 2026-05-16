@@ -209,8 +209,7 @@ Utilities are reclassified by the earliest owning layer:
 - CODIR-only: `lib/carts/dialect/codir/Utils/` — CodeletABIUtils.
 - ARTS-only: `lib/carts/dialect/arts/Utils/` — DbUtils, EdtUtils, IdRegistry,
   LocationMetadata, LoweringContractUtils, PartitionPredicates,
-  BlockedAccessUtils, MetadataAttrNames, MetadataEnums, ARTSCostModel,
-  RuntimeConfig.
+  BlockedAccessUtils, MetadataEnums, ARTSCostModel, RuntimeConfig.
 - ARTS-RT-only: `lib/carts/dialect/arts-rt/Utils/` — LoopInvarianceUtils.
 
 ## CMake Strategy

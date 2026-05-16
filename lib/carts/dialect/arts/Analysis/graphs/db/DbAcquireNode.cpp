@@ -38,7 +38,6 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
-#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <limits>
 #include <optional>
@@ -250,11 +249,6 @@ void DbAcquireNode::collectAccessOperations(
   MemoryAccessClassifier::collectAccessOperations(this, dbRefToMemOps);
 }
 
-void DbAcquireNode::forEachMemoryAccess(
-    llvm::function_ref<void(Operation *, bool)> callback) {
-  MemoryAccessClassifier::forEachMemoryAccess(this, callback);
-}
-
 bool DbAcquireNode::hasLoads() {
   return MemoryAccessClassifier::hasLoads(this);
 }
@@ -265,22 +259,6 @@ bool DbAcquireNode::hasStores() {
 
 bool DbAcquireNode::isReadOnlyAccess() {
   return MemoryAccessClassifier::isReadOnlyAccess(this);
-}
-
-bool DbAcquireNode::isWriterAccess() {
-  return MemoryAccessClassifier::isWriterAccess(this);
-}
-
-bool DbAcquireNode::hasMemoryAccesses() {
-  return MemoryAccessClassifier::hasMemoryAccesses(this);
-}
-
-size_t DbAcquireNode::countLoads() {
-  return MemoryAccessClassifier::countLoads(this);
-}
-
-size_t DbAcquireNode::countStores() {
-  return MemoryAccessClassifier::countStores(this);
 }
 
 bool DbAcquireNode::hasIndirectAccess() const {
@@ -297,20 +275,8 @@ bool DbAcquireNode::hasDirectAccess() const {
 /// Partition Bounds Methods -- delegate to PartitionBoundsAnalyzer
 ///===----------------------------------------------------------------------===///
 
-bool DbAcquireNode::hasValidEdtAndAccesses() {
-  return PartitionBoundsAnalyzer::hasValidEdtAndAccesses(this);
-}
-
-bool DbAcquireNode::computePartitionBounds() {
-  return PartitionBoundsAnalyzer::computePartitionBounds(this);
-}
-
 bool DbAcquireNode::canBePartitioned() {
   return PartitionBoundsAnalyzer::canBePartitioned(this);
-}
-
-bool DbAcquireNode::canPartitionWithOffset(Value offset) {
-  return PartitionBoundsAnalyzer::canPartitionWithOffset(this, offset);
 }
 
 std::optional<unsigned>
@@ -334,28 +300,6 @@ void DbAcquireNode::invalidatePartitionFacts() const { partitionFacts.reset(); }
 LogicalResult DbAcquireNode::computeBlockInfo(Value &blockOffset,
                                               Value &blockSize) {
   return DbBlockInfoComputer::computeBlockInfo(this, blockOffset, blockSize);
-}
-
-LogicalResult DbAcquireNode::computeBlockInfoFromWhile(scf::WhileOp whileOp,
-                                                       Value &blockOffset,
-                                                       Value &blockSize,
-                                                       Value *offsetForCheck) {
-  return DbBlockInfoComputer::computeBlockInfoFromWhile(
-      this, whileOp, blockOffset, blockSize, offsetForCheck);
-}
-
-LogicalResult DbAcquireNode::computeBlockInfoFromHints(Value &blockOffset,
-                                                       Value &blockSize) {
-  return DbBlockInfoComputer::computeBlockInfoFromHints(this, blockOffset,
-                                                        blockSize);
-}
-
-LogicalResult
-DbAcquireNode::computeBlockInfoFromForLoop(ArrayRef<LoopNode *> loopNodes,
-                                           Value &blockOffset, Value &blockSize,
-                                           Value *offsetForCheck) {
-  return DbBlockInfoComputer::computeBlockInfoFromForLoop(
-      this, loopNodes, blockOffset, blockSize, offsetForCheck);
 }
 
 ///===----------------------------------------------------------------------===///
@@ -575,12 +519,6 @@ AccessPattern DbAcquireNode::getAccessPattern() const {
 ///===----------------------------------------------------------------------===///
 /// Remaining methods (print, worker-indexed, disjoint, validation)
 ///===----------------------------------------------------------------------===///
-
-void DbAcquireNode::print(llvm::raw_ostream &os) const {
-  os << "DbAcquireNode (" << getHierId() << ")";
-  os << " estimatedBytes=" << estimatedBytes;
-  os << "\n";
-}
 
 bool DbAcquireNode::isWorkerIndexedAccess() const {
   if (!op)

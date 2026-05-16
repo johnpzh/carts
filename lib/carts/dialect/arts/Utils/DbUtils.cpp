@@ -314,33 +314,6 @@ template DbLoweringInfo DbUtils::extractDbLoweringInfo<DbAllocOp>(DbAllocOp op);
 /// Datablock Tracing Utilities
 ///===----------------------------------------------------------------------===///
 
-std::optional<std::pair<Value, Value>> DbUtils::traceToDbAlloc(Value dep) {
-  if (auto allocOp = dyn_cast_or_null<DbAllocOp>(getUnderlyingDbAlloc(dep)))
-    return std::make_pair(allocOp.getGuid(), allocOp.getPtr());
-
-  if (auto allocOp = dep.getDefiningOp<DbAllocOp>())
-    return std::make_pair(allocOp.getGuid(), allocOp.getPtr());
-
-  if (auto acqOp = dep.getDefiningOp<DbAcquireOp>()) {
-    if (Value srcGuid = acqOp.getSourceGuid())
-      return traceToDbAlloc(srcGuid);
-    if (Value srcPtr = acqOp.getSourcePtr())
-      return traceToDbAlloc(srcPtr);
-  }
-
-  if (auto blockArg = dyn_cast<BlockArgument>(dep)) {
-    Operation *parentOp = blockArg.getOwner()->getParentOp();
-    if (auto parentEdt = dyn_cast<EdtOp>(parentOp)) {
-      unsigned idx = blockArg.getArgNumber();
-      ValueRange parentDeps = parentEdt.getDependencies();
-      if (idx < parentDeps.size())
-        return traceToDbAlloc(parentDeps[idx]);
-    }
-  }
-
-  return std::nullopt;
-}
-
 Operation *DbUtils::getUnderlyingDb(Value v, unsigned depth) {
   if (!v)
     return nullptr;
@@ -428,37 +401,6 @@ DbAllocOp DbUtils::getAllocOpFromGuid(Value dbGuid) {
                ? depDbAcquireOp.getGuid().getDefiningOp<DbAllocOp>()
                : nullptr;
   return nullptr;
-}
-
-std::optional<SmallVector<int64_t, 4>>
-DbUtils::getStaticDbOuterShape(Value dbHandle) {
-  if (!dbHandle)
-    return std::nullopt;
-
-  auto dbAlloc = dbHandle.getDefiningOp<DbAllocOp>();
-  if (!dbAlloc)
-    return std::nullopt;
-
-  SmallVector<int64_t, 4> shape;
-  shape.reserve(dbAlloc.getSizes().size());
-  for (Value size : dbAlloc.getSizes()) {
-    int64_t constantSize = 0;
-    if (!ValueAnalysis::getConstantIndex(size, constantSize))
-      return std::nullopt;
-    shape.push_back(constantSize);
-  }
-  return shape;
-}
-
-int64_t DbUtils::computeStaticPartitionCount(DbAllocOp alloc) {
-  int64_t count = 1;
-  for (Value sz : alloc.getSizes()) {
-    if (auto cst = getConstantIntValue(sz))
-      count *= *cst;
-    else
-      return -1;
-  }
-  return count;
 }
 
 std::optional<int64_t> DbUtils::resolveRootAllocId(Value value,
@@ -557,54 +499,6 @@ SmallVector<Value> DbUtils::getDepOffsetsFromDb(Value dbPtr) {
   if (!underlyingDb)
     return {};
   return getDepOffsetsFromDb(underlyingDb);
-}
-
-///===----------------------------------------------------------------------===///
-/// Datablock Stride Computation
-///===----------------------------------------------------------------------===///
-
-std::optional<int64_t> DbUtils::getStaticStride(ValueRange sizes) {
-  if (sizes.empty())
-    return std::nullopt;
-
-  SmallVector<int64_t> staticShape(sizes.size(), 1);
-  for (size_t i = 1; i < sizes.size(); ++i) {
-    int64_t dim;
-    if (!ValueAnalysis::getConstantIndex(sizes[i], dim))
-      return std::nullopt;
-    staticShape[i] = dim;
-  }
-  return computeSuffixProduct(staticShape).front();
-}
-
-std::optional<int64_t> DbUtils::getStaticStride(MemRefType memrefType) {
-  auto shape = memrefType.getShape();
-  if (shape.empty())
-    return std::nullopt;
-
-  if (llvm::is_contained(shape.drop_front(), ShapedType::kDynamic))
-    return std::nullopt;
-
-  return computeSuffixProduct(shape).front();
-}
-
-std::optional<int64_t> DbUtils::getStaticElementStride(DbAllocOp alloc) {
-  return getStaticStride(alloc.getElementSizes());
-}
-
-Value DbUtils::getStrideValue(OpBuilder &builder, Location loc,
-                              ValueRange sizes) {
-  if (sizes.empty())
-    return nullptr;
-
-  SmallVector<OpFoldResult> mixedSizes;
-  mixedSizes.reserve(sizes.size());
-  for (Value size : sizes)
-    mixedSizes.push_back(size);
-
-  SmallVector<OpFoldResult> strides =
-      memref::computeSuffixProductIRBlock(loc, builder, mixedSizes);
-  return getValueOrCreateConstantIndexOp(builder, loc, strides.front());
 }
 
 bool DbUtils::isWriterMode(ArtsMode mode) {
@@ -899,29 +793,6 @@ DbUtils::getMemoryAccessInfo(Operation *memOp) {
                                                store.getMapOperands().end()),
                             MemoryAccessKind::Write};
   return std::nullopt;
-}
-
-bool DbUtils::hasSharedReadonlyRoot(Operation *lhs, Operation *rhs) {
-  MemoryRootSummary lhsSummary = summarizeMemoryRoots(lhs);
-  MemoryRootSummary rhsSummary = summarizeMemoryRoots(rhs);
-
-  for (const auto &[alloc, access] : lhsSummary.dbAllocs) {
-    auto it = rhsSummary.dbAllocs.find(alloc);
-    if (it != rhsSummary.dbAllocs.end() && access.isReadOnly() &&
-        it->second.isReadOnly()) {
-      return true;
-    }
-  }
-
-  for (const auto &[memref, access] : lhsSummary.rawMemrefs) {
-    auto it = rhsSummary.rawMemrefs.find(memref);
-    if (it != rhsSummary.rawMemrefs.end() && access.isReadOnly() &&
-        it->second.isReadOnly()) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 bool DbUtils::hasSharedWritableRootConflict(Operation *lhs, Operation *rhs) {

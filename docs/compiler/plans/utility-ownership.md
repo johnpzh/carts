@@ -126,8 +126,9 @@ ownership:
   because they are conversion logic, not CODIR dialect utilities.
 - [x] ARTS-only utilities moved to `include/carts/dialect/arts/Utils/`:
   DbUtils, EdtUtils, IdRegistry, LocationMetadata, LoweringContractUtils,
-  PartitionPredicates, BlockedAccessUtils, MetadataAttrNames, MetadataEnums,
-  ARTSCostModel (was utils/costs/), RuntimeConfig (was utils/machine/).
+  PartitionPredicates, BlockedAccessUtils, MetadataEnums, ARTSCostModel (was
+  utils/costs/), RuntimeConfig (was utils/machine/). Legacy metadata attr-name
+  JSON plumbing has been removed.
 - [x] ARTS-RT-only utility moved to `include/carts/dialect/arts-rt/Utils/`:
   LoopInvarianceUtils.
 - [x] SDE-only utility moved to `include/carts/dialect/sde/Utils/`:

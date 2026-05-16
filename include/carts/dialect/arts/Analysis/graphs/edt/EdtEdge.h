@@ -9,11 +9,7 @@
 
 #include "carts/Dialect.h"
 #include "carts/dialect/arts/Analysis/graphs/base/EdgeBase.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMapInfo.h"
-#include "llvm/ADT/SetVector.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/raw_ostream.h"
 #include <cstdint>
 #include <string>
 
@@ -24,7 +20,7 @@ class DbAllocNode;
 class DbAcquireNode;
 
 /// Data dependency types carried by EDT edges.
-enum class DbDepType { RAW, WAR, WAW, RAR };
+enum class DbDepType { RAW, WAR, WAW };
 
 struct DbEdge {
   DbAcquireNode *producer = nullptr;
@@ -45,10 +41,6 @@ public:
   NodeBase *getTo() const override { return to; }
   EdgeKind getKind() const override { return EdgeKind::Dep; }
   StringRef getType() const override { return typeLabel; }
-  void print(llvm::raw_ostream &os) const override;
-
-  ArrayRef<DbEdge> getEdges() const { return dbEdges.getArrayRef(); }
-  void appendEdge(const DbEdge &edge) { dbEdges.insert(edge); }
 
   static bool classof(const EdgeBase *E) {
     return E->getKind() == EdgeKind::Dep;
@@ -56,7 +48,6 @@ public:
 
 private:
   NodeBase *from, *to;
-  SetVector<DbEdge, SmallVector<DbEdge, 2>> dbEdges;
   std::string typeLabel;
 };
 

@@ -69,11 +69,6 @@ DbAllocNode::DbAllocNode(DbAllocOp op, DbAnalysis *analysis)
 
 }
 
-void DbAllocNode::print(llvm::raw_ostream &os) const {
-  os << "DbAllocNode (" << getHierId() << ")";
-  os << "\n";
-}
-
 void DbAllocNode::forEachChildNode(
     const std::function<void(NodeBase *)> &fn) const {
   for (const auto &n : acquireNodes)
@@ -92,11 +87,6 @@ DbAcquireNode *DbAllocNode::getOrCreateAcquireNode(DbAcquireOp op) {
   acquireNodes.push_back(std::move(newNode));
   acquireMap[op] = ptr;
   return ptr;
-}
-
-DbAcquireNode *DbAllocNode::findAcquireNode(DbAcquireOp op) const {
-  auto it = acquireMap.find(op);
-  return it != acquireMap.end() ? it->second : nullptr;
 }
 
 SmallVector<DbAcquireNode *, 16> DbAllocNode::collectAllAcquireNodes() {

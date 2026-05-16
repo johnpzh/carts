@@ -13,26 +13,22 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/raw_ostream.h"
 
 namespace mlir {
 namespace carts::arts {
 
 /// Forward declarations
 class LoopNode;
-class LoopAnalysis;
-class EdtAnalysis;
 
 ////===----------------------------------------------------------------------===////
 /// EdtNode - represents an EDT operation
 ////===----------------------------------------------------------------------===////
 class EdtNode : public NodeBase {
 public:
-  EdtNode(EdtOp op, EdtAnalysis *EA);
+  explicit EdtNode(EdtOp op);
 
   StringRef getHierId() const override { return hierId; }
   void setHierId(std::string id) { hierId = std::move(id); }
-  void print(llvm::raw_ostream &os) const override;
   Operation *getOp() const override {
     return const_cast<EdtOp &>(edtOp).getOperation();
   }
@@ -51,18 +47,7 @@ public:
     enclosingLoops.assign(loops.begin(), loops.end());
   }
 
-  void addAssociatedLoop(LoopNode *loop) {
-    if (loop)
-      enclosingLoops.push_back(loop);
-  }
-
   ArrayRef<LoopNode *> getAssociatedLoops() const { return enclosingLoops; }
-
-  /// Check if this EDT contains nested EDT operations
-  bool hasNestedEdts() const;
-
-  /// Check if this EDT contains nested task-type EDT operations
-  bool hasNestedTaskEdts() const;
 
   NodeKind getKind() const override { return NodeKind::EdtTask; }
   static bool classof(const NodeBase *N) {
@@ -71,7 +56,6 @@ public:
 
 private:
   EdtOp edtOp;
-  EdtAnalysis *edtAnalysis = nullptr;
   std::string hierId;
   EdtInfo info;
 

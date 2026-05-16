@@ -12,7 +12,6 @@
 #include "carts/dialect/arts/Analysis/graphs/db/DbAccessPattern.h"
 #include "carts/dialect/arts/Utils/MetadataEnums.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/Support/raw_ostream.h"
 #include <functional>
 #include <memory>
 #include <optional>
@@ -163,7 +162,6 @@ public:
 
   StringRef getHierId() const override { return hierId; }
   void setHierId(std::string id) { hierId = id; }
-  void print(llvm::raw_ostream &os) const override;
   Operation *getOp() const override { return op; }
 
   void addInEdge(EdgeBase *edge) override { inEdges.insert(edge); }
@@ -173,11 +171,9 @@ public:
 
   /// Graph structure management
   DbAcquireNode *getOrCreateAcquireNode(DbAcquireOp op);
-  DbAcquireNode *findAcquireNode(DbAcquireOp op) const;
   SmallVector<DbAcquireNode *, 16> collectAllAcquireNodes();
   SmallVector<const DbAcquireNode *, 16> collectAllAcquireNodes() const;
   void forEachChildNode(const std::function<void(NodeBase *)> &fn) const;
-  size_t getAcquireNodesSize() const { return acquireNodes.size(); }
 
   /// Operation accessors
   DbAllocOp getDbAllocOp() const { return dbAllocOp; }
@@ -255,7 +251,6 @@ public:
 
   StringRef getHierId() const override { return hierId; }
   void setHierId(std::string id) { hierId = id; }
-  void print(llvm::raw_ostream &os) const override;
   Operation *getOp() const override { return op; }
 
   void addInEdge(EdgeBase *edge) override { inEdges.insert(edge); }
@@ -282,16 +277,9 @@ public:
       DenseMap<DbRefOp, SetVector<Operation *>> &dbRefToMemOps);
 
   /// Helper methods for querying memory access.
-  void
-  forEachMemoryAccess(llvm::function_ref<void(Operation *, bool)> callback);
-
   bool hasLoads();
   bool hasStores();
   bool isReadOnlyAccess();
-  bool isWriterAccess();
-  bool hasMemoryAccesses();
-  size_t countLoads();
-  size_t countStores();
   bool hasIndirectAccess() const;
   bool hasDirectAccess() const;
 
@@ -303,10 +291,7 @@ public:
 
   /// Utility methods for partitioning
   bool canBePartitioned();
-  bool hasValidEdtAndAccesses();
 
-  bool computePartitionBounds();
-  bool canPartitionWithOffset(Value offset);
   /// Return the access-chain dimension that depends on the partition offset.
   /// If requireLeading is true, only accept leading dynamic index.
   std::optional<unsigned> getPartitionOffsetDim(Value offset,
@@ -317,14 +302,6 @@ public:
   void invalidatePartitionFacts() const;
 
   LogicalResult computeBlockInfo(Value &blockOffset, Value &blockSize);
-  LogicalResult computeBlockInfoFromWhile(scf::WhileOp whileOp,
-                                          Value &blockOffset, Value &blockSize,
-                                          Value *offsetForCheck = nullptr);
-  LogicalResult computeBlockInfoFromHints(Value &blockOffset, Value &blockSize);
-  LogicalResult computeBlockInfoFromForLoop(ArrayRef<LoopNode *> loopNodes,
-                                            Value &blockOffset,
-                                            Value &blockSize,
-                                            Value *offsetForCheck = nullptr);
 
   /// Get stencil bounds for this acquire (computed during canBePartitioned)
   const std::optional<StencilBounds> &getStencilBounds() const {

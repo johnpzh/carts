@@ -317,10 +317,6 @@ EdtDataFlowAnalysis::classifyDep(DbAcquireNode *producer,
       (consMode == ArtsMode::out || consMode == ArtsMode::inout))
     return DbDepType::WAR;
 
-  if ((prodMode == ArtsMode::in || prodMode == ArtsMode::inout) &&
-      (consMode == ArtsMode::in || consMode == ArtsMode::inout))
-    return DbDepType::RAR;
-
   return std::nullopt;
 }
 
@@ -336,11 +332,4 @@ void EdtDataFlowAnalysis::recordDep(DbAcquireNode *producer,
 
   DbEdge edge{producer, consumer, depType};
   dependencyMap[{from.getOperation(), to.getOperation()}].insert(edge);
-}
-
-void EdtDataFlowAnalysis::recordDep(DbAcquireNode *reader,
-                                    DbAcquireNode *writer) {
-  auto depType = classifyDep(reader, writer);
-  if (depType)
-    recordDep(reader, writer, *depType);
 }

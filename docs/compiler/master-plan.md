@@ -817,8 +817,8 @@ pick the next concrete slice; use the Milestones to confirm exit gates.
   dialect's `Utils/` surface (`check-utils` skill). The cross-dialect blob
   formerly in `include/carts/utils/` is reclassified: ARTS-only headers
   (DbUtils, EdtUtils, IdRegistry, LocationMetadata, LoweringContractUtils,
-  PartitionPredicates, BlockedAccessUtils, MetadataAttrNames, MetadataEnums,
-  ARTSCostModel, RuntimeConfig) moved to `carts/dialect/arts/Utils/`;
+  PartitionPredicates, BlockedAccessUtils, MetadataEnums, ARTSCostModel,
+  RuntimeConfig) moved to `carts/dialect/arts/Utils/`;
   ARTS-RT-only LoopInvarianceUtils moved to `carts/dialect/arts-rt/Utils/`;
   SDE-only SDECostModel moved to `carts/dialect/sde/Utils/`. CODIR ABI
   predicates already lived in `carts/dialect/codir/Utils/`. Remaining:

@@ -31,31 +31,5 @@ EdtDepEdge::EdtDepEdge(NodeBase *from, NodeBase *to, const DbEdge &edge)
     : from(from), to(to) {
   assert(from && "Source node cannot be null");
   assert(to && "Destination node cannot be null");
-  dbEdges.insert(edge);
   typeLabel = inferLabel(edge);
-}
-
-void EdtDepEdge::print(llvm::raw_ostream &os) const {
-  os << "EDT DEPENDENCY EDGE:\n"
-     << "  - From: " << from->getHierId() << "\n"
-     << "  - To: " << to->getHierId() << "\n";
-  for (const auto &edge : dbEdges) {
-    std::string label = inferLabel(edge);
-    os << "  - Dep: " << label << " [";
-    switch (edge.depType) {
-    case DbDepType::RAW:
-      os << "RAW";
-      break;
-    case DbDepType::WAR:
-      os << "WAR";
-      break;
-    case DbDepType::WAW:
-      os << "WAW";
-      break;
-    case DbDepType::RAR:
-      os << "RAR";
-      break;
-    }
-    os << "]\n";
-  }
 }

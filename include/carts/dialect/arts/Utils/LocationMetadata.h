@@ -11,7 +11,6 @@
 
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/JSON.h"
 #include <string>
 
 namespace mlir {
@@ -45,40 +44,11 @@ public:
   /// Handles FileLineColLoc, FusedLoc, CallSiteLoc, NameLoc
   static LocationMetadata fromLocation(Location loc);
 
-  /// Parse from key string (format: "basename:line:col")
-  static LocationMetadata fromKey(llvm::StringRef key);
-
   /// Extract basename from a file path
   static std::string getBasename(llvm::StringRef path);
 
-  ///===-------------------------------------------------------------===///
-  /// JSON Serialization
-  ///===-------------------------------------------------------------===///
-
-  /// Import from JSON (reads "file", "line", "column" fields)
-  void importFromJson(const llvm::json::Object &json);
-
-  /// Export to JSON (writes "file", "line", "column" fields)
-  void exportToJson(llvm::json::Object &json) const;
-
-  ///===-------------------------------------------------------------===///
-  /// Accessors
-  ///===-------------------------------------------------------------===///
-
-  /// Get the location key
-  llvm::StringRef getKey() const { return key; }
-
   /// Check if location is valid
   bool isValid() const { return line > 0; }
-
-  /// Compare locations for equality
-  bool operator==(const LocationMetadata &other) const {
-    return key == other.key;
-  }
-
-  bool operator<(const LocationMetadata &other) const {
-    return key < other.key;
-  }
 
 private:
   /// Update the location key based on file, line, column

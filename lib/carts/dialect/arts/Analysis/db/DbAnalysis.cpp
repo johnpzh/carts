@@ -22,8 +22,6 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/SetVector.h"
 #include "llvm/Support/Debug.h"
 
 #include "carts/utils/Debug.h"
@@ -330,66 +328,8 @@ void DbAnalysis::invalidate() {
   functionGraphMap.clear();
 }
 
-void DbAnalysis::print(func::FuncOp func) {
-  ARTS_INFO("Printing DbGraph for function: " << func.getName());
-  DbGraph &graph = getOrCreateGraph(func);
-  graph.print(ARTS_DBGS());
-}
-
 LoopAnalysis *DbAnalysis::getLoopAnalysis() {
   return &getAnalysisManager().getLoopAnalysis();
-}
-
-bool DbAnalysis::hasNonInternodeConsumerForWrittenDb(EdtOp producerEdt) {
-  if (!producerEdt)
-    return false;
-
-  func::FuncOp parentFunc = producerEdt->getParentOfType<func::FuncOp>();
-  if (!parentFunc)
-    return false;
-
-  DbGraph &graph = getOrCreateGraph(parentFunc);
-  llvm::DenseSet<DbAllocNode *> writtenDbAllocs;
-
-  graph.forEachAcquireNode([&](DbAcquireNode *acquireNode) {
-    if (!acquireNode)
-      return;
-
-    if (acquireNode->getEdtUser() != producerEdt)
-      return;
-    if (!acquireNode->isWriterAccess())
-      return;
-
-    if (DbAllocNode *root = acquireNode->getRootAlloc())
-      writtenDbAllocs.insert(root);
-  });
-
-  if (writtenDbAllocs.empty())
-    return false;
-
-  bool hasNonInternodeConsumer = false;
-  graph.forEachAcquireNode([&](DbAcquireNode *acquireNode) {
-    if (hasNonInternodeConsumer || !acquireNode)
-      return;
-
-    DbAllocNode *root = acquireNode->getRootAlloc();
-    if (!root || !writtenDbAllocs.contains(root))
-      return;
-
-    EdtOp consumerEdt = acquireNode->getEdtUser();
-    if (!consumerEdt) {
-      hasNonInternodeConsumer = true;
-      return;
-    }
-
-    if (consumerEdt == producerEdt)
-      return;
-
-    if (consumerEdt.getConcurrency() != EdtConcurrency::internode)
-      hasNonInternodeConsumer = true;
-  });
-
-  return hasNonInternodeConsumer;
 }
 
 /// Scan the acquire's block for MinUIOp/MinSIOp that refines the given
@@ -911,78 +851,6 @@ DbAnalysis::getAcquireAccessPattern(DbAcquireOp acquire) {
   return node->getAccessPattern();
 }
 
-/// Determine the access pattern for a DB allocation.
-///
-/// This function combines:
-///   1. Runtime analysis via DbGraph acquire pattern summarization
-///   2. Static metadata from MemrefAnalyzer (dominantAccessPattern)
-///   3. Explicit operation attributes (if already annotated)
-///
-/// Priority order:
-///   - Runtime analysis (most accurate, based on actual IR access patterns)
-///   - Static metadata (from preprocessing/profiling)
-///   - Existing attributes (from previous passes)
-///   - Default to unknown if no information is available
-std::optional<DbAccessPattern>
-DbAnalysis::getAllocAccessPattern(DbAllocOp alloc) {
-  if (!alloc)
-    return std::nullopt;
-
-  /// Check for an existing operation attribute first.
-  std::optional<DbAccessPattern> attrPattern =
-      getDbAccessPattern(alloc.getOperation());
-
-  func::FuncOp func = alloc->getParentOfType<func::FuncOp>();
-  if (!func)
-    return attrPattern;
-
-  DbGraph &graph = getOrCreateGraph(func);
-  DbAllocNode *node = graph.getDbAllocNode(alloc);
-  if (!node)
-    return attrPattern;
-
-  /// Runtime analysis: check acquire-level access patterns across all
-  /// acquires of this allocation. This is the most accurate source as it's
-  /// based on actual IR access patterns.
-  AcquirePatternSummary summary = node->summarizeAcquirePatterns();
-  if (summary.hasStencil)
-    return DbAccessPattern::stencil;
-  if (summary.hasIndexed)
-    return DbAccessPattern::indexed;
-  if (summary.hasUniform)
-    return DbAccessPattern::uniform;
-
-  /// Static metadata fallback: check MemrefMetadata dominantAccessPattern.
-  /// This may be set by MemrefAnalyzer during preprocessing and provides
-  /// valuable hints when runtime analysis is inconclusive.
-  if (node->dominantAccessPattern) {
-    AccessPatternType metaPattern = *node->dominantAccessPattern;
-
-    /// Map MemrefMetadata AccessPatternType to DbAccessPattern.
-    /// Note the semantic differences:
-    ///   - AccessPatternType::Stencil → DbAccessPattern::stencil
-    ///     (multiple offset accesses like A[i-1], A[i], A[i+1])
-    ///   - AccessPatternType::Sequential/Strided → DbAccessPattern::uniform
-    ///     (predictable, partitionable patterns)
-    ///   - AccessPatternType::GatherScatter/Random → DbAccessPattern::indexed
-    ///     (indirect/irregular access patterns)
-    if (metaPattern == AccessPatternType::Stencil)
-      return DbAccessPattern::stencil;
-    if (metaPattern == AccessPatternType::Sequential ||
-        metaPattern == AccessPatternType::Strided)
-      return DbAccessPattern::uniform;
-    if (metaPattern == AccessPatternType::GatherScatter ||
-        metaPattern == AccessPatternType::Random)
-      return DbAccessPattern::indexed;
-  }
-
-  /// Fallback to existing attribute if metadata didn't provide a pattern.
-  if (attrPattern)
-    return attrPattern;
-
-  return DbAccessPattern::unknown;
-}
-
 DbAllocNode *DbAnalysis::getDbAllocNode(DbAllocOp alloc) {
   auto func = alloc->getParentOfType<func::FuncOp>();
   if (!func)
@@ -1019,14 +887,6 @@ PartitionMode DbAnalysis::getPartitionModeFromStructure(DbAllocOp alloc) {
     return PartitionMode::coarse;
 
   return PartitionMode::fine_grained;
-}
-
-bool DbAnalysis::isBlock(DbAcquireOp acquire) {
-  return getPartitionModeFromStructure(acquire) == PartitionMode::block;
-}
-
-bool DbAnalysis::isElementWise(DbAcquireOp acquire) {
-  return getPartitionModeFromStructure(acquire) == PartitionMode::fine_grained;
 }
 
 bool DbAnalysis::isCoarse(DbAcquireOp acquire) {

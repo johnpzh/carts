@@ -148,9 +148,6 @@ public:
   /// Invalidate all graphs
   void invalidate() override;
 
-  /// Print analysis for a function.
-  void print(func::FuncOp func);
-
   /// Access analyses
   DbAliasAnalysis *getAliasAnalysis() { return dbAliasAnalysis.get(); }
   LoopAnalysis *getLoopAnalysis();
@@ -180,10 +177,6 @@ public:
   bool operationHasDistributedDbContract(Operation *op);
   bool operationHasPeerInferredPartitionDims(Operation *op);
 
-  /// Return true when producerEdt writes DBs that are later consumed outside
-  /// internode EDT flow.
-  bool hasNonInternodeConsumerForWrittenDb(EdtOp producerEdt);
-
   /// Return true when operations a and b have conflicting DB accesses:
   /// both access the same underlying DB allocation and at least one is a
   /// writer. This is a semantic query about DB relationships (conflict
@@ -192,7 +185,6 @@ public:
 
   /// Query DB access patterns through the DB graph interface.
   std::optional<AccessPattern> getAcquireAccessPattern(DbAcquireOp acquire);
-  std::optional<DbAccessPattern> getAllocAccessPattern(DbAllocOp alloc);
 
   /// Convenience: get DB alloc node by op (derives parent func internally).
   DbAllocNode *getDbAllocNode(DbAllocOp alloc);
@@ -210,12 +202,6 @@ public:
 
   /// Get partition mode from DbAllocOp structure.
   static PartitionMode getPartitionModeFromStructure(DbAllocOp alloc);
-
-  /// Check if acquire is in block partition mode.
-  static bool isBlock(DbAcquireOp acquire);
-
-  /// Check if acquire is in element-wise (fine_grained) partition mode.
-  static bool isElementWise(DbAcquireOp acquire);
 
   /// Check if acquire is in coarse partition mode.
   static bool isCoarse(DbAcquireOp acquire);

@@ -30,8 +30,7 @@ namespace carts::arts {
 /// Centralized manager for all ARTS analysis objects.
 class AnalysisManager {
 public:
-  AnalysisManager(ModuleOp module, const std::string &configFile = "",
-                  const std::string &metadataFile = "");
+  AnalysisManager(ModuleOp module, const std::string &configFile = "");
   ~AnalysisManager();
 
   /// Invalidate all analysis objects and graphs
@@ -53,7 +52,6 @@ public:
 
   ModuleOp &getModule() { return module; }
   const std::string &getConfigFile() const { return configFile; }
-  const std::string &getMetadataFile() const { return metadataFile; }
 
   /// Get the ARTS runtime configuration
   RuntimeConfig &getRuntimeConfig() { return runtimeConfig; }
@@ -64,9 +62,6 @@ public:
 
   const StringAnalysis &getStringAnalysis() const;
 
-  /// Print summary of analysis objects and their graphs
-  void print(llvm::raw_ostream &os);
-
   /// Capture diagnostic data
   void captureDiagnostics();
 
@@ -76,34 +71,9 @@ public:
     return cachedDiagnosticJson.has_value();
   }
 
-  /// Metadata coverage data
-  struct MetadataCoverage {
-    int64_t loopsAnalyzed = 0;
-    int64_t loopsTotal = 0;
-    int64_t memrefsAnalyzed = 0;
-    int64_t memrefsTotal = 0;
-    bool hasData = false;
-  };
-
-  /// Set metadata coverage data
-  void setMetadataCoverage(int64_t loopsAnalyzed, int64_t loopsTotal,
-                           int64_t memrefsAnalyzed, int64_t memrefsTotal) {
-    metadataCoverage.loopsAnalyzed = loopsAnalyzed;
-    metadataCoverage.loopsTotal = loopsTotal;
-    metadataCoverage.memrefsAnalyzed = memrefsAnalyzed;
-    metadataCoverage.memrefsTotal = memrefsTotal;
-    metadataCoverage.hasData = true;
-  }
-
-  /// Get metadata coverage data
-  const MetadataCoverage &getMetadataCoverage() const {
-    return metadataCoverage;
-  }
-
 private:
   ModuleOp module;
   std::string configFile;
-  std::string metadataFile;
   RuntimeConfig runtimeConfig;
   std::unique_ptr<carts::sde::SDECostModel> costModel;
   std::unique_ptr<DbAnalysis> dbAnalysis;
@@ -115,8 +85,6 @@ private:
   /// Cached diagnostic data
   std::optional<std::string> cachedDiagnosticJson;
 
-  /// Metadata coverage from VerifyMetadataPass
-  MetadataCoverage metadataCoverage;
 };
 
 } // namespace carts::arts

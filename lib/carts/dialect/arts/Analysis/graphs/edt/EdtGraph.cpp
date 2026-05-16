@@ -22,7 +22,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/JSON.h"
-#include "llvm/Support/raw_ostream.h"
 
 using namespace mlir;
 using namespace mlir::carts;
@@ -32,20 +31,6 @@ using namespace mlir::carts::arts;
 ARTS_DEBUG_SETUP(edt_graph);
 
 namespace {
-StringRef depTypeToString(DbDepType type) {
-  switch (type) {
-  case DbDepType::RAW:
-    return "RAW";
-  case DbDepType::WAR:
-    return "WAR";
-  case DbDepType::WAW:
-    return "WAW";
-  case DbDepType::RAR:
-    return "RAR";
-  }
-  return "Dep";
-}
-
 void sortEdtNodesByHierId(SmallVectorImpl<EdtNode *> &nodes) {
   llvm::sort(nodes, [](EdtNode *lhs, EdtNode *rhs) {
     return lhs->getHierId() < rhs->getHierId();
@@ -71,23 +56,9 @@ void EdtGraph::build() {
   buildDependencies();
   isBuilt.store(true, std::memory_order_release);
   needsRebuild.store(false, std::memory_order_release);
-  version.fetch_add(1, std::memory_order_relaxed);
-}
-
-void EdtGraph::buildNodesOnly() {
-  if (isBuilt.load(std::memory_order_acquire) &&
-      !needsRebuild.load(std::memory_order_acquire))
-    return;
-  ARTS_INFO("Building EDT graph nodes only");
-  invalidate();
-  collectNodes();
-  isBuilt.store(true, std::memory_order_release);
-  needsRebuild.store(false, std::memory_order_release);
-  version.fetch_add(1, std::memory_order_relaxed);
 }
 
 void EdtGraph::invalidate() {
-  version.fetch_add(1, std::memory_order_relaxed);
   edtNodes.clear();
   edges.clear();
   nodes.clear();
@@ -95,18 +66,12 @@ void EdtGraph::invalidate() {
   needsRebuild.store(true, std::memory_order_release);
 }
 
-NodeBase *EdtGraph::getEntryNode() const {
-  if (!edtNodes.empty())
-    return edtNodes.begin()->second.get();
-  return nullptr;
-}
-
 NodeBase *EdtGraph::getOrCreateNode(Operation *op) {
   if (auto edtOp = dyn_cast<EdtOp>(op)) {
     auto it = edtNodes.find(edtOp);
     if (it != edtNodes.end())
       return it->second.get();
-    auto newNode = std::make_unique<EdtNode>(edtOp, edtAnalysis);
+    auto newNode = std::make_unique<EdtNode>(edtOp);
     newNode->setHierId("T" + std::to_string(edtNodes.size() + 1));
     NodeBase *ptr = newNode.get();
     edtNodes[edtOp] = std::move(newNode);
@@ -250,50 +215,6 @@ bool EdtGraph::areEdtsIndependent(EdtOp a, EdtOp b) {
   return !DbUtils::hasSharedWritableRootConflict(opA, opB);
 }
 
-void EdtGraph::print(llvm::raw_ostream &os) {
-  os << "===============================================\n";
-  os << "EdtGraph for function: " << func.getName().str() << "\n";
-  os << "===============================================\n";
-  os << "Summary:\n";
-  os << "  Tasks: " << edtNodes.size() << "\n";
-  os << "  Edges: " << edges.size() << "\n\n";
-
-  os << "Task Hierarchy:\n";
-  for (auto &pair : edtNodes) {
-    EdtNode *task = pair.second.get();
-    os << "Task [" << task->getHierId() << "]: ";
-    task->print(os);
-    os << "\n";
-
-    SmallVector<DbEdge, 4> dbDeps;
-    for (auto *edge : task->getOutEdges())
-      if (auto *depEdge = dyn_cast<EdtDepEdge>(edge)) {
-        auto edges = depEdge->getEdges();
-        dbDeps.append(edges.begin(), edges.end());
-      }
-    if (!dbDeps.empty()) {
-      os << "  Data Dependencies:\n";
-      for (const auto &edge : dbDeps) {
-        std::string label = "db";
-        if (auto *prod = edge.producer)
-          if (auto *alloc = prod->getRootAlloc())
-            label = alloc->getHierId().str();
-        os << "    - " << label << " (" << depTypeToString(edge.depType)
-           << ")\n";
-      }
-    }
-  }
-
-  if (!edges.empty()) {
-    os << "Task Dependencies:\n";
-    for (const auto &pair : edges) {
-      auto *edge = pair.second.get();
-      os << "  [" << edge->getFrom()->getHierId() << "] -> ["
-         << edge->getTo()->getHierId() << "] (DB: " << edge->getType() << ")\n";
-    }
-  }
-}
-
 llvm::json::Value EdtGraph::exportToJsonValue(bool includeAnalysis) const {
   using namespace llvm::json;
 
@@ -378,10 +299,6 @@ llvm::json::Value EdtGraph::exportToJsonValue(bool includeAnalysis) const {
   return llvm::json::Value(std::move(edts));
 }
 
-void EdtGraph::exportToJson(llvm::raw_ostream &os, bool includeAnalysis) const {
-  os << exportToJsonValue(includeAnalysis) << "\n";
-}
-
 /// Collect all arts.edt operations in the function and create task nodes.
 void EdtGraph::collectNodes() {
   ARTS_INFO("Phase 1 - Collecting EDT nodes");
@@ -448,12 +365,7 @@ void EdtGraph::buildDependencies() {
     if (!fromNode || !toNode)
       continue;
 
-    auto iter = dep.edges.begin();
-    auto *edge = new EdtDepEdge(fromNode, toNode, *iter);
-    ++iter;
-    for (; iter != dep.edges.end(); ++iter)
-      edge->appendEdge(*iter);
-
+    auto *edge = new EdtDepEdge(fromNode, toNode, dep.edges.front());
     if (addEdge(fromNode, toNode, edge)) {
       ++created;
     } else {

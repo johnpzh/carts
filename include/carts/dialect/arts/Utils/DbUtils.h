@@ -54,10 +54,6 @@ public:
   ///===----------------------------------------------------------------------===////
   /// Functions for tracing values back to their source datablock operations
 
-  /// Trace a dependency back to its root DbAllocOp.
-  /// Returns {guid, ptr} from the DbAllocOp, or nullopt if not found.
-  static std::optional<std::pair<Value, Value>> traceToDbAlloc(Value dep);
-
   /// Finds the datablock-related operation (DbAllocOp or DbAcquireOp)
   /// associated with the given value. The depth parameter prevents infinite
   /// recursion in circular acquire chains.
@@ -70,16 +66,6 @@ public:
   /// Trace a GUID value through acquire chains to find the originating
   /// DbAllocOp. Returns nullptr if the GUID does not trace to an allocation.
   static DbAllocOp getAllocOpFromGuid(Value dbGuid);
-
-  /// Extract a compile-time constant outer shape from a DbAllocOp.
-  /// Returns nullopt if the handle does not define a DbAllocOp or if any
-  /// size dimension is dynamic.
-  static std::optional<SmallVector<int64_t, 4>>
-  getStaticDbOuterShape(Value dbHandle);
-
-  /// Compute the total static partition count (product of all outer sizes)
-  /// for a DbAllocOp. Returns -1 if any size is dynamic.
-  static int64_t computeStaticPartitionCount(DbAllocOp alloc);
 
   /// Recover the original DbAllocOp arts.id for a rebuilt or forwarded DB
   /// handle family. Uses an explicit fallback alloc when available, otherwise
@@ -129,38 +115,6 @@ public:
 
   /// Extract dependency iteration offsets from a datablock value.
   static SmallVector<Value> getDepOffsetsFromDb(Value dbPtr);
-
-  ///===----------------------------------------------------------------------===////
-  /// Datablock Stride Computation
-  ///===----------------------------------------------------------------------===////
-  /// Functions for computing strides for row-major indexing.
-  /// For sizes = [D0, D1, D2, ...], stride = D1 * D2 * ... (TRAILING
-  /// dimensions). This follows row-major linearization: index = i0 * stride +
-  /// ...
-  ///
-  /// Examples:
-  ///   [4, 16]     -> stride = 16
-  ///   [8, 4, 2]   -> stride = 4 * 2 = 8
-  ///   [64]        -> stride = 1 (single dimension)
-
-  /// Compute static stride from sizes (compile-time constant).
-  /// Returns std::nullopt if any trailing dimension is dynamic.
-  static std::optional<int64_t> getStaticStride(ValueRange sizes);
-
-  /// Overload for MemRefType shape.
-  static std::optional<int64_t> getStaticStride(MemRefType memrefType);
-
-  /// Get element stride from DbAllocOp (uses getElementSizes()).
-  /// This is the stride for linearized access WITHIN each datablock element.
-  static std::optional<int64_t> getStaticElementStride(DbAllocOp alloc);
-
-  /// Compute stride as a Value (handles both static and dynamic dimensions).
-  /// Materializes the row-major suffix product via upstream MLIR memref
-  /// indexing helpers, returning a constant index when fully static.
-  /// For single-dimension [N], returns constant 1.
-  /// Returns nullptr if sizes is empty.
-  static Value getStrideValue(OpBuilder &builder, Location loc,
-                              ValueRange sizes);
 
   ///===----------------------------------------------------------------------===///
   /// Access Mode and Hints Analysis
@@ -237,10 +191,6 @@ public:
   /// Supports memref/affine load/store operations.
   static std::optional<MemoryAccessInfo> getMemoryAccessInfo(Operation *memOp);
 
-  /// Return true when both scopes read the same underlying DB allocation or
-  /// raw memref without either scope writing that root.
-  static bool hasSharedReadonlyRoot(Operation *lhs, Operation *rhs);
-
   /// Return true when two scopes touch the same underlying DB allocation or
   /// raw memref and at least one side writes that root.
   static bool hasSharedWritableRootConflict(Operation *lhs, Operation *rhs);
@@ -308,25 +258,6 @@ public:
   static std::optional<int64_t> extractBlockSizeFromHint(Value sizeHint,
                                                          int depth = 0);
 
-  /// Merge two DbAccessPattern values, keeping the higher-priority pattern.
-  /// Priority: stencil > indexed > uniform > unknown.
-  static DbAccessPattern mergeAccessPattern(DbAccessPattern lhs,
-                                            DbAccessPattern rhs) {
-    auto rank = [](DbAccessPattern p) -> unsigned {
-      switch (p) {
-      case DbAccessPattern::stencil:
-        return 3;
-      case DbAccessPattern::indexed:
-        return 2;
-      case DbAccessPattern::uniform:
-        return 1;
-      case DbAccessPattern::unknown:
-        return 0;
-      }
-      return 0;
-    };
-    return rank(rhs) > rank(lhs) ? rhs : lhs;
-  }
 };
 
 } // namespace carts::arts

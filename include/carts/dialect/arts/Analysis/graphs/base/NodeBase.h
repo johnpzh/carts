@@ -9,7 +9,6 @@
 
 #include "mlir/IR/Operation.h"
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/Support/raw_ostream.h"
 
 namespace mlir {
 namespace carts::arts {
@@ -25,9 +24,6 @@ public:
 
   /// Get the hierarchical ID (e.g., "A.1" for deps).
   virtual StringRef getHierId() const = 0;
-
-  /// Print node details.
-  virtual void print(llvm::raw_ostream &os) const = 0;
 
   /// Get the underlying MLIR operation.
   virtual Operation *getOp() const = 0;

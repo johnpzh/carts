@@ -8,7 +8,6 @@
 #define ARTS_DIALECT_CORE_ANALYSIS_EDT_EDTDATAFLOWANALYSIS_H
 
 #include "carts/Dialect.h"
-#include "carts/dialect/arts/Analysis/edt/EdtInfo.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbGraph.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtEdge.h"
@@ -58,7 +57,6 @@ private:
 
   void recordDep(DbAcquireNode *producer, DbAcquireNode *consumer,
                  DbDepType depType);
-  void recordDep(DbAcquireNode *reader, DbAcquireNode *writer);
 
   DbGraph *dbGraph = nullptr;
   DbAliasAnalysis *aliasAA = nullptr;

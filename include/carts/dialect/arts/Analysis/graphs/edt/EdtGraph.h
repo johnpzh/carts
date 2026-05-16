@@ -17,7 +17,6 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/JSON.h"
-#include "llvm/Support/raw_ostream.h"
 #include <atomic>
 #include <memory>
 
@@ -33,12 +32,8 @@ public:
   EdtGraph(func::FuncOp func, DbGraph *dbGraph, EdtAnalysis *EA);
 
   void build();
-  void buildNodesOnly();
   void invalidate();
-  void print(llvm::raw_ostream &os);
   llvm::json::Value exportToJsonValue(bool includeAnalysis = false) const;
-  void exportToJson(llvm::raw_ostream &os, bool includeAnalysis = false) const;
-  NodeBase *getEntryNode() const;
   NodeBase *getOrCreateNode(Operation *op);
   NodeBase *getNode(Operation *op) const;
   EdtNode *getEdtNode(EdtOp edt) const;
@@ -50,13 +45,7 @@ public:
   void getDeterministicTopologicalOrder(
       SmallVectorImpl<EdtNode *> &topoOrder,
       SmallVectorImpl<EdtNode *> &leftoverNodes) const;
-  func::FuncOp getFunction() const { return func; }
-  bool hasDbGraph() const { return dbGraph != nullptr; }
-  DbGraph *getDbGraph() const { return dbGraph; }
   size_t size() const { return nodes.size(); }
-  uint64_t getVersion() const {
-    return version.load(std::memory_order_relaxed);
-  }
 
   /// Check if two EDTs are independent under the current memory-root model.
   /// Shared read-only roots are allowed; any shared writable root is treated
@@ -72,7 +61,6 @@ private:
   DenseMap<std::pair<NodeBase *, NodeBase *>, std::unique_ptr<EdgeBase>> edges;
   std::atomic<bool> isBuilt{false};
   std::atomic<bool> needsRebuild{true};
-  std::atomic<uint64_t> version{0};
 
   /// Private helpers
   void collectNodes();

@@ -77,7 +77,6 @@ using mlir::carts::arts::debugStream;
 ARTS_DEBUG_SETUP(compile)
 
 namespace {
-constexpr const char *kDefaultMetadataFile = ".carts-metadata.json";
 constexpr const char *kDefaultDiagnoseOutput = ".carts-diagnose.json";
 constexpr uint64_t kDefaultArtsIdStride = 1000;
 } // namespace
@@ -116,12 +115,6 @@ static cl::opt<std::string> ArtsConfig("arts-config",
                                        cl::desc("ARTS configuration file path"),
                                        cl::value_desc("config_file"),
                                        cl::init(""));
-
-/// Metadata file path
-static cl::opt<std::string> MetadataFile("metadata-file",
-                                         cl::desc("Path to metadata JSON file"),
-                                         cl::value_desc("filename"),
-                                         cl::init(kDefaultMetadataFile));
 
 static cl::opt<uint64_t>
     ArtsIdStride("arts-id-stride",
@@ -1478,7 +1471,7 @@ buildPassManager(ModuleOp module, MLIRContext &context,
 
   /// Create module-level analysis manager for caching across functions
   std::unique_ptr<arts::AnalysisManager> AM =
-      std::make_unique<arts::AnalysisManager>(module, ArtsConfig, MetadataFile);
+      std::make_unique<arts::AnalysisManager>(module, ArtsConfig);
 
   auto &machine = AM->getRuntimeConfig();
   if (!machine.hasConfigFile() || !machine.isValid()) {

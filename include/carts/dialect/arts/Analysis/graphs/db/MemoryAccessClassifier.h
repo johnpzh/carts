@@ -40,10 +40,7 @@ public:
   static bool hasLoads(DbAcquireNode *node);
   static bool hasStores(DbAcquireNode *node);
   static bool isReadOnlyAccess(DbAcquireNode *node);
-  static bool isWriterAccess(DbAcquireNode *node);
   static bool hasMemoryAccesses(DbAcquireNode *node);
-  static size_t countLoads(DbAcquireNode *node);
-  static size_t countStores(DbAcquireNode *node);
 
   /// Indirect/direct access detection.
   /// An indirect access is one whose index depends on a memory load

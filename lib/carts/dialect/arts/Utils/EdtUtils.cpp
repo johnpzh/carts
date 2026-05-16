@@ -5,7 +5,6 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/Utils/EdtUtils.h"
-#include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -57,27 +56,6 @@ EdtUtils::getBlockArgumentForAcquire(DbAcquireOp acquireOp) {
 
   BlockArgument blockArg = body.getArgument(blockArgIdx);
   return {edtUser, blockArg};
-}
-
-EpochOp EdtUtils::wrapBodyInEpoch(Block &body, Location loc) {
-  SmallVector<Operation *, 8> opsToMove;
-  for (Operation &op : body.without_terminator())
-    opsToMove.push_back(&op);
-
-  if (opsToMove.empty())
-    return nullptr;
-
-  OpBuilder builder(body.getTerminator());
-  auto epochOp = EpochOp::create(builder, loc);
-  auto &epochBlock = epochOp.getRegion().emplaceBlock();
-
-  for (Operation *op : opsToMove)
-    op->moveBefore(&epochBlock, epochBlock.end());
-
-  builder.setInsertionPointToEnd(&epochBlock);
-  YieldOp::create(builder, loc);
-
-  return epochOp;
 }
 
 std::optional<unsigned> EdtUtils::mapMemrefToArg(EdtOp edt,
@@ -274,70 +252,6 @@ void EdtUtils::analyzeCapturedValues(
   capturedValues = std::move(externalCaptures);
   EdtUtils::classifyUserValues(capturedValues.getArrayRef(), parameters,
                                constants, dbHandles);
-}
-
-SmallVector<Value> EdtUtils::collectPackedValues(EdtOp edt) {
-  llvm::SetVector<Value> capturedValues;
-  llvm::SetVector<Value> uniqueParameters;
-  llvm::SetVector<Value> constants;
-  llvm::SetVector<Value> dbHandles;
-  SmallVector<Value> parameters;
-  for (Value param : edt.getParams()) {
-    parameters.push_back(param);
-    uniqueParameters.insert(param);
-  }
-  EdtUtils::analyzeCapturedValues(edt, capturedValues, uniqueParameters,
-                                  constants, dbHandles);
-
-  SmallVector<Value> packedValues;
-  packedValues.reserve(parameters.size());
-  DenseMap<Value, unsigned> valueToPackIndex;
-
-  for (Value parameter : parameters) {
-    if (auto *defOp = parameter.getDefiningOp())
-      if (isUndefLikeOp(defOp))
-        continue;
-    valueToPackIndex.try_emplace(parameter, packedValues.size());
-    packedValues.push_back(parameter);
-  }
-
-  auto appendIfMissing = [&](Value val) {
-    if (!val)
-      return;
-    if (val.getDefiningOp<arith::ConstantOp>())
-      return;
-    if (valueToPackIndex.count(val))
-      return;
-    valueToPackIndex[val] = packedValues.size();
-    packedValues.push_back(val);
-  };
-
-  for (Value dep : edt.getDependencies()) {
-    auto dbAcquireOp = dep.getDefiningOp<DbAcquireOp>();
-    if (!dbAcquireOp)
-      continue;
-
-    for (Value idx : dbAcquireOp.getIndices())
-      appendIfMissing(idx);
-    for (Value off : dbAcquireOp.getOffsets())
-      appendIfMissing(off);
-    for (Value sz : dbAcquireOp.getSizes())
-      appendIfMissing(sz);
-    for (Value partIdx : dbAcquireOp.getPartitionIndices())
-      appendIfMissing(partIdx);
-    for (Value partOff : dbAcquireOp.getPartitionOffsets())
-      appendIfMissing(partOff);
-    for (Value partSize : dbAcquireOp.getPartitionSizes())
-      appendIfMissing(partSize);
-
-    if (auto *rawAlloc =
-            DbUtils::getUnderlyingDbAlloc(dbAcquireOp.getSourcePtr()))
-      if (auto alloc = dyn_cast<DbAllocOp>(rawAlloc))
-        for (Value elemSz : alloc.getElementSizes())
-          appendIfMissing(elemSz);
-  }
-
-  return packedValues;
 }
 
 } // namespace carts::arts

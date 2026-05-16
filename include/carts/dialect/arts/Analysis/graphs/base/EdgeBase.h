@@ -7,7 +7,7 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_BASE_EDGEBASE_H
 #define ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_BASE_EDGEBASE_H
 
-#include "llvm/Support/raw_ostream.h"
+#include "llvm/ADT/StringRef.h"
 
 namespace mlir {
 namespace carts::arts {
@@ -32,8 +32,6 @@ public:
   /// Human-readable label for debugging/printing only
   virtual llvm::StringRef getType() const = 0;
 
-  /// Print edge details.
-  virtual void print(llvm::raw_ostream &os) const = 0;
 };
 
 } // namespace carts::arts

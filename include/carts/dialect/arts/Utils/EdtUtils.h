@@ -49,42 +49,6 @@ public:
       op.moveBefore(terminator);
   }
 
-  /// Fuse consecutive pairs of operations of type OpT in a block.
-  /// canFuse checks if two consecutive ops can be fused.
-  /// doFuse performs the fusion (must erase or modify the second op).
-  /// Returns true if any fusion was performed.
-  template <typename OpT>
-  static bool fuseConsecutivePairs(
-      Block &block, llvm::function_ref<bool(OpT, OpT)> canFuse,
-      llvm::function_ref<void(OpT, OpT)> doFuse) {
-    bool changed = false;
-    for (auto it = block.begin(); it != block.end();) {
-      auto first = dyn_cast<OpT>(&*it);
-      if (!first) {
-        ++it;
-        continue;
-      }
-      auto nextIt = std::next(it);
-      if (nextIt == block.end()) {
-        ++it;
-        continue;
-      }
-      auto second = dyn_cast<OpT>(&*nextIt);
-      if (!second) {
-        ++it;
-        continue;
-      }
-      if (!canFuse(first, second)) {
-        ++it;
-        continue;
-      }
-      doFuse(first, second);
-      changed = true;
-      /// Re-run on same first op to chain-fuse.
-    }
-    return changed;
-  }
-
   /// Return true when an EDT is nested inside an EpochOp.
   static bool isInsideEpoch(EdtOp op) {
     return op->getParentOfType<EpochOp>() != nullptr;
@@ -94,10 +58,6 @@ public:
   static bool isInsideEpoch(Operation *op) {
     return op->getParentOfType<EpochOp>() != nullptr;
   }
-
-  /// Wrap all operations (except terminator) in a block inside an EpochOp.
-  /// Returns the created EpochOp, or nullptr if no operations to wrap.
-  static EpochOp wrapBodyInEpoch(Block &body, Location loc);
 
   /// Finds the EdtOp that uses a DbAcquireOp and returns the corresponding
   /// block argument. Returns {EdtOp, BlockArgument} pair, or {nullptr,
@@ -141,10 +101,6 @@ public:
                                     llvm::SetVector<Value> &constants,
                                     llvm::SetVector<Value> &dbHandles);
 
-  /// Collect scalar values in the same logical order EdtLowering packs them
-  /// into `arts.edt_param_pack`: user params, then dep-derived scalars
-  /// (indices/offsets/sizes/partition slices/element sizes).
-  static SmallVector<Value> collectPackedValues(EdtOp edt);
 };
 
 ///===----------------------------------------------------------------------===//

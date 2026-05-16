@@ -301,11 +301,9 @@ void EdtLoweringPass::runOnOperation() {
   ARTS_DEBUG_REGION(module.dump(););
 
   /// Snapshot EDT capture contracts before nested lowering mutates parent EDT
-  /// bodies. DbAnalysis must also be fresh because EdtAnalysis rebuilds its
-  /// graph through the DB analysis layer.
+  /// bodies. DbAnalysis must be fresh because dependency contracts are read
+  /// from the DB graph while outlining.
   analysisManager.getDbAnalysis().invalidate();
-  analysisManager.getEdtAnalysis().invalidate();
-  analysisManager.getEdtAnalysis().analyze();
 
   ARTS_DEBUG_HEADER(TaskEdtLowering);
   SmallVector<EdtOp, 8> taskEdts;
@@ -321,7 +319,6 @@ void EdtLoweringPass::runOnOperation() {
     /// old EDT body. Invalidate so the next EDT's analysis rebuilds fresh.
     analysisManager.getDbAnalysis().invalidate();
   }
-  analysisManager.getEdtAnalysis().invalidate();
   analysisManager.getDbAnalysis().invalidate();
 
   ARTS_INFO_FOOTER(EdtLoweringPass);

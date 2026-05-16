@@ -5,7 +5,6 @@
 #include "carts/dialect/arts/Utils/LocationMetadata.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Location.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -28,29 +27,6 @@ void LocationMetadata::updateKey() {
   os << getBasename(file) << ":" << line << ":" << column;
   key = os.str();
 }
-
-void LocationMetadata::importFromJson(const llvm::json::Object &json) {
-  if (auto fileStr = json.getString("file"))
-    file = fileStr->str();
-  line = json.getInteger("line").value_or(0);
-  column = json.getInteger("column").value_or(0);
-  updateKey();
-}
-
-void LocationMetadata::exportToJson(llvm::json::Object &json) const {
-  if (!file.empty())
-    json["file"] = file;
-  if (line > 0)
-    json["line"] = static_cast<int64_t>(line);
-  if (column > 0)
-    json["column"] = static_cast<int64_t>(column);
-  if (!key.empty())
-    json["key"] = key;
-}
-
-///===----------------------------------------------------------------------===///
-/// Utility Methods
-///===----------------------------------------------------------------------===///
 
 std::string LocationMetadata::getBasename(llvm::StringRef path) {
   size_t lastSlash = path.rfind('/');
@@ -115,22 +91,5 @@ LocationMetadata LocationMetadata::fromLocation(Location loc) {
   }
 
   metadata.updateKey();
-  return metadata;
-}
-
-LocationMetadata LocationMetadata::fromKey(llvm::StringRef keyStr) {
-  LocationMetadata metadata;
-  metadata.key = keyStr.str();
-
-  /// Try to parse the key format "file:line:col"
-  llvm::SmallVector<llvm::StringRef, 3> parts;
-  keyStr.split(parts, ':');
-
-  if (parts.size() >= 3) {
-    metadata.file = parts[0].str();
-    parts[1].getAsInteger(10, metadata.line);
-    parts[2].getAsInteger(10, metadata.column);
-  }
-
   return metadata;
 }

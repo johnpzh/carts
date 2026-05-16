@@ -30,8 +30,6 @@ FLAG_ARTS_DEBUG = "--arts-debug"
 FLAG_DEBUG_ONLY = "--debug-only"
 FLAG_PIPELINE = "--pipeline"
 FLAG_OUTPUT = "-o"
-FLAG_METADATA_FILE = "--metadata-file"
-DEFAULT_METADATA_FILENAME = ".carts-metadata.json"
 
 
 @dataclass(frozen=True)
@@ -818,7 +816,6 @@ def _compile_from_mlir(
     config = get_config()
     carts_compile_bin = config.get_carts_tool(TOOL_CARTS_COMPILE)
     passthrough_args = passthrough_args or []
-    metadata_file = _find_metadata_file(input_file, passthrough_args)
 
     # Pass --help through to carts-compile binary
     if "--help" in passthrough_args or "-h" in passthrough_args:
@@ -827,8 +824,6 @@ def _compile_from_mlir(
 
     if all_pipelines:
         extra_args = list(passthrough_args)
-        if metadata_file:
-            extra_args.extend([FLAG_METADATA_FILE, str(metadata_file)])
         if arts_debug:
             extra_args.append(f"{FLAG_ARTS_DEBUG}={arts_debug}")
         _compile_all_pipelines(config, input_file, output, extra_args, optimize)
@@ -844,8 +839,6 @@ def _compile_from_mlir(
     arts_cfg = _find_arts_config(input_file, passthrough_args, config)
     if arts_cfg:
         cmd.extend([FLAG_ARTS_CONFIG, str(arts_cfg)])
-    if metadata_file:
-        cmd.extend([FLAG_METADATA_FILE, str(metadata_file)])
 
     if optimize:
         cmd.append("--O3")
@@ -934,18 +927,6 @@ def _find_arts_config(
         if default.is_file():
             return default
 
-    return None
-
-
-def _find_metadata_file(input_file: Path, pipeline_args: List[str]) -> Optional[Path]:
-    """Find sibling metadata JSON for .mlir compilation when not overridden."""
-    for arg in pipeline_args:
-        if arg == FLAG_METADATA_FILE or arg.startswith(f"{FLAG_METADATA_FILE}="):
-            return None
-
-    candidate = input_file.parent.resolve() / DEFAULT_METADATA_FILENAME
-    if candidate.is_file():
-        return candidate
     return None
 
 

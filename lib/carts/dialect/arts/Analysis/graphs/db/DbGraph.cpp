@@ -15,7 +15,6 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/JSON.h"
-#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
 #include <string>
 using namespace mlir;
@@ -57,17 +56,13 @@ void DbGraph::build() {
   computeMetrics();
   built.store(true, std::memory_order_release);
   needsRebuild.store(false, std::memory_order_release);
-  version.fetch_add(1, std::memory_order_relaxed);
 }
 
 void DbGraph::invalidate() {
-  version.fetch_add(1, std::memory_order_relaxed);
   allocNodes.clear();
   acquireNodeMap.clear();
   opOrder.clear();
   nextAllocId = 1;
-  peakLiveDbs = 0;
-  peakBytes = 0;
   built.store(false, std::memory_order_release);
   needsRebuild.store(true, std::memory_order_release);
 }
@@ -208,71 +203,6 @@ void DbGraph::forEachAcquireNode(
     fn(pair.second);
 }
 
-void DbGraph::print(llvm::raw_ostream &os) {
-  if (allocNodes.empty())
-    return;
-
-  os << "\n";
-  os << "DbGraph Analysis: " << this->func.getName().str() << "\n";
-  os << "======================================\n";
-
-  os << "Summary: " << allocNodes.size() << " allocs, " << acquireNodeMap.size()
-     << " acquires\n";
-  os << "Peak: " << peakLiveDbs << " live DBs, " << peakBytes << " bytes\n";
-  os << "\n";
-
-  for (const auto &pair : allocNodes) {
-    DbAllocNode *alloc = pair.second.get();
-
-    os << "  DB [" << alloc->getHierId() << "]\n";
-    os << "  Op: " << alloc->getDbAllocOp() << "\n";
-    os << "  Lifetime: Op " << alloc->beginIndex << " -> " << alloc->endIndex
-       << "\n";
-    if (alloc->rank)
-      os << "  Rank: " << *alloc->rank << "\n";
-    os << "\n";
-    os << "  Usage: " << alloc->numAcquires << " acquires"
-       << "\n";
-
-    /// Show acquires (iterate through graph structure, not info)
-    if (alloc->getAcquireNodesSize() > 0) {
-      os << "  Acquires (" << alloc->getAcquireNodesSize() << "):\n";
-      alloc->forEachChildNode([&](NodeBase *child) {
-        auto *acqNode = dyn_cast<DbAcquireNode>(child);
-        os << "    [" << acqNode->getHierId() << "] Op " << acqNode->beginIndex;
-        if (acqNode->endIndex != acqNode->beginIndex)
-          os << "->" << acqNode->endIndex;
-
-        /// Show mode
-        os << ", mode=" << acqNode->getDbAcquireOp().getModeAttr();
-        os << "\n";
-
-        /// Show number of reads and writes
-        auto loads = acqNode->countLoads();
-        auto stores = acqNode->countStores();
-        os << "      EDT Uses - Reads: " << loads << ", Writes: " << stores
-           << "\n";
-      });
-    }
-
-    /// Show releases tracked in acquire nodes
-    unsigned releaseCount = 0;
-    alloc->forEachChildNode([&](NodeBase *child) {
-      if (auto *acq = dyn_cast<DbAcquireNode>(child)) {
-        if (acq->getDbReleaseOp())
-          releaseCount++;
-      }
-    });
-
-    if (releaseCount > 0)
-      os << "  Releases: " << releaseCount << " (tracked in acquires)\n";
-
-    os << "\n";
-  }
-
-  os << "\n";
-}
-
 /// Walk through the function and collect all DB operations
 /// (alloc/acquire/release) into graph nodes
 void DbGraph::collectNodes() {
@@ -302,15 +232,9 @@ void DbGraph::computeOpOrder() {
 /// This includes timing intervals, critical spans/paths, loop depths,
 /// and peak resource usage across all allocations.
 void DbGraph::computeMetrics() {
-  peakLiveDbs = 0;
-  peakBytes = 0;
-
   /// Process each allocation to compute per-node metrics
   for (const auto &pair : allocNodes)
     computeAllocMetrics(pair.first, pair.second.get());
-
-  /// Compute global peak metrics using sweep-line algorithm
-  computePeakMetrics();
 }
 
 /// Compute metrics for a single allocation.
@@ -400,44 +324,6 @@ void DbGraph::computeLoopDepth(
     maxDepth = std::max<unsigned>(maxDepth, enclosingLoops.size());
   }
   info.maxLoopDepth = maxDepth;
-}
-
-/// Compute peak live databases and bytes using sweep-line algorithm
-void DbGraph::computePeakMetrics() {
-  struct Event {
-    uint64_t idx;
-    int delta;
-    unsigned long long bytes;
-  };
-
-  SmallVector<Event, 32> events;
-  for (auto &kv : allocNodes) {
-    const DbAllocNode &info = *kv.second;
-    DbAllocNode *allocNode = kv.second.get();
-    /// Iterate through graph structure
-    allocNode->forEachChildNode([&](NodeBase *child) {
-      if (auto *node = dyn_cast<DbAcquireNode>(child)) {
-        unsigned long long bytes = info.memoryFootprint.value_or<int64_t>(0);
-        events.push_back({node->beginIndex, +1, bytes});
-        events.push_back({node->endIndex + 1, -1, bytes});
-      }
-    });
-  }
-
-  llvm::sort(events,
-             [](const Event &a, const Event &b) { return a.idx < b.idx; });
-
-  int liveCount = 0;
-  unsigned long long liveBytes = 0;
-  for (auto &event : events) {
-    liveCount += event.delta;
-    if (event.delta > 0)
-      liveBytes += event.bytes;
-    else
-      liveBytes -= event.bytes;
-    peakLiveDbs = std::max<uint64_t>(peakLiveDbs, (uint64_t)liveCount);
-    peakBytes = std::max<unsigned long long>(peakBytes, liveBytes);
-  }
 }
 
 llvm::json::Value DbGraph::exportToJsonValue(bool includeAnalysis) const {
@@ -652,8 +538,4 @@ llvm::json::Value DbGraph::exportToJsonValue(bool includeAnalysis) const {
   }
 
   return llvm::json::Value(std::move(dbs));
-}
-
-void DbGraph::exportToJson(llvm::raw_ostream &os, bool includeAnalysis) const {
-  os << exportToJsonValue(includeAnalysis) << "\n";
 }

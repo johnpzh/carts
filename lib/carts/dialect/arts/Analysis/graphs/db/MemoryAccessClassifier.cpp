@@ -248,41 +248,10 @@ bool MemoryAccessClassifier::isReadOnlyAccess(DbAcquireNode *node) {
   return acqOp && acqOp.getMode() == ArtsMode::in;
 }
 
-bool MemoryAccessClassifier::isWriterAccess(DbAcquireNode *node) {
-  bool sawStore = false;
-  forEachMemoryAccess(node, [&](Operation *, bool isStore) {
-    if (isStore)
-      sawStore = true;
-  });
-  if (sawStore)
-    return true;
-
-  DbAcquireOp acqOp = node->getDbAcquireOp();
-  return acqOp && DbUtils::isWriterMode(acqOp.getMode());
-}
-
 bool MemoryAccessClassifier::hasMemoryAccesses(DbAcquireNode *node) {
   bool found = false;
   forEachMemoryAccess(node, [&](Operation *, bool) { found = true; });
   return found;
-}
-
-size_t MemoryAccessClassifier::countLoads(DbAcquireNode *node) {
-  size_t count = 0;
-  forEachMemoryAccess(node, [&](Operation *, bool isStore) {
-    if (!isStore)
-      ++count;
-  });
-  return count;
-}
-
-size_t MemoryAccessClassifier::countStores(DbAcquireNode *node) {
-  size_t count = 0;
-  forEachMemoryAccess(node, [&](Operation *, bool isStore) {
-    if (isStore)
-      ++count;
-  });
-  return count;
 }
 
 bool MemoryAccessClassifier::hasIndirectAccess(DbAcquireNode *node) {
