@@ -4,13 +4,13 @@
 /// Helpers for materializing DB layouts from an already-authored plan.
 ///
 /// These utilities do not choose tensor partitioning policy. SDE owns owner
-/// dimensions, physical block shape, and halo policy. Core utilities may
+/// dimensions, physical block shape, and halo policy. ARTS utilities may
 /// inspect those attrs for diagnostics or ARTS object materialization, but
 /// block-local access rewriting belongs to SDE MU/token lowering.
 ///==========================================================================///
 
-#ifndef ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
-#define ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
+#ifndef CARTS_DIALECT_ARTS_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
+#define CARTS_DIALECT_ARTS_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
 
 #include "carts/dialect/arts/Transforms/db/DbLayoutPlan.h"
 #include "mlir/IR/Attributes.h"
@@ -38,4 +38,4 @@ resolvePhysicalDbLayoutPlan(ArrayAttr ownerDimsAttr, ArrayAttr blockShapeAttr,
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
+#endif // CARTS_DIALECT_ARTS_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H

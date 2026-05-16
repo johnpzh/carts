@@ -67,12 +67,6 @@ public:
   /// DbAllocOp. Returns nullptr if the GUID does not trace to an allocation.
   static DbAllocOp getAllocOpFromGuid(Value dbGuid);
 
-  /// Recover the original DbAllocOp arts.id for a rebuilt or forwarded DB
-  /// handle family. Uses an explicit fallback alloc when available, otherwise
-  /// traces through DB provenance and preserved root-id attrs.
-  static std::optional<int64_t>
-  resolveRootAllocId(Value value, DbAllocOp fallbackAlloc = nullptr);
-
   ///===----------------------------------------------------------------------===////
   /// Datablock Lowering Info Extraction
   ///===----------------------------------------------------------------------===////
@@ -132,32 +126,10 @@ public:
   static DbMode convertArtsModeToDbMode(ArtsMode mode);
 
   ///===----------------------------------------------------------------------===///
-  /// Host-View Safety
-  ///===----------------------------------------------------------------------===///
-
-  /// Returns true when a DB value (or any forwarded host alias/view derived
-  /// from it) escapes to a non-EDT use that requires a contiguous whole-view
-  /// contract. Fragmented layouts such as block/fine-grained cannot preserve
-  /// those uses without additional host-side rewriting, so callers should keep
-  /// the allocation coarse.
-  ///
-  /// Direct host load/store users are considered partitionable because DB
-  /// rewriters can localize those indices. Opaque users such as helper calls,
-  /// dimension queries, raw pointer escapes, and memref copies are treated as
-  /// unsafe and force a coarse layout. Pointer casts used only for null/non-
-  /// null checks remain partitionable because they do not observe whole-view
-  /// layout.
-  static bool hasNonPartitionableHostViewUses(Value dbValue);
-
-  ///===----------------------------------------------------------------------===///
   /// Offset Dep and Block Size Analysis
   ///===----------------------------------------------------------------------===///
   /// Functions for analyzing value dependencies on offsets and extracting
   /// base block sizes from size hints.
-
-  /// Try to extract an offset-independent base block size from size hints.
-  static Value extractBaseBlockSizeCandidate(Value offsetHint, Value sizeHint,
-                                             int depth = 0);
 
   /// Pick a representative partition offset (prefer non-constant).
   /// Returns the chosen offset and its index via outIdx when provided.

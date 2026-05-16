@@ -109,10 +109,6 @@ static bool isMemrefForwardingOp(Operation *op, Value source) {
   return false;
 }
 
-static bool isStructuralHostDbUse(Operation *op) {
-  return isa<EdtOp, LoweringContractOp, DbReleaseOp, DbFreeOp>(op);
-}
-
 static bool isCleanupTerminalOp(Operation *op, Value current) {
   if (auto release = dyn_cast<DbReleaseOp>(op))
     return release.getSource() == current;
@@ -147,56 +143,6 @@ static void enqueueStructuralDbChainResults(Operation *op,
 
   for (Value result : op->getResults())
     worklist.push_back(result);
-}
-
-static bool isNullPointerLike(Value value) {
-  if (!value)
-    return false;
-
-  if (isa<BlockArgument>(value))
-    return false;
-
-  Operation *defOp = value.getDefiningOp();
-  if (!defOp)
-    return false;
-
-  if (isa<LLVM::ZeroOp>(defOp))
-    return true;
-
-  if (auto constant = dyn_cast<arith::ConstantOp>(defOp)) {
-    if (auto intAttr = dyn_cast<IntegerAttr>(constant.getValue()))
-      return intAttr.getValue().isZero();
-  }
-
-  return false;
-}
-
-static bool isNullCheckOnlyPointerCast(polygeist::Memref2PointerOp castOp) {
-  if (!castOp)
-    return false;
-
-  for (OpOperand &use : castOp.getResult().getUses()) {
-    auto cmp = dyn_cast<LLVM::ICmpOp>(use.getOwner());
-    if (!cmp)
-      return false;
-
-    auto pred = cmp.getPredicate();
-    if (pred != LLVM::ICmpPredicate::eq && pred != LLVM::ICmpPredicate::ne)
-      return false;
-
-    Value lhs = cmp.getLhs();
-    Value rhs = cmp.getRhs();
-    bool lhsIsCast = lhs == castOp.getResult();
-    bool rhsIsCast = rhs == castOp.getResult();
-    if (!lhsIsCast && !rhsIsCast)
-      return false;
-
-    Value other = lhsIsCast ? rhs : lhs;
-    if (!isNullPointerLike(other))
-      return false;
-  }
-
-  return true;
 }
 
 static void appendDynamicSubviewOffsets(memref::SubViewOp subview,
@@ -383,27 +329,6 @@ DbAllocOp DbUtils::getAllocOpFromGuid(Value dbGuid) {
   return nullptr;
 }
 
-std::optional<int64_t> DbUtils::resolveRootAllocId(Value value,
-                                                   DbAllocOp fallbackAlloc) {
-  if (fallbackAlloc) {
-    int64_t allocId = getArtsId(fallbackAlloc);
-    if (allocId > 0)
-      return allocId;
-  }
-
-  if (Operation *rootOp = getUnderlyingDbAlloc(value))
-    if (auto rootAlloc = dyn_cast<DbAllocOp>(rootOp)) {
-      int64_t allocId = getArtsId(rootAlloc);
-      if (allocId > 0)
-        return allocId;
-    }
-
-  if (auto rootId = getDbRootAllocId(value); rootId && *rootId > 0)
-    return rootId;
-
-  return std::nullopt;
-}
-
 ///===----------------------------------------------------------------------===///
 /// Datablock Size and Offset Extraction
 ///===----------------------------------------------------------------------===///
@@ -483,150 +408,6 @@ bool DbUtils::isI1DbPtrType(Type type) {
 
 DbMode DbUtils::convertArtsModeToDbMode(ArtsMode mode) {
   return (mode == ArtsMode::in) ? DbMode::read : DbMode::write;
-}
-
-/// Custom use-chain traversal: upstream view-chain utilities
-/// (skipFullyAliasingOperations, skipViewLikeOps) walk UP the def chain to
-/// find the root allocation. This function walks DOWN the use chain to
-/// detect non-structural host consumers that would block partitioning.
-/// It also handles CARTS-specific ops (EdtOp, DbAcquireOp, DbReleaseOp,
-/// LoweringContractOp, Memref2PointerOp null-checks) that have no upstream
-/// equivalent, so the custom traversal is necessary.
-bool DbUtils::hasNonPartitionableHostViewUses(Value dbValue) {
-  if (!dbValue)
-    return false;
-
-  SmallVector<Value, 8> worklist{dbValue};
-  llvm::SmallPtrSet<Value, 16> visitedValues;
-
-  while (!worklist.empty()) {
-    Value current = worklist.pop_back_val();
-    if (!current || !visitedValues.insert(current).second)
-      continue;
-
-    for (OpOperand &use : llvm::make_early_inc_range(current.getUses())) {
-      Operation *user = use.getOwner();
-      if (!user || user->getParentOfType<EdtOp>())
-        continue;
-
-      if (isa<memref::DeallocOp>(user))
-        continue;
-
-      if (getMemoryAccessInfo(user))
-        continue;
-
-      if (isMemrefForwardingOp(user, current)) {
-        for (Value result : user->getResults())
-          if (isa<MemRefType>(result.getType()))
-            worklist.push_back(result);
-        continue;
-      }
-
-      /// Pointer casts used only for null/non-null checks do not require a
-      /// contiguous whole-view layout. Keep treating true pointer escapes as
-      /// unsafe, but allow allocation-failure guards on DB-backed views.
-      if (auto memrefToPtr = dyn_cast<polygeist::Memref2PointerOp>(user)) {
-        if (isNullCheckOnlyPointerCast(memrefToPtr))
-          continue;
-      }
-
-      /// ARTS dependency plumbing outside an EDT is structural, not a host
-      /// whole-view consumer. Follow acquire ptr results so later opaque host
-      /// uses (for example helper calls on a host acquire) are still detected.
-      if (auto acquire = dyn_cast<DbAcquireOp>(user)) {
-        if (acquire.getSourcePtr() == current &&
-            isa<MemRefType>(acquire.getPtr().getType()))
-          worklist.push_back(acquire.getPtr());
-        continue;
-      }
-
-      if (isStructuralHostDbUse(user))
-        continue;
-
-      ARTS_DEBUG("Host-view veto: non-partitionable host user "
-                 << user->getName() << " on value type " << current.getType());
-      return true;
-    }
-  }
-
-  return false;
-}
-
-Value DbUtils::extractBaseBlockSizeCandidate(Value offsetHint, Value sizeHint,
-                                             int depth) {
-  if (!sizeHint || depth > 6)
-    return Value();
-
-  if (!offsetHint || !ValueAnalysis::dependsOn(sizeHint, offsetHint))
-    return sizeHint;
-
-  Operation *defOp = sizeHint.getDefiningOp();
-  if (!defOp)
-    return Value();
-
-  if (auto minOp = dyn_cast<arith::MinUIOp>(defOp)) {
-    Value lhs = minOp.getLhs();
-    Value rhs = minOp.getRhs();
-    bool lhsDep = ValueAnalysis::dependsOn(lhs, offsetHint);
-    bool rhsDep = ValueAnalysis::dependsOn(rhs, offsetHint);
-    if (lhsDep && !rhsDep)
-      return extractBaseBlockSizeCandidate(offsetHint, rhs, depth + 1);
-    if (rhsDep && !lhsDep)
-      return extractBaseBlockSizeCandidate(offsetHint, lhs, depth + 1);
-    if (Value cand = extractBaseBlockSizeCandidate(offsetHint, lhs, depth + 1))
-      return cand;
-    return extractBaseBlockSizeCandidate(offsetHint, rhs, depth + 1);
-  }
-
-  if (auto minOp = dyn_cast<arith::MinSIOp>(defOp)) {
-    Value lhs = minOp.getLhs();
-    Value rhs = minOp.getRhs();
-    bool lhsDep = ValueAnalysis::dependsOn(lhs, offsetHint);
-    bool rhsDep = ValueAnalysis::dependsOn(rhs, offsetHint);
-    if (lhsDep && !rhsDep)
-      return extractBaseBlockSizeCandidate(offsetHint, rhs, depth + 1);
-    if (rhsDep && !lhsDep)
-      return extractBaseBlockSizeCandidate(offsetHint, lhs, depth + 1);
-    if (Value cand = extractBaseBlockSizeCandidate(offsetHint, lhs, depth + 1))
-      return cand;
-    return extractBaseBlockSizeCandidate(offsetHint, rhs, depth + 1);
-  }
-
-  if (auto selectOp = dyn_cast<arith::SelectOp>(defOp)) {
-    Value tVal = selectOp.getTrueValue();
-    Value fVal = selectOp.getFalseValue();
-    bool tDep = ValueAnalysis::dependsOn(tVal, offsetHint);
-    bool fDep = ValueAnalysis::dependsOn(fVal, offsetHint);
-    if (tDep && !fDep)
-      return extractBaseBlockSizeCandidate(offsetHint, fVal, depth + 1);
-    if (fDep && !tDep)
-      return extractBaseBlockSizeCandidate(offsetHint, tVal, depth + 1);
-    if (Value cand = extractBaseBlockSizeCandidate(offsetHint, tVal, depth + 1))
-      return cand;
-    return extractBaseBlockSizeCandidate(offsetHint, fVal, depth + 1);
-  }
-
-  if (auto addOp = dyn_cast<arith::AddIOp>(defOp)) {
-    int64_t lhsConst = 0, rhsConst = 0;
-    bool lhsIsConst = ValueAnalysis::getConstantIndex(addOp.getLhs(), lhsConst);
-    bool rhsIsConst = ValueAnalysis::getConstantIndex(addOp.getRhs(), rhsConst);
-    if (lhsIsConst && lhsConst >= -16 && lhsConst <= 16)
-      return extractBaseBlockSizeCandidate(offsetHint, addOp.getRhs(),
-                                           depth + 1);
-    if (rhsIsConst && rhsConst >= -16 && rhsConst <= 16)
-      return extractBaseBlockSizeCandidate(offsetHint, addOp.getLhs(),
-                                           depth + 1);
-  }
-
-  if (auto subOp = dyn_cast<arith::SubIOp>(defOp)) {
-    int64_t rhsConst = 0;
-    if (ValueAnalysis::getConstantIndex(subOp.getRhs(), rhsConst) &&
-        rhsConst >= -16 && rhsConst <= 16)
-      return extractBaseBlockSizeCandidate(offsetHint, subOp.getLhs(),
-                                           depth + 1);
-  }
-
-  return Value();
 }
 
 Value DbUtils::pickRepresentativePartitionOffset(ArrayRef<Value> offsets,

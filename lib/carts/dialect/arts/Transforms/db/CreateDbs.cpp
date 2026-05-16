@@ -239,7 +239,6 @@ private:
   ModuleOp module;
   mlir::carts::arts::AnalysisManager *AM = nullptr;
   OpBuilder *builder = nullptr;
-  DenseMap<Operation *, Operation *> dbPtrToOriginalAlloc;
   SetVector<Operation *> opsToRemove;
 
   /// Structure to track all usage information for a memref
@@ -250,9 +249,6 @@ private:
     bool usedByOtherEdts = false;
     ArtsMode accessMode = ArtsMode::uninitialized;
     DbAllocOp dbAllocOp = nullptr;
-
-    /// The computed allocation strategy plan
-    std::optional<DbPhysicalLayoutPlan> rewritePlan;
   };
 
   DenseMap<Operation *, MemrefInfo> memrefInfo;
@@ -269,22 +265,18 @@ private:
                                         Value contractTarget);
   void createDbAcquireOps(EdtOp edt, SetVector<Value> &externalDeps);
   Value findParentAcquireSource(EdtOp edt, Operation *dbAllocOp,
-                                ArtsMode requestedMode,
-                                bool requiresIndexedAccess = false);
+                                ArtsMode requestedMode);
   void initializeGlobalDbIfNeeded(Operation *alloc, DbAllocOp dbAllocOp,
-                                  const DbPhysicalLayoutPlan &plan,
                                   DbAllocType allocType);
 
   DbAllocType inferAllocType(Operation *alloc);
   void insertDbFreeForDbAlloc(DbAllocOp dbAlloc, Operation *alloc);
   void rewriteOpsToUseDbAcquire(EdtOp edt, SmallVector<Operation *> &operations,
                                 Operation *rawAlloc,
-                                Value localAcquireView,
-                                const DbPhysicalLayoutPlan &plan);
+                                Value localAcquireView);
   void rewriteUsesInParentEdt(MemrefInfo &memrefInfo);
   Operation *findPhysicalLayoutPlanSource(Operation *alloc);
-  void rewriteUsesEverywhereWithPlan(Operation *alloc, DbAllocOp dbAlloc,
-                                     const DbPhysicalLayoutPlan &plan);
+  void rewriteUsesEverywhere(Operation *alloc, DbAllocOp dbAlloc);
 };
 } // namespace
 
@@ -656,8 +648,6 @@ void CreateDbsPass::createDbAllocOps() {
     Value allocValue = alloc->getResult(0);
     MemRefType memRefType = cast<MemRefType>(allocValue.getType());
     Type elementType = memRefType.getElementType();
-    while (auto nestedMemRef = dyn_cast<MemRefType>(elementType))
-      elementType = nestedMemRef.getElementType();
 
     /// Determine allocation granularity using unified heuristics
     SmallVector<Value> sizes, logicalElementSizes, elementSizes;
@@ -682,14 +672,10 @@ void CreateDbsPass::createDbAllocOps() {
     /// Coarse is the only raw-memref bridge left in ARTS. If SDE authored a
     /// physical block layout, the corresponding MU/token/codelet materializer
     /// must have already rewritten the accesses before this pass.
-    DbPhysicalLayoutPlan plan(PartitionMode::coarse);
     sizes.push_back(createOp<arith::ConstantIndexOp>(*builder, loc, 1));
     elementSizes.assign(logicalElementSizes.begin(), logicalElementSizes.end());
-    PartitionMode partitionMode = PartitionMode::coarse;
-    Operation *planSource = nullptr;
 
-    planSource = findPhysicalLayoutPlanSource(alloc);
-    if (planSource) {
+    if (Operation *planSource = findPhysicalLayoutPlanSource(alloc)) {
       InFlightDiagnostic diag = alloc->emitError(
           "SDE-authored physical DB layout reached CreateDbs as a raw "
           "memref; SDE must materialize MU/token/codelet storage and "
@@ -697,12 +683,9 @@ void CreateDbsPass::createDbAllocOps() {
       diag.attachNote(planSource->getLoc()) << "layout plan source";
       signalPassFailure();
       return;
-    } else if (DbUtils::hasNonPartitionableHostViewUses(allocValue)) {
-      ARTS_DEBUG(" - Keeping coarse DB layout due to host whole-view use");
     }
 
-    if (plan.isCoarse())
-      ARTS_DEBUG(" - Using coarse-grained allocation");
+    ARTS_DEBUG(" - Using coarse-grained raw DB bridge allocation");
 
     /// Create the db_alloc operation
     /// DBs without an explicit route stay on the creating node. Lowering
@@ -712,31 +695,28 @@ void CreateDbsPass::createDbAllocOps() {
     auto dbAllocOp = createOp<DbAllocOp>(
         *builder,
         loc, mode, route, allocType, dbMode, elementType, sizes, elementSizes,
-        partitionMode);
+        PartitionMode::coarse);
     ++numDbAllocsCreated;
 
     projectSemanticContractToDbValue(alloc, dbAllocOp.getOperation(),
                                      dbAllocOp.getPtr());
 
     /// Initialize global DBs
-    initializeGlobalDbIfNeeded(alloc, dbAllocOp, plan, allocType);
+    initializeGlobalDbIfNeeded(alloc, dbAllocOp, allocType);
 
     /// Copy ARTS ID from original allocation to DbAllocOp
     copyArtsMetadataAttrs(alloc, dbAllocOp.getOperation());
-
-    info.rewritePlan = plan;
 
     /// Record allocation strategy decision for diagnostics
     AM->getDbHeuristics().recordDecision(
         "AllocationStrategy", true,
         "Coarse raw-memref bridge allocation",
         alloc,
-        {{"outerRank", static_cast<int64_t>(plan.outerRank())},
-         {"innerRank", static_cast<int64_t>(plan.innerRank())}});
+        {{"outerRank", static_cast<int64_t>(sizes.size())},
+         {"innerRank", static_cast<int64_t>(elementSizes.size())}});
 
     /// Store mappings for later use
     info.dbAllocOp = dbAllocOp;
-    dbPtrToOriginalAlloc[dbAllocOp] = alloc;
 
     /// Insert DbFreeOp and remove associated dealloc operations
     insertDbFreeForDbAlloc(dbAllocOp, alloc);
@@ -751,7 +731,7 @@ void CreateDbsPass::createDbAllocOps() {
       /// Redirect non-EDT aliases/host accesses to the canonical DB-backed
       /// coarse view so initialization and verification code observe the
       /// datablock contents instead of a disconnected host allocation.
-      rewriteUsesEverywhereWithPlan(alloc, dbAllocOp, plan);
+      rewriteUsesEverywhere(alloc, dbAllocOp);
 
       /// EDT uses are rewritten only after a matching db_acquire has been
       /// materialized in createDbAcquireOps. Rewriting them here would capture
@@ -763,7 +743,6 @@ void CreateDbsPass::createDbAllocOps() {
 /// Initialize global constants for DB-backed globals.
 void CreateDbsPass::initializeGlobalDbIfNeeded(Operation *alloc,
                                                DbAllocOp dbAllocOp,
-                                               const DbPhysicalLayoutPlan &plan,
                                                DbAllocType allocType) {
   if (allocType != DbAllocType::global)
     return;
@@ -800,14 +779,6 @@ void CreateDbsPass::initializeGlobalDbIfNeeded(Operation *alloc,
   }
 
   auto storeToDb = [&](Value initVal, ArrayRef<Value> indices) {
-    if (plan.usesBlockedLayout()) {
-      alloc->emitError("blocked global DB initialization reached CreateDbs; "
-                       "SDE/CODIR must materialize tiled MU storage before "
-                       "ARTS conversion");
-      signalPassFailure();
-      return;
-    }
-
     Value dbRef =
         createOp<DbRefOp>(*builder, loc, dbAllocOp.getPtr(), zeroIndices);
     createOp<memref::StoreOp>(*builder, loc, initVal, dbRef, indices);
@@ -844,8 +815,7 @@ void CreateDbsPass::initializeGlobalDbIfNeeded(Operation *alloc,
 }
 
 Value CreateDbsPass::findParentAcquireSource(EdtOp edt, Operation *dbAllocOp,
-                                             ArtsMode requestedMode,
-                                             bool requiresIndexedAccess) {
+                                             ArtsMode requestedMode) {
   auto dbAlloc = dyn_cast_or_null<DbAllocOp>(dbAllocOp);
   if (!dbAlloc)
     return nullptr;
@@ -865,15 +835,6 @@ Value CreateDbsPass::findParentAcquireSource(EdtOp edt, Operation *dbAllocOp,
     Operation *db = DbUtils::getUnderlyingDbAlloc(v);
     if (!db || db != dbAllocOp)
       return false;
-
-    /// If the caller intends to index into this handle, avoid reusing a
-    /// single-element datablock view.
-    if (requiresIndexedAccess) {
-      if (Operation *dbOp = DbUtils::getUnderlyingDb(v)) {
-        if (DbAnalysis::hasSingleSize(dbOp))
-          return false;
-      }
-    }
 
     /// Avoid treating the DbAllocOp results themselves as reusable handles
     if (auto *defOp = v.getDefiningOp())
@@ -995,9 +956,7 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
 
     /// Raw bridge acquires cover the whole physical DB range selected at
     /// allocation time. SDE-tokenized slices lower before this pass.
-    const auto &plan = info.rewritePlan.value();
-
-    /// Build full DB-space range for the already-created physical layout.
+    /// Build full DB-space range for the already-created coarse layout.
     SmallVector<Value> dbOffsets, dbSizes;
     SmallVector<Value> allocSizes(dbAllocOp.getSizes().begin(),
                                   dbAllocOp.getSizes().end());
@@ -1022,16 +981,6 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
                         : info.accessMode;
     }
 
-    if (!plan.isCoarse()) {
-      InFlightDiagnostic diag = edt->emitError(
-          "non-coarse raw memref dependency reached CreateDbs; SDE must "
-          "materialize MU/token/codelet dependencies before ARTS conversion");
-      diag.attachNote(underlyingOp->getLoc()) << "raw allocation";
-      signalPassFailure();
-      return;
-    }
-    PartitionMode partMode = PartitionMode::coarse;
-
     Value acqGuid = sourceGuid;
     Value acqPtr = sourcePtr;
     if (Value availableHandle =
@@ -1045,7 +994,8 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
       Type ptrType = acqPtr ? acqPtr.getType() : Type();
       if (DbUtils::getUnderlyingDbAlloc(acqPtr)) {
         return createOp<DbAcquireOp>(
-            *builder, acquireLoc, acquireMode, acqGuid, acqPtr, partMode,
+            *builder, acquireLoc, acquireMode, acqGuid, acqPtr,
+            PartitionMode::coarse,
             /*indices=*/SmallVector<Value>{}, /*offsets=*/dbOffsets,
             /*sizes=*/dbSizes,
             /*partition_indices=*/SmallVector<Value>{},
@@ -1054,7 +1004,8 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
       }
 
       return createOp<DbAcquireOp>(
-          *builder, acquireLoc, acquireMode, acqGuid, acqPtr, ptrType, partMode,
+          *builder, acquireLoc, acquireMode, acqGuid, acqPtr, ptrType,
+          PartitionMode::coarse,
           /*indices=*/SmallVector<Value>{}, /*offsets=*/dbOffsets,
           /*sizes=*/dbSizes,
           /*partition_indices=*/SmallVector<Value>{},
@@ -1069,8 +1020,9 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
         edt.getOperation(), acquireOp.getOperation(), acquireOp.getPtr());
 
     ARTS_DEBUG(" - Created raw bridge acquire, mode="
-               << acquireMode << ", partition=" << static_cast<int>(partMode)
-               << ": " << acquireOp);
+               << acquireMode << ", partition="
+               << static_cast<int>(PartitionMode::coarse) << ": "
+               << acquireOp);
 
     Value localAcquireView = acquireOp.getPtr();
     auto sourceType = dyn_cast<MemRefType>(localAcquireView.getType());
@@ -1100,7 +1052,7 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
 
     if (!opsToRewrite.empty()) {
       rewriteOpsToUseDbAcquire(edt, opsToRewrite, underlyingOp,
-                               localAcquireView, plan);
+                               localAcquireView);
     }
 
     OpBuilder::InsertionGuard releaseGuard(*builder);
@@ -1165,19 +1117,6 @@ void CreateDbsPass::rewriteUsesInParentEdt(MemrefInfo &memrefInfo) {
                              << users.size() << " in parent EDT, skipped "
                              << skippedUses);
 
-  /// Coarse raw bridge: db_ref[0] + original load/store indices. Tiled or
-  /// sliced views must already have been rewritten at the SDE MU/token level.
-  const DbPhysicalLayoutPlan &plan = memrefInfo.rewritePlan.value();
-  if (!plan.isCoarse()) {
-    InFlightDiagnostic diag = memrefInfo.alloc->emitError(
-        "non-coarse raw memref parent uses reached CreateDbs; SDE must "
-        "materialize MU/token/codelet storage and token-local rewrites before "
-        "ARTS conversion");
-    diag.attachNote(dbAlloc->getLoc()) << "DB allocation created for raw memref";
-    signalPassFailure();
-    return;
-  }
-
   Value rootValue = memrefInfo.alloc->getResult(0);
   for (Operation *user : users) {
     if (failed(
@@ -1193,20 +1132,11 @@ void CreateDbsPass::rewriteUsesInParentEdt(MemrefInfo &memrefInfo) {
 /// Rewrite uses of a DB allocation in the parent region.
 /// This is used when the allocation is not inside an EDT, but is still shared
 /// with EDTs and the host needs to see the updated data.
-void CreateDbsPass::rewriteUsesEverywhereWithPlan(
-    Operation *alloc, DbAllocOp dbAlloc, const DbPhysicalLayoutPlan &plan) {
+void CreateDbsPass::rewriteUsesEverywhere(Operation *alloc,
+                                          DbAllocOp dbAlloc) {
   Value originalValue = alloc->getResult(0);
   if (!originalValue)
     return;
-
-  if (plan.usesBlockedLayout()) {
-    InFlightDiagnostic diag = alloc->emitError(
-        "blocked raw host uses reached CreateDbs; SDE/CODIR must materialize "
-        "tiled MU/token views before ARTS conversion");
-    diag.attachNote(dbAlloc->getLoc()) << "DB allocation created for raw memref";
-    signalPassFailure();
-    return;
-  }
 
   auto getAnchorInDbAllocBlock = [&](Operation *user) -> Operation * {
     if (!user)
@@ -1306,20 +1236,9 @@ void CreateDbsPass::rewriteUsesEverywhereWithPlan(
 /// Rewrite operations to use DbAcquire
 void CreateDbsPass::rewriteOpsToUseDbAcquire(
     EdtOp edt, SmallVector<Operation *> &operations, Operation *rawAlloc,
-    Value localAcquireView,
-    const DbPhysicalLayoutPlan &plan) {
+    Value localAcquireView) {
   ARTS_DEBUG(" - Rewriting " << operations.size() << " operations in EDT");
   numOpsRewrittenToDbViews += operations.size();
-
-  if (!plan.isCoarse()) {
-    InFlightDiagnostic diag = edt->emitError(
-        "non-coarse raw memref access rewrite reached CreateDbs; SDE must "
-        "materialize tiled MU/token views before ARTS conversion");
-    if (rawAlloc)
-      diag.attachNote(rawAlloc->getLoc()) << "raw allocation";
-    signalPassFailure();
-    return;
-  }
 
   /// Build value mapping from parent EDT block args/acquires to this EDT's args
   IRMapping scopeMapping;
