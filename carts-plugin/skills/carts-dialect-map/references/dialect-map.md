@@ -64,8 +64,7 @@ analysis-backed decisions.
 Important areas:
 
 - `Analysis/db`, `Analysis/edt`, `Analysis/loop`, `Analysis/heuristics`.
-- `Transforms/db`, `Transforms/edt`, `Transforms/epoch`, `Transforms/loop`.
-- `Conversion/ArtsToRt`, `Conversion/ArtsRtToLLVM`.
+- `Transforms/db`, `Transforms/edt`, `Transforms/epoch`, `Transforms/verify`.
 - `Utils/` - DbUtils, EdtUtils, LoweringContractUtils,
   PartitionPredicates, BlockedAccessUtils, ARTSCostModel.
 
@@ -88,6 +87,14 @@ Limits: ARTS-RT should not introduce new high-level semantics, scheduling
 policy, or analysis decisions. If a fix requires understanding OpenMP intent,
 DB/EDT graph state, or partition ownership, it likely belongs in SDE, CODIR,
 or ARTS.
+
+Important areas:
+
+- `Conversion/ArtsToRt` - lower chosen ARTS objects into runtime-shaped IR.
+- `Conversion/ArtsRtToLLVM` and `Conversion/RtToLLVM` - lower runtime-shaped
+  IR into LLVM dialect runtime calls.
+- `Transforms/` - LLVM-facing cleanup, runtime-call optimization, data pointer
+  hoisting, alias scopes, loop hints, and lowered-form verification.
 
 ## TableGen Boundaries
 
