@@ -1,15 +1,16 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode_4x16.cfg --start-from sde-planning --pipeline sde-planning --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
-// Verify that ReductionStrategy flips the same add reduction to tree when
-// the distributed cost model makes atomics more expensive at the same total
-// worker count.
+// Verify that ReductionStrategy stays topology-neutral: a multinode ARTS
+// config with the same total logical worker capacity must not make SDE choose
+// a different strategy.
 
 // CHECK-LABEL: // -----// IR Dump After ReductionStrategy (reduction-strategy) //----- //
 // CHECK: func.func @main
 // CHECK: sde.cu_region <parallel> {
 // CHECK: sde.su_iterate (%c0) to (%c128) step (%c1)
 // CHECK-SAME: reduction{{\[}}#sde.reduction_kind<add>{{\]}}
-// CHECK-SAME: reduction_strategy(<tree>)
+// CHECK-SAME: reduction_strategy(<atomic>)
+// CHECK-NOT: reduction_strategy(<tree>)
 // CHECK-NOT: arts.for
 // CHECK: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 

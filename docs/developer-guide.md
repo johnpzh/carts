@@ -220,13 +220,18 @@ counter += value;
 
 ### 9. Runtime Functions
 
-The following OpenMP runtime functions are supported:
+OpenMP thread-introspection calls can appear in source programs, but they are
+not CARTS topology APIs and must not be modeled as ARTS node queries in SDE or
+CODIR:
 
 ```c
-int tid = omp_get_thread_num();      // Converted to arts.get_current_node
-int nthreads = omp_get_num_threads(); // Converted to arts.get_total_nodes
-int max_threads = omp_get_max_threads(); // Converted to arts.get_total_nodes
+int tid = omp_get_thread_num();
+int nthreads = omp_get_num_threads();
+int max_threads = omp_get_max_threads();
 ```
+
+Concrete ARTS topology, including node count, current node, and worker routing,
+is introduced only after isolated codelets reach the ARTS layer.
 
 ## Memory Layout Requirements
 

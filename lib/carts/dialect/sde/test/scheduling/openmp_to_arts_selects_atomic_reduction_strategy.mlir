@@ -1,7 +1,7 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_64t.cfg --start-from sde-planning --pipeline sde-planning --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Verify that ReductionStrategy keeps an add reduction on the atomic path
-// when the active single-node cost model still prices atomics below the
+// when the active topology-neutral cost model prices atomics below the
 // collective alternative.
 
 // CHECK-LABEL: // -----// IR Dump After ReductionStrategy (reduction-strategy) //----- //

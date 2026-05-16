@@ -1,7 +1,7 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_64t.cfg --start-from sde-planning --pipeline sde-planning --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // Verify that float add reductions stay on the tree path even when the
-// single-node cost model would otherwise price integer atomics favorably.
+// topology-neutral cost model would otherwise price integer atomics favorably.
 
 // CHECK-LABEL: // -----// IR Dump After ReductionStrategy (reduction-strategy) //----- //
 // CHECK: func.func @main

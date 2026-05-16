@@ -28,6 +28,13 @@ The stack has four non-negotiable contracts:
   topology.
 - ARTS-RT lowers the already-chosen object graph to runtime ABI calls.
 
+Concurrency follows the same ownership rule. SDE and CODIR may reason about
+generic logical workers and codelet-local work shape, but they must not observe
+node count, workers per node, local-vs-multinode placement, routes, or runtime
+replication policy. The first dialect allowed to bind those logical workers to
+single-node or multinode ARTS topology is ARTS; ARTS-RT receives that decision
+as lowering-ready runtime shape.
+
 The architecture must remove late rediscovery. CARTS should not infer DB roots,
 owner dimensions, dependency windows, codelet captures, or tiling policy after
 SDE/CODIR have enough information to say those things directly.

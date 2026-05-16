@@ -2,12 +2,10 @@
 /// File: ARTSCostModel.h
 ///
 /// ARTS-backed implementation of SDECostModel. SDE passes consume only the
-/// runtime-neutral SDECostModel interface; this adapter maps abstract logical
-/// capacity and normalized costs to the configured ARTS runtime.
-/// Costs change based on RuntimeConfig topology (local vs distributed):
-///   - Halo exchange: 0.01/byte local vs 0.5/byte distributed (50x)
-///   - Task sync: 3000 local vs 5000 distributed (1.7x)
-///   - Task creation: 1800 local vs 2500 distributed (1.4x)
+/// runtime-neutral SDECostModel interface. This adapter may use the configured
+/// ARTS runtime to expose total logical worker capacity, but it must not expose
+/// node topology or local-vs-distributed placement costs to SDE. ARTS owns
+/// those topology decisions after CODIR materialization.
 ///==========================================================================///
 
 #ifndef ARTS_UTILS_COSTS_ARTSCOSTMODEL_H
@@ -24,13 +22,9 @@ class ARTSCostModel : public carts::sde::SDECostModel {
 public:
   explicit ARTSCostModel(const RuntimeConfig &am) : machine(am) {}
 
-  // --- Task lifecycle (maps SDE tasks -> ARTS EDTs) ---
-  double getTaskCreationCost() const override {
-    return machine.isDistributed() ? 2500.0 : 1800.0;
-  }
-  double getTaskSyncCost() const override {
-    return machine.isDistributed() ? 5000.0 : 3000.0;
-  }
+  // --- Task lifecycle (generic worker-level planning costs) ---
+  double getTaskCreationCost() const override { return 1800.0; }
+  double getTaskSyncCost() const override { return 3000.0; }
 
   // --- Reduction (maps SDE reductions -> ARTS atomics/trees) ---
   double getReductionCost(int64_t workerCount) const override {
@@ -38,16 +32,10 @@ public:
     double linearCost = workerCount * getAtomicUpdateCost();
     return std::min(treeCost, linearCost);
   }
-  double getAtomicUpdateCost() const override {
-    return machine.isDistributed() ? 500.0 : 100.0;
-  }
+  double getAtomicUpdateCost() const override { return 100.0; }
 
-  // --- Data movement (maps SDE data access -> ARTS DB acquire) ---
-  double getLocalDataAccessCost() const override { return 500.0; }
-  double getRemoteDataAccessCost() const override { return 5000.0; }
-  double getHaloExchangeCostPerByte() const override {
-    return machine.isDistributed() ? 0.5 : 0.01;
-  }
+  // --- Generic memory access (no placement/topology scope) ---
+  double getDataAccessCost() const override { return 500.0; }
 
   // --- Scheduling ---
   double getSchedulingOverhead(carts::sde::SdeScheduleKind kind,
@@ -72,7 +60,6 @@ public:
   int getLogicalWorkerCapacity() const override {
     return machine.getRuntimeTotalWorkers();
   }
-  int getLogicalNodeCapacity() const override { return machine.getNodeCount(); }
 };
 
 } // namespace mlir::carts::arts

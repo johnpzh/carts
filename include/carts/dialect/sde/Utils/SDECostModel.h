@@ -32,10 +32,8 @@ public:
   virtual double getReductionCost(int64_t workerCount) const = 0;
   virtual double getAtomicUpdateCost() const = 0;
 
-  // --- Data movement costs ---
-  virtual double getLocalDataAccessCost() const = 0;
-  virtual double getRemoteDataAccessCost() const = 0;
-  virtual double getHaloExchangeCostPerByte() const = 0;
+  // --- Generic memory-access cost ---
+  virtual double getDataAccessCost() const = 0;
 
   // --- Scheduling costs ---
   virtual double getSchedulingOverhead(SdeScheduleKind kind,
@@ -43,13 +41,6 @@ public:
 
   // --- Abstract execution capacity ---
   virtual int getLogicalWorkerCapacity() const = 0;
-  virtual int getLogicalNodeCapacity() const = 0;
-  virtual bool isDistributed() const { return getLogicalNodeCapacity() > 1; }
-
-  // Compatibility shims for non-SDE callers that have not adopted the
-  // runtime-neutral names yet.
-  int getWorkerCount() const { return getLogicalWorkerCapacity(); }
-  int getNodeCount() const { return getLogicalNodeCapacity(); }
 
   // --- Hardware parameters ---
   virtual int getVectorWidth() const = 0;
@@ -81,7 +72,7 @@ public:
   virtual int64_t getMinIterationsPerWorker() const {
     return std::max<int64_t>(
         1, static_cast<int64_t>(getTaskCreationCost() /
-                                (getLocalDataAccessCost() + 1.0)));
+                                (getDataAccessCost() + 1.0)));
   }
 };
 

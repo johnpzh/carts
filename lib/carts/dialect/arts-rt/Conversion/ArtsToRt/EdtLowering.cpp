@@ -329,7 +329,6 @@ void EdtLoweringPass::gatherLowerableTaskEdts(
       ++numEdtsDemotedToTask;
       edtOp.setType(EdtType::task);
       arts::setWorkers(edtOp.getOperation(), 0);
-      arts::setWorkersPerNode(edtOp.getOperation(), 0);
       setNowait(edtOp, false);
     }
     taskEdts.push_back(edtOp);
