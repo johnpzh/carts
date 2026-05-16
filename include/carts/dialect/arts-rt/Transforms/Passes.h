@@ -38,7 +38,7 @@ std::unique_ptr<::mlir::Pass> createDbLoweringPass(uint64_t idStride = 1000);
 std::unique_ptr<::mlir::Pass> createEdtLoweringPass(uint64_t idStride = 1000);
 /// Lower ARTS epochs into ARTS-RT epoch ops.
 std::unique_ptr<::mlir::Pass> createEpochLoweringPass();
-/// Lower runtime-shaped ARTS/ARTS-RT ops to LLVM dialect runtime calls.
+/// Lower runtime-shaped ARTS-RT ops to LLVM dialect runtime calls.
 std::unique_ptr<::mlir::Pass> createConvertArtsRtToLLVMPass();
 std::unique_ptr<::mlir::Pass>
 createConvertArtsRtToLLVMPass(bool debug, bool distributedInitPerWorker,

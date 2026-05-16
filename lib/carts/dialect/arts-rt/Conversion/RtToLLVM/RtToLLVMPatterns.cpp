@@ -3,8 +3,7 @@
 ///
 /// ARTS runtime dialect (arts_rt) to LLVM conversion patterns.
 /// These patterns convert arts_rt ops into LLVM runtime calls via the
-/// ArtsCodegen infrastructure shared with residual ARTS/ARTS-RT-to-LLVM
-/// conversion.
+/// ArtsCodegen infrastructure shared with the ARTS-RT-to-LLVM conversion.
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVMInternal.h"

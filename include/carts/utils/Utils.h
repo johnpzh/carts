@@ -19,7 +19,6 @@
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Region.h"
 #include "mlir/IR/Value.h"
-#include <optional>
 
 namespace mlir {
 namespace carts::arts {

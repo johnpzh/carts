@@ -1,9 +1,9 @@
 ///==========================================================================///
 /// File: ConvertArtsRtToLLVMPatterns.cpp
 ///
-/// Residual ARTS/ARTS-RT-to-LLVM conversion patterns extracted from
-/// ConvertArtsRtToLLVM.cpp. Each pattern lowers runtime-shaped operations into
-/// LLVM runtime calls via the ArtsCodegen infrastructure.
+/// ARTS-RT-to-LLVM conversion patterns extracted from ConvertArtsRtToLLVM.cpp.
+/// A small residual set of ARTS ops is still handled here until pre-lowering
+/// converts every runtime-facing operation to ARTS-RT first.
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVMInternal.h"

@@ -30,6 +30,7 @@
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Types.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
+#include "carts/dialect/arts-rt/Utils/RuntimeCallUtils.h"
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 namespace mlir::carts::arts_rt {
@@ -46,8 +47,10 @@ ARTS_DEBUG_SETUP(guid_rang_call_opt);
 
 using namespace mlir;
 using namespace mlir::carts;
-using namespace mlir::carts::arts;
 using namespace mlir::carts::arts_rt;
+using mlir::carts::arts::debugStream;
+using mlir::carts::arts::getStaticTripCount;
+using mlir::carts::arts::ValueAnalysis;
 
 namespace {
 
@@ -55,7 +58,7 @@ static bool isGuidReserveCall(func::CallOp call) {
   if (call.getNumOperands() != 2 || call.getNumResults() != 1)
     return false;
   std::optional<types::RuntimeFunction> fn =
-      types::runtimeFunctionFromName(call.getCallee());
+      getRuntimeFunction(call);
   return fn && *fn == types::ARTSRTL_arts_guid_reserve;
 }
 

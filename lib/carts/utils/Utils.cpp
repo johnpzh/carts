@@ -4,7 +4,7 @@
 ///==========================================================================///
 #include "carts/utils/Utils.h"
 #include "carts/Dialect.h"
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Types.h"
+#include "carts/dialect/arts-rt/Utils/RuntimeCallUtils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -152,22 +152,9 @@ bool isArtsRuntimeQuery(Value val) {
   if (isa<RuntimeQueryOp>(defOp))
     return true;
 
-  /// Check for func::CallOp (after lowering)
-  if (auto callOp = dyn_cast<func::CallOp>(defOp)) {
-    std::optional<arts_rt::types::RuntimeFunction> fn =
-        arts_rt::types::runtimeFunctionFromName(callOp.getCallee());
-    if (!fn)
-      return false;
-    switch (*fn) {
-    case arts_rt::types::ARTSRTL_arts_get_current_node:
-    case arts_rt::types::ARTSRTL_arts_get_total_nodes:
-    case arts_rt::types::ARTSRTL_arts_get_current_worker:
-    case arts_rt::types::ARTSRTL_arts_get_total_workers:
-      return true;
-    default:
-      return false;
-    }
-  }
+  /// Check for func::CallOp after ARTS-RT-to-LLVM has emitted runtime calls.
+  if (auto callOp = dyn_cast<func::CallOp>(defOp))
+    return arts_rt::isRuntimeTopologyQueryCall(callOp);
 
   return false;
 }

@@ -2,7 +2,8 @@
 /// File: ConvertArtsRtToLLVM.cpp
 ///
 /// This file implements the ARTS-RT-owned pass that lowers runtime-shaped
-/// ARTS/ARTS-RT operations into LLVM dialect runtime calls.
+/// ARTS-RT operations into LLVM dialect runtime calls. A small residual set of
+/// ARTS ops is still handled here until the ARTS-to-RT boundary is complete.
 ///
 /// Example:
 ///   Before:
@@ -36,8 +37,8 @@ ARTS_DEBUG_SETUP(convert_arts_rt_to_llvm);
 
 using namespace mlir;
 using namespace mlir::carts;
-using namespace mlir::carts::arts;
 using namespace mlir::carts::arts_rt;
+using mlir::carts::arts::debugStream;
 
 namespace arts_rt_to_llvm = mlir::carts::arts_rt::convert_arts_rt_to_llvm;
 
@@ -51,7 +52,7 @@ struct ConvertArtsRtToLLVMPass
 
   explicit ConvertArtsRtToLLVMPass(bool debug = false,
                                    bool distributedInitPerWorker = false,
-                                   const RuntimeConfig *machine = nullptr)
+                                   const arts::RuntimeConfig *machine = nullptr)
       : debugMode(debug), distributedInitPerWorker(distributedInitPerWorker),
         machine(machine) {}
 
@@ -61,7 +62,7 @@ private:
   ArtsCodegen *AC = nullptr;
   bool debugMode = false;
   bool distributedInitPerWorker = false;
-  const RuntimeConfig *machine = nullptr;
+  const arts::RuntimeConfig *machine = nullptr;
 };
 } // namespace
 
@@ -167,7 +168,7 @@ std::unique_ptr<Pass> createConvertArtsRtToLLVMPass() {
 
 std::unique_ptr<Pass>
 createConvertArtsRtToLLVMPass(bool debug, bool distributedInitPerWorker,
-                              const RuntimeConfig *machine) {
+                              const arts::RuntimeConfig *machine) {
   return std::make_unique<ConvertArtsRtToLLVMPass>(
       debug, distributedInitPerWorker, machine);
 }

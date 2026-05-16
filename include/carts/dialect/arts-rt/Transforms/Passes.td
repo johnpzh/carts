@@ -23,7 +23,12 @@ def DbLowering : Pass<"db-lowering", "mlir::ModuleOp"> {
 }
 
 def ConvertArtsRtToLLVM : Pass<"convert-arts-rt-to-llvm", "mlir::ModuleOp"> {
-  let summary = "Lower runtime-shaped ARTS/ARTS-RT IR to LLVM dialect calls";
+  let summary = "Lower runtime-shaped ARTS-RT IR to LLVM dialect calls";
+  let description = [{
+    Lowers ARTS-RT runtime ABI operations to LLVM dialect calls. This pass
+    still accepts a small set of residual ARTS operations while the pre-lowering
+    boundary is being tightened.
+  }];
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
     "::mlir::carts::arts::ArtsDialect", "::mlir::carts::arts_rt::ArtsRtDialect",
@@ -142,7 +147,7 @@ def RuntimeCallOpt
 }
 
 def EdtLowering : Pass<"edt-lowering", "mlir::ModuleOp"> {
-  let summary = "Lower ARTS EDTs to LLVM";
+  let summary = "Lower ARTS EDTs to ARTS-RT launch and dependency ops";
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect",
     "::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect",

@@ -18,7 +18,7 @@ namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_RUNTIMECALLOPT
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Types.h"
+#include "carts/dialect/arts-rt/Utils/RuntimeCallUtils.h"
 #include "carts/passes/Passes.h"
 #include "carts/utils/Debug.h"
 #include "carts/utils/LoopInvarianceUtils.h"
@@ -31,8 +31,9 @@ ARTS_DEBUG_SETUP(runtime_call_opt);
 
 using namespace mlir;
 using namespace mlir::carts;
-using namespace mlir::carts::arts;
 using namespace mlir::carts::arts_rt;
+using mlir::carts::arts::debugStream;
+using mlir::carts::arts::findHoistTarget;
 
 namespace {
 
@@ -40,11 +41,7 @@ static std::optional<types::RuntimeFunction>
 getOptimizableRuntimeFunction(func::CallOp call) {
   if (!call || call.getNumOperands() != 0 || call.getNumResults() != 1)
     return std::nullopt;
-  std::optional<types::RuntimeFunction> fn =
-      types::runtimeFunctionFromName(call.getCallee());
-  if (!fn || !types::isRuntimeTopologyQuery(*fn))
-    return std::nullopt;
-  return fn;
+  return getRuntimeTopologyQueryFunction(call);
 }
 
 struct RuntimeCallOptPass
