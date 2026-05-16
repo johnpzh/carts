@@ -225,7 +225,7 @@ Current implementation:
   execution from silently scaling one large DB through remote task traffic.
   SDE/CODIR must materialize the block DB layout before ARTS binds routes.
 - CODIR-to-ARTS only binds DB-dependent codelets to `internode` placement when
-  the codelet carries physical owner/block storage metadata. Distribution
+  the codelet carries generic tile owner/shape storage metadata. Distribution
   intent without a materialized storage plan remains local until the SDE/CODIR
   MU/token path can create shaped DBs.
 

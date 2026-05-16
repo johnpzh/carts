@@ -274,10 +274,10 @@ struct CodirCodeletMetadata {
   codir::CodirRepetitionStructureAttr repetitionStructure;
   codir::CodirAsyncStrategyAttr asyncStrategy;
   ArrayAttr planOwnerDims;
-  ArrayAttr physicalOwnerDims;
-  ArrayAttr physicalBlockShape;
+  ArrayAttr tileOwnerDims;
+  ArrayAttr tileShape;
   ArrayAttr logicalWorkerSlice;
-  ArrayAttr physicalHaloShape;
+  ArrayAttr haloShape;
   ArrayAttr accessMinOffsets;
   ArrayAttr accessMaxOffsets;
   ArrayAttr spatialDims;
@@ -325,10 +325,10 @@ getCodirMetadataFromSchedulingUnit(sde::SdeSuIterateOp source) {
         codir::CodirAsyncStrategyAttr::get(
             ctx, convertAsyncStrategy(async.getValue()));
   metadata.planOwnerDims = source.getOwnerDimsAttr();
-  metadata.physicalOwnerDims = source.getPhysicalOwnerDimsAttr();
-  metadata.physicalBlockShape = source.getPhysicalBlockShapeAttr();
+  metadata.tileOwnerDims = source.getPhysicalOwnerDimsAttr();
+  metadata.tileShape = source.getPhysicalBlockShapeAttr();
   metadata.logicalWorkerSlice = source.getLogicalWorkerSliceAttr();
-  metadata.physicalHaloShape = source.getPhysicalHaloShapeAttr();
+  metadata.haloShape = source.getPhysicalHaloShapeAttr();
   metadata.accessMinOffsets = source.getAccessMinOffsetsAttr();
   metadata.accessMaxOffsets = source.getAccessMaxOffsetsAttr();
   metadata.spatialDims = source.getSpatialDimsAttr();
@@ -350,9 +350,9 @@ createCodirCodelet(OpBuilder &builder, Location loc, ArrayAttr depModes,
       builder, loc, depModes, taskDepend, orderedTaskDepend,
       completionBarrier, metadata.pattern, metadata.distributionKind,
       metadata.iterationTopology, metadata.repetitionStructure,
-      metadata.asyncStrategy, metadata.planOwnerDims, metadata.physicalOwnerDims,
-      metadata.physicalBlockShape, metadata.logicalWorkerSlice,
-      metadata.physicalHaloShape, metadata.accessMinOffsets,
+      metadata.asyncStrategy, metadata.planOwnerDims, metadata.tileOwnerDims,
+      metadata.tileShape, metadata.logicalWorkerSlice,
+      metadata.haloShape, metadata.accessMinOffsets,
       metadata.accessMaxOffsets, metadata.spatialDims, metadata.writeFootprint,
       metadata.inPlaceSafe, metadata.inPlaceSharedState, deps, params);
 }
@@ -395,17 +395,17 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
                   arts::ArtsPlanAsyncStrategyAttr::get(
                       ctx, convertAsyncStrategy(async.getValue())));
   }
-  ArrayAttr physicalBlockShape = codelet.getPhysicalBlockShapeAttr();
-  if (physicalBlockShape) {
-    if (auto physicalOwnerDims = codelet.getPhysicalOwnerDimsAttr())
-      setPlanOwnerDimsAttr(task.getOperation(), physicalOwnerDims);
-    setPlanPhysicalBlockShapeAttr(task.getOperation(), physicalBlockShape);
+  ArrayAttr tileShape = codelet.getTileShapeAttr();
+  if (tileShape) {
+    if (auto tileOwnerDims = codelet.getTileOwnerDimsAttr())
+      setPlanOwnerDimsAttr(task.getOperation(), tileOwnerDims);
+    setPlanPhysicalBlockShapeAttr(task.getOperation(), tileShape);
   } else if (auto ownerDims = codelet.getPlanOwnerDimsAttr()) {
     setPlanOwnerDimsAttr(task.getOperation(), ownerDims);
   }
   if (auto workerSlice = codelet.getLogicalWorkerSliceAttr())
     task->setAttr("planLogicalWorkerSlice", workerSlice);
-  if (auto haloShape = codelet.getPhysicalHaloShapeAttr())
+  if (auto haloShape = codelet.getHaloShapeAttr())
     task->setAttr("planHaloShape", haloShape);
   if (auto minOffsets = codelet.getAccessMinOffsetsAttr())
     task->setAttr(
@@ -648,13 +648,13 @@ static inline bool hasSdePhysicalOwnerSlicePlan(sde::SdeSuIterateOp op) {
   return op && op.getPhysicalBlockShapeAttr() && op.getPhysicalOwnerDimsAttr();
 }
 
-static inline bool hasCodirPhysicalOwnerSlicePlan(codir::CodeletOp op) {
-  return op && op.getPhysicalBlockShapeAttr() && op.getPhysicalOwnerDimsAttr();
+static inline bool hasCodirTileOwnerSlicePlan(codir::CodeletOp op) {
+  return op && op.getTileShapeAttr() && op.getTileOwnerDimsAttr();
 }
 
 static inline bool canUseCodirOwnerSliceForAlloc(codir::CodeletOp codelet,
                                                  arts::DbAllocOp alloc) {
-  if (!hasCodirPhysicalOwnerSlicePlan(codelet) || !alloc)
+  if (!hasCodirTileOwnerSlicePlan(codelet) || !alloc)
     return false;
 
   std::optional<arts::PartitionMode> mode =
@@ -664,9 +664,9 @@ static inline bool canUseCodirOwnerSliceForAlloc(codir::CodeletOp codelet,
     return false;
 
   return arts::getPlanOwnerDimsAttr(alloc.getOperation()) ==
-             codelet.getPhysicalOwnerDimsAttr() &&
+             codelet.getTileOwnerDimsAttr() &&
          arts::getPlanPhysicalBlockShapeAttr(alloc.getOperation()) ==
-             codelet.getPhysicalBlockShapeAttr();
+             codelet.getTileShapeAttr();
 }
 
 static inline bool canUseOwnerSliceBoundaryPlan(sde::SdeSuIterateOp source) {
@@ -959,7 +959,7 @@ static inline LogicalResult
 createDbBackedMemref(OpBuilder &builder, Location loc, MemRefType memrefType,
                      ValueRange dynamicSizes, Value &memref,
                      codir::CodeletOp planSource) {
-  if (!hasCodirPhysicalOwnerSlicePlan(planSource))
+  if (!hasCodirTileOwnerSlicePlan(planSource))
     return createDbBackedMemref(builder, loc, memrefType, dynamicSizes, memref,
                                 sde::SdeSuIterateOp{});
 
@@ -970,8 +970,8 @@ createDbBackedMemref(OpBuilder &builder, Location loc, MemRefType memrefType,
 
   SmallVector<Value> dbElementSizes = std::move(*elementSizes);
   FailureOr<arts::DbPhysicalLayoutPlan> physicalPlan =
-      arts::resolvePhysicalDbLayoutPlan(planSource.getPhysicalOwnerDimsAttr(),
-                                        planSource.getPhysicalBlockShapeAttr(),
+      arts::resolvePhysicalDbLayoutPlan(planSource.getTileOwnerDimsAttr(),
+                                        planSource.getTileShapeAttr(),
                                         dbElementSizes, builder, loc);
   if (failed(physicalPlan))
     return failure();
@@ -985,13 +985,13 @@ createDbBackedMemref(OpBuilder &builder, Location loc, MemRefType memrefType,
       SmallVector<Value>(physicalPlan->innerSizes.begin(),
                          physicalPlan->innerSizes.end()),
       physicalPlan->mode);
-  if (auto ownerDims = planSource.getPhysicalOwnerDimsAttr())
+  if (auto ownerDims = planSource.getTileOwnerDimsAttr())
     arts::setPlanOwnerDimsAttr(dbAlloc.getOperation(), ownerDims);
-  if (auto blockShape = planSource.getPhysicalBlockShapeAttr())
+  if (auto blockShape = planSource.getTileShapeAttr())
     arts::setPlanPhysicalBlockShapeAttr(dbAlloc.getOperation(), blockShape);
   if (auto workerSlice = planSource.getLogicalWorkerSliceAttr())
     arts::setPlanLogicalWorkerSliceAttr(dbAlloc.getOperation(), workerSlice);
-  if (auto haloShape = planSource.getPhysicalHaloShapeAttr())
+  if (auto haloShape = planSource.getHaloShapeAttr())
     arts::setPlanHaloShapeAttr(dbAlloc.getOperation(), haloShape);
 
   memref = materializeInnerPayload(builder, loc, dbAlloc.getPtr());
@@ -1543,7 +1543,7 @@ static inline LogicalResult materializeRawCodirDependency(Value dep,
         dimOps.push_back(op);
 
     arts::DbAllocOp createdDbAlloc;
-    if (hasCodirPhysicalOwnerSlicePlan(planSource)) {
+    if (hasCodirTileOwnerSlicePlan(planSource)) {
       if (failed(createDbBackedMemref(builder, root.getLoc(), memrefType,
                                       ValueRange{}, replacement, planSource)))
         return failure();
@@ -1571,7 +1571,7 @@ static inline LogicalResult materializeRawCodirDependency(Value dep,
 
   builder.setInsertionPointAfter(def);
   if (auto alloc = dyn_cast<memref::AllocOp>(def)) {
-    if (failed(hasCodirPhysicalOwnerSlicePlan(planSource)
+    if (failed(hasCodirTileOwnerSlicePlan(planSource)
                    ? createDbBackedMemref(builder, alloc.getLoc(), memrefType,
                                           alloc.getDynamicSizes(), replacement,
                                           planSource)
@@ -1579,7 +1579,7 @@ static inline LogicalResult materializeRawCodirDependency(Value dep,
                                           alloc.getDynamicSizes(), replacement)))
       return failure();
   } else if (auto alloca = dyn_cast<memref::AllocaOp>(def)) {
-    if (failed(hasCodirPhysicalOwnerSlicePlan(planSource)
+    if (failed(hasCodirTileOwnerSlicePlan(planSource)
                    ? createDbBackedMemref(builder, alloca.getLoc(), memrefType,
                                           alloca.getDynamicSizes(), replacement,
                                           planSource)

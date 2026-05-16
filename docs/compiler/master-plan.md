@@ -168,9 +168,9 @@ Important current facts:
   materialization, not in late ARTS `CreateDbs` recovery.
 - CODIR may carry generic scheduling/distribution intent before storage is
   ready, but CODIR-to-ARTS only turns that intent into `internode` EDT routing
-  when physical owner/block storage metadata is present (or the codelet has no
-  DB dependencies). Planned-but-unmaterialized user DBs stay local instead of
-  creating remote coarse DB traffic.
+  when generic tile owner/shape storage metadata is present (or the codelet has
+  no DB dependencies). Planned-but-unmaterialized user DBs stay local instead
+  of creating remote coarse DB traffic.
 - The tensor raising/lowering passes (`RaiseMemrefToTensor`, `RaiseToTensor`,
   `LowerToMemref`) are no longer in any live pass list, but the source still
   lives under `lib/carts/dialect/sde/Transforms/state/raising/`. M3

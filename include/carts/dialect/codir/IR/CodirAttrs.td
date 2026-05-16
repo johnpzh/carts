@@ -58,7 +58,7 @@ def DistributionKindAttr
 
 def CodirIterationTopology
     : CartsCodir_I32Enum<"CodirIterationTopology",
-                         "CODIR physical iteration topology", [
+                         "CODIR logical iteration topology", [
       I32EnumAttrCase<"owner_strip", 0, "owner_strip">,
       I32EnumAttrCase<"owner_tile", 1, "owner_tile">,
       I32EnumAttrCase<"owner_tile_2d", 2, "owner_tile_2d">

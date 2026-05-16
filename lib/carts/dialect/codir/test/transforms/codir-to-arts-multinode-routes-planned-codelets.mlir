@@ -36,7 +36,7 @@ module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_worker
 // CODIR: codir.codelet
 // CODIR-SAME: iteration_topology = #codir.iteration_topology<owner_strip>
 // CODIR-SAME: logical_worker_slice = [16, 16]
-// CODIR-SAME: physical_block_shape = [16, 16]
+// CODIR-SAME: tile_shape = [16, 16]
 
 // ARTS-LABEL: func.func @planned_owner_strip_routes_by_chunk
 // ARTS: scf.for %[[IV:.*]] =

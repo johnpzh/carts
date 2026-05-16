@@ -30,7 +30,7 @@ struct ConvertCodirToArtsPass
     return codelet.getDistributionKindAttr() ||
            codelet.getIterationTopologyAttr() ||
            codelet.getLogicalWorkerSliceAttr() ||
-           codelet.getPhysicalBlockShapeAttr();
+           codelet.getTileShapeAttr();
   }
 
   bool hasDistributedLaunchStoragePlan(codir::CodeletOp codelet) const {
@@ -38,7 +38,7 @@ struct ConvertCodirToArtsPass
       return false;
     if (codelet.getDeps().empty())
       return true;
-    return hasCodirPhysicalOwnerSlicePlan(codelet);
+    return hasCodirTileOwnerSlicePlan(codelet);
   }
 
   scf::ForOp findGenericWorkerDispatchLoop(codir::CodeletOp codelet) const {
@@ -247,7 +247,7 @@ struct ConvertCodirToArtsPass
       if (canUseCodirOwnerSliceForAlloc(codelet, alloc) &&
           !codelet.getParams().empty()) {
         if (std::optional<int64_t> blockSize =
-                getFirstPositiveI64(codelet.getPhysicalBlockShapeAttr())) {
+                getFirstPositiveI64(codelet.getTileShapeAttr())) {
           Value blockSizeValue = createConstantIndex(builder, loc, *blockSize);
           Value base = codelet.getParams().back();
           Value blockIndex =
