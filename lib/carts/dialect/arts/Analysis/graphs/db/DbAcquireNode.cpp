@@ -516,7 +516,7 @@ AccessPattern DbAcquireNode::getAccessPattern() const {
 }
 
 ///===----------------------------------------------------------------------===///
-/// Remaining methods (print, worker-indexed, disjoint, validation)
+/// Remaining methods (print, worker-indexed, disjoint)
 ///===----------------------------------------------------------------------===///
 
 bool DbAcquireNode::isWorkerIndexedAccess() const {
@@ -541,58 +541,4 @@ bool DbAcquireNode::isWorkerIndexedAccess() const {
     return false;
 
   return isa<BlockArgument>(partitionIdx);
-}
-
-bool DbAcquireNode::accessIndexDependsOn(Value idx) {
-  if (!idx)
-    return false;
-
-  DenseMap<DbRefOp, SetVector<Operation *>> dbRefToMemOps;
-  collectAccessOperations(dbRefToMemOps);
-
-  for (auto &[dbRef, memOps] : dbRefToMemOps) {
-    for (Operation *memOp : memOps) {
-      SmallVector<Value> fullChain =
-          DbUtils::collectFullIndexChain(dbRef, memOp);
-      for (Value chainIdx : fullChain) {
-        if (ValueAnalysis::dependsOn(chainIdx, idx))
-          return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-bool DbAcquireNode::validateElementWisePartitioning() {
-  auto partitionIndices = dbAcquireOp.getPartitionIndices();
-  if (partitionIndices.empty())
-    return true;
-
-  /// Check 1: Do partition indices come from a loop with step > 1?
-  /// If so, this is a block-wise pattern (e.g., for k_block = 0 to N step 16)
-  LoopAnalysis *loopAnalysis = analysis ? analysis->getLoopAnalysis() : nullptr;
-  for (Value idx : partitionIndices) {
-    if (!loopAnalysis)
-      break;
-    if (LoopNode *drivingLoop = loopAnalysis->findEnclosingLoopDrivenBy(
-            dbAcquireOp.getOperation(), idx)) {
-      auto step = drivingLoop->getStepConstant();
-      if (step && *step > 1) {
-        ARTS_DEBUG("  Block-wise pattern detected: loop step = "
-                   << *step << " for index " << idx);
-        return false;
-      }
-    }
-  }
-
-  /// Check 2: Do the partition indices appear in EDT body accesses?
-  for (Value idx : partitionIndices) {
-    if (!accessIndexDependsOn(idx)) {
-      ARTS_DEBUG("  Partition index " << idx << " not found in access chain");
-      return false;
-    }
-  }
-
-  return true;
 }

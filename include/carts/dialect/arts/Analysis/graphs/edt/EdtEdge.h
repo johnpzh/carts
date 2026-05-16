@@ -11,7 +11,6 @@
 #include "carts/dialect/arts/Analysis/graphs/base/EdgeBase.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include <cstdint>
-#include <string>
 
 namespace mlir {
 namespace carts::arts {
@@ -39,16 +38,9 @@ public:
 
   NodeBase *getFrom() const override { return from; }
   NodeBase *getTo() const override { return to; }
-  EdgeKind getKind() const override { return EdgeKind::Dep; }
-  StringRef getType() const override { return typeLabel; }
-
-  static bool classof(const EdgeBase *E) {
-    return E->getKind() == EdgeKind::Dep;
-  }
 
 private:
   NodeBase *from, *to;
-  std::string typeLabel;
 };
 
 } // namespace carts::arts

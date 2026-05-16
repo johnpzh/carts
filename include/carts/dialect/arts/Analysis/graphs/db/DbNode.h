@@ -259,7 +259,6 @@ public:
   const DenseSet<EdgeBase *> &getOutEdges() const override { return outEdges; }
 
   DbAllocNode *getParent() const { return rootAlloc; }
-  NodeBase *getDirectParent() const { return parent; }
   DbAllocNode *getRootAlloc() const { return rootAlloc; }
   DbAnalysis *getAnalysis() const { return analysis; }
 
@@ -328,15 +327,6 @@ public:
   /// Check if this acquire uses worker-indexed pattern: offsets[%workerId] with
   /// sizes[1]. This pattern is inherently disjoint across workers.
   bool isWorkerIndexedAccess() const;
-
-  /// Check if any access index within this acquire depends on the given value.
-  /// Used to validate that partition indices match actual memory accesses.
-  bool accessIndexDependsOn(Value idx);
-
-  /// Validate that element-wise partition indices match actual accesses.
-  /// Returns false if this is a block-wise pattern (indices are block corners,
-  /// but accesses span a range) - indicating we should fall back to block mode.
-  bool validateElementWisePartitioning();
 
   /// Internal state accessors used by extracted helper classes.
   /// These are not part of the public API and should not be called directly.

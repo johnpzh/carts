@@ -39,9 +39,6 @@ public:
   /// Invalidate internal caches
   void invalidate() override;
 
-  /// Convenience: get EDT node by op (derives parent func internally).
-  EdtNode *getEdtNode(EdtOp op);
-
   /// Expose sub-analyses so that EdtNode / EdtGraph can reach them
   /// without storing a raw AnalysisManager pointer.
   LoopAnalysis &getLoopAnalysis();

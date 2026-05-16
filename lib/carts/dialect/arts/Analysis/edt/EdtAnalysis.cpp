@@ -7,7 +7,6 @@
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtGraph.h"
-#include "carts/dialect/arts/Analysis/graphs/edt/EdtNode.h"
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 
@@ -65,13 +64,6 @@ void EdtAnalysis::invalidate() {
     if (kv.second)
       kv.second->invalidate();
   edtGraphs.clear();
-}
-
-EdtNode *EdtAnalysis::getEdtNode(EdtOp op) {
-  auto func = op->getParentOfType<func::FuncOp>();
-  if (!func)
-    return nullptr;
-  return getOrCreateEdtGraph(func).getEdtNode(op);
 }
 
 LoopAnalysis &EdtAnalysis::getLoopAnalysis() {
