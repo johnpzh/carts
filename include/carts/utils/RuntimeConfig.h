@@ -68,7 +68,6 @@ public:
   bool isLocalExecution() const {
     return nodeCount == 1 && nodes.size() == 1 && nodes[0] == "localhost";
   }
-  int getTotalWorkerThreads() const { return getRuntimeTotalWorkers(); }
 
   /// Runtime worker count per node used by ARTS scheduling.
   /// `worker_threads` is already the worker count on multi-node runs.
@@ -95,10 +94,6 @@ public:
       return ExecutionMode::IntraNode;
     return ExecutionMode::SingleThreaded;
   }
-
-  /// Total parallelism (for threshold calculations)
-  int getTotalParallelism() const { return getRuntimeTotalWorkers(); }
-
   /// Should chunking be prioritized? (true for distributed execution)
   bool shouldPrioritizeChunking() const { return nodeCount > 1; }
 

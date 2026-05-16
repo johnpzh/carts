@@ -11,7 +11,7 @@
 ///    deps
 /// 4. Insert parameter/dependency unpacking in outlined function
 /// 5. Replace EDT with edt_create call returning GUID
-/// 6. Add dependency management (record_in_dep, increment_out_latch)
+/// 6. Add dependency management (record_in_dep)
 ///
 /// Dep contract (before/after):
 ///   BEFORE:
@@ -328,7 +328,6 @@ void EdtLoweringPass::gatherLowerableTaskEdts(
       ARTS_DEBUG("Demoting non-task EDT to task: " << edtOp);
       ++numEdtsDemotedToTask;
       edtOp.setType(EdtType::task);
-      arts::setWorkers(edtOp.getOperation(), 0);
       setNowait(edtOp, false);
     }
     taskEdts.push_back(edtOp);
@@ -351,7 +350,6 @@ void EdtLoweringPass::gatherLowerableTaskEdts(
 ///   %param_pack = arts.edt_param_pack ...
 ///   %edt_guid = arts.edt_create %param_pack, %dep_count, %route
 ///   arts.record_in_dep %edt_guid, %dep
-///   arts.increment_out_latch %edt_guid
 ///===----------------------------------------------------------------------===///
 LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
   OpBuilder::InsertionGuard IG(AC->getBuilder());
@@ -952,13 +950,12 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
 ///===----------------------------------------------------------------------===///
 /// Insert dependency management operations
 ///
-/// Adds runtime dependency tracking operations (record_in_dep,
-/// increment_out_latch) for EDT execution. Determines access mode based on
-/// dependency source and extracts GUIDs appropriately. Example:
+/// Adds runtime dependency tracking operations for EDT execution. Determines
+/// access mode based on dependency source and extracts GUIDs appropriately.
+/// Example:
 ///   EDT with input deps %d1, %d2 and output deps %d3
 ///   becomes: arts.rec_dep %edt_guid, [%d1_guid, %d2_guid, %d3_guid]
 ///   {access_mode = direct}
-///            arts.inc_dep %edt_guid, [%d3_guid] {access_mode = direct}
 ///===----------------------------------------------------------------------===///
 LogicalResult
 EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,

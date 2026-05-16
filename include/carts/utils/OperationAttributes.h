@@ -9,7 +9,6 @@
 #include "mlir/IR/Operation.h"
 #include "llvm/ADT/StringRef.h"
 #include <cstdint>
-#include <limits>
 #include <optional>
 
 namespace mlir {
@@ -31,7 +30,6 @@ namespace Operation {
 using namespace llvm;
 
 /// Common ARTS attributes
-constexpr StringLiteral Workers = "workers";
 constexpr StringLiteral ArtsId = "arts.id";
 constexpr StringLiteral ArtsCreateId = "arts.create_id";
 constexpr StringLiteral MetadataOriginId = "arts.metadata_origin_id";
@@ -711,28 +709,6 @@ inline void setDistributedDbAllocation(Operation *op, bool enabled) {
     return;
   }
   op->removeAttr(AttrNames::Operation::Distributed);
-}
-
-inline std::optional<int64_t> getWorkers(Operation *op) {
-  if (!op)
-    return std::nullopt;
-  if (auto attr = op->getAttrOfType<IntegerAttr>(AttrNames::Operation::Workers))
-    return attr.getInt();
-  return std::nullopt;
-}
-
-inline void setWorkers(Operation *op, int64_t workers) {
-  if (!op)
-    return;
-  if (workers <= 0) {
-    op->removeAttr(AttrNames::Operation::Workers);
-    return;
-  }
-  int64_t clamped =
-      std::min<int64_t>(workers, std::numeric_limits<int32_t>::max());
-  op->setAttr(
-      AttrNames::Operation::Workers,
-      IntegerAttr::get(IntegerType::get(op->getContext(), 32), clamped));
 }
 
 inline bool isLocalityOnly(Operation *op) {

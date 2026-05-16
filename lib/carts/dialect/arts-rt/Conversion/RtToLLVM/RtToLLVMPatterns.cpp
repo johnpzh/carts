@@ -1385,21 +1385,6 @@ private:
   }
 };
 
-/// Pattern to convert arts.increment_dep operations.
-/// In arts v2, the latch mechanism has been removed. IncrementDepOp is now a
-/// no-op that simply gets erased during lowering.
-struct IncrementDepPattern : public ArtsRtToLLVMPattern<IncrementDepOp> {
-  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
-
-  LogicalResult matchAndRewrite(IncrementDepOp op,
-                                PatternRewriter &rewriter) const override {
-    ARTS_INFO("Erasing IncrementDep Op (latch removed in v2) " << op);
-    rewriter.eraseOp(op);
-    ++numDepOpsConverted;
-    return success();
-  }
-};
-
 ///===----------------------------------------------------------------------===///
 /// EDT Patterns
 ///===----------------------------------------------------------------------===///
@@ -1885,7 +1870,7 @@ void populateRtToLLVMPatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
 
   /// Dep patterns
   patterns.add<DepGepOpPattern>(context, AC);
-  patterns.add<RecordDepPattern, IncrementDepPattern>(context, AC);
+  patterns.add<RecordDepPattern>(context, AC);
   patterns.add<DepDbAcquireOpPattern>(context, AC);
   patterns.add<DbGepOpPattern>(context, AC);
 

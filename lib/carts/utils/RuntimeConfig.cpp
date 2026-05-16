@@ -211,7 +211,7 @@ std::string RuntimeConfig::getMachineDescription() const {
   oss << "  Configured Worker Threads: " << threads << " per node\n";
   oss << "  Runtime Workers: " << getRuntimeWorkersPerNode() << " per node\n";
   oss << "  Total Nodes: " << nodeCount << "\n";
-  oss << "  Total Worker Threads: " << getTotalWorkerThreads() << "\n";
+  oss << "  Total Worker Threads: " << getRuntimeTotalWorkers() << "\n";
 
   if (hasGpuSupport()) {
     oss << "  GPU Support: Enabled (" << gpu << " GPUs)\n";

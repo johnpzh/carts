@@ -94,7 +94,6 @@ Always use centralized constants:
 
 ```cpp
 AttrNames::Operation::ArtsId
-AttrNames::Operation::Workers
 AttrNames::Operation::DepPattern
 AttrNames::Operation::PartitionMode
 AttrNames::Operation::Stencil::StencilCenterOffset

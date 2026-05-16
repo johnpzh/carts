@@ -141,21 +141,6 @@ def RecordDepOp
   }];
 }
 
-def IncrementDepOp : ArtsRt_Op<"inc_dep", [MemoryEffects<[MemWrite]>]> {
-  let summary = "Increment out-latches for EDT dependencies";
-  let description = [{
-    Increments latch count for out-dependencies of an EDT launch.
-  }];
-  let arguments = (ins
-    I64:$edt_guid,
-    Variadic<AnyType>:$datablocks,
-    DefaultValuedAttr<DepAccessModeAttr,
-                      "::mlir::carts::arts_rt::DepAccessMode::direct">:$access_mode
-  );
-  let assemblyFormat =
-      "$edt_guid `(` $datablocks `:` type($datablocks) `)` attr-dict";
-}
-
 def DepGepOp : ArtsRt_Op<"dep_gep", [Pure, AttrSizedOperandSegments]> {
   let summary = "Extract a dependency entry pointer pair";
   let arguments = (ins AnyType:$dep_struct, Index:$offset,

@@ -232,9 +232,6 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
   if ((op.getPhysicalOwnerDimsAttr() && op.getPhysicalBlockShapeAttr()) ||
       costModel.getLogicalWorkerCapacity() <= 1)
     return;
-  if (auto plannedWorkers = getWorkers(op.getOperation());
-      plannedWorkers && *plannedWorkers <= 1)
-    return;
   auto classification = op.getStructuredClassification();
   bool isStencil =
       classification &&
@@ -330,10 +327,6 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
         *classification == sde::SdeStructuredClassification::matmul)
       return;
   }
-  if (auto plannedWorkers = getWorkers(op.getOperation());
-      plannedWorkers && *plannedWorkers <= 1)
-    return;
-
   std::optional<sde::LoopIndexedOutputPlan> outputPlan =
       sde::findLoopIndexedOutputPlan(op);
   if (!outputPlan || outputPlan->shape.empty() || outputPlan->shape.front() <= 0)
@@ -379,10 +372,6 @@ static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
   if (!classification ||
       *classification != sde::SdeStructuredClassification::matmul)
     return;
-  if (auto plannedWorkers = getWorkers(op.getOperation());
-      plannedWorkers && *plannedWorkers <= 1)
-    return;
-
   std::optional<sde::LoopIndexedOutputPlan> outputPlan =
       sde::findLoopIndexedOutputPlan(op);
   if (!outputPlan || outputPlan->shape.size() < 2 || outputPlan->shape[0] <= 0 ||
@@ -423,9 +412,6 @@ static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
   auto classification = op.getStructuredClassification();
   if (!classification ||
       *classification != sde::SdeStructuredClassification::reduction)
-    return;
-  if (auto plannedWorkers = getWorkers(op.getOperation());
-      plannedWorkers && *plannedWorkers <= 1)
     return;
   std::optional<int64_t> tripCount = getStaticTripCount(op.getOperation());
   if (!tripCount || *tripCount <= 0)
