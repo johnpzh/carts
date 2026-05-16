@@ -25,7 +25,7 @@ struct VerifyLoweredPass
     bool found = false;
     auto *artsRtDialect = getOperation()
                               ->getContext()
-                              ->getLoadedDialect<arts::rt::ArtsRtDialect>();
+                              ->getLoadedDialect<arts_rt::ArtsRtDialect>();
     getOperation().walk([&](Operation *op) {
       if (isArtsOp(op)) {
         op->emitError("high-level ARTS operation survived past "

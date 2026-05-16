@@ -402,7 +402,7 @@ findBlockedNeighborCacheHoistLoop(scf::ForOp loop, int varyingIndex,
   return hoistLoop;
 }
 
-Value buildDepPtrLoad(OpBuilder &builder, Location loc, rt::DepGepOp depGep,
+Value buildDepPtrLoad(OpBuilder &builder, Location loc, DepGepOp depGep,
                       ArrayRef<Value> indices) {
   auto newDepGep = DepGepOp::create(
       builder, loc, depGep.getGuid().getType(), depGep.getPtr().getType(),
@@ -412,7 +412,7 @@ Value buildDepPtrLoad(OpBuilder &builder, Location loc, rt::DepGepOp depGep,
 }
 
 Value buildGuardedDepPtrLoad(OpBuilder &builder, Location loc,
-                             rt::DepGepOp depGep, ArrayRef<Value> indices,
+                             DepGepOp depGep, ArrayRef<Value> indices,
                              Value guard, Value fallbackPtr) {
   if (!guard)
     return buildDepPtrLoad(builder, loc, depGep, indices);

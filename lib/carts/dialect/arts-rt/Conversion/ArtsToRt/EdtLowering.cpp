@@ -1533,8 +1533,8 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
         users.push_back(use.getOwner());
     }
 
-    const bool hasDbGepUsers = llvm::any_of(
-        users, [](Operation *op) { return isa<arts::DbGepOp>(op); });
+    const bool hasDbGepUsers =
+        llvm::any_of(users, [](Operation *op) { return isa<DbGepOp>(op); });
     const bool useInvariantSingleDepView =
         indicesAlreadySliceRelative &&
         (depSizes.empty() ||

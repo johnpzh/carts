@@ -9,6 +9,7 @@
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVMInternal.h"
 
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/utils/OperationAttributes.h"
@@ -47,6 +48,7 @@ static llvm::Statistic numMiscOpsConverted{
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
+using namespace mlir::carts::arts_rt;
 using namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm;
 
 ///===----------------------------------------------------------------------===///

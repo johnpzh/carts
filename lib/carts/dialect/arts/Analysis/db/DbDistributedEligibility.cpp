@@ -113,12 +113,6 @@ static bool hasOnlyAllowedHandleUsers(Value rootHandle) {
         continue;
       }
 
-      if (auto dbGepOp = dyn_cast<DbGepOp>(user)) {
-        if (dbGepOp.getBasePtr() == value)
-          enqueue(dbGepOp.getResult());
-        continue;
-      }
-
       if (auto unrealized = dyn_cast<UnrealizedConversionCastOp>(user)) {
         if (llvm::is_contained(unrealized.getInputs(), value))
           for (Value result : unrealized->getResults())

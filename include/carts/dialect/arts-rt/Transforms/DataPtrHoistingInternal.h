@@ -119,11 +119,13 @@ Value buildLoopInvariantI1Not(OpBuilder &builder, Location loc, Value cond);
 Value buildLoopInvariantI1And(OpBuilder &builder, Location loc, Value lhs,
                               Value rhs);
 
-Value buildDepPtrLoad(OpBuilder &builder, Location loc, rt::DepGepOp depGep,
+Value buildDepPtrLoad(OpBuilder &builder, Location loc,
+                      ::mlir::carts::arts_rt::DepGepOp depGep,
                       ArrayRef<Value> indices);
 
 Value buildGuardedDepPtrLoad(OpBuilder &builder, Location loc,
-                             rt::DepGepOp depGep, ArrayRef<Value> indices,
+                             ::mlir::carts::arts_rt::DepGepOp depGep,
+                             ArrayRef<Value> indices,
                              Value guard, Value fallbackPtr);
 
 Value buildNormalizedForceZeroCond(OpBuilder &builder, Location loc,

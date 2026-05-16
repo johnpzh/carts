@@ -44,6 +44,7 @@ namespace mlir::carts::arts_rt {
 
 #include "carts/utils/Debug.h"
 #include "carts/utils/ValueAnalysis.h"
+#include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMInterfaces.h"
@@ -58,6 +59,7 @@ ARTS_DEBUG_SETUP(alias_scope_gen);
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
+using namespace mlir::carts::arts_rt;
 
 namespace {
 

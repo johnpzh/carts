@@ -49,7 +49,7 @@ struct NormalizedElementSlice {
 
 struct DepSourceInfo {
   DbAcquireOp dbAcquire;
-  rt::DepDbAcquireOp depDbAcquire;
+  ::mlir::carts::arts_rt::DepDbAcquireOp depDbAcquire;
 };
 
 ///===----------------------------------------------------------------------===//

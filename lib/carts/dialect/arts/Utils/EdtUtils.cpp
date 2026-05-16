@@ -173,10 +173,6 @@ Value EdtUtils::traceCapturedDbHandle(Value value) {
       value = dbRef.getSource();
       continue;
     }
-    if (auto dbGep = dyn_cast<DbGepOp>(defOp)) {
-      value = dbGep.getBasePtr();
-      continue;
-    }
     if (auto cast = dyn_cast<memref::CastOp>(defOp)) {
       value = cast.getSource();
       continue;

@@ -6,6 +6,7 @@
 
 #include "carts/utils/ValueAnalysis.h"
 #include "carts/Dialect.h"
+#include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -923,7 +924,7 @@ static bool isDerivedFromPtrImpl(Value value, Value source,
 
   if (auto dbAcquire = dyn_cast<DbAcquireOp>(defOp))
     return trace(dbAcquire.getSourcePtr());
-  if (auto dbGep = dyn_cast<DbGepOp>(defOp))
+  if (auto dbGep = dyn_cast<::mlir::carts::arts_rt::DbGepOp>(defOp))
     return trace(dbGep.getBasePtr());
   if (auto gepOp = dyn_cast<LLVM::GEPOp>(defOp))
     return trace(gepOp.getBase());
@@ -1112,7 +1113,7 @@ static Value getUnderlyingValueImpl(Value v, SmallPtrSet<Value, 16> &visited,
 
   if (auto dbAcquire = dyn_cast<DbAcquireOp>(op))
     return trace(dbAcquire.getSourcePtr());
-  if (auto dbGep = dyn_cast<DbGepOp>(op))
+  if (auto dbGep = dyn_cast<::mlir::carts::arts_rt::DbGepOp>(op))
     return trace(dbGep.getBasePtr());
   if (auto dbRef = dyn_cast<DbRefOp>(op))
     return trace(dbRef.getSource());

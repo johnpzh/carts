@@ -19,6 +19,7 @@
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
+using namespace mlir::carts::arts_rt;
 
 namespace mlir::carts::arts::edt_lowering {
 

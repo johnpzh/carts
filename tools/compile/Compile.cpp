@@ -669,7 +669,7 @@ configurePassManager(PassManager &pm,
 /// Register standard MLIR dialects, passes, and translations.
 void registerDialects(DialectRegistry &registry) {
   registry.insert<polygeist::PolygeistDialect, arts::ArtsDialect,
-                  arts::rt::ArtsRtDialect, sde::CartsSdeDialect,
+                  arts_rt::ArtsRtDialect, sde::CartsSdeDialect,
                   codir::CartsCodirDialect>();
   registerAllPasses();
   registerVerifyArtsObjectsOnly();
@@ -705,7 +705,7 @@ void initializeContext(MLIRContext &context) {
   context.getOrLoadDialect<bufferization::BufferizationDialect>();
   context.getOrLoadDialect<polygeist::PolygeistDialect>();
   context.getOrLoadDialect<arts::ArtsDialect>();
-  context.getOrLoadDialect<arts::rt::ArtsRtDialect>();
+  context.getOrLoadDialect<arts_rt::ArtsRtDialect>();
   context.getOrLoadDialect<sde::CartsSdeDialect>();
   context.getOrLoadDialect<codir::CartsCodirDialect>();
   context.getOrLoadDialect<cf::ControlFlowDialect>();
