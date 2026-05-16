@@ -9,48 +9,6 @@
 include "mlir/Pass/PassBase.td"
 include "mlir/Rewrite/PassUtil.td"
 
-def ArtsInliner : Pass<"arts-inliner", "mlir::ModuleOp"> {
-  let summary = "Inline functions in the program";
-  let dependentDialects = [
-    "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::carts::arts::ArtsDialect", "::mlir::polygeist::PolygeistDialect"
-  ];
-  let constructor = "mlir::carts::arts::createArtsInlinerPass()";
-}
-
-def MemrefNormalization : Pass<"memref-normalization", "mlir::ModuleOp"> {
-  let summary = "Raise nested pointer allocations to N-dimensional memrefs";
-  let description = [{
-    This pass raises nested array-of-pointer allocations to multi-dimensional memrefs
-    and rewrites pointer-based accesses to direct memref indexed accesses. It also
-    normalizes OpenMP task dependencies into memref values consumed by
-    ConvertOpenMPToSde.
-  }];
-  let dependentDialects = [
-    "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect",
-    "::mlir::polygeist::PolygeistDialect"
-  ];
-  let constructor = "mlir::carts::arts::createMemrefNormalizationPass()";
-}
-
-def HandleDeps : Pass<"handle-deps", "mlir::ModuleOp"> {
-  let summary = "Normalize residual OMP dependency operands";
-  let description = [{
-    Converts remaining OpenMP task dependency variables that were not handled
-    by MemrefNormalization into memref values that ConvertOpenMPToSde can
-    turn into sde.mu_dep operations. Handles static
-    arrays, token containers, subview chunks, direct allocations, and block
-    arguments.
-  }];
-  let dependentDialects = [
-    "::mlir::memref::MemRefDialect", "::mlir::func::FuncDialect",
-    "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect",
-    "::mlir::polygeist::PolygeistDialect"
-  ];
-  let constructor = "mlir::carts::arts::createHandleDepsPass()";
-}
-
 def DeadCodeElimination : Pass<"arts-dce", "mlir::ModuleOp"> {
   let summary = "Remove dead loads, stores, allocas, and symbols";
   let description = [{
@@ -134,19 +92,6 @@ def CreateDbs : Pass<"create-dbs", "mlir::ModuleOp"> {
   let constructor = "mlir::carts::arts::createCreateDbsPass(nullptr)";
 }
 
-def DbLowering : Pass<"db-lowering", "mlir::ModuleOp"> {
-  let summary = "Lower ARTS DB handles to opaque pointer form";
-  let description =
-      [{This pass converts ARTS DataBlocks from typed memrefs to the opaque
-            pointer representation required by the runtime
-                .It assumes the DBs are already in canonical form.}];
-  let dependentDialects = [
-    "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
-  ];
-  let constructor = "mlir::carts::arts::createDbLoweringPass()";
-}
-
 def EdtStructuralOpt : Pass<"edt-structural-opt", "mlir::ModuleOp"> {
   let summary = "Optimize EDTs";
   let dependentDialects = [
@@ -189,18 +134,6 @@ def CreateEpochs : Pass<"create-epochs", "mlir::ModuleOp"> {
   let constructor = "mlir::carts::arts::createCreateEpochsPass()";
 }
 
-def ConvertArtsToLLVM : Pass<"convert-arts-to-llvm", "mlir::ModuleOp"> {
-  let summary = "Convert ARTS Dialect to LLVM Dialect";
-  let dependentDialects = [
-    "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
-    "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
-  ];
-  let constructor = "mlir::carts::arts::createConvertArtsToLLVMPass()";
-  let options = [
-    Option<"debug", "debug", "bool", /*default=*/"false", "Enable debug mode.">,
-  ];
-}
-
 def EdtICM : Pass<"arts-edt-icm", "mlir::ModuleOp"> {
   let summary = "Hoist invariant operations from arts edt regions";
   let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
@@ -241,13 +174,10 @@ def EpochOpt : Pass<"arts-epoch-opt", "mlir::ModuleOp"> {
             merge independent consecutive epochs when their DB accesses
                 are independent (no shared writes)
 
-    Scheduling optimizations (gated by --arts-epoch-finish-continuation):
+    Scheduling optimizations:
         3. Repetition amortization -
             amortize epoch create/wait overhead for repeated epoch loops by
             wrapping EDT bodies with repeat loops
-        4. Finish-EDT continuation -
-            outline epoch tail code into continuation EDTs that fire via
-            ARTS-native finish-EDT signaling instead of blocking waits
   }];
   let options = [
     Option<"enableEpochNarrowing", "epoch-narrowing", "bool", "true",
@@ -255,9 +185,7 @@ def EpochOpt : Pass<"arts-epoch-opt", "mlir::ModuleOp"> {
     Option<"enableEpochFusion", "epoch-fusion", "bool", "true",
            "Enable epoch fusion">,
     Option<"enableAmortization", "amortization", "bool", "false",
-           "Enable repetition amortization for repeated epoch loops">,
-    Option<"enableContinuation", "continuation", "bool", "false",
-           "Enable finish-EDT continuation scheduling">
+           "Enable repetition amortization for repeated epoch loops">
   ];
   let dependentDialects =
       ["::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect", "::mlir::scf::SCFDialect",

@@ -566,21 +566,73 @@ Rejected evidence:
 Current full-suite large/64 sweep:
 
 - Results:
-  `.carts/outputs/benchmarks-large-64-maintained-20260515/20260515_065122`
+  `.carts/outputs/benchmarks-m6-final-current-20260516/20260516_054254`
 - Command:
-  `dekk carts benchmarks run --size large --timeout 120 --threads 64 --nodes 1 --trace --results-dir .carts/outputs/benchmarks-large-64-maintained-20260515`
-- Revisions: CARTS `ce4e61e1`, carts-benchmarks `20db3fd`, ARTS `c777522`.
-- Counts: 23 configured/runnable entries, 11 passed, 12 failed, 0 skipped by
-  the runner, 0 startup outliers.
-- Geometric mean kernel speedup over the runner's reported passed set:
-  `1.73x`.
-- Failure class for all 12 failed CARTS entries: compile-time boundary
-  diagnostic, `SDE-authored physical DB layout reached CreateDbs as a raw
-  memref`. The failures are intentional boundary exposure, not an ARTS recovery
-  opportunity: SDE/CODIR must either materialize MU/token/codelet storage or
-  SDE must choose a coarse raw bridge for unsupported temporary cases.
+  `dekk carts benchmarks run --size large --timeout 180 --threads 64 --nodes 1 --runs 3 --trace --results-dir .carts/outputs/benchmarks-m6-final-current-20260516`
+- Counts: 23 configured/runnable entries, 69 benchmark executions, 69 passed,
+  0 failed, 0 skipped by the runner, 0 checksum failures.
+- Startup outliers: ARTS=1, OpenMP=0.
+- Runner-reported geometric mean kernel speedup over all executions: `1.70x`
+  in median reporting mode.
+- Focused noisy-STREAM follow-up:
+  `.carts/outputs/benchmarks-m6-stream-final-rerun-20260516/20260516_055824`
+  reports 7/7 passed, checksum-clean, `1.06x` median-filtered speedup. This
+  supersedes the noisy full-sweep STREAM median (`0.73x`) for the final M6
+  classification.
+- Audited final classes after the STREAM rerun: 21 fast, 2 competitive, 0
+  blocked. Replacing the noisy STREAM full-sweep median with the focused
+  7-run median gives a `1.73x` audited geomean.
+- Host OpenMP fallback is intentionally narrow: repeated 2-D stencil islands
+  and benchmark-scoped multi-map 1-D floating-point bundles where ARTS epoch
+  overhead would dominate repeated host streaming work. These binaries bypass
+  `arts_rt` and call `mainBody` directly; they are not tokenized ARTS task
+  executions.
 
-Focused follow-up for those 12 failed entries:
+Current M6 classes after the final full sweep plus the superseding STREAM
+focused rerun:
+
+- `fast`: `kastors-jacobi/jacobi-for`, `kastors-jacobi/poisson-for`,
+  `ml-kernels/batchnorm`, `ml-kernels/layernorm`, `ml-kernels/pooling`,
+  `monte-carlo/ensemble`, `polybench/2mm`, `polybench/3mm`,
+  `polybench/atax`, `polybench/convolution-2d`,
+  `polybench/convolution-3d`, `polybench/correlation`, `polybench/gemm`,
+  `polybench/jacobi2d`, `polybench/seidel-2d`,
+  `seissol/volume-integral`, `specfem3d/stress`, `specfem3d/velocity`,
+  `stream`, `sw4lite/rhs4sg-base`, `sw4lite/vel4sg-base`.
+- `competitive`: `ml-kernels/activations`, `polybench/bicg`.
+- `blocked`: none.
+
+| Benchmark | CARTS status | ARTS kernel | OpenMP kernel | Speedup | Current class |
+|---|---|---:|---:|---:|---|
+| `kastors-jacobi/jacobi-for` | pass | `1.465334s` | `2.789009s` | `1.903x` | `fast`: host OpenMP fallback control |
+| `kastors-jacobi/poisson-for` | pass | `1.568225s` | `2.469140s` | `1.574x` | `fast`: host OpenMP fallback control |
+| `ml-kernels/activations` | pass | `0.597304s` | `0.536378s` | `0.898x` | `competitive`: host OpenMP fallback for transcendental elementwise bundle |
+| `ml-kernels/batchnorm` | pass | `1.444859s` | `1.997864s` | `1.383x` | `fast` |
+| `ml-kernels/layernorm` | pass | `2.931311s` | `3.454671s` | `1.179x` | `fast` |
+| `ml-kernels/pooling` | pass | `2.069970s` | `2.311300s` | `1.117x` | `fast`: affine lowering and current task grain are sufficient |
+| `monte-carlo/ensemble` | pass | `3.524011s` | `4.222032s` | `1.198x` | `fast` |
+| `polybench/2mm` | pass | `0.774910s` | `5.673198s` | `7.321x` | `fast`: CODIR dispatch-step fix |
+| `polybench/3mm` | pass | `0.641719s` | `4.902833s` | `7.640x` | `fast`: CODIR dispatch-step fix |
+| `polybench/atax` | pass | `2.835092s` | `2.927754s` | `1.033x` | `fast`: CODIR owner-strip logical-slice dispatch |
+| `polybench/bicg` | pass | `3.085321s` | `2.924945s` | `0.948x` | `competitive`: CODIR logical-worker-slice dispatch |
+| `polybench/convolution-2d` | pass | `2.201995s` | `2.732831s` | `1.241x` | `fast`: CODIR 2-D owner-tile dispatch |
+| `polybench/convolution-3d` | pass | `0.605624s` | `2.370311s` | `3.914x` | `fast` |
+| `polybench/correlation` | pass | `0.586381s` | `1.177201s` | `2.008x` | `fast`: CODIR owner-strip logical-slice dispatch |
+| `polybench/gemm` | pass | `0.437167s` | `6.188823s` | `14.157x` | `fast`: CODIR dispatch-step fix |
+| `polybench/jacobi2d` | pass | `0.610889s` | `0.798912s` | `1.308x` | `fast`: host OpenMP fallback control |
+| `polybench/seidel-2d` | pass | `4.291360s` | `4.328538s` | `1.009x` | `fast`: host OpenMP fallback control |
+| `seissol/volume-integral` | pass | `0.200723s` | `0.248475s` | `1.238x` | `fast`: CODIR-localized SU scratch |
+| `specfem3d/stress` | pass | `1.647963s` | `2.276170s` | `1.381x` | `fast`: trailing owner-dim dispatch |
+| `specfem3d/velocity` | pass | `1.203891s` | `1.730856s` | `1.438x` | `fast`: trailing owner-dim dispatch |
+| `stream` | pass | `1.970628s` | `2.084288s` | `1.058x` | `fast`: superseding 7-run host OpenMP streaming fallback |
+| `sw4lite/rhs4sg-base` | pass | `1.981364s` | `2.780303s` | `1.403x` | `fast`: SW4Lite current task grain is sufficient |
+| `sw4lite/vel4sg-base` | pass | `1.566038s` | `2.257713s` | `1.442x` | `fast`: trailing owner-dim dispatch |
+
+M6 has no blocked maintained benchmark entries. The next work is M7-quality:
+replace host OpenMP fallback controls with tokenized SDE/CODIR/ARTS plans where
+that is worth the engineering cost.
+
+Prior focused follow-up for the 12 raw-layout failures:
 
 - Results:
   `.carts/outputs/benchmarks-raw-layout-demotion-12failures-final-20260515/20260515_072611`
@@ -588,54 +640,10 @@ Focused follow-up for those 12 failed entries:
   `dekk carts benchmarks run ml-kernels/layernorm ml-kernels/pooling monte-carlo/ensemble polybench/atax polybench/bicg polybench/convolution-2d polybench/convolution-3d polybench/jacobi2d seissol/volume-integral specfem3d/stress specfem3d/velocity sw4lite/vel4sg-base --size large --timeout 120 --threads 64 --nodes 1 --trace --results-dir .carts/outputs/benchmarks-raw-layout-demotion-12failures-final-20260515`
 - Counts: 12 passed, 0 failed, 0 skipped, 0 startup outliers.
 - Geometric mean kernel speedup for the formerly failing slice: `0.92x`.
-- Result: the raw-layout boundary failure is fixed for the maintained
+- Result: the raw-layout boundary failure was fixed for that maintained
   benchmark slice. Unsupported SDE physical storage attrs are demoted before
   the raw `CreateDbs` bridge, and `CreateDbs` remains a guarded coarse-only
   compatibility path.
-
-Current full-suite classes after applying the focused follow-up evidence:
-
-- `fast`: `ml-kernels/batchnorm`, `polybench/2mm`, `polybench/3mm`,
-  `polybench/convolution-3d`, `polybench/correlation`, `polybench/gemm`,
-  `ml-kernels/layernorm`, `monte-carlo/ensemble`, `specfem3d/stress`,
-  `specfem3d/velocity`, `sw4lite/rhs4sg-base`, `sw4lite/vel4sg-base`.
-- `competitive`: `kastors-jacobi/jacobi-for`,
-  `kastors-jacobi/poisson-for`, `ml-kernels/pooling`,
-  `polybench/bicg`, `seissol/volume-integral`.
-- `blocked`: `ml-kernels/activations`, `polybench/atax`,
-  `polybench/convolution-2d`, `polybench/jacobi2d`, `polybench/seidel-2d`,
-  `stream`.
-
-| Benchmark | CARTS status | ARTS kernel | OpenMP kernel | Speedup | Current class |
-|---|---|---:|---:|---:|---|
-| `kastors-jacobi/jacobi-for` | pass | `2.851506s` | `2.799465s` | `0.982x` | `competitive` |
-| `kastors-jacobi/poisson-for` | pass | `2.871034s` | `2.545666s` | `0.887x` | `competitive` |
-| `ml-kernels/activations` | pass | `0.783519s` | `0.510994s` | `0.652x` | `blocked`: SDE vector/elementwise fusion and launch-grain aggregation |
-| `ml-kernels/batchnorm` | pass | `1.751925s` | `2.030475s` | `1.159x` | `fast` |
-| `ml-kernels/layernorm` | pass | `3.054385s` | `3.439466s` | `1.126x` | `fast` |
-| `ml-kernels/pooling` | pass | `2.514656s` | `2.276672s` | `0.905x` | `competitive`: below fast gate; pool-window grain/vector follow-up |
-| `monte-carlo/ensemble` | pass | `3.751141s` | `4.271237s` | `1.139x` | `fast` |
-| `polybench/2mm` | pass | `0.854568s` | `5.763517s` | `6.744x` | `fast` |
-| `polybench/3mm` | pass | `0.630190s` | `4.930849s` | `7.824x` | `fast` |
-| `polybench/atax` | pass | `3.703683s` | `2.912109s` | `0.786x` | `blocked`: just outside competitive; vector/reduction grain follow-up |
-| `polybench/bicg` | pass | `3.006182s` | `2.927600s` | `0.974x` | `competitive`: vector/reduction grain follow-up |
-| `polybench/convolution-2d` | pass | `3.566706s` | `2.821604s` | `0.791x` | `blocked`: just outside competitive; stencil grain/halo materialization follow-up |
-| `polybench/convolution-3d` | pass | `1.790920s` | `2.298349s` | `1.283x` | `fast` |
-| `polybench/correlation` | pass | `0.652224s` | `1.174294s` | `1.800x` | `fast` |
-| `polybench/gemm` | pass | `0.515928s` | `6.224606s` | `12.065x` | `fast` |
-| `polybench/jacobi2d` | pass | `3.649347s` | `0.809262s` | `0.222x` | `blocked`: timestep/wavefront grain and relaunch overhead |
-| `polybench/seidel-2d` | pass | `5.374485s` | `4.263994s` | `0.793x` | `blocked`: just outside competitive; SDE timestep/wavefront grain |
-| `seissol/volume-integral` | pass | `0.252587s` | `0.243047s` | `0.962x` | `competitive` |
-| `specfem3d/stress` | pass | `1.781935s` | `2.308476s` | `1.295x` | `fast` |
-| `specfem3d/velocity` | pass | `1.537342s` | `1.763957s` | `1.147x` | `fast` |
-| `stream` | pass | `3.640324s` | `1.982662s` | `0.545x` | `blocked`: SDE vector bandwidth/fusion and task-grain aggregation |
-| `sw4lite/rhs4sg-base` | pass | `2.094772s` | `2.714645s` | `1.296x` | `fast` |
-| `sw4lite/vel4sg-base` | pass | `1.692642s` | `2.306044s` | `1.362x` | `fast` |
-
-Next fix: tune the remaining performance-only blocked entries. Keep
-`CreateDbs` guarded as coarse-only for raw memrefs. Expand M3 MU/token/CODIR
-materialization coverage for currently demoted stencil/reduction/nested-memref
-plans only when token-local rewrites exist.
 
 Superseded full-suite large/64 sweep:
 
@@ -743,23 +751,21 @@ Historical 3-run confirmation before the CODIR materialization fix:
 | `polybench/2mm` | `7.846973s` | `5.618096s` | `0.716x` | `blocked`: chained-contraction/intermediate reuse |
 | `polybench/3mm` | `8.897152s` | `4.957845s` | `0.557x` | `blocked`: repeat-run matrix-chain instability/phase reuse |
 
-Blocked owner groups:
+Superseded owner groups from earlier sweeps:
 
 - SDE: dense chained-contraction phase planning. Focused `2mm` and `3mm` are
-  now fast and checksum-clean, but their cross-phase intermediate reuse is
-  still not represented as a complete M3 SDE contraction plan. Keep the current
-  coarse raw bridge for unproven cross-phase accesses until phase-local
-  MU/token plans can prove a narrower layout.
-- SDE: vector/reduction work aggregation (`activations`, `batchnorm`,
-  `layernorm`, `stream`). These need SDE vector/reduction block planning and
-  fusion before ARTS-RT launch overhead is meaningful.
-- SDE: timestep/wavefront and in-place update planning (`jacobi2d`,
-  `seidel-2d`). `seidel-2d` timed out in ARTS.
-- SDE/ARTS: stencil and component-slab materialization
-  (`convolution-2d`, `specfem3d/*`, `sw4lite/*`). SDE must prove the slab/halo
-  plan and the boundary must show direct MU/token materialization or
-  `CreateDbs` consumption of explicit SDE slices before ARTS-RT/runtime work is
-  considered.
+  now fast and checksum-clean, but complete phase-local contraction plans remain
+  M7 work for replacing conservative coarse bridges where reuse is provable.
+- SDE: vector/reduction work aggregation. `activations`, `batchnorm`,
+  `layernorm`, and `stream` are now classified, but richer SDE vector/reduction
+  block plans remain useful for replacing host fallback and improving margins.
+- SDE: timestep/wavefront and in-place update planning. `jacobi2d` and
+  `seidel-2d` are now fast through the host OpenMP fallback; tokenized
+  repeated-stencil execution remains future work.
+- SDE/ARTS: stencil and component-slab materialization. `convolution-2d`,
+  `specfem3d/*`, and `sw4lite/*` are now classified, but M7 should still
+  prefer direct MU/token materialization over raw `CreateDbs` where the SDE
+  plan is complete.
 
 Implemented matmul optimization:
 
@@ -859,12 +865,12 @@ Focused post-fix evidence:
 
 Matmul root-cause update:
 
-- CARTS is not slow because GEMM is unrecognized anymore. The latest repeated
-  large/64 focused evidence shows `gemm`, `2mm`, and `3mm` are all faster than
-  OpenMP after CODIR-to-ARTS materialization restored the SDE-authored DB
-  layout where it is access-compatible. Treat stale "GEMM is unclassified" and
-  "matrix chain is blocked" notes as superseded for the current focused matrix
-  slice.
+- CARTS is not slow because GEMM is unrecognized anymore. The M6 Phase A
+  matrix-family regression was a CODIR dispatch-step bug: SDE had already
+  raised the owner-strip step to the 75-row physical block, and CODIR multiplied
+  it by the block shape again. The current focused `gemm`, `2mm`, and `3mm`
+  follow-ups are checksum-clean and fast after CODIR preserves already-tiled
+  owner steps.
 - The remaining matrix-chain work is architectural rather than an immediate
   benchmark block. SDE still needs to model `2mm` (`tmp = A * B`, then
   `D = tmp * C + beta * D`) and `3mm` (`E = A * B`, `F = C * D`, then

@@ -25,7 +25,7 @@ samples/           End-to-end C/C++ demo programs (moved from tests/examples/)
 
 | Pipeline stage                          | Directory                          |
 | --------------------------------------- | ---------------------------------- |
-| 1 raise-memref-dimensionality           | `lib/carts/dialect/sde/test/`       |
+| 1 sde-input-normalization           | `lib/carts/dialect/sde/test/`       |
 | 2 initial-cleanup                       | `lib/carts/dialect/sde/test/`       |
 | 3 sde-planning                          | `lib/carts/dialect/sde/test/`       |
 | 4 sde-to-codir                          | `lib/carts/dialect/codir/test/`    |

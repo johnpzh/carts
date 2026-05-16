@@ -8,6 +8,33 @@
 
 include "mlir/Pass/PassBase.td"
 
+def DbLowering : Pass<"db-lowering", "mlir::ModuleOp"> {
+  let summary = "Lower ARTS DB handles to runtime-shaped opaque pointers";
+  let description = [{
+    Converts ARTS DataBlocks from typed memrefs to the opaque pointer
+    representation required by the runtime ABI. The ARTS object graph must
+    already be canonical before this ARTS-RT lowering step runs.
+  }];
+  let dependentDialects = [
+    "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
+    "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
+  ];
+  let constructor = "mlir::carts::arts::createDbLoweringPass()";
+}
+
+def ConvertArtsToLLVM : Pass<"convert-arts-to-llvm", "mlir::ModuleOp"> {
+  let summary = "Lower runtime-shaped ARTS/ARTS-RT IR to LLVM dialect calls";
+  let dependentDialects = [
+    "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
+    "::mlir::carts::arts::ArtsDialect", "::mlir::carts::arts_rt::ArtsRtDialect",
+    "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
+  ];
+  let constructor = "mlir::carts::arts::createConvertArtsToLLVMPass()";
+  let options = [
+    Option<"debug", "debug", "bool", /*default=*/"false", "Enable debug mode.">,
+  ];
+}
+
 def DataPtrHoisting
     : Pass<"arts-data-ptr-hoisting", "mlir::ModuleOp"> {
   let summary =

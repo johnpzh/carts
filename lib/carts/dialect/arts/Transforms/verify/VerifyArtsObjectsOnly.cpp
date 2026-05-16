@@ -11,11 +11,21 @@
 #include "carts/passes/Passes.h.inc"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/ADT/StringRef.h"
 
 using namespace mlir;
 using namespace mlir::carts;
 
 namespace {
+
+constexpr llvm::StringLiteral kKeepHostOpenMP = "sde.keep_host_openmp";
+
+static bool isInsideHostOpenMPIsland(Operation *op) {
+  for (Operation *cur = op; cur; cur = cur->getParentOp())
+    if (cur->hasAttr(kKeepHostOpenMP))
+      return true;
+  return false;
+}
 
 static LogicalResult verifyArtsObjectsOnly(ModuleOp module) {
   auto *sdeDialect =
@@ -30,6 +40,8 @@ static LogicalResult verifyArtsObjectsOnly(ModuleOp module) {
     }
 
     if (op->getDialect() && op->getDialect()->getNamespace() == "omp") {
+      if (isInsideHostOpenMPIsland(op))
+        return;
       op->emitError() << "OpenMP operation '" << op->getName()
                       << "' remains after the CODIR-to-ARTS boundary";
       found = true;

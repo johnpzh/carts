@@ -61,7 +61,6 @@ LINK_LIBS PUBLIC
 ###===---------------------------------------------------------------===###
 add_mlir_dialect_library(MLIRCartsArtsTransforms
   PARTIAL_SOURCES_INTENDED
-  ${CARTS_CORE_CONVERSION_SOURCE_FILES}
   ${CARTS_TRANSFORMS_SOURCE_FILES}
   ${CARTS_ARTS_UTILS_SOURCE_FILES}
   ${CARTS_ANALYSIS_SOURCE_FILES}

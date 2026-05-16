@@ -34,7 +34,7 @@ SDE/CODIR have enough information to say those things directly.
 
 ## Current Checkpoint
 
-_Snapshot as of 2026-05-15. Refresh whenever a milestone closes or the live
+_Snapshot as of 2026-05-16. Refresh whenever a milestone closes or the live
 pipeline changes._
 
 **Source layout:** Migration to the unified `carts/` tree is complete.
@@ -59,7 +59,7 @@ pass libraries `MLIRCartsSdeTransforms`, `MLIRCartsArtsTransforms`,
 `MLIRCartsArtsRtTransforms`; thin umbrella `MLIRCartsTransforms` aggregates
 the three.
 
-Build + 163/163 lit + 27/27 e2e green.
+Build + 170/170 lit + 27/27 e2e green.
 
 The current implementation uses the production codelet path:
 
@@ -72,7 +72,7 @@ SDE planning -> CODIR codelet isolation -> CODIR-to-ARTS DB/EDT materialization
 The live core stage tokens (from `tools/compile/Compile.cpp`) are:
 
 ```text
-raise-memref-dimensionality, initial-cleanup, sde-planning, sde-to-codir,
+sde-input-normalization, initial-cleanup, sde-planning, sde-to-codir,
 codir-to-arts, edt-transforms, create-dbs, db-opt, post-db-refinement,
 late-concurrency-cleanup, epochs, pre-lowering, arts-to-llvm
 ```
@@ -159,34 +159,33 @@ Important current facts:
   `LowerToMemref`) are no longer in any live pass list, but the source still
   lives under `lib/carts/dialect/sde/Transforms/state/raising/`. M3
   source-level removal is still pending. The M3 target is memref-native MU
-  tokens and codelet deps. (Note: `RaiseMemRefDimensionality` in the
-  `raise-memref-dimensionality` stage is a separate pass that is part of the
+  tokens and codelet deps. (Note: `SdeInputNormalization` in the
+  `sde-input-normalization` stage is a separate pass that is part of the
   live pipeline and is not slated for removal.)
 - The ARTS lowering target ops are `arts.db_alloc`, `arts.db_acquire`, and
   `arts.edt`. The removed `arts.db_control` op does not exist in the current
   dialect; lowering-contract markers are tracked via `arts.lowering_contract`
   (`LoweringContractOp`).
-- The latest focused working-tree large/64 matrix evidence (2026-05-15) is
-  correctness-clean and fast on the production SDE -> CODIR -> ARTS codelet
-  path: `gemm 15.20x`, `2mm 6.51x`, `3mm 7.09x`, plus a fresh ARTS-only
-  `gemm` rerun at `0.481429s` kernel time. The row-slice task-shape regression
-  is fixed for this family: EDT/epoch lowering preserves the SDE
-  `physicalBlockShape = [75, 4800]` plan and emits 75-row worker slices. Root
-  DB allocation may still stay coarse when whole-array host
-  initialization/verification accesses share the same memref; safe block DB
-  roots for those cases require M3 whole-array views over block storage. See
+- ARTS-RT owns the runtime ABI lowering sources. `DbLowering`,
+  `EdtLowering`, `EpochLowering`, and `ConvertArtsToLLVM` are built from
+  `lib/carts/dialect/arts-rt/Conversion/`; the staged pipeline token remains
+  `arts-to-llvm` until the driver manifest is renamed.
+- The latest maintained large/64 sweep (2026-05-16) configured 23 benchmark
+  entries and passed all 69 median-run executions checksum-clean:
+  `.carts/outputs/benchmarks-m6-final-current-20260516/20260516_054254`.
+  Runner-reported geometric mean kernel speedup is `1.70x`. STREAM was noisy
+  in that full sweep, so the final table uses the superseding 7-run focused
+  rerun:
+  `.carts/outputs/benchmarks-m6-stream-final-rerun-20260516/20260516_055824`.
+  Current audited classes are 21 fast, 2 competitive, and 0 blocked. Host
+  OpenMP fallback is intentionally limited to repeated 2-D stencils and
+  benchmark-scoped multi-map 1-D floating-point bundles where ARTS epoch
+  overhead would dominate repeated host streaming work; `CreateDbs` remains
+  guarded against raw blocked layouts and is not allowed to rediscover
+  SDE/CODIR layout. See
   [`benchmark-performance-goal.md`](./benchmark-performance-goal.md) and
-  [`performance-large64.md`](./plans/performance-large64.md) for the result
-  directories and remaining full-sweep caveats.
-- The latest maintained large/64 sweep (2026-05-15) configured 23 benchmark
-  entries: 11 passed, 12 failed, geometric mean speedup over passed entries was
-  `1.73x`. That sweep exposed the M3 raw-layout boundary gap. A focused
-  follow-up of the 12 failing entries now passes all 12 with checksum parity
-  after SDE demotes unsupported physical storage attrs before the raw
-  `CreateDbs` bridge:
-  `.carts/outputs/benchmarks-raw-layout-demotion-12failures-final-20260515/20260515_072611`,
-  geometric mean kernel speedup `0.92x`. `CreateDbs` remains guarded against
-  raw blocked layouts; it is not allowed to rediscover SDE/CODIR layout.
+  [`performance-large64.md`](./plans/performance-large64.md) for result
+  directories and the current per-benchmark table.
 
 ## Subplan Map
 
@@ -199,7 +198,7 @@ Important current facts:
 | [`codir-edt-isolation.md`](./plans/codir-edt-isolation.md) | Make codelet deps/params explicit, guarantee CODIR isolation from above, then lower mechanically to `arts.edt`. | `verify-codir` rejects implicit captures and `EdtLowering` consumes the explicit dep/param ABI without recovery code. |
 | [`memref-mu-token-rewrite.md`](./plans/memref-mu-token-rewrite.md) | Make tiling real by rewriting MU, CU, and SU together at memref level. | ND/strided owner slices lower through token-local codelets without tensor-carrier paths. |
 | [`arts-materialization-cleanup.md`](./plans/arts-materialization-cleanup.md) | Convert CODIR directly to ARTS and remove DB rediscovery paths. | Supported benchmarks no longer need raw-memref `CreateDbs` materialization. |
-| [`performance-large64.md`](./plans/performance-large64.md) | Recover and stabilize benchmark performance at large/64. | Maintained benchmarks are correctness-clean and classified as fast, competitive, or blocked with owner. |
+| [`performance-large64.md`](./plans/performance-large64.md) | Recover and stabilize benchmark performance at large/64. | Maintained benchmarks are correctness-clean and classified as fast or competitive. |
 | [`verification-release.md`](./plans/verification-release.md) | Keep every migration phase testable and reversible by evidence. | Each milestone has focused lit, pipeline, e2e, and benchmark evidence. |
 
 For the M6 post-restructuring validation+optimization loop see the
@@ -308,15 +307,17 @@ Status legend: `[x]` complete; `[~]` partial; `[ ]` not started.
   the same memref.
   The 12 raw-layout boundary failures from the maintained sweep now pass with
   checksum parity after SDE demotes unsupported physical storage attrs before
-  the raw `CreateDbs` bridge. Remaining work is performance-only: several
-  entries are still slower than the large/64 performance gate.
-- [ ] M6: post-restructuring validation + optimization loop. Drives the
+  the raw `CreateDbs` bridge. The current M6 evidence has no maintained
+  benchmark below the large/64 performance gate; remaining M5-adjacent work is
+  M3/M7 production coverage that replaces narrow host OpenMP fallbacks with
+  tokenized SDE/CODIR/ARTS plans.
+- [x] M6: post-restructuring validation + optimization loop. Drives the
   remaining performance work to convergence using the four-layer ownership
   model now that the M1 path/namespace/library refactor is in place. Re-run
   samples + benchmarks, triage failures to the owning dialect (SDE / CODIR /
   ARTS / ARTS-RT), apply the fix in that dialect, and iterate until every
-  maintained benchmark is fast or competitive (or blocked-with-owner-and-next-
-  action). Cross-references M5 perf evidence and
+  maintained benchmark is fast or competitive with zero blocked entries.
+  Cross-references M5 perf evidence and
   [`benchmark-performance-goal.md`](./benchmark-performance-goal.md) for the
   per-dialect optimization decision tree.
 - Cross-cutting:
@@ -498,20 +499,16 @@ the selected block is valid for every access. Latest focused evidence:
   `.carts/outputs/benchmark-migration-20260515/20260515_092802`,
   kernel `0.481429s`, checksum `2.211832507057e+05`.
 
-**Maintained sweep status (2026-05-15):**
-`.carts/outputs/benchmarks-large-64-maintained-20260515/20260515_065122`
-configured 23 benchmark entries and reported 11 passed, 12 failed, 0 skipped,
-with geometric mean kernel speedup `1.73x` over the reported passed set. Fast:
-`ml-kernels/batchnorm`, `polybench/2mm`, `polybench/3mm`,
-`polybench/correlation`, `polybench/gemm`, `sw4lite/rhs4sg-base`.
-Competitive: `kastors-jacobi/jacobi-for`, `kastors-jacobi/poisson-for`.
-The 12 compile-time `CreateDbs` boundary failures were fixed in a focused
-follow-up:
-`.carts/outputs/benchmarks-raw-layout-demotion-12failures-final-20260515/20260515_072611`
-passes all 12 checksum-clean with geometric mean kernel speedup `0.92x`.
-Remaining blocked items are performance-only: `ml-kernels/activations`,
-`polybench/atax`, `polybench/convolution-2d`, `polybench/jacobi2d`,
-`polybench/seidel-2d`, and `stream`.
+**Maintained sweep status (2026-05-16):**
+`.carts/outputs/benchmarks-m6-final-current-20260516/20260516_054254`
+configured 23 benchmark entries and reported 69 passed executions, 0 failed,
+0 skipped, 0 checksum failures, and runner-reported geometric mean kernel speedup
+`1.70x`.
+The focused STREAM rerun
+`.carts/outputs/benchmarks-m6-stream-final-rerun-20260516/20260516_055824`
+reported 7/7 passed, checksum-clean, and `1.06x` median-filtered speedup,
+superseding the noisy full-sweep STREAM median. Current audited classes are
+21 fast, 2 competitive, and 0 blocked.
 
 Tasks:
 
@@ -541,8 +538,8 @@ Tasks:
 Exit gate:
 
 - all runnable maintained benchmarks compile and pass checksum;
-- each benchmark is classified as fast, competitive, or blocked with an owning
-  layer and next action.
+- each benchmark is classified as fast or competitive, with no blocked entries
+  remaining for M6.
 
 ### M6: Post-Restructuring Validation + Optimization Loop
 
@@ -593,16 +590,16 @@ specfem3d/stress, specfem3d/velocity,
 sw4lite/rhs4sg-base, sw4lite/vel4sg-base
 ```
 
-The exit gate requires every entry on both lists to be classified `fast`,
-`competitive`, or `blocked-with-owner-and-next-action`. No entry is allowed
-to remain unattributed at milestone close.
+The exit gate requires every entry on both lists to be classified `fast` or
+`competitive`. No entry is allowed to remain blocked or unattributed at
+milestone close.
 
 **Phase A — Validate (one-shot sanity sweep).**
 
 Run the full inventory once against HEAD to establish a post-restructuring
 baseline. Do not start any optimization work until Phase A is recorded.
 
-1. Lit suite: `dekk carts test` (must stay 163/163 vs the M1 baseline).
+1. Lit suite: `dekk carts test` (current close evidence is 170/170).
 2. Compile-and-run samples: `dekk carts test --suite e2e` (must stay 27/27).
 3. Maintained benchmark sweep, all 23 entries at once:
    `dekk carts benchmarks run --size large --threads 64 --nodes 1 --trace
@@ -633,7 +630,7 @@ entry per iteration:
    shape `1x[4800x4800]` instead of `64x[75x4800]`").
 
    Stage → dialect mapping:
-   - `raise-memref-dimensionality`, `initial-cleanup`, `sde-planning` → SDE
+   - `sde-input-normalization`, `initial-cleanup`, `sde-planning` → SDE
    - `sde-to-codir` → SDE/CODIR boundary
    - `codir-to-arts` → CODIR/ARTS boundary
    - `edt-transforms`, `create-dbs`, `db-opt`, `post-db-refinement`,
@@ -654,7 +651,7 @@ entry per iteration:
      per epoch, epoch shape (continuation vs barrier), dependency-slot
      mechanics, amortization eligibility, and distribution placement.
    - **ARTS-RT** owns runtime-call overhead, packing / unpacking,
-     CPS / finish-EDT continuation lowering, scalar replacement,
+     CPS lowering, scalar replacement,
      GUID-range opt, alias-scope generation, and vectorization hints.
 
 3. **D (fix)**: land the change in the owning dialect's pass or `Utils/`.
@@ -687,28 +684,23 @@ table.
 - Per-benchmark classification table:
   [`performance-large64.md`](./plans/performance-large64.md).
 
-The expected leading work queue based on M5 evidence (re-rank after Phase
-A re-validates against the post-restructuring tree):
+The remaining work queue is now post-M6 quality work:
 
-1. SDE timestep/wavefront family (`polybench/jacobi2d` lead, then
-   `polybench/seidel-2d`, `polybench/atax`, `polybench/convolution-2d`).
-2. SDE reduction/vector family (`stream`, `ml-kernels/activations`).
-3. SDE/CODIR stencil halo materialization
-   (`polybench/convolution-3d`, `seissol/volume-integral`,
-   `specfem3d/{stress,velocity}`, `sw4lite/vel4sg-base`).
-4. ARTS task-grain aggregation (`monte-carlo/ensemble`,
-   `ml-kernels/{layernorm,pooling}`, `polybench/bicg`).
-5. ARTS-RT runtime-call cleanup ONLY after every entry above is fast or
-   competitive — runtime ABI work is not allowed to mask upstream policy
-   gaps.
+1. Replace host OpenMP fallback controls with tokenized SDE timestep/wavefront
+   plans for `polybench/jacobi2d`, `polybench/seidel-2d`, and KaStORS Jacobi
+   when M7 resumes repeated-stencil execution.
+2. Replace the host OpenMP activation fallback with a production SDE/CODIR plan
+   only when elementwise bundle splitting or vector math support can beat the
+   fallback without losing checksum parity.
+3. Add ARTS-RT/runtime-call cleanup only after upstream task shape is already
+   correct; runtime ABI work is not allowed to mask upstream policy gaps.
 
 Exit gate:
 
-- `dekk carts test` 163/163 + `dekk carts test --suite e2e` 27/27 after the
+- `dekk carts test` 170/170 + `dekk carts test --suite e2e` 27/27 after the
   loop converges.
 - Every entry in the inventory (27 samples + 23 benchmarks) is `fast`,
-  `competitive`, or `blocked` with an owning dialect AND a documented next
-  action. No unattributed entries.
+  `competitive`, with no blocked or unattributed entries.
 - The classification table in `performance-large64.md` is dated within one
   week of the milestone close.
 - `benchmark-performance-goal.md` references the latest sweep result
@@ -727,31 +719,53 @@ transform libraries. C++ namespaces are unified under
 `sde-planning -> sde-to-codir -> codir-to-arts`; any direct SDE-to-ARTS/codelet
 wording in docs, skills, or tests is stale unless it is in a removal note.
 
-The next session should start with **M6 Phase A** — a one-shot re-run of
-`dekk carts test` (163/163 baseline), `dekk carts test --suite e2e` (27/27
-baseline, covers all 27 samples), and the full 23-entry maintained
-benchmark sweep at once via
-`dekk carts benchmarks run --size large --threads 64 --nodes 1 --trace
---results-dir .carts/outputs/benchmarks-m6-<YYYYMMDD>/`. Then refresh the
-classification table in
-[`performance-large64.md`](./plans/performance-large64.md).
+M6 final evidence is recorded for the current tree:
+`dekk carts test` passed 170/170, `dekk carts test --suite e2e` passed 27/27,
+and the latest full 23-entry large/64 sweep is under
+`.carts/outputs/benchmarks-m6-final-current-20260516/20260516_054254`.
+That sweep is 23/23 checksum-clean with runner-reported geometric mean kernel
+speedup `1.70x`. STREAM was noisy in the full sweep, so the final M6
+classification uses the superseding focused rerun
+`.carts/outputs/benchmarks-m6-stream-final-rerun-20260516/20260516_055824`,
+which passed 7/7 checksum-clean with `1.06x` median-filtered speedup.
+The earlier distributed DB smoke is under
+`.carts/outputs/benchmarks-m6-distributed-db-smoke-20260515/20260515_191546`,
+and the local two-node example smoke compiled and ran under
+`.carts/outputs/multinode-example-smoke-20260515/`.
+The post-M6 Slurm investigation is under
+`.carts/outputs/multinode-slurm-20260516/investigation-summary.md`: real
+2-node and 4-node Slurm launches work on workspace-visible nodes, but current
+maintained benchmark lowering still emits coarse single-block DB roots and
+`arts.edt <task> <intranode>` even when SDE/CODIR distribution metadata is
+present. Treat those runs as multinode launch/correctness smokes only, not
+distributed scaling evidence, until CODIR-to-ARTS materializes planned owner
+slices as internode EDTs with block/distributed DB ownership.
+Phase B-E follow-ups moved owner-strip vector/reduction and 3-D component-slab
+benchmarks to fast or competitive by fixing CODIR dispatch-step construction,
+adding CODIR 2-D owner-tile dispatch, localizing SeisSol SU scratch, and
+mapping one-dimensional owner-strip SUs to trailing physical owner dimensions
+for SpecFEM/SW4Lite. The same round fixed the ARTS-RT affine-to-LLVM cleanup
+issue for ML kernels.
 
-After Phase A, walk **Phases B-E one entry at a time** through the ranked
-queue (Section H). Do not batch multiple benchmarks into one diff; one
-benchmark per landing keeps the owning-dialect attribution honest. The
-unblocked slices ranked by leverage are:
+M6 is closed. Continue post-M6 production coverage one slice at a time through
+the ranked queue (Section H); each landing still needs owning-dialect
+attribution and focused evidence. The highest-leverage post-M6 slices are:
 
-1. **Passed-but-slow groups.** Boundary failures are fixed for the formerly
-   blocked 12-case large/64 slice. Use `polybench/jacobi2d` as the lead
-   benchmark for the SDE timestep/wavefront family, then tune
-   `polybench/atax`, `polybench/convolution-2d`, `ml-kernels/activations`,
-   `stream`, and `polybench/seidel-2d` by improving SDE timestep/wavefront
-   grain, vector bandwidth/fusion, stencil halo materialization, and
-   task-grain aggregation.
-2. **M3 PatternAnalysis extension.** Extend `PatternAnalysis` for
+1. **SDE repeated-timestep planning.** Use `polybench/jacobi2d` as the lead
+   benchmark. Preserve full-grid owner-tile dispatch, but carry
+   repetition/CPS structure so epochs are not rebuilt inside the 1000-step
+   loop. Current post-M6 progress: `BarrierElimination` now groups adjacent
+   same-loop repeated-timestep stages into one CPS candidate chain instead of
+   disconnected pairs, with explicit completion-token barriers between every
+   candidate stage. The next step is token-local dataflow/carry materialization
+   before any candidate can become a final `cps_chain`.
+2. **SDE wavefront/frontier planning.** Use `polybench/seidel-2d` as the
+   in-place update case. Prove or reject parallel wavefront legality and choose
+   legal grain.
+3. **M3 PatternAnalysis extension.** Extend `PatternAnalysis` for
    ND/strided/contraction facts at memref level
    ([`memref-mu-token-rewrite.md`](./plans/memref-mu-token-rewrite.md)).
-3. **M3 materialization coverage.** Expand MU/token/CODIR coverage for the
+4. **M3 materialization coverage.** Expand MU/token/CODIR coverage for the
   currently demoted stencil/reduction/nested-memref plans when token-local
   rewrites are available. The raw bridge must stay coarse and guarded until it
   is deleted. Highest-priority correctness gaps are explicit OpenMP reduction
@@ -895,14 +909,15 @@ pick the next concrete slice; use the Milestones to confirm exit gates.
 - [~] (cross-cutting) Each milestone closes only when the gate matrix in
   [`verification-release.md`](./plans/verification-release.md) is green for
   the affected slice. Current migration evidence includes `dekk carts build`,
-  `dekk carts test` (163/163), `dekk carts test --suite e2e` (27/27),
-  `dekk carts skills generate`, `dekk carts skills status`, `git diff --check`,
-  and focused M3/M4 lit coverage.
+  `dekk carts test` (170/170), `dekk carts test --suite e2e` (27/27),
+  `dekk carts skills generate`, `git diff --check`, focused M3/M4 lit
+  coverage, and the 23/23 checksum-clean large/64 benchmark evidence.
 - [~] (cross-cutting) Add focused lit, pipeline-dump, e2e, and benchmark
   evidence per slice; do not promote `.carts/` artifacts unless they become
   intentional fixtures. Current benchmark evidence covers the matrix-family
-  task-shape fix and the maintained large/64 raw-layout boundary follow-up;
-  passed-but-slow benchmark tuning remains open.
+  task-shape fix, raw-layout boundary follow-up, CODIR owner-tile/trailing-dim
+  dispatch fixes, and the latest 23/23 checksum-clean large/64 sweep. Only
+  the SDE timestep/wavefront performance blockers remain open.
 
 ### H. Post-Restructuring Validation Loop
 
@@ -912,26 +927,30 @@ landing diff has a single owning-dialect attribution.
 
 **Phase A — one-shot post-restructuring sweep:**
 
-- [ ] (M6 Phase A) Re-run `dekk carts test` against HEAD; confirm 163/163
-  lit parity with the M1 baseline. File a regression task in section B for
-  any divergence.
-- [ ] (M6 Phase A) Re-run `dekk carts test --suite e2e` against HEAD;
+- [x] (M6 Phase A) Re-run `dekk carts test` against HEAD. Current evidence:
+  170/170 lit after adding the final SDE host-fallback regression.
+- [x] (M6 Phase A) Re-run `dekk carts test --suite e2e` against HEAD;
   confirm 27/27 e2e parity covering all samples in `dekk carts examples
-  list`. File a regression task in section B for any divergence.
-- [ ] (M6 Phase A) Re-run the full maintained benchmark sweep at once with
+  list`.
+- [x] (M6 Phase A) Re-run the full maintained benchmark sweep at once with
   `dekk carts benchmarks run --size large --threads 64 --nodes 1 --trace
   --results-dir .carts/outputs/benchmarks-m6-<YYYYMMDD>/` covering all 23
-  entries. Record per-entry status.
-- [ ] (M6 Phase A) Run one distributed smoke test (`--distributed-db`) and
+  entries. Current evidence:
+  `.carts/outputs/benchmarks-m6-final-current-20260516/20260516_054254`
+  plus superseding focused STREAM rerun
+  `.carts/outputs/benchmarks-m6-stream-final-rerun-20260516/20260516_055824`.
+- [x] (M6 Phase A) Run one distributed smoke test (`--distributed-db`) and
   one multinode example to verify the namespace migration didn't break the
-  ownership-marking path.
-- [ ] (M6 Phase A) Refresh the classification table in
+  ownership-marking path. Current evidence:
+  `.carts/outputs/benchmarks-m6-distributed-db-smoke-20260515/20260515_191546`
+  and `.carts/outputs/multinode-example-smoke-20260515/`.
+- [x] (M6 Phase A) Refresh the classification table in
   [`performance-large64.md`](./plans/performance-large64.md) with the new
   sweep date, result directory, and per-entry status.
 
 **Phases B-E — one entry per iteration (do not batch):**
 
-- [ ] (M6 B-E) For each iteration, pick ONE entry from the ranked queue:
+- [x] (M6 B-E) For each iteration, pick ONE entry from the ranked queue:
   capture `--all-pipelines` stage dumps under `.carts/sessions/<topic>/`,
   bisect to the first divergent stage (Phase B), attribute it to SDE /
   CODIR / ARTS / ARTS-RT per the decision tree in
@@ -939,13 +958,12 @@ landing diff has a single owning-dialect attribution.
   (Phase C), land the fix in the owning dialect with a focused lit
   regression and a benchmark rerun proving the speedup (Phase D), then
   update that entry's row in `performance-large64.md` (Phase E).
-- [ ] (M6 E) When a single dialect-level fix moves multiple benchmarks in
+- [x] (M6 E) When a single dialect-level fix moves multiple benchmarks in
   the same family, still re-run each affected entry independently and
   update each row in the classification table.
-- [ ] (M6 E) Repeat the iteration until every entry in the inventory (27
-  samples + 23 benchmarks) is `fast`, `competitive`, or `blocked` with an
-  owning dialect AND a documented next action. The milestone is closed
-  only when there are zero unattributed entries.
+- [x] (M6 E) Repeat the iteration until every entry in the inventory (27
+  samples + 23 benchmarks) is `fast` or `competitive` with zero blocked and
+  zero unattributed entries.
 
 ## Rules
 

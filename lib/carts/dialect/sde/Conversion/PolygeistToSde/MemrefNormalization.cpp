@@ -1,5 +1,5 @@
 ///===----------------------------------------------------------------------===///
-/// File: MemrefNormalization.cpp
+/// File: SdeMemrefNormalization.cpp
 ///
 /// This pass raises nested pointer allocations to N-dimensional memrefs and
 /// normalizes OpenMP task dependencies to memref values that
@@ -17,7 +17,7 @@
 #include "PolygeistToSdeUtils.h"
 #include "carts/Dialect.h"
 #include "carts/dialect/sde/Analysis/AffineAccessUtils.h"
-#include "carts/passes/Passes.h"
+#include "carts/dialect/sde/Transforms/Passes.h"
 #include "carts/utils/Debug.h"
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/RemovalUtils.h"
@@ -49,8 +49,10 @@ using namespace mlir::carts::arts;
 using namespace mlir::carts;
 using namespace mlir::omp;
 
-#define GEN_PASS_DEF_MEMREFNORMALIZATION
-#include "carts/passes/Passes.h.inc"
+namespace mlir::carts::arts {
+#define GEN_PASS_DEF_SDEMEMREFNORMALIZATION
+#include "carts/dialect/sde/Transforms/Passes.h.inc"
+} // namespace mlir::carts::arts
 
 ARTS_DEBUG_SETUP(memref_normalization);
 
@@ -325,8 +327,9 @@ static bool isInnerWrapperOfInlinedPattern(Value alloc) {
 /// Pass Implementation
 ///===----------------------------------------------------------------------===///
 
-struct MemrefNormalizationPass
-    : public ::impl::MemrefNormalizationBase<MemrefNormalizationPass> {
+struct SdeMemrefNormalizationPass
+    : public mlir::carts::arts::impl::SdeMemrefNormalizationBase<
+          SdeMemrefNormalizationPass> {
 
   void runOnOperation() override;
 
@@ -399,10 +402,10 @@ private:
 /// Main Entry Point
 ///===----------------------------------------------------------------------===///
 
-void MemrefNormalizationPass::runOnOperation() {
+void SdeMemrefNormalizationPass::runOnOperation() {
   ModuleOp module = getOperation();
   MLIRContext *ctx = module.getContext();
-  ARTS_INFO_HEADER(MemrefNormalizationPass);
+  ARTS_INFO_HEADER(SdeMemrefNormalizationPass);
   ARTS_DEBUG_REGION(module.dump(););
 
   /// Pre-processing: Hoist memref.alloc ops out of scf.if regions when they
@@ -561,7 +564,7 @@ void MemrefNormalizationPass::runOnOperation() {
       if (unsupportedUseOp) {
         diag.attachNote(unsupportedUseOp->getLoc()) << "unsupported use here";
       }
-      ARTS_DEBUG("MemrefNormalization: skipping nested memref pattern ("
+      ARTS_DEBUG("SdeMemrefNormalization: skipping nested memref pattern ("
                  << detail << ") at " << patternOpt->rootAlloc.getLoc());
       hadUnraisedNestedMemref = true;
       continue;
@@ -603,7 +606,7 @@ void MemrefNormalizationPass::runOnOperation() {
   ARTS_DEBUG("Final omp.task count: " << finalTaskCount);
 
   if (finalTaskCount != initialTaskCount) {
-    module.emitError() << "MemrefNormalization pass corrupted omp.task "
+    module.emitError() << "SdeMemrefNormalization pass corrupted omp.task "
                           "operations: started with "
                        << initialTaskCount << " tasks, ended with "
                        << finalTaskCount << " tasks";
@@ -611,7 +614,7 @@ void MemrefNormalizationPass::runOnOperation() {
     return;
   }
 
-  ARTS_INFO_FOOTER(MemrefNormalizationPass);
+  ARTS_INFO_FOOTER(SdeMemrefNormalizationPass);
   ARTS_DEBUG_REGION(module.dump(););
 }
 
@@ -620,7 +623,7 @@ void MemrefNormalizationPass::runOnOperation() {
 ///===----------------------------------------------------------------------===///
 
 std::optional<AllocPattern>
-MemrefNormalizationPass::detectPattern(Value alloc) {
+SdeMemrefNormalizationPass::detectPattern(Value alloc) {
   AllocPattern pattern;
   pattern.rootAlloc = alloc;
   pattern.storeToWrapper = nullptr;
@@ -945,7 +948,7 @@ MemrefNormalizationPass::detectPattern(Value alloc) {
 /// Phase 2a: Collect Element Accesses
 ///===----------------------------------------------------------------------===///
 
-void MemrefNormalizationPass::collectAllAccesses(AllocPattern &pattern) {
+void SdeMemrefNormalizationPass::collectAllAccesses(AllocPattern &pattern) {
   llvm::SetVector<Value> roots;
   if (pattern.wrapperAlloca)
     roots.insert(pattern.wrapperAlloca);
@@ -965,7 +968,7 @@ void MemrefNormalizationPass::collectAllAccesses(AllocPattern &pattern) {
   }
 }
 
-void MemrefNormalizationPass::collectAccessesRecursively(
+void SdeMemrefNormalizationPass::collectAccessesRecursively(
     Value current, SmallVector<Value> &indices, SmallVector<Operation *> &chain,
     SmallVector<AccessInfo> &accesses, unsigned depth) {
   constexpr unsigned kMaxRecursionDepth = 64;
@@ -1061,7 +1064,7 @@ void MemrefNormalizationPass::collectAccessesRecursively(
 /// Phase 2b: Collect OMP Dependencies
 ///===----------------------------------------------------------------------===///
 
-void MemrefNormalizationPass::collectOmpDependencies(
+void SdeMemrefNormalizationPass::collectOmpDependencies(
     AllocPattern &pattern,
     const DenseMap<Value, SmallVector<TaskDepRef>> &taskDepsByValue) {
   for (const auto &entry : taskDepsByValue) {
@@ -1076,7 +1079,7 @@ void MemrefNormalizationPass::collectOmpDependencies(
 }
 
 std::optional<DepInfo>
-MemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
+SdeMemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
                                        omp::TaskOp taskOp, unsigned depIdx,
                                        omp::ClauseTaskDepend) {
   DepInfo info;
@@ -1235,7 +1238,7 @@ MemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
 ///===----------------------------------------------------------------------===///
 
 std::optional<TraceResult>
-MemrefNormalizationPass::traceToPattern(Value val, AllocPattern &pattern) {
+SdeMemrefNormalizationPass::traceToPattern(Value val, AllocPattern &pattern) {
   TraceResult result;
 
   /// Direct match to root or any alias wrapper that resolves to it.
@@ -1283,7 +1286,7 @@ MemrefNormalizationPass::traceToPattern(Value val, AllocPattern &pattern) {
 }
 
 std::optional<TraceResult>
-MemrefNormalizationPass::traceValueToPattern(Value val, AllocPattern &pattern) {
+SdeMemrefNormalizationPass::traceValueToPattern(Value val, AllocPattern &pattern) {
   /// For element values (not memrefs), we look at the defining load
   if (auto loadOp = val.getDefiningOp<memref::LoadOp>()) {
     auto memResult = traceToPattern(loadOp.getMemref(), pattern);
@@ -1307,7 +1310,7 @@ MemrefNormalizationPass::traceValueToPattern(Value val, AllocPattern &pattern) {
   return std::nullopt;
 }
 
-bool MemrefNormalizationPass::isPatternAliasRoot(
+bool SdeMemrefNormalizationPass::isPatternAliasRoot(
     Value val, const AllocPattern &pattern) const {
   if (!val)
     return false;
@@ -1316,7 +1319,7 @@ bool MemrefNormalizationPass::isPatternAliasRoot(
   return llvm::is_contained(pattern.outerWrapperAliases, val);
 }
 
-void MemrefNormalizationPass::collectOuterWrapperAliases(
+void SdeMemrefNormalizationPass::collectOuterWrapperAliases(
     AllocPattern &pattern) {
   if (!pattern.wrapperAlloca)
     return;
@@ -1360,7 +1363,7 @@ void MemrefNormalizationPass::collectOuterWrapperAliases(
   pattern.outerWrapperAliases.assign(discovered.begin(), discovered.end());
 }
 
-bool MemrefNormalizationPass::recordUnsupportedUse(Operation *op,
+bool SdeMemrefNormalizationPass::recordUnsupportedUse(Operation *op,
                                                    llvm::Twine reason) {
   if (!unsupportedUseOp) {
     unsupportedUseOp = op;
@@ -1373,7 +1376,7 @@ bool MemrefNormalizationPass::recordUnsupportedUse(Operation *op,
   return false;
 }
 
-bool MemrefNormalizationPass::hasOnlySupportedUseGraph(
+bool SdeMemrefNormalizationPass::hasOnlySupportedUseGraph(
     const AllocPattern &pattern) {
   DenseSet<Value> visitedValues;
   llvm::SetVector<Value> roots;
@@ -1392,7 +1395,7 @@ bool MemrefNormalizationPass::hasOnlySupportedUseGraph(
   return true;
 }
 
-bool MemrefNormalizationPass::hasOnlySupportedSubviewUses(
+bool SdeMemrefNormalizationPass::hasOnlySupportedSubviewUses(
     Value value, DenseSet<Value> &visitedValues) {
   if (!value || !isa<MemRefType>(value.getType()))
     return true;
@@ -1468,7 +1471,7 @@ bool MemrefNormalizationPass::hasOnlySupportedSubviewUses(
   return true;
 }
 
-bool MemrefNormalizationPass::hasOnlySupportedUses(
+bool SdeMemrefNormalizationPass::hasOnlySupportedUses(
     Value value, DenseSet<Value> &visitedValues) {
   if (!value || !isa<MemRefType>(value.getType()))
     return true;
@@ -1476,7 +1479,7 @@ bool MemrefNormalizationPass::hasOnlySupportedUses(
     return true;
 
   /// Compile.cpp lowers affine ops before this stage, so the supported graph
-  /// here is the memref/scf form that MemrefNormalization actually
+  /// here is the memref/scf form that SdeMemrefNormalization actually
   /// rewrites.
   for (Operation *user : value.getUsers()) {
     if (!user)
@@ -1553,7 +1556,7 @@ bool MemrefNormalizationPass::hasOnlySupportedUses(
 }
 
 std::optional<FlatStridedPlan>
-MemrefNormalizationPass::inferFlatStridedPlan(AllocPattern &pattern) {
+SdeMemrefNormalizationPass::inferFlatStridedPlan(AllocPattern &pattern) {
   auto rootType = dyn_cast<MemRefType>(pattern.rootAlloc.getType());
   if (!rootType || rootType.getRank() != 1 || pattern.dimensions.size() != 1 ||
       pattern.accesses.empty())
@@ -1622,7 +1625,7 @@ MemrefNormalizationPass::inferFlatStridedPlan(AllocPattern &pattern) {
 /// Phase 3: Transformation
 ///===----------------------------------------------------------------------===///
 
-LogicalResult MemrefNormalizationPass::transformFlatStridedWrapper(
+LogicalResult SdeMemrefNormalizationPass::transformFlatStridedWrapper(
     AllocPattern &pattern, const FlatStridedPlan &plan, OpBuilder &builder) {
   if (plan.accessIndices.size() != pattern.accesses.size())
     return failure();
@@ -1636,7 +1639,7 @@ LogicalResult MemrefNormalizationPass::transformFlatStridedWrapper(
   return transformPattern(pattern, builder);
 }
 
-LogicalResult MemrefNormalizationPass::transformPattern(AllocPattern &pattern,
+LogicalResult SdeMemrefNormalizationPass::transformPattern(AllocPattern &pattern,
                                                         OpBuilder &builder) {
   OpBuilder::InsertionGuard guard(builder);
   DominanceInfo localDomInfo(
@@ -1906,7 +1909,7 @@ LogicalResult MemrefNormalizationPass::transformPattern(AllocPattern &pattern,
   return success();
 }
 
-void MemrefNormalizationPass::rewriteTracedMemref2PointerUses(
+void SdeMemrefNormalizationPass::rewriteTracedMemref2PointerUses(
     AllocPattern &pattern, Value ndAlloc, OpBuilder &builder,
     llvm::DenseSet<Operation *> &toRemove) {
   auto parentFunc =
@@ -1974,7 +1977,7 @@ void MemrefNormalizationPass::rewriteTracedMemref2PointerUses(
 ///   memref.store %val, %alloc[%i]   /// Direct use of %alloc
 ///
 LogicalResult
-MemrefNormalizationPass::transformSimpleWrapper(AllocPattern &pattern,
+SdeMemrefNormalizationPass::transformSimpleWrapper(AllocPattern &pattern,
                                                 OpBuilder &builder) {
   OpBuilder::InsertionGuard guard(builder);
   DominanceInfo localDomInfo(
@@ -2082,7 +2085,7 @@ MemrefNormalizationPass::transformSimpleWrapper(AllocPattern &pattern,
 /// Utilities
 ///===----------------------------------------------------------------------===///
 
-Value MemrefNormalizationPass::createCanonicalAllocation(
+Value SdeMemrefNormalizationPass::createCanonicalAllocation(
     OpBuilder &builder, Location loc, Type elementType,
     ArrayRef<Value> dimSizes) {
   SmallVector<int64_t> shape;
@@ -2104,7 +2107,7 @@ Value MemrefNormalizationPass::createCanonicalAllocation(
   return allocOp.getResult();
 }
 
-void MemrefNormalizationPass::transferMetadata(Operation *oldAlloc,
+void SdeMemrefNormalizationPass::transferMetadata(Operation *oldAlloc,
                                                Operation *newAlloc) {
   if (!oldAlloc || !newAlloc)
     return;
@@ -2115,7 +2118,7 @@ void MemrefNormalizationPass::transferMetadata(Operation *oldAlloc,
   }
 }
 
-void MemrefNormalizationPass::handleDeallocations(
+void SdeMemrefNormalizationPass::handleDeallocations(
     AllocPattern &pattern, Value ndAlloc, OpBuilder &builder,
     llvm::DenseSet<Operation *> &toRemove, DominanceInfo &domInfo) {
   /// We need to find and remove the deallocation pattern which can be:
@@ -2427,7 +2430,7 @@ void MemrefNormalizationPass::handleDeallocations(
 ///===----------------------------------------------------------------------===///
 
 /// Check if maybeLoad is a load operation from the given source value
-bool MemrefNormalizationPass::isLoadFromValue(Value maybeLoad, Value source) {
+bool SdeMemrefNormalizationPass::isLoadFromValue(Value maybeLoad, Value source) {
   if (auto loadOp = maybeLoad.getDefiningOp<memref::LoadOp>()) {
     return loadOp.getMemref() == source;
   }
@@ -2456,7 +2459,7 @@ bool MemrefNormalizationPass::isLoadFromValue(Value maybeLoad, Value source) {
 /// directly.
 ///
 /// Returns true if a complete pattern was found (reaching scalar element type)
-bool MemrefNormalizationPass::extractNestedAllocations(Value storedVal,
+bool SdeMemrefNormalizationPass::extractNestedAllocations(Value storedVal,
                                                        Operation *loopOp,
                                                        memref::StoreOp storeOp,
                                                        AllocPattern &pattern,
@@ -2556,7 +2559,7 @@ bool MemrefNormalizationPass::extractNestedAllocations(Value storedVal,
 }
 
 /// Check if a value traces back to the root allocation through a chain of loads
-bool MemrefNormalizationPass::tracesToRootAlloc(Value val,
+bool SdeMemrefNormalizationPass::tracesToRootAlloc(Value val,
                                                 AllocPattern &pattern) {
   constexpr int MAX_TRACE_DEPTH = 10;
   Value current = val;
@@ -2587,9 +2590,9 @@ bool MemrefNormalizationPass::tracesToRootAlloc(Value val,
 ///===----------------------------------------------------------------------===///
 
 namespace mlir {
-namespace carts::arts {
-std::unique_ptr<Pass> createMemrefNormalizationPass() {
-  return std::make_unique<MemrefNormalizationPass>();
+namespace carts::sde {
+std::unique_ptr<Pass> createSdeMemrefNormalizationPass() {
+  return std::make_unique<SdeMemrefNormalizationPass>();
 }
-} // namespace carts::arts
+} // namespace carts::sde
 } // namespace mlir

@@ -13,7 +13,6 @@
 #include "carts/dialect/arts/Analysis/edt/EdtAnalysis.h"
 #include "carts/dialect/arts/Analysis/edt/EpochAnalysis.h"
 #include "carts/dialect/arts/Analysis/heuristics/DbHeuristics.h"
-#include "carts/dialect/arts/Analysis/heuristics/EdtHeuristics.h"
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
 #include "carts/dialect/arts/Utils/RuntimeConfig.h"
@@ -45,7 +44,6 @@ public:
   LoopAnalysis &getLoopAnalysis();
   StringAnalysis &getStringAnalysis();
   DbHeuristics &getDbHeuristics();
-  EdtHeuristics &getEdtHeuristics();
 
   /// Invalidate and rebuild DB graphs for all functions in the module.
   void invalidateAndRebuildGraphs(ModuleOp module);
@@ -112,7 +110,6 @@ private:
   std::unique_ptr<EdtAnalysis> edtAnalysis;
   std::unique_ptr<EpochAnalysis> epochAnalysis;
   std::unique_ptr<DbHeuristics> dbHeuristics;
-  std::unique_ptr<EdtHeuristics> edtHeuristics;
   std::unique_ptr<LoopAnalysis> loopAnalysis;
   std::unique_ptr<StringAnalysis> stringAnalysis;
   /// Cached diagnostic data

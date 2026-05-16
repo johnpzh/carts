@@ -439,6 +439,41 @@ static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
       op.getContext(), sde::SdeIterationTopology::owner_strip));
 }
 
+static void stampInPlaceSharedStencilSerialSlice(
+    sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
+  if (op.getLogicalWorkerSliceAttr() ||
+      costModel.getLogicalWorkerCapacity() <= 1)
+    return;
+  auto classification = op.getStructuredClassification();
+  if (!classification ||
+      *classification != sde::SdeStructuredClassification::stencil)
+    return;
+  if (!op.getInPlaceSharedStateAttr())
+    return;
+  if (op.getLowerBounds().size() != 1 || op.getUpperBounds().size() != 1 ||
+      op.getSteps().size() != 1)
+    return;
+
+  std::optional<int64_t> tripCount = getStaticTripCount(op.getOperation());
+  if (!tripCount || *tripCount <= 1)
+    return;
+
+  int64_t targetTasks = std::min<int64_t>(
+      64, std::max<int64_t>(1, costModel.getLogicalWorkerCapacity()));
+  int64_t slice = ceilDivPositive(*tripCount, targetTasks);
+  if (slice <= 1)
+    return;
+
+  op.setPhysicalOwnerDimsAttr(
+      buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{0}));
+  op.setPhysicalBlockShapeAttr(
+      buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{slice}));
+  op.setLogicalWorkerSliceAttr(
+      buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{slice}));
+  op.setIterationTopologyAttr(sde::SdeIterationTopologyAttr::get(
+      op.getContext(), sde::SdeIterationTopology::owner_strip));
+}
+
 static int64_t saturatingMultiplyPositive(int64_t lhs, int64_t rhs) {
   lhs = std::max<int64_t>(1, lhs);
   rhs = std::max<int64_t>(1, rhs);
@@ -520,6 +555,7 @@ struct DistributionPlanningPass
       stampMatmulPhysicalPlan(op, *costModel);
       stampUniformPhysicalPlan(op, *costModel);
       stampReductionTaskShapePlan(op, *costModel);
+      stampInPlaceSharedStencilSerialSlice(op, *costModel);
       if (auto kind = chooseDistributionKind(op, *costModel))
         rewrites.push_back({op, *kind});
     });

@@ -15,10 +15,12 @@
 ///     }
 ///==========================================================================///
 
-#define GEN_PASS_DEF_ARTSINLINER
+#define GEN_PASS_DEF_SDEINPUTINLINER
 #include "carts/Dialect.h"
-#include "carts/passes/Passes.h"
-#include "carts/passes/Passes.h.inc"
+#include "carts/dialect/sde/Transforms/Passes.h"
+namespace mlir::carts::arts {
+#include "carts/dialect/sde/Transforms/Passes.h.inc"
+} // namespace mlir::carts::arts
 #include "carts/utils/Utils.h"
 #include "mlir/Analysis/CallGraph.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -108,7 +110,7 @@ static bool hasLayoutSensitiveMemrefSignature(func::CallOp call,
 /// We still inline helpers that carry OpenMP because later passes need that
 /// structure in the caller to expose parallel structure and loop fusion.
 ///
-/// Nested-memref helpers are the exception: MemrefNormalization changes
+/// Nested-memref helpers are the exception: SdeMemrefNormalization changes
 /// the storage layout of those values, so the helper body must be visible in
 /// the caller before that pass runs. Otherwise the call boundary would retain
 /// the stale pre-raise type/layout contract.
@@ -193,7 +195,7 @@ static LogicalResult inlineSingleBlockFuncCallInOmp(func::CallOp call,
   return success();
 }
 
-struct ArtsInlinerInterface : public mlir::InlinerInterface {
+struct SdeInputInlinerInterface : public mlir::InlinerInterface {
   using mlir::InlinerInterface::InlinerInterface;
 
   ///===--------------------------------------------------------------------===///
@@ -251,14 +253,16 @@ struct ArtsInlinerInterface : public mlir::InlinerInterface {
   }
 };
 
-struct ArtsInlinerPass : public impl::ArtsInlinerBase<ArtsInlinerPass> {
+struct SdeInputInlinerPass
+    : public mlir::carts::arts::impl::SdeInputInlinerBase<
+          SdeInputInlinerPass> {
 
   void runOnOperation() override {
     ModuleOp module = getOperation();
-    ARTS_DEBUG_HEADER(ArtsInlinerPass);
+    ARTS_DEBUG_HEADER(SdeInputInlinerPass);
 
     /// Build the inliner interface
-    ArtsInlinerInterface inliner(&getContext());
+    SdeInputInlinerInterface inliner(&getContext());
 
     /// Use a worklist approach to handle newly created calls during inlining
     bool changed;
@@ -368,7 +372,7 @@ struct ArtsInlinerPass : public impl::ArtsInlinerBase<ArtsInlinerPass> {
     /// Clean up unused functions
     cleanupUnusedFunctions(module);
 
-    ARTS_DEBUG_FOOTER(ArtsInlinerPass);
+    ARTS_DEBUG_FOOTER(SdeInputInlinerPass);
     ARTS_DEBUG_REGION(module.dump(););
   }
 
@@ -393,9 +397,9 @@ private:
 } // namespace
 
 namespace mlir {
-namespace carts::arts {
-std::unique_ptr<Pass> createArtsInlinerPass() {
-  return std::make_unique<ArtsInlinerPass>();
+namespace carts::sde {
+std::unique_ptr<Pass> createSdeInputInlinerPass() {
+  return std::make_unique<SdeInputInlinerPass>();
 }
-} // namespace carts::arts
+} // namespace carts::sde
 } // namespace mlir

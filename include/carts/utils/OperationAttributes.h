@@ -49,6 +49,8 @@ constexpr StringLiteral PartitionMode = "partition_mode";
 constexpr StringLiteral PartitionHint = "arts.partition_hint";
 constexpr StringLiteral AccessPattern = "access_pattern";
 constexpr StringLiteral Distributed = "distributed";
+constexpr StringLiteral DistributedRejectReason =
+    "arts.distributed_reject_reason";
 constexpr StringLiteral DistributionKind = "distribution_kind";
 constexpr StringLiteral DistributionPattern = "distribution_pattern";
 /// ODS-generated attribute name for EdtOp dep pattern
@@ -62,10 +64,6 @@ constexpr StringLiteral NoStartEpoch = "arts.no_start_epoch";
 /// DB storage-type inference annotations (set by DbModeTighteningPass)
 constexpr StringLiteral LocalOnly = "arts.local_only";
 constexpr StringLiteral ReadOnlyAfterInit = "arts.read_only_after_init";
-
-/// Finish-EDT continuation attributes.
-constexpr StringLiteral ControlDep = "arts.has_control_dep";
-constexpr StringLiteral ContinuationForEpoch = "arts.continuation_for_epoch";
 
 /// Preserves compile-time DB outer extents on rehydrated handle values when
 /// outlining breaks the original DbAllocOp def-use chain.

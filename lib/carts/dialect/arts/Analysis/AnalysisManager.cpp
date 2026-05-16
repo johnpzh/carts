@@ -50,8 +50,6 @@ void AnalysisManager::invalidate() {
     loopAnalysis->invalidate();
   if (stringAnalysis)
     stringAnalysis->invalidate();
-  if (edtHeuristics)
-    edtHeuristics->invalidate();
   if (dbHeuristics)
     dbHeuristics->clearDecisions();
   metadataCoverage = MetadataCoverage{};
@@ -99,12 +97,6 @@ DbHeuristics &AnalysisManager::getDbHeuristics() {
     dbHeuristics = std::make_unique<DbHeuristics>(runtimeConfig);
   }
   return *dbHeuristics;
-}
-
-EdtHeuristics &AnalysisManager::getEdtHeuristics() {
-  if (!edtHeuristics)
-    edtHeuristics = std::make_unique<EdtHeuristics>(*this);
-  return *edtHeuristics;
 }
 
 void AnalysisManager::invalidateAndRebuildGraphs(ModuleOp module) {

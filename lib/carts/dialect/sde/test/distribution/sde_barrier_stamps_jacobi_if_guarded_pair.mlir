@@ -2,10 +2,9 @@
 
 // Jacobi benchmark loops lower as adjacent SDE stages in an outer timestep
 // loop, with the second phase guarded by the timestep IV rather than separated
-// by an explicit SDE barrier. Same-shape stencil/stencil adjacent pairs keep
-// the regular stencil plan only; the repeated-timestep async contract is not
-// stamped until Core has a profitable multi-stage stencil schedule for this
-// shape.
+// by an explicit SDE barrier. SDE recognizes this as a full timestep pair,
+// inserts an explicit stage-completion boundary, and marks the pair as a CPS
+// candidate until tokenized stencil dataflow exists.
 
 // CHECK-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
 // CHECK: func.func @jacobi_if_guarded_pair
@@ -13,25 +12,37 @@
 // CHECK: sde.su_iterate
 // CHECK-SAME: classification(<stencil>)
 // CHECK: } {
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: cps_candidate_group_id = 0 : i64
+// CHECK-SAME: cps_candidate_requires_tokenized_dataflow
+// CHECK-SAME: cps_candidate_stage_count = 2 : i64
+// CHECK-SAME: cps_candidate_stage_index = 0 : i64
 // CHECK-SAME: pattern = #sde.pattern<stencil_tiling_nd>
-// CHECK-NOT: asyncStrategy
-// CHECK-NOT: repetitionStructure
+// CHECK-SAME: repetitionStructure = #sde.repetition_structure<full_timestep>
+// CHECK: %[[DONE:[0-9]+]] = sde.control_token : !sde.completion
+// CHECK: sde.su_barrier(%[[DONE]] : !sde.completion)
+// CHECK-SAME: barrierReason = #sde.barrier_reason<timestep_stage_boundary>
 // CHECK: scf.if
 // CHECK: sde.su_iterate
 // CHECK-SAME: classification(<stencil>)
 // CHECK: } {
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: cps_candidate_group_id = 0 : i64
+// CHECK-SAME: cps_candidate_requires_tokenized_dataflow
+// CHECK-SAME: cps_candidate_stage_count = 2 : i64
+// CHECK-SAME: cps_candidate_stage_index = 1 : i64
 // CHECK-SAME: pattern = #sde.pattern<stencil_tiling_nd>
-// CHECK-NOT: asyncStrategy
-// CHECK-NOT: repetitionStructure
+// CHECK-SAME: repetitionStructure = #sde.repetition_structure<full_timestep>
 // CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: func.func @jacobi_if_guarded_pair
 // CHECK: depPattern = #arts.dep_pattern<stencil_tiling_nd>
-// CHECK-NOT: planAsyncStrategy
-// CHECK-NOT: planRepetitionStructure
+// CHECK-SAME: planAsyncStrategy = #arts.plan_async_strategy<advance_edt>
+// CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
+// CHECK: arts.barrier {barrierReason = #arts.barrier_reason<timestep_stage_boundary>}
 // CHECK: scf.if
 // CHECK: depPattern = #arts.dep_pattern<stencil_tiling_nd>
-// CHECK-NOT: planAsyncStrategy
-// CHECK-NOT: planRepetitionStructure
+// CHECK-SAME: planAsyncStrategy = #arts.plan_async_strategy<advance_edt>
+// CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
 // CHECK-NOT: sde.
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {

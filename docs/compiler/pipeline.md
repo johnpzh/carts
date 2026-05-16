@@ -36,7 +36,7 @@ DB/EDT objects. These group records are descriptive; only `pipeline`,
 
 Driver stages:
 
-1. `raise-memref-dimensionality`
+1. `sde-input-normalization`
 2. `initial-cleanup`
 3. `sde-planning`
 4. `sde-to-codir`
@@ -60,17 +60,17 @@ Conditional epilogues:
 
 ## Stage Summaries
 
-### `raise-memref-dimensionality`
+### `sde-input-normalization`
 
 ```text
 LowerAffine(func)
 CSE
-ArtsInliner
+SdeInputInliner
 PolygeistCanonicalize
 ScalarForwarding
 PolygeistCanonicalize
-RaiseMemRefDimensionality
-HandleDeps
+SdeMemrefNormalization
+SdeHandleDeps
 DeadCodeElimination
 CSE
 ```
@@ -195,6 +195,9 @@ PolygeistCanonicalize
 
 ### `pre-lowering`
 
+This stage is implemented by ARTS-RT lowering code even though it still consumes
+the abstract ARTS object graph.
+
 ```text
 EdtAllocaSinking
 PolygeistCanonicalize
@@ -222,6 +225,10 @@ VerifyPreLowered
 
 ### `arts-to-llvm`
 
+The token name is still `arts-to-llvm` for pipeline compatibility. The source
+implementation lives under `dialect/arts-rt/Conversion/` because this stage is
+runtime ABI and LLVM-facing lowering.
+
 ```text
 ConvertArtsToLLVM
 LoweringContractCleanup
@@ -240,7 +247,7 @@ VerifyLowered
 
 ## Stage Dependencies
 
-- `initial-cleanup` depends on `raise-memref-dimensionality`.
+- `initial-cleanup` depends on `sde-input-normalization`.
 - `sde-planning` depends on `initial-cleanup`.
 - `sde-to-codir` depends on `sde-planning`.
 - `codir-to-arts` depends on `sde-to-codir`.

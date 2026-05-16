@@ -22,14 +22,8 @@ public:
   EpochAccessSummary summarizeEpochAccess(EpochOp epoch) const;
   EpochFusionDecision
   evaluateEpochFusion(EpochOp first, EpochOp second,
-                      bool continuationEnabled = true,
                       const EpochAccessSummary *firstSummary = nullptr,
                       const EpochAccessSummary *secondSummary = nullptr) const;
-  EpochContinuationDecision
-  evaluateContinuation(EpochOp epoch, EpochOp previousEpoch = nullptr,
-                       bool continuationEnabled = true,
-                       const EpochAccessSummary *previousSummary = nullptr,
-                       const EpochAccessSummary *epochSummary = nullptr) const;
 };
 
 } // namespace carts::arts

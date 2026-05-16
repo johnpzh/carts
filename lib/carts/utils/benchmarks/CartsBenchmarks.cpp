@@ -228,6 +228,12 @@ static int carts_benchmarks_should_report_init(void) {
   return !(v[0] == '0' && v[1] == '\0');
 }
 
+static int carts_benchmarks_host_openmp = 0;
+
+__attribute__((noinline)) void carts_benchmarks_mark_host_openmp(void) {
+  carts_benchmarks_host_openmp = 1;
+}
+
 ///===----------------------------------------------------------------------===///
 /// ARTS Init Time (process start -> entering mainBody)
 ///===----------------------------------------------------------------------===///
@@ -240,6 +246,8 @@ __attribute__((constructor)) static void carts_benchmarks_ctor(void) {
 }
 
 static int carts_benchmarks_is_arts_binary(void) {
+  if (carts_benchmarks_host_openmp)
+    return 0;
   /// OpenMP reference binaries do not link against ARTS, but CARTS-generated
   /// binaries do. Use symbol presence as a robust discriminator even when
   /// `artsConfig` env var is not set (e.g., using ./arts.cfg in CWD).

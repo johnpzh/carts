@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline raise-memref-dimensionality | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %arts_config --pipeline sde-input-normalization | %FileCheck %s
 
 // CHECK-LABEL: func.func @main
 // CHECK-NOT: arts.undef : i1

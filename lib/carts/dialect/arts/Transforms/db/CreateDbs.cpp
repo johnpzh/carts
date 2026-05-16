@@ -41,11 +41,10 @@
 #include "carts/Dialect.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
-#include "carts/dialect/arts/Conversion/ArtsToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts/Transforms/db/DbLayoutPlanUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_CREATEDBS
-#include "carts/dialect/arts/Transforms/db/DbTransforms.h"
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
 #include "carts/dialect/arts/Utils/DbUtils.h"
@@ -636,13 +635,13 @@ void CreateDbsPass::createDbAllocOps() {
     }
 
     /// Reject allocations with nested memref element types.  These are
-    /// double-indirection patterns (e.g. float**) that MemrefNormalization
+    /// double-indirection patterns (e.g. float**) that SdeMemrefNormalization
     /// should have raised to N-dimensional memrefs.  If they reach here,
     /// the pipeline has a gap that will produce broken executables.
     if (auto memRefType = dyn_cast<MemRefType>(alloc->getResult(0).getType())) {
       if (isa<MemRefType>(memRefType.getElementType())) {
         alloc->emitError("un-normalizable nested memref pattern (element type "
-                         "is memref); MemrefNormalization should have raised "
+                         "is memref); SdeMemrefNormalization should have raised "
                          "this to an N-dimensional memref");
         signalPassFailure();
         return;

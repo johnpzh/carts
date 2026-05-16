@@ -27,8 +27,8 @@
 /// - else: keep per-iteration reserve semantics
 ///==========================================================================///
 
-#include "carts/dialect/arts/Conversion/ArtsToLLVM/CodegenSupport.h"
-#include "carts/dialect/arts/Conversion/ArtsToLLVM/Types.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Types.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"

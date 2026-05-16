@@ -27,12 +27,6 @@ namespace carts::arts {
 class AnalysisManager;
 class RuntimeConfig;
 
-/// General IR cleanup and canonicalization passes.
-std::unique_ptr<Pass> createArtsInlinerPass();
-/// Raise nested pointer allocations to N-dimensional memrefs.
-std::unique_ptr<Pass> createMemrefNormalizationPass();
-/// Normalize residual OMP task dependency operands before SDE conversion.
-std::unique_ptr<Pass> createHandleDepsPass();
 /// Eliminate dead ARTS operations and dead helper IR.
 std::unique_ptr<Pass> createDCEPass();
 
@@ -47,24 +41,10 @@ std::unique_ptr<Pass> createDbDistributedOwnershipPass(AnalysisManager *AM);
 std::unique_ptr<Pass> createDbTransformsPass(AnalysisManager *AM);
 std::unique_ptr<Pass> createCreateEpochsPass();
 
-/// Lower ARTS dialect operations into LLVM-ready IR.
-std::unique_ptr<Pass> createConvertArtsToLLVMPass();
-std::unique_ptr<Pass> createConvertArtsToLLVMPass(bool debug,
-                                                  bool distributedInitPerWorker,
-                                                  const RuntimeConfig *machine);
-
-/// EDT-local cleanup and codegen-preparation passes.
+/// EDT-local cleanup and ARTS object refinement passes.
 std::unique_ptr<Pass> createEdtICMPass();
 std::unique_ptr<Pass> createEdtAllocaSinkingPass();
-std::unique_ptr<Pass> createDataPtrHoistingPass();
-std::unique_ptr<Pass> createGuidRangCallOptPass();
-std::unique_ptr<Pass> createRuntimeCallOptPass();
 std::unique_ptr<Pass> createEdtPtrRematerializationPass();
-std::unique_ptr<Pass> createDbLoweringPass(uint64_t idStride = 1000);
-std::unique_ptr<Pass> createEpochLoweringPass();
-std::unique_ptr<Pass> createEdtLoweringPass(uint64_t idStride = 1000);
-std::unique_ptr<Pass> createEdtLoweringPass(AnalysisManager *AM,
-                                            uint64_t idStride = 1000);
 std::unique_ptr<Pass> createLoweringContractCleanupPass();
 
 /// High-level epoch scheduling passes.
@@ -73,12 +53,7 @@ std::unique_ptr<Pass> createEpochOptPass(AnalysisManager *AM);
 /// Create EpochOpt with explicit scheduling flags.
 /// Structural opts (narrowing/fusion) are always enabled.
 std::unique_ptr<Pass> createEpochOptPass(AnalysisManager *AM,
-                                         bool enableAmortization,
-                                         bool enableContinuation);
-/// Create EpochOpt with scheduling-only flags (structural opts disabled).
-std::unique_ptr<Pass> createEpochOptSchedulingPass(AnalysisManager *AM,
-                                                   bool enableAmortization,
-                                                   bool enableContinuation);
+                                         bool enableAmortization);
 std::unique_ptr<Pass> createHoistingPass();
 std::unique_ptr<Pass> createBlockLoopStripMiningPass();
 

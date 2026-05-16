@@ -58,14 +58,6 @@ struct EpochAccessSummary {
   bool empty() const { return allocModes.empty(); }
 };
 
-struct EpochContinuationDecision {
-  bool eligible = false;
-  llvm::SmallVector<Operation *> tailOps;
-  llvm::SmallVector<Value> capturedDbAcquireValues;
-  unsigned tailWorkUnits = 0;
-  std::string rationale;
-};
-
 struct EpochFusionDecision {
   bool shouldFuse = false;
   std::string rationale;
@@ -81,16 +73,8 @@ public:
   /// Decide whether two consecutive epochs may be fused.
   static EpochFusionDecision
   evaluateEpochFusion(EpochOp first, EpochOp second,
-                      bool continuationEnabled = true,
                       const EpochAccessSummary *firstSummary = nullptr,
                       const EpochAccessSummary *secondSummary = nullptr);
-
-  /// Decide whether an epoch can lower through finish-EDT continuation.
-  static EpochContinuationDecision
-  evaluateContinuation(EpochOp epoch, EpochOp previousEpoch = nullptr,
-                       bool continuationEnabled = true,
-                       const EpochAccessSummary *previousSummary = nullptr,
-                       const EpochAccessSummary *epochSummary = nullptr);
 };
 
 } // namespace carts::arts

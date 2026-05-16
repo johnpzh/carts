@@ -27,7 +27,7 @@ Relevant current areas:
 - `Tiling`
 - `DistributionPlanning`
 - `MemoryUnitMaterialization`
-- `MemrefNormalization`
+- `SdeMemrefNormalization`
 - `RaiseMemrefToTensor`
 - `RaiseToTensor`
 - `LowerToMemref`

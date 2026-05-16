@@ -1,4 +1,4 @@
-// RUN: not %carts-compile %s --arts-config %arts_config --pipeline raise-memref-dimensionality 2>&1 | %FileCheck %s
+// RUN: not %carts-compile %s --arts-config %arts_config --pipeline sde-input-normalization 2>&1 | %FileCheck %s
 
 // CHECK: 'arith.addi' op using value defined outside the region
 

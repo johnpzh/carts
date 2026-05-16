@@ -14,12 +14,12 @@ namespace mlir::carts::arts {
 } // namespace mlir::carts::arts
 
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
-#include "carts/utils/ValueAnalysis.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
+#include "carts/utils/ValueAnalysis.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/Statistic.h"
 
@@ -114,25 +114,26 @@ static bool isTimestepBarrier(sde::SdeSuBarrierOp barrier) {
 
 static bool haveSameIterationShape(sde::SdeSuIterateOp lhs,
                                    sde::SdeSuIterateOp rhs) {
-  return ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(lhs.getLowerBounds(),
-                                                 rhs.getLowerBounds()) &&
-         ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(lhs.getUpperBounds(),
-                                                 rhs.getUpperBounds()) &&
-         ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(lhs.getSteps(),
-                                                 rhs.getSteps());
+  return ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(
+             lhs.getLowerBounds(), rhs.getLowerBounds()) &&
+         ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(
+             lhs.getUpperBounds(), rhs.getUpperBounds()) &&
+         ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(
+             lhs.getSteps(), rhs.getSteps());
 }
 
 static bool haveSameIterationBounds(sde::SdeSuIterateOp lhs,
                                     sde::SdeSuIterateOp rhs) {
   return lhs.getLowerBounds().size() == rhs.getLowerBounds().size() &&
-         ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(lhs.getLowerBounds(),
-                                                 rhs.getLowerBounds()) &&
-         ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(lhs.getUpperBounds(),
-                                                 rhs.getUpperBounds());
+         ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(
+             lhs.getLowerBounds(), rhs.getLowerBounds()) &&
+         ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(
+             lhs.getUpperBounds(), rhs.getUpperBounds());
 }
 
 static bool isTiledMultipleOfStep(Value candidate, Value baseStep) {
-  if (::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(candidate, baseStep))
+  if (::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(candidate,
+                                                              baseStep))
     return true;
 
   auto mul = candidate.getDefiningOp<arith::MulIOp>();
@@ -147,9 +148,11 @@ static bool isTiledMultipleOfStep(Value candidate, Value baseStep) {
            ::mlir::carts::arts::ValueAnalysis::isProvablyNonZero(value);
   };
 
-  if (::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(mul.getLhs(), baseStep))
+  if (::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(mul.getLhs(),
+                                                              baseStep))
     return isPositiveMultiplier(mul.getRhs());
-  if (::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(mul.getRhs(), baseStep))
+  if (::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(mul.getRhs(),
+                                                              baseStep))
     return isPositiveMultiplier(mul.getLhs());
   return false;
 }
@@ -160,7 +163,8 @@ static bool haveEquivalentOrTiledSteps(sde::SdeSuIterateOp lhs,
     return false;
 
   for (auto [lhsStep, rhsStep] : llvm::zip(lhs.getSteps(), rhs.getSteps())) {
-    if (::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(lhsStep, rhsStep))
+    if (::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(lhsStep,
+                                                                rhsStep))
       continue;
     if (isTiledMultipleOfStep(lhsStep, rhsStep) ||
         isTiledMultipleOfStep(rhsStep, lhsStep))
@@ -186,9 +190,9 @@ static bool isUniformRepeatableStage(sde::SdeSuIterateOp op) {
               sde::SdeStructuredClassification::elementwise_pipeline);
 }
 
-static bool isOutOfPlaceStencilStage(
-    sde::SdeSuIterateOp op,
-    const sde::StructuredMemoryEffectSummary &effects) {
+static bool
+isOutOfPlaceStencilStage(sde::SdeSuIterateOp op,
+                         const sde::StructuredMemoryEffectSummary &effects) {
   if (!op || effects.hasUnknownEffects)
     return false;
   auto classification = op.getStructuredClassification();
@@ -216,6 +220,40 @@ static void stampRepeatedTimestepPlan(sde::SdeSuIterateOp op) {
   if (!op.getAsyncStrategyAttr())
     op.setAsyncStrategyAttr(sde::SdeAsyncStrategyAttr::get(
         op.getContext(), sde::SdeAsyncStrategy::advance_edt));
+}
+
+static void coarsenRepeatedStencilSlice(sde::SdeSuIterateOp op) {
+  if (!op)
+    return;
+  auto topology = op.getIterationTopology();
+  if (!topology || *topology != sde::SdeIterationTopology::owner_tile)
+    return;
+  ArrayAttr slice = op.getLogicalWorkerSliceAttr();
+  if (!slice || slice.size() != 2)
+    return;
+
+  SmallVector<Attribute, 2> coarsenedValues(slice.begin(), slice.end());
+  auto firstDim = dyn_cast<IntegerAttr>(coarsenedValues.front());
+  if (!firstDim || firstDim.getInt() <= 0)
+    return;
+  coarsenedValues.front() =
+      IntegerAttr::get(firstDim.getType(), firstDim.getInt() * 2);
+  ArrayAttr coarsened = ArrayAttr::get(op.getContext(), coarsenedValues);
+  if (coarsened == slice)
+    return;
+  op.setLogicalWorkerSliceAttr(coarsened);
+  if (ArrayAttr physical = op.getPhysicalBlockShapeAttr()) {
+    SmallVector<Attribute, 2> physicalValues(physical.begin(), physical.end());
+    if (physicalValues.size() != 2)
+      return;
+    auto physicalFirstDim = dyn_cast<IntegerAttr>(physicalValues.front());
+    if (!physicalFirstDim || physicalFirstDim.getInt() <= 0)
+      return;
+    physicalValues.front() = IntegerAttr::get(physicalFirstDim.getType(),
+                                              physicalFirstDim.getInt() * 2);
+    op.setPhysicalBlockShapeAttr(
+        ArrayAttr::get(op.getContext(), physicalValues));
+  }
 }
 
 static Operation *findPreviousSuContainer(Operation *anchor) {
@@ -265,24 +303,36 @@ static bool canStampCandidatePair(sde::SdeSuIterateOp first,
   return true;
 }
 
-static void stampCandidatePair(sde::SdeSuIterateOp first,
-                               sde::SdeSuIterateOp second, int64_t groupId) {
-  assert(canStampCandidatePair(first, second) &&
-         "candidate pair preconditions must be checked before stamping");
+static bool canUseAdjacentCandidateStage(sde::SdeSuIterateOp op) {
+  return isSdeCpsCandidateStage(op) && !hasCandidateAttrs(op);
+}
 
-  MLIRContext *ctx = first.getContext();
+static void stampCandidateGroup(ArrayRef<sde::SdeSuIterateOp> stages,
+                                int64_t groupId) {
+  assert(stages.size() >= 2 && "candidate groups require multiple stages");
+  MLIRContext *ctx = stages.front()->getContext();
+  int64_t stageCount = static_cast<int64_t>(stages.size());
+
   auto setStageAttrs = [&](sde::SdeSuIterateOp op, int64_t stageIndex) {
     op->setAttr(kCpsCandidateGroupId,
                 IntegerAttr::get(IntegerType::get(ctx, 64), groupId));
     op->setAttr(kCpsCandidateStageIndex,
                 IntegerAttr::get(IntegerType::get(ctx, 64), stageIndex));
     op->setAttr(kCpsCandidateStageCount,
-                IntegerAttr::get(IntegerType::get(ctx, 64), 2));
+                IntegerAttr::get(IntegerType::get(ctx, 64), stageCount));
     op->setAttr(kCpsCandidateRequiresTokenizedDataflow, UnitAttr::get(ctx));
   };
 
-  setStageAttrs(first, 0);
-  setStageAttrs(second, 1);
+  for (auto [index, stage] : llvm::enumerate(stages))
+    setStageAttrs(stage, static_cast<int64_t>(index));
+}
+
+static void stampCandidatePair(sde::SdeSuIterateOp first,
+                               sde::SdeSuIterateOp second, int64_t groupId) {
+  assert(canStampCandidatePair(first, second) &&
+         "candidate pair preconditions must be checked before stamping");
+  SmallVector<sde::SdeSuIterateOp, 2> stages{first, second};
+  stampCandidateGroup(stages, groupId);
 }
 
 static bool attachStageCompletionToBarrier(Operation *stageContainer,
@@ -322,8 +372,8 @@ static bool insertStageCompletionBarrier(Operation *firstContainer,
   MLIRContext *ctx = firstContainer->getContext();
   OpBuilder builder(ctx);
   builder.setInsertionPointAfter(firstContainer);
-  auto token = sde::SdeControlTokenOp::create(
-      builder, firstContainer->getLoc(), sde::CompletionType::get(ctx));
+  auto token = sde::SdeControlTokenOp::create(builder, firstContainer->getLoc(),
+                                              sde::CompletionType::get(ctx));
 
   SmallVector<Value> tokens{token.getToken()};
   builder.setInsertionPoint(secondContainer);
@@ -335,17 +385,18 @@ static bool insertStageCompletionBarrier(Operation *firstContainer,
   return true;
 }
 
-static bool writesIntersectReads(const sde::StructuredMemoryEffectSummary &lhs,
-                                 const sde::StructuredMemoryEffectSummary &rhs) {
+static bool
+writesIntersectReads(const sde::StructuredMemoryEffectSummary &lhs,
+                     const sde::StructuredMemoryEffectSummary &rhs) {
   for (Value written : lhs.writes)
     if (rhs.reads.contains(written))
       return true;
   return false;
 }
 
-static bool hasAlternatingBufferExchange(
-    const sde::StructuredMemoryEffectSummary &lhs,
-    const sde::StructuredMemoryEffectSummary &rhs) {
+static bool
+hasAlternatingBufferExchange(const sde::StructuredMemoryEffectSummary &lhs,
+                             const sde::StructuredMemoryEffectSummary &rhs) {
   return writesIntersectReads(lhs, rhs) && writesIntersectReads(rhs, lhs);
 }
 
@@ -373,8 +424,8 @@ static bool hasPhysicalTimestepPlan(sde::SdeSuIterateOp op) {
   return op.getPhysicalOwnerDimsAttr() || op.getPhysicalBlockShapeAttr();
 }
 
-static bool haveCompatiblePhysicalTimestepPlan(
-    sde::SdeSuIterateOp predecessor, sde::SdeSuIterateOp successor) {
+static bool haveCompatiblePhysicalTimestepPlan(sde::SdeSuIterateOp predecessor,
+                                               sde::SdeSuIterateOp successor) {
   bool predPlanned = hasPhysicalTimestepPlan(predecessor);
   bool succPlanned = hasPhysicalTimestepPlan(successor);
   if (!predPlanned && !succPlanned)
@@ -412,7 +463,8 @@ static std::optional<SmallVector<int64_t, 4>>
 getUniqueStaticWrittenShape(const sde::StructuredMemoryEffectSummary &effects) {
   std::optional<SmallVector<int64_t, 4>> selectedShape;
   for (Value written : effects.writes) {
-    Value root = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(written);
+    Value root =
+        ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(written);
     auto memrefType = dyn_cast<MemRefType>(root.getType());
     if (!memrefType || !memrefType.hasStaticShape())
       return std::nullopt;
@@ -429,9 +481,9 @@ getUniqueStaticWrittenShape(const sde::StructuredMemoryEffectSummary &effects) {
   return selectedShape;
 }
 
-static bool haveSameStaticWrittenShape(
-    const sde::StructuredMemoryEffectSummary &lhs,
-    const sde::StructuredMemoryEffectSummary &rhs) {
+static bool
+haveSameStaticWrittenShape(const sde::StructuredMemoryEffectSummary &lhs,
+                           const sde::StructuredMemoryEffectSummary &rhs) {
   auto lhsShape = getUniqueStaticWrittenShape(lhs);
   auto rhsShape = getUniqueStaticWrittenShape(rhs);
   return lhsShape && rhsShape && *lhsShape == *rhsShape;
@@ -455,8 +507,7 @@ static void stampJacobiTimestepPlan(sde::SdeSuIterateOp predecessor,
   stampRepeatedTimestepPlan(successor);
   if (predecessorIsStencil)
     predecessor.setPatternAttr(sde::SdePatternAttr::get(
-        predecessor.getContext(),
-        sde::SdePattern::jacobi_alternating_buffers));
+        predecessor.getContext(), sde::SdePattern::jacobi_alternating_buffers));
   if (successorIsStencil)
     successor.setPatternAttr(sde::SdePatternAttr::get(
         successor.getContext(), sde::SdePattern::jacobi_alternating_buffers));
@@ -476,8 +527,7 @@ static bool stampTimestepPlanIfRecognized(
       haveCompatibleTimestepIterationPlan(predecessor, successor);
 
   if (isUniformRepeatableStage(predecessor) &&
-      isUniformRepeatableStage(successor) &&
-      compatibleIterationPlan &&
+      isUniformRepeatableStage(successor) && compatibleIterationPlan &&
       allowUniformUniformPlan &&
       writesIntersectReads(predEffects, succEffects) &&
       haveCompatiblePhysicalTimestepPlan(predecessor, successor)) {
@@ -497,6 +547,8 @@ static bool stampTimestepPlanIfRecognized(
       allowStencilStencilPlan) {
     stampRepeatedTimestepPlan(predecessor);
     stampRepeatedTimestepPlan(successor);
+    coarsenRepeatedStencilSlice(predecessor);
+    coarsenRepeatedStencilSlice(successor);
     return true;
   }
 
@@ -504,6 +556,8 @@ static bool stampTimestepPlanIfRecognized(
       (compatibleIterationPlan ||
        haveSameStaticWrittenShape(predEffects, succEffects))) {
     stampJacobiTimestepPlan(predecessor, successor, predStencil, succStencil);
+    coarsenRepeatedStencilSlice(predecessor);
+    coarsenRepeatedStencilSlice(successor);
     return true;
   }
 
@@ -521,10 +575,11 @@ static bool stampAdjacentTimestepPair(Operation *predOp, Operation *succOp) {
 
   auto predEffects =
       sde::collectStructuredMemoryEffects(predecessor.getOperation());
-  auto succEffects = sde::collectStructuredMemoryEffects(successor.getOperation());
+  auto succEffects =
+      sde::collectStructuredMemoryEffects(successor.getOperation());
   return stampTimestepPlanIfRecognized(predecessor, successor, predEffects,
                                        succEffects,
-                                       /*allowStencilStencilPlan=*/false,
+                                       /*allowStencilStencilPlan=*/true,
                                        /*allowUniformUniformPlan=*/false);
 }
 
@@ -585,31 +640,56 @@ static bool isTransparentBetweenTimestepCandidates(Operation *op) {
 
 static unsigned stampAdjacentLoopCandidates(scf::ForOp loop,
                                             int64_t &nextGroupId) {
-  Operation *previous = nullptr;
   unsigned stamped = 0;
+  SmallVector<Operation *, 4> candidateContainers;
+
+  auto flushCandidateChain = [&]() {
+    if (candidateContainers.size() < 2) {
+      candidateContainers.clear();
+      return;
+    }
+
+    SmallVector<sde::SdeSuIterateOp, 4> stages;
+    stages.reserve(candidateContainers.size());
+    for (Operation *container : candidateContainers) {
+      auto stage = findSuIterate(container);
+      if (!canUseAdjacentCandidateStage(stage)) {
+        candidateContainers.clear();
+        return;
+      }
+      stages.push_back(stage);
+    }
+
+    for (auto index : llvm::seq<size_t>(1, candidateContainers.size()))
+      if (!insertStageCompletionBarrier(candidateContainers[index - 1],
+                                        candidateContainers[index])) {
+        candidateContainers.clear();
+        return;
+      }
+
+    stampCandidateGroup(stages, nextGroupId);
+    ++stamped;
+    ++nextGroupId;
+    candidateContainers.clear();
+  };
 
   for (Operation &op : loop.getBody()->without_terminator()) {
     if (findSuIterate(&op)) {
-      if (previous) {
-        auto first = findSuIterate(previous);
-        auto second = findSuIterate(&op);
-        if (canStampCandidatePair(first, second) &&
-            insertStageCompletionBarrier(previous, &op)) {
-          stampCandidatePair(first, second, nextGroupId);
-          ++stamped;
-          ++nextGroupId;
-        }
-      }
-      previous = &op;
+      auto stage = findSuIterate(&op);
+      if (!canUseAdjacentCandidateStage(stage))
+        flushCandidateChain();
+      if (canUseAdjacentCandidateStage(stage))
+        candidateContainers.push_back(&op);
       continue;
     }
 
     if (isTransparentBetweenTimestepCandidates(&op))
       continue;
 
-    previous = nullptr;
+    flushCandidateChain();
   }
 
+  flushCandidateChain();
   return stamped;
 }
 
@@ -725,7 +805,6 @@ struct BarrierEliminationPass
                                              << " timestep pair(s)");
     ARTS_INFO("BarrierElimination: stamped " << cpsCandidateGroupsStamped
                                              << " CPS candidate group(s)");
-
   }
 
 private:

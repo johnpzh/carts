@@ -117,10 +117,10 @@ Cannon and SUMMA remain viable future paths once collective-like orchestration i
 
 ## 3. Strategy Selection Policy (H2)
 
-Current core fallback/materialization policy is implemented in
-`DistributionHeuristics::selectDistributionKind`
-(`lib/carts/dialect/arts/Analysis/heuristics/DistributionHeuristics.cpp`).
-The intended source of truth is still SDE-selected distribution intent.
+Current selection policy is implemented in SDE by
+`DistributionPlanning` (`lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`).
+ARTS consumes and materializes the selected distribution intent; it should not
+recover source-level distribution policy after the CODIR-to-ARTS boundary.
 
 Selection order matters:
 
@@ -190,7 +190,7 @@ memref work that has not yet become canonical MU token/codelet form.
 Key files:
 - `tools/compile/Compile.cpp`
 - `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
-- `lib/carts/dialect/codir/Transforms/CodirBoundary.cpp`
+- `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp`
 
 Useful stop points:
@@ -313,20 +313,14 @@ This coupling is what keeps data ownership and routed work aligned for
 
 ## 10. Heuristics Placement
 
-`DistributionHeuristics` now centralizes:
-- worker topology resolution (`resolveWorkerConfig`)
-- dispatch worker count / total worker helpers
-- DB alignment block-size heuristic
-- coarsened block-size hint computation for SDE-planned work units
-  - the coarsening threshold is not trip-count-only
-  - small loops carried by EDTs with many DB dependencies get larger worker
-    chunks, because ARTS pays fixed setup cost per EDT and per dependency slot
-  - direct serial perfect nests can count as extra work per outer iteration,
-    but only for low-fanout uniform loops; this avoids over-coarsening
-    batchnorm-like kernels without relaxing granularity for stencil- or
-    multi-array-heavy loops
-
-Passes consume the API; they do not duplicate these heuristics.
+Distribution selection now lives in SDE:
+- `DistributionPlanning` reads SDE pattern/effect facts and the SDE cost model.
+- It stamps `sde.su_distribute` or distribution attributes on eligible
+  `sde.su_iterate` operations.
+- CODIR carries the explicit codelet contract.
+- ARTS DB/EDT/epoch passes consume concrete distribution attrs and ownership
+  metadata; they should validate and refine the object graph, not reselect
+  source-level policy.
 
 Wavefront note:
 

@@ -22,6 +22,7 @@
 #include "mlir/Dialect/OpenMP/OpenMPDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Pass/Pass.h"
+#include "polygeist/Dialect.h"
 
 namespace mlir::carts::sde {
 std::unique_ptr<Pass> createMemoryUnitMaterializationPass();
@@ -52,6 +53,11 @@ inline NamedAttrList getRewrittenAttrs(SdeSuIterateOp op) {
 }
 
 class SDECostModel;
+
+// --- Input normalization before OpenMP-to-SDE conversion ---
+std::unique_ptr<Pass> createSdeInputInlinerPass();
+std::unique_ptr<Pass> createSdeMemrefNormalizationPass();
+std::unique_ptr<Pass> createSdeHandleDepsPass();
 
 // --- State passes (IR cleanup before planning) ---
 std::unique_ptr<Pass> createScalarForwardingPass();

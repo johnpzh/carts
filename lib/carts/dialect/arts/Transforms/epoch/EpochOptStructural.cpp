@@ -335,8 +335,6 @@ EpochNarrowingCounts narrowEpochScopes(ModuleOp module) {
   for (EpochOp epoch : epochs) {
     if (!epoch->getBlock())
       continue;
-    if (epoch->hasAttr(ContinuationForEpoch))
-      continue;
     unsigned created = narrowEpoch(epoch);
     if (created == 0)
       continue;
@@ -347,8 +345,7 @@ EpochNarrowingCounts narrowEpochScopes(ModuleOp module) {
 }
 
 unsigned processRegionForEpochFusion(Region &region,
-                                     const EpochAnalysis &epochAnalysis,
-                                     bool continuationEnabled) {
+                                     const EpochAnalysis &epochAnalysis) {
   unsigned fusedPairs = 0;
   for (Block &block : region) {
     for (auto it = block.begin(); it != block.end();) {
@@ -368,8 +365,7 @@ unsigned processRegionForEpochFusion(Region &region,
         EpochAccessSummary secondAccesses =
             epochAnalysis.summarizeEpochAccess(second);
         EpochFusionDecision decision = epochAnalysis.evaluateEpochFusion(
-            first, second, continuationEnabled, &firstAccesses,
-            &secondAccesses);
+            first, second, &firstAccesses, &secondAccesses);
         if (!decision.shouldFuse) {
           ARTS_DEBUG("Skipping epoch fusion: " << decision.rationale);
           break;
@@ -386,8 +382,7 @@ unsigned processRegionForEpochFusion(Region &region,
 
     for (Operation &op : block) {
       for (Region &nested : op.getRegions())
-        fusedPairs += processRegionForEpochFusion(nested, epochAnalysis,
-                                                  continuationEnabled);
+        fusedPairs += processRegionForEpochFusion(nested, epochAnalysis);
     }
   }
   return fusedPairs;

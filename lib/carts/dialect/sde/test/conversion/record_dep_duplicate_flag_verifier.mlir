@@ -1,4 +1,4 @@
-// RUN: not %carts-compile %s --pipeline raise-memref-dimensionality 2>&1 | %FileCheck %s
+// RUN: not %carts-compile %s --pipeline sde-input-normalization 2>&1 | %FileCheck %s
 
 // CHECK: dep_flags entries (2) must match datablocks (1)
 

@@ -38,6 +38,7 @@
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
 #include "polygeist/Dialect.h"
+#include "polygeist/Ops.h"
 #include "polygeist/Passes/Passes.h"
 
 #include "carts/Dialect.h"
@@ -58,6 +59,9 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
 #include <array>
 #include <cassert>
 #include <functional>
@@ -161,22 +165,11 @@ static cl::opt<bool> DistributedDb(
              "(ownership marking + parallel initPerWorker creation)"),
     cl::init(false));
 
-/// Enable epoch finish-continuation lowering (replaces blocking
-/// arts_wait_on_handle with ARTS-native finish-EDT continuation scheduling
-/// for eligible epoch patterns). See RFC:
-/// docs/compiler/epoch-finish-continuation-rfc.md
-static cl::opt<bool> EpochFinishContinuation(
-    "arts-epoch-finish-continuation",
-    cl::desc("Enable epoch finish-continuation lowering (default: on; replace "
-             "blocking epoch waits with ARTS-native finish-EDT continuation "
-             "scheduling for eligible patterns)"),
-    cl::init(true));
-
 ///===----------------------------------------------------------------------===///
 /// Pipeline Stop Options
 ///===----------------------------------------------------------------------===///
 enum class StageId {
-  RaiseMemRefDimensionality,
+  SdeInputNormalization,
   InitialCleanup,
   SdePlanning,
   SdeToCodir,
@@ -247,7 +240,7 @@ static cl::opt<std::string> StartFrom(
     "start-from",
     cl::desc("Resume pipeline from specified stage token "
              "(use --print-pipeline-manifest-json to inspect valid tokens)"),
-    cl::value_desc("stage"), cl::init("raise-memref-dimensionality"));
+    cl::value_desc("stage"), cl::init("sde-input-normalization"));
 
 static cl::opt<bool> PrintPipelineManifestJSON(
     "print-pipeline-manifest-json",
@@ -261,16 +254,16 @@ static cl::opt<std::string> CustomPassPipeline(
     cl::value_desc("pipeline"), cl::init(""));
 
 static const std::array<llvm::StringLiteral, 10>
-    kRaiseMemRefDimensionalityPasses = {"LowerAffine(func)",
-                                        "CSE",
-                                        "ArtsInliner",
-                                        "PolygeistCanonicalize",
-                                        "ScalarForwarding",
-                                        "PolygeistCanonicalize",
-                                        "RaiseMemRefDimensionality",
-                                        "HandleDeps",
-                                        "DeadCodeElimination",
-                                        "CSE"};
+    kSdeInputNormalizationPasses = {"LowerAffine(func)",
+                                    "CSE",
+                                    "SdeInputInliner",
+                                    "PolygeistCanonicalize",
+                                    "ScalarForwarding",
+                                    "PolygeistCanonicalize",
+                                    "SdeMemrefNormalization",
+                                    "SdeHandleDeps",
+                                    "DeadCodeElimination",
+                                    "CSE"};
 static const std::array<llvm::StringLiteral, 3> kInitialCleanupPasses = {
     "LowerAffine(func)", "CSE(func)", "PolygeistCanonicalizeFor(func)"};
 static const std::array<llvm::StringLiteral, 14> kSdePlanningPasses = {
@@ -309,8 +302,9 @@ static const std::array<llvm::StringLiteral, 6> kCreateDbsPasses = {
     "SymbolDCE", "Mem2Reg", "PolygeistCanonicalize"};
 static const std::array<llvm::StringLiteral, 4> kDbOptPasses = {
     "DbModeTightening", "PolygeistCanonicalize", "CSE", "Mem2Reg"};
-static const std::array<llvm::StringLiteral, 7> kPostDbRefinementPasses = {
+static const std::array<llvm::StringLiteral, 8> kPostDbRefinementPasses = {
     "DbModeTightening",
+    "DbDistributedOwnership (conditional)",
     "EdtTransforms",
     "DbTransforms",
     "ContractValidation",
@@ -352,7 +346,8 @@ static const std::array<llvm::StringLiteral, 22> kPreLoweringPasses = {
     "CSE",
     "VerifyEpochLowered",
     "VerifyPreLowered"};
-static const std::array<llvm::StringLiteral, 13> kArtsToLLVMPasses = {
+static const std::array<llvm::StringLiteral, 14> kArtsToLLVMPasses = {
+    "LowerAffine(func)",
     "ConvertArtsToLLVM",
     "LoweringContractCleanup",
     "GuidRangCallOpt",
@@ -374,11 +369,13 @@ static const std::array<llvm::StringLiteral, 6> kPostO3OptPasses = {
     "LICM",
     "CSE",
     "PolygeistCanonicalize"};
-static const std::array<llvm::StringLiteral, 12> kLLVMIREmissionPasses = {
+static const std::array<llvm::StringLiteral, 14> kLLVMIREmissionPasses = {
     "CSE",
     "PolygeistCanonicalize",
+    "ConvertOpenMPToLLVM",
     "ArithExpandOps",
     "ConvertSCFToCF",
+    "ResidualHostOpenMPMemrefCleanup",
     "ConvertPolygeistToLLVM",
     "ConvertIndexToLLVM",
     "ConvertControlFlowToLLVM",
@@ -398,7 +395,7 @@ static constexpr llvm::StringLiteral kSdeToCodirLayers[] = {"sde", "codir"};
 static constexpr llvm::StringLiteral kCodirToArtsLayers[] = {"codir", "arts"};
 
 static constexpr llvm::StringLiteral kCurrentFrontendStages[] = {
-    "raise-memref-dimensionality", "initial-cleanup"};
+    "sde-input-normalization", "initial-cleanup"};
 static constexpr llvm::StringLiteral kCurrentSdePlanningStages[] = {
     "sde-planning"};
 static constexpr llvm::StringLiteral kCurrentSdeToCodirStages[] = {
@@ -690,8 +687,7 @@ void registerDialects(DialectRegistry &registry) {
   registerAllDialects(registry);
   registerAllExtensions(registry);
   registerAllFromLLVMIRTranslations(registry);
-  registerBuiltinDialectTranslation(registry);
-  registerLLVMDialectTranslation(registry);
+  registerAllToLLVMIRTranslations(registry);
 }
 
 /// Initialize the MLIR context by loading necessary dialects and attaching
@@ -735,6 +731,277 @@ void initializeContext(MLIRContext &context) {
       context);
 }
 
+static void ensureRuntimeConfigDataVisibleForValidation(ModuleOp module) {
+  std::optional<StringRef> configData = arts::getRuntimeConfigData(module);
+  if (!configData || configData->empty())
+    return;
+  constexpr llvm::StringLiteral kConfigGlobalName =
+      "__carts_embedded_arts_cfg";
+  if (module.lookupSymbol<LLVM::GlobalOp>(kConfigGlobalName))
+    return;
+
+  OpBuilder builder(module.getContext());
+  builder.setInsertionPointToStart(module.getBody());
+  auto i8 = mlir::IntegerType::get(module.getContext(), 8);
+  auto type = LLVM::LLVMArrayType::get(i8, configData->size() + 1);
+  LLVM::GlobalOp::create(
+      builder, module.getLoc(), type, /*isConstant=*/true,
+      LLVM::Linkage::Internal, kConfigGlobalName,
+      builder.getStringAttr(configData->str() + '\0'));
+}
+
+static bool hasResidualOpenMP(ModuleOp module) {
+  bool found = false;
+  module.walk([&](Operation *op) {
+    if (op->getDialect() && op->getDialect()->getNamespace() == "omp") {
+      found = true;
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return found;
+}
+
+static void markHostOpenMPBenchmarkMode(ModuleOp module) {
+  if (!hasResidualOpenMP(module))
+    return;
+
+  constexpr llvm::StringLiteral kMarkerFn =
+      "carts_benchmarks_mark_host_openmp";
+  MLIRContext *ctx = module.getContext();
+  if (!module.lookupSymbol<LLVM::LLVMFuncOp>(kMarkerFn)) {
+    OpBuilder builder(ctx);
+    builder.setInsertionPointToStart(module.getBody());
+    auto fnType = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
+                                              /*params=*/{}, false);
+    auto fn = LLVM::LLVMFuncOp::create(builder, module.getLoc(), kMarkerFn,
+                                       fnType);
+    fn.setLinkage(LLVM::Linkage::External);
+  }
+
+  SmallVector<LLVM::CallOp> benchmarkStarts;
+  module.walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == "carts_benchmarks_start")
+      benchmarkStarts.push_back(call);
+  });
+
+  for (LLVM::CallOp call : benchmarkStarts) {
+    OpBuilder builder(call);
+    LLVM::CallOp::create(builder, call.getLoc(), TypeRange{},
+                         SymbolRefAttr::get(ctx, kMarkerFn), ValueRange{});
+  }
+}
+
+static bool isLLVMMemRefDescriptorLike(mlir::Type type) {
+  auto structType = dyn_cast<LLVM::LLVMStructType>(type);
+  if (!structType || structType.getBody().size() < 2)
+    return false;
+  return isa<LLVM::LLVMPointerType>(structType.getBody()[0]) &&
+         isa<LLVM::LLVMPointerType>(structType.getBody()[1]);
+}
+
+static void foldResidualHostOpenMPMemrefPointerCasts(ModuleOp module) {
+  SmallVector<UnrealizedConversionCastOp> casts;
+  module.walk([&](UnrealizedConversionCastOp cast) {
+    if (cast.getNumOperands() != 1 || cast.getNumResults() != 1)
+      return;
+    if (!isa<LLVM::LLVMPointerType>(cast.getResult(0).getType()))
+      return;
+    if (!isa<MemRefType>(cast.getOperand(0).getType()))
+      return;
+    casts.push_back(cast);
+  });
+
+  for (UnrealizedConversionCastOp cast : casts) {
+    if (!cast || cast->use_empty())
+      continue;
+    auto sourceCast =
+        cast.getOperand(0).getDefiningOp<UnrealizedConversionCastOp>();
+    if (!sourceCast || sourceCast.getNumOperands() != 1 ||
+        sourceCast.getNumResults() != 1)
+      continue;
+    mlir::Value descriptor = sourceCast.getOperand(0);
+    if (!isLLVMMemRefDescriptorLike(descriptor.getType()))
+      continue;
+
+    OpBuilder builder(cast);
+    mlir::Value ptr = LLVM::ExtractValueOp::create(
+        builder, cast.getLoc(), descriptor, /*position=*/1);
+    if (ptr.getType() != cast.getResult(0).getType())
+      ptr = LLVM::AddrSpaceCastOp::create(
+          builder, cast.getLoc(), cast.getResult(0).getType(), ptr);
+    cast.getResult(0).replaceAllUsesWith(ptr);
+    cast.erase();
+    if (sourceCast->use_empty())
+      sourceCast.erase();
+  }
+}
+
+static mlir::Value createLLVMIndexConstant(OpBuilder &builder, Location loc,
+                                           mlir::Type type, int64_t value) {
+  return LLVM::ConstantOp::create(builder, loc, type,
+                                  builder.getIntegerAttr(type, value));
+}
+
+static mlir::Value buildRankOneDescriptorFromBarePtr(OpBuilder &builder,
+                                                     Location loc,
+                                                     mlir::Value ptr,
+                                                     mlir::Type descriptorType) {
+  auto structType = dyn_cast<LLVM::LLVMStructType>(descriptorType);
+  if (!structType || structType.getBody().size() < 5)
+    return {};
+
+  mlir::Type indexType = structType.getBody()[2];
+  mlir::Value zero = createLLVMIndexConstant(builder, loc, indexType, 0);
+  mlir::Value one = createLLVMIndexConstant(builder, loc, indexType, 1);
+
+  mlir::Value descriptor = LLVM::PoisonOp::create(builder, loc, descriptorType);
+  descriptor = LLVM::InsertValueOp::create(builder, loc, descriptor, ptr,
+                                           ArrayRef<int64_t>{0});
+  descriptor = LLVM::InsertValueOp::create(builder, loc, descriptor, ptr,
+                                           ArrayRef<int64_t>{1});
+  descriptor = LLVM::InsertValueOp::create(builder, loc, descriptor, zero,
+                                           ArrayRef<int64_t>{2});
+  descriptor = LLVM::InsertValueOp::create(
+      builder, loc, descriptor, zero, ArrayRef<int64_t>{3, 0});
+  descriptor = LLVM::InsertValueOp::create(
+      builder, loc, descriptor, one, ArrayRef<int64_t>{4, 0});
+  return descriptor;
+}
+
+static void cleanupResidualHostOpenMPMemrefs(ModuleOp module) {
+  SmallVector<UnrealizedConversionCastOp> castsToDescriptor;
+  module.walk([&](UnrealizedConversionCastOp cast) {
+    if (cast.getNumOperands() != 1 || cast.getNumResults() != 1)
+      return;
+    if (!isLLVMMemRefDescriptorLike(cast.getResult(0).getType()))
+      return;
+    auto ptrToMemref =
+        cast.getOperand(0).getDefiningOp<polygeist::Pointer2MemrefOp>();
+    if (!ptrToMemref)
+      return;
+    auto memrefType = dyn_cast<MemRefType>(ptrToMemref.getType());
+    if (!memrefType || memrefType.getRank() != 1 || memrefType.hasStaticShape())
+      return;
+    castsToDescriptor.push_back(cast);
+  });
+
+  for (UnrealizedConversionCastOp cast : castsToDescriptor) {
+    if (!cast)
+      continue;
+    auto ptrToMemref =
+        cast.getOperand(0).getDefiningOp<polygeist::Pointer2MemrefOp>();
+    if (!ptrToMemref)
+      continue;
+    OpBuilder builder(cast);
+    mlir::Value descriptor = buildRankOneDescriptorFromBarePtr(
+        builder, cast.getLoc(), ptrToMemref.getSource(),
+        cast.getResult(0).getType());
+    if (!descriptor)
+      continue;
+    cast.getResult(0).replaceAllUsesWith(descriptor);
+    cast.erase();
+    if (ptrToMemref->use_empty())
+      ptrToMemref.erase();
+  }
+
+  SmallVector<polygeist::Memref2PointerOp> memrefToPointerOps;
+  module.walk([&](polygeist::Memref2PointerOp op) {
+    auto sourceCast = op.getSource().getDefiningOp<UnrealizedConversionCastOp>();
+    if (!sourceCast || sourceCast.getNumOperands() != 1 ||
+        !isLLVMMemRefDescriptorLike(sourceCast.getOperand(0).getType()))
+      return;
+    memrefToPointerOps.push_back(op);
+  });
+
+  for (polygeist::Memref2PointerOp op : memrefToPointerOps) {
+    if (!op)
+      continue;
+    auto sourceCast = op.getSource().getDefiningOp<UnrealizedConversionCastOp>();
+    if (!sourceCast)
+      continue;
+    OpBuilder builder(op);
+    mlir::Value ptr = LLVM::ExtractValueOp::create(
+        builder, op.getLoc(), sourceCast.getOperand(0), /*position=*/1);
+    if (ptr.getType() != op.getType())
+      ptr = LLVM::AddrSpaceCastOp::create(builder, op.getLoc(), op.getType(),
+                                          ptr);
+    op.getResult().replaceAllUsesWith(ptr);
+    op.erase();
+    if (sourceCast->use_empty())
+      sourceCast.erase();
+  }
+}
+
+struct ResidualHostOpenMPMemrefCleanupPass
+    : public PassWrapper<ResidualHostOpenMPMemrefCleanupPass,
+                         OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(
+      ResidualHostOpenMPMemrefCleanupPass)
+
+  StringRef getArgument() const final {
+    return "carts-residual-host-openmp-memref-cleanup";
+  }
+
+  StringRef getDescription() const final {
+    return "Clean residual host-OpenMP memref/pointer bridges before LLVM "
+           "emission";
+  }
+
+  void runOnOperation() final {
+    ModuleOp module = getOperation();
+    if (!hasResidualOpenMP(module))
+      return;
+    cleanupResidualHostOpenMPMemrefs(module);
+  }
+};
+
+static bool hasArtsRuntimeCallsOutsideHostWrappers(llvm::Module &module) {
+  for (llvm::Function &function : module) {
+    if (function.isDeclaration())
+      continue;
+    if (function.getName() == "main" || function.getName() == "main_edt")
+      continue;
+
+    for (llvm::BasicBlock &block : function) {
+      for (llvm::Instruction &instruction : block) {
+        auto *call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+        if (!call)
+          continue;
+        llvm::Function *callee = call->getCalledFunction();
+        if (callee && callee->getName().starts_with("arts_"))
+          return true;
+      }
+    }
+  }
+  return false;
+}
+
+static void bypassArtsRuntimeForHostOpenMP(llvm::Module &module) {
+  llvm::Function *main = module.getFunction("main");
+  llvm::Function *mainBody = module.getFunction("mainBody");
+  if (!main || !mainBody || main->arg_size() != 2)
+    return;
+  if (mainBody->arg_size() != 0 && mainBody->arg_size() != 2)
+    return;
+  if (hasArtsRuntimeCallsOutsideHostWrappers(module))
+    return;
+
+  main->deleteBody();
+  llvm::BasicBlock *entry =
+      llvm::BasicBlock::Create(module.getContext(), "entry", main);
+  llvm::IRBuilder<> builder(entry);
+  SmallVector<llvm::Value *, 2> args;
+  if (mainBody->arg_size() == 2)
+    for (llvm::Argument &arg : main->args())
+      args.push_back(&arg);
+  llvm::CallInst *result = builder.CreateCall(mainBody, args);
+  if (main->getReturnType()->isVoidTy())
+    builder.CreateRetVoid();
+  else
+    builder.CreateRet(result);
+}
+
 ///===----------------------------------------------------------------------===///
 /// Pipeline Builders
 ///===----------------------------------------------------------------------===///
@@ -747,20 +1014,20 @@ static void addCanonicalizeAndCSE(PassManager &pm) {
   pm.addPass(createCSEPass());
 }
 
-/// Raise nested pointer allocations to N-dimensional memrefs.
-void buildRaiseMemRefDimensionalityPipeline(PassManager &pm) {
+/// Normalize frontend storage and dependency shape before SDE conversion.
+void buildSdeInputNormalizationPipeline(PassManager &pm) {
   OpPassManager &optPM = pm.nest<func::FuncOp>();
   /// Stage contract: normalize affine memory/control ops before the module pass
-  /// runs so RaiseMemRefDimensionality only needs to reason about the
+  /// runs so SdeInputNormalization only needs to reason about the
   /// memref+SCF form produced by the frontend/inliner pipeline.
   optPM.addPass(createLowerAffinePass());
   pm.addPass(createCSEPass());
-  pm.addPass(arts::createArtsInlinerPass());
+  pm.addPass(sde::createSdeInputInlinerPass());
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
   pm.addPass(sde::createScalarForwardingPass());
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
-  pm.addPass(arts::createMemrefNormalizationPass());
-  pm.addPass(arts::createHandleDepsPass());
+  pm.addPass(sde::createSdeMemrefNormalizationPass());
+  pm.addPass(sde::createSdeHandleDepsPass());
   pm.addPass(arts::createDCEPass());
   pm.addPass(createCSEPass());
 }
@@ -843,12 +1110,15 @@ void buildDbOptPipeline(PassManager &pm, arts::AnalysisManager *AM) {
 }
 
 /// Tighten DB modes and persist post-partition refinement contracts.
-void buildPostDbRefinementPipeline(PassManager &pm, arts::AnalysisManager *AM) {
+void buildPostDbRefinementPipeline(PassManager &pm, arts::AnalysisManager *AM,
+                                   bool enableDistributedDb) {
   /// DbModeTighteningPass performs local DB cleanup after mode adjustment,
   /// which can expose new zero-dependency or degenerate EDTs before epoch
   /// shaping. Mode tightening must run before EDT transforms so affinity and
   /// reduction analysis see accurate writer/reader modes.
   pm.addPass(arts::createDbModeTighteningPass(AM));
+  if (enableDistributedDb)
+    pm.addPass(arts::createDbDistributedOwnershipPass(AM));
   pm.addPass(arts::createEdtTransformsPass(AM));
   /// Re-run DB transforms after EDT dependency pruning so cleanup-only
   /// acquires and now-unreachable DB roots are removed in the DB layer.
@@ -870,22 +1140,18 @@ void buildLateConcurrencyCleanupPipeline(PassManager &pm) {
 }
 
 /// Epoch creation passes.
-void buildEpochsPipeline(PassManager &pm, arts::AnalysisManager *AM,
-                         bool enableContinuation) {
+void buildEpochsPipeline(PassManager &pm, arts::AnalysisManager *AM) {
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
   pm.addPass(arts::createCreateEpochsPass());
   pm.addPass(arts::createVerifyEpochCreatedPass());
-  /// Run EpochOpt with structural + scheduling optimizations on newly created
-  /// epochs. Amortization is always enabled; continuation is gated.
-  pm.addPass(arts::createEpochOptPass(AM,
-                                      /*amortization=*/true,
-                                      /*continuation=*/enableContinuation));
+  /// Run EpochOpt with structural + amortization optimizations on newly
+  /// created epochs.
+  pm.addPass(arts::createEpochOptPass(AM, /*amortization=*/true));
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
 }
 
 /// Pre-lowering passes.
-void buildPreLoweringPipeline(PassManager &pm, arts::AnalysisManager *AM,
-                              bool enableContinuation) {
+void buildPreLoweringPipeline(PassManager &pm, arts::AnalysisManager *AM) {
   /// TODO(PERF): EdtAllocaSinkingPass runs twice (late concurrency cleanup
   /// and here).
   pm.addPass(arts::createEdtAllocaSinkingPass());
@@ -913,6 +1179,7 @@ void buildPreLoweringPipeline(PassManager &pm, arts::AnalysisManager *AM,
 void buildArtsToLLVMPipeline(PassManager &pm, bool debug,
                              bool distributedInitPerWorker,
                              const arts::RuntimeConfig *machine) {
+  pm.addNestedPass<func::FuncOp>(createLowerAffinePass());
   pm.addPass(arts::createConvertArtsToLLVMPass(debug, distributedInitPerWorker,
                                                machine));
   /// ConvertArtsToLLVM still consults lowering contracts for late dependency
@@ -944,11 +1211,14 @@ void buildAdditionalOptPipeline(OpPassManager &optPM) {
 }
 
 /// LLVM IR emission passes.
-void buildLLVMIREmissionPipeline(PassManager &pm) {
+void buildLLVMIREmissionPipeline(PassManager &pm, bool convertOpenMP) {
   pm.addPass(createCSEPass());
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
+  if (convertOpenMP)
+    pm.addPass(createConvertOpenMPToLLVMPass());
   pm.addPass(arith::createArithExpandOpsPass());
   pm.addPass(createSCFToControlFlowPass());
+  pm.addPass(std::make_unique<ResidualHostOpenMPMemrefCleanupPass>());
   pm.addPass(polygeist::createConvertPolygeistToLLVMPass());
   pm.addPass(createConvertIndexToLLVMPass());
   pm.addPass(createConvertControlFlowToLLVMPass());
@@ -969,8 +1239,8 @@ isStageEnabledWhenEmitLLVMRequested(const StageExecutionContext &ctx) {
 }
 
 // --- Pipeline dependency declarations ---
-static constexpr llvm::StringLiteral kDepRaiseMemref[] = {
-    "raise-memref-dimensionality"};
+static constexpr llvm::StringLiteral kDepSdeInputNormalization[] = {
+    "sde-input-normalization"};
 static constexpr llvm::StringLiteral kDepInitialCleanup[] = {"initial-cleanup"};
 static constexpr llvm::StringLiteral kDepSdePlanning[] = {"sde-planning"};
 static constexpr llvm::StringLiteral kDepSdeToCodir[] = {"sde-to-codir"};
@@ -983,11 +1253,11 @@ static constexpr llvm::StringLiteral kDepPreLowering[] = {
 static constexpr llvm::StringLiteral kDepArtsToLLVM[] = {"pre-lowering"};
 static ArrayRef<StageDescriptor> getStageRegistry() {
   static const std::array<StageDescriptor, 15> kStageRegistry = {{
-      {StageId::RaiseMemRefDimensionality, "raise-memref-dimensionality", StageKind::Core, true, true,
-       false, "Error when raising memref dimensionality",
-       kRaiseMemRefDimensionalityPasses,
+      {StageId::SdeInputNormalization, "sde-input-normalization", StageKind::Core, true, true,
+       false, "Error when normalizing SDE input",
+       kSdeInputNormalizationPasses,
        [](PassManager &pm, const StageExecutionContext &) {
-         buildRaiseMemRefDimensionalityPipeline(pm);
+         buildSdeInputNormalizationPipeline(pm);
        },
        isStageEnabledAlways,
        /*dependsOn=*/llvm::ArrayRef<llvm::StringLiteral>()},
@@ -998,7 +1268,7 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
          buildInitialCleanupPipeline(optPM);
        },
        isStageEnabledAlways,
-       /*dependsOn=*/kDepRaiseMemref},
+       /*dependsOn=*/kDepSdeInputNormalization},
       {StageId::SdePlanning, "sde-planning", StageKind::Core, true, true,
        false, "Error when converting OpenMP to SDE planning IR",
        kSdePlanningPasses,
@@ -1050,7 +1320,8 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        false, "Error when refining post-partition DB contracts",
        kPostDbRefinementPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
-         buildPostDbRefinementPipeline(pm, ctx.analysisManager);
+         buildPostDbRefinementPipeline(pm, ctx.analysisManager,
+                                       DistributedDb);
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepCreateDbs},
@@ -1066,15 +1337,14 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        StageKind::Core, true, true, false,
        "Error when creating and optimizing epochs", kEpochsPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
-         buildEpochsPipeline(pm, ctx.analysisManager, EpochFinishContinuation);
+         buildEpochsPipeline(pm, ctx.analysisManager);
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepPostDbRefinement},
       {StageId::PreLowering, "pre-lowering", StageKind::Core, true, true, true,
        "Error when pre-lowering DBs, EDTs, and Epochs", kPreLoweringPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
-         buildPreLoweringPipeline(pm, ctx.analysisManager,
-                                  EpochFinishContinuation);
+         buildPreLoweringPipeline(pm, ctx.analysisManager);
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepPreLowering},
@@ -1095,8 +1365,8 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        /*dependsOn=*/kDepArtsToLLVM},
       {StageId::LLVMIREmission, kLLVMIREmissionToken, StageKind::Epilogue, false, false,
        false, "Error when emitting LLVM IR", kLLVMIREmissionPasses,
-       [](PassManager &pm, const StageExecutionContext &) {
-         buildLLVMIREmissionPipeline(pm);
+       [](PassManager &pm, const StageExecutionContext &ctx) {
+         buildLLVMIREmissionPipeline(pm, hasResidualOpenMP(ctx.module));
        },
        isStageEnabledWhenEmitLLVMRequested,
        /*dependsOn=*/kDepArtsToLLVM},
@@ -1181,7 +1451,7 @@ struct PipelineHooks {
 LogicalResult
 buildPassManager(ModuleOp module, MLIRContext &context,
                  std::optional<StageId> stopAt,
-                 StageId startFrom = StageId::RaiseMemRefDimensionality,
+                 StageId startFrom = StageId::SdeInputNormalization,
                  std::unique_ptr<arts::AnalysisManager> *outAM = nullptr,
                  PipelineHooks *hooks = nullptr) {
   assert(validatePipelineDAG(getStageRegistry()) &&
@@ -1456,6 +1726,11 @@ int main(int argc, char **argv) {
 
   /// Translate the optimized module to LLVM IR and write output.
   if (EmitLLVM) {
+    bool hasHostOpenMP = hasResidualOpenMP(module.get());
+    if (hasHostOpenMP)
+      foldResidualHostOpenMPMemrefPointerCasts(module.get());
+    ensureRuntimeConfigDataVisibleForValidation(module.get());
+    markHostOpenMPBenchmarkMode(module.get());
     LLVMContext llvmContext;
     auto llvmModule = translateModuleToLLVMIR(module.get(), llvmContext);
     if (!llvmModule) {
@@ -1463,6 +1738,8 @@ int main(int argc, char **argv) {
       ARTS_ERROR("Failed to emit LLVM IR");
       return -1;
     }
+    if (hasHostOpenMP)
+      bypassArtsRuntimeForHostOpenMP(*llvmModule);
     std::string llvmIR;
     raw_string_ostream llvmStream(llvmIR);
     llvmModule->print(llvmStream, nullptr);

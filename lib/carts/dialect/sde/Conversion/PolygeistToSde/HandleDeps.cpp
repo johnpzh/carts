@@ -3,16 +3,18 @@
 ///
 /// This pass normalizes residual OMP task dependencies to memref values that
 /// ConvertOpenMPToSde can turn into sde.mu_dep operations. It handles
-/// dependencies not covered by MemrefNormalization
+/// dependencies not covered by SdeMemrefNormalization
 /// (e.g., static arrays, token containers, direct memref allocations, block
 /// arguments).
 ///===----------------------------------------------------------------------===///
 
-#define GEN_PASS_DEF_HANDLEDEPS
+#define GEN_PASS_DEF_SDEHANDLEDEPS
 #include "PolygeistToSdeUtils.h"
 #include "carts/Dialect.h"
-#include "carts/passes/Passes.h"
-#include "carts/passes/Passes.h.inc"
+#include "carts/dialect/sde/Transforms/Passes.h"
+namespace mlir::carts::arts {
+#include "carts/dialect/sde/Transforms/Passes.h.inc"
+} // namespace mlir::carts::arts
 #include "carts/utils/Debug.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -64,7 +66,8 @@ static std::optional<Value> getStoredValueToToken(memref::AllocaOp allocaOp) {
   return std::nullopt;
 }
 
-struct HandleDepsPass : public impl::HandleDepsBase<HandleDepsPass> {
+struct SdeHandleDepsPass
+    : public mlir::carts::arts::impl::SdeHandleDepsBase<SdeHandleDepsPass> {
   void runOnOperation() override;
 
 private:
@@ -79,9 +82,9 @@ private:
 ///===----------------------------------------------------------------------===///
 
 std::optional<DepInfo>
-HandleDepsPass::extractDepInfo(Value depVar, omp::TaskOp taskOp,
-                               unsigned depIdx, omp::ClauseTaskDepend,
-                               OpBuilder &builder) {
+SdeHandleDepsPass::extractDepInfo(Value depVar, omp::TaskOp taskOp,
+                                  unsigned depIdx, omp::ClauseTaskDepend,
+                                  OpBuilder &builder) {
 
   DepInfo info;
   info.taskOp = taskOp;
@@ -173,10 +176,10 @@ HandleDepsPass::extractDepInfo(Value depVar, omp::TaskOp taskOp,
 /// runOnOperation
 ///===----------------------------------------------------------------------===///
 
-void HandleDepsPass::runOnOperation() {
+void SdeHandleDepsPass::runOnOperation() {
   ModuleOp module = getOperation();
   MLIRContext *ctx = module.getContext();
-  ARTS_INFO_HEADER(HandleDepsPass);
+  ARTS_INFO_HEADER(SdeHandleDepsPass);
 
   OpBuilder builder(ctx);
 
@@ -212,15 +215,15 @@ void HandleDepsPass::runOnOperation() {
   });
 
   ARTS_DEBUG("=== Dep Handling Complete ===");
-  ARTS_INFO_FOOTER(HandleDepsPass);
+  ARTS_INFO_FOOTER(SdeHandleDepsPass);
 }
 
 } // namespace
 
 namespace mlir {
-namespace carts::arts {
-std::unique_ptr<Pass> createHandleDepsPass() {
-  return std::make_unique<HandleDepsPass>();
+namespace carts::sde {
+std::unique_ptr<Pass> createSdeHandleDepsPass() {
+  return std::make_unique<SdeHandleDepsPass>();
 }
-} // namespace carts::arts
+} // namespace carts::sde
 } // namespace mlir

@@ -1357,10 +1357,10 @@ def _compile_all_pipelines(
             <stem>.mlir                      # cgeist output (pre-ARTS MLIR)
           2_sde/                             # semantic dialect work
             stages/
-              01_raise-memref-dimensionality.mlir
+              01_sde-input-normalization.mlir
               02_initial-cleanup.mlir
             passes/
-              01_raise-memref-dimensionality/
+              01_sde-input-normalization/
               02_initial-cleanup/
               03_sde-planning/               # SDE planning passes
           3_codir/                           # codelet isolation work

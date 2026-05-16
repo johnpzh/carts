@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --arts-config %arts_config --pipeline raise-memref-dimensionality | %FileCheck %s
+// RUN: %carts-compile %s --arts-config %arts_config --pipeline sde-input-normalization | %FileCheck %s
 
 // CHECK-LABEL: module
 // CHECK: codir.codelet

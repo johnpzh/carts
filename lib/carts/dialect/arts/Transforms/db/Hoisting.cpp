@@ -123,7 +123,7 @@ static bool hoistInvariantOpsInEdt(EdtOp edt) {
 /// Epoch Acquire Hoisting
 ///===----------------------------------------------------------------------===///
 ///
-/// Hoists loop-invariant read-only db_acquire ops out of worker loops in
+/// Hoists loop-invariant db_acquire ops out of worker loops in
 /// epochs. Safety: hoist only when ALL runtime operands and partition hints are
 /// loop invariant. This pass does not drop or rewrite partition hints.
 ///
@@ -146,6 +146,18 @@ static bool hoistInvariantOpsInEdt(EdtOp edt) {
 ///   }
 ///
 ///===----------------------------------------------------------------------===///
+
+static bool canHoistAcquireOutOfEpoch(DbAcquireOp acq) {
+  switch (acq.getMode()) {
+  case ArtsMode::in:
+  case ArtsMode::inout:
+    return true;
+  case ArtsMode::out:
+  case ArtsMode::uninitialized:
+    return false;
+  }
+  return false;
+}
 
 /// Rematerialize loop-invariant operands to dominate the insertion point.
 /// Returns false if any operand depends on the loop IV or can't be traced.
@@ -336,7 +348,10 @@ static bool hoistAcquiresInEpoch(EpochOp epoch) {
   bool changed = false;
   Block &body = epoch.getBody().front();
 
-  /// First, try hoisting read-only coarse acquires out of the epoch entirely.
+  /// First, try hoisting loop-invariant coarse acquires out of the epoch
+  /// entirely. Write-capable inout acquires are safe here when every user stays
+  /// in the epoch: the epoch remains the completion boundary, and the original
+  /// access mode is preserved on the single hoisted acquire.
   /// This handles acquires inside conditional regions or EDT dependencies by
   /// moving them to the parent block and releasing after the epoch completes.
   auto hoistOutOfEpoch = [&]() {
@@ -344,7 +359,7 @@ static bool hoistAcquiresInEpoch(EpochOp epoch) {
     SmallVector<DbAcquireOp> candidates;
 
     epoch.walk([&](DbAcquireOp acq) {
-      if (acq.getMode() != ArtsMode::in)
+      if (!canHoistAcquireOutOfEpoch(acq))
         return;
       if (acq->getParentOfType<EdtOp>())
         return;

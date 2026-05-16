@@ -32,9 +32,6 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
         numRepeatedEpochLoopsAmortized(
             this, "num-repeated-epoch-loops-amortized",
             "Number of repeated epoch loops amortized"),
-        numContinuationEdtsCreated(
-            this, "num-continuation-edts-created",
-            "Number of continuation EDTs created from epoch tails"),
         numEpochsNarrowed(this, "num-epochs-narrowed",
                           "Number of epochs split into narrower scopes"),
         numEpochsCreatedByNarrowing(
@@ -48,9 +45,6 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
       : AM(AM), numRepeatedEpochLoopsAmortized(
                     this, "num-repeated-epoch-loops-amortized",
                     "Number of repeated epoch loops amortized"),
-        numContinuationEdtsCreated(
-            this, "num-continuation-edts-created",
-            "Number of continuation EDTs created from epoch tails"),
         numEpochsNarrowed(this, "num-epochs-narrowed",
                           "Number of epochs split into narrower scopes"),
         numEpochsCreatedByNarrowing(
@@ -60,13 +54,12 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
                            "Number of consecutive epoch pairs fused") {
   }
 
-  EpochOptPass(mlir::carts::arts::AnalysisManager *AM, bool narrowing, bool fusion,
-               bool amortization, bool continuation)
+  EpochOptPass(mlir::carts::arts::AnalysisManager *AM, bool narrowing,
+               bool fusion, bool amortization)
       : EpochOptPass(AM) {
     enableEpochNarrowing = narrowing;
     enableEpochFusion = fusion;
     enableAmortization = amortization;
-    enableContinuation = continuation;
   }
 
   mlir::carts::arts::AnalysisManager &getEpochAnalysisManager(ModuleOp module) {
@@ -102,37 +95,6 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
       }
     }
 
-    if (enableContinuation) {
-      SmallVector<EpochOp> epochOps;
-      module.walk([&](EpochOp epochOp) { epochOps.push_back(epochOp); });
-      ARTS_INFO("Found " << epochOps.size()
-                         << " epoch operations to analyze for scheduling");
-      unsigned transformed = 0;
-      for (EpochOp epochOp : epochOps) {
-        if (!epochOp || !epochOp->getBlock())
-          continue;
-
-        EpochContinuationDecision decision = epochAnalysis.evaluateContinuation(
-            epochOp, dyn_cast_or_null<EpochOp>(epochOp->getPrevNode()),
-            /*continuationEnabled=*/true);
-        if (!decision.eligible) {
-          ARTS_DEBUG(
-              "  Epoch not eligible for continuation: " << decision.rationale);
-          continue;
-        }
-
-        ARTS_INFO("  Transforming eligible epoch to continuation form");
-        if (succeeded(transformToContinuation(epochOp, decision)))
-          ++transformed;
-      }
-      if (transformed > 0) {
-        numContinuationEdtsCreated += transformed;
-        ARTS_INFO("Transformed " << transformed
-                                 << " epochs to continuation form");
-        changed = true;
-      }
-    }
-
     if (enableEpochNarrowing) {
       EpochNarrowingCounts narrowingCounts = narrowEpochScopes(module);
       if (narrowingCounts.epochsNarrowed != 0) {
@@ -144,8 +106,8 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
     }
 
     if (enableEpochFusion) {
-      unsigned fusedEpochPairs = processRegionForEpochFusion(
-          module.getRegion(), epochAnalysis, enableContinuation);
+      unsigned fusedEpochPairs =
+          processRegionForEpochFusion(module.getRegion(), epochAnalysis);
       if (fusedEpochPairs != 0) {
         numEpochPairsFused += fusedEpochPairs;
         ARTS_INFO("Epoch fusion applied");
@@ -162,7 +124,6 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
 private:
   mlir::carts::arts::AnalysisManager *AM = nullptr;
   Statistic numRepeatedEpochLoopsAmortized;
-  Statistic numContinuationEdtsCreated;
   Statistic numEpochsNarrowed;
   Statistic numEpochsCreatedByNarrowing;
   Statistic numEpochPairsFused;
@@ -183,17 +144,9 @@ std::unique_ptr<Pass> createEpochOptPass(mlir::carts::arts::AnalysisManager *AM)
 }
 
 std::unique_ptr<Pass> createEpochOptPass(mlir::carts::arts::AnalysisManager *AM,
-                                         bool amortization,
-                                         bool continuation) {
+                                         bool amortization) {
   return std::make_unique<EpochOptPass>(AM, /*narrowing=*/true, /*fusion=*/true,
-                                        amortization, continuation);
-}
-
-std::unique_ptr<Pass>
-createEpochOptSchedulingPass(mlir::carts::arts::AnalysisManager *AM, bool amortization,
-                             bool continuation) {
-  return std::make_unique<EpochOptPass>(
-      AM, /*narrowing=*/false, /*fusion=*/false, amortization, continuation);
+                                        amortization);
 }
 
 } // namespace carts::arts

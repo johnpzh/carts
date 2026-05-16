@@ -8,7 +8,7 @@ dialect/                     MLIR dialects (one subdirectory per CARTS dialect)
     Analysis/                StructuredOpAnalysis (loop/access classification)
     Conversion/
       OmpToSde/              ConvertOpenMPToSde (OMP→SDE boundary)
-      PolygeistToSde/        Inliner, MemrefNormalization, HandleDeps
+      PolygeistToSde/        SdeInputInliner, SdeMemrefNormalization, SdeHandleDeps
     IR/                      SdeDialect.cpp, SdeOps.cpp
     Transforms/
       state/raising/         RaiseToLinalg, RaiseToTensor, RaiseMemrefToTensor
@@ -27,9 +27,6 @@ dialect/                     MLIR dialects (one subdirectory per CARTS dialect)
     Utils/                   CodeletABIUtils
   arts/                      ARTS dialect — abstract orchestration (DB, EDT, epoch)
     Analysis/                All analysis (db, edt, graphs, heuristics, loop)
-    Conversion/
-      ArtsToLLVM/            ConvertArtsToLLVM
-      ArtsToRt/              EDT/epoch lowering (ARTS → ARTS-RT)
     IR/                      ARTS dialect definition
     Transforms/              All ARTS passes (db/, edt/, loop/, epoch/, verify/)
     Utils/                   ARTS-specific utilities (DbUtils, EdtUtils,
@@ -39,6 +36,8 @@ dialect/                     MLIR dialects (one subdirectory per CARTS dialect)
   arts-rt/                   ARTS-RT dialect — runtime ABI
     IR/                      arts_rt dialect (RtDialect.cpp, RtOps.cpp)
     Conversion/
+      ArtsToRt/              DB/EDT/epoch lowering (ARTS → ARTS-RT/runtime shape)
+      ArtsToLLVM/            Runtime ABI codegen and residual ARTS lowering
       RtToLLVM/              arts_rt → LLVM patterns
     Transforms/              DataPtrHoisting, RuntimeCallOpt, ScalarReplacement,
                              LoopVectorizationHints, AliasScopeGen

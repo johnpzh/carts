@@ -15,17 +15,8 @@ EpochAccessSummary EpochAnalysis::summarizeEpochAccess(EpochOp epoch) const {
 }
 
 EpochFusionDecision EpochAnalysis::evaluateEpochFusion(
-    EpochOp first, EpochOp second, bool continuationEnabled,
-    const EpochAccessSummary *firstSummary,
+    EpochOp first, EpochOp second, const EpochAccessSummary *firstSummary,
     const EpochAccessSummary *secondSummary) const {
   return EpochHeuristics::evaluateEpochFusion(
-      first, second, continuationEnabled, firstSummary, secondSummary);
-}
-
-EpochContinuationDecision EpochAnalysis::evaluateContinuation(
-    EpochOp epoch, EpochOp previousEpoch, bool continuationEnabled,
-    const EpochAccessSummary *previousSummary,
-    const EpochAccessSummary *epochSummary) const {
-  return EpochHeuristics::evaluateContinuation(
-      epoch, previousEpoch, continuationEnabled, previousSummary, epochSummary);
+      first, second, firstSummary, secondSummary);
 }

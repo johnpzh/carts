@@ -1,7 +1,7 @@
 /// Test: Nested memref with opaque func.call escape is a hard error.
 /// MemrefNormalization must reject patterns it cannot fully raise to
 /// N-dimensional memrefs, because silent skips produce broken output.
-// RUN: not %carts-compile %s --O3 --arts-config %arts_config --pipeline raise-memref-dimensionality 2>&1 | %FileCheck %s
+// RUN: not %carts-compile %s --O3 --arts-config %arts_config --pipeline sde-input-normalization 2>&1 | %FileCheck %s
 
 // CHECK: error: un-normalizable nested memref pattern
 

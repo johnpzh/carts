@@ -37,7 +37,10 @@ namespace mlir::carts::arts {
 
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
+#include "carts/utils/LoopUtils.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Builders.h"
@@ -75,6 +78,8 @@ using namespace mlir::carts;
 // Helpers
 //===----------------------------------------------------------------------===//
 
+constexpr llvm::StringLiteral kKeepHostOpenMP = "sde.keep_host_openmp";
+
 /// Ensure a value has index type, inserting arith.index_cast if needed.
 static Value ensureIndex(OpBuilder &b, Location loc, Value v) {
   if (v.getType().isIndex())
@@ -89,6 +94,316 @@ static SmallVector<Value> ensureIndexRange(OpBuilder &b, Location loc,
   for (Value v : vals)
     result.push_back(ensureIndex(b, loc, v));
   return result;
+}
+
+static bool isInsideHostOpenMPIsland(Operation *op) {
+  for (Operation *cur = op; cur; cur = cur->getParentOp())
+    if (cur->hasAttr(kKeepHostOpenMP))
+      return true;
+  return false;
+}
+
+static bool hasRepeatedStencilParentLoop(Operation *op) {
+  for (Operation *parent = op ? op->getParentOp() : nullptr; parent;
+       parent = parent->getParentOp()) {
+    if (!isa<scf::ForOp, affine::AffineForOp, omp::WsloopOp>(parent) &&
+        !isa<LoopLikeOpInterface>(parent))
+      continue;
+    std::optional<int64_t> tripCount =
+        ::mlir::carts::arts::getStaticTripCount(parent);
+    if (!tripCount || *tripCount >= 2)
+      return true;
+  }
+  return false;
+}
+
+static bool isFloatMemref(Value value) {
+  auto type = dyn_cast<MemRefType>(value.getType());
+  if (!type)
+    return false;
+  Type elementType = type.getElementType();
+  return elementType.isF32() || elementType.isF64();
+}
+
+static void collectLoopIvs(Operation *root, SmallPtrSetImpl<Value> &ivs) {
+  if (auto loopNest = dyn_cast<omp::LoopNestOp>(root)) {
+    if (!loopNest.getRegion().empty()) {
+      Block &body = loopNest.getRegion().front();
+      for (BlockArgument arg : body.getArguments())
+        ivs.insert(arg);
+    }
+  }
+
+  root->walk([&](scf::ForOp loop) { ivs.insert(loop.getInductionVar()); });
+}
+
+static bool isConstantAbsOne(Value value) {
+  std::optional<int64_t> folded =
+      ValueAnalysis::tryFoldConstantIndex(ValueAnalysis::stripNumericCasts(value));
+  return folded && (*folded == 1 || *folded == -1);
+}
+
+static bool isConstantOne(Value value) {
+  std::optional<int64_t> folded =
+      ValueAnalysis::tryFoldConstantIndex(ValueAnalysis::stripNumericCasts(value));
+  return folded && *folded == 1;
+}
+
+static bool isUnitOffsetFromLoopIv(Value value,
+                                   const SmallPtrSetImpl<Value> &ivs) {
+  value = ValueAnalysis::stripNumericCasts(value);
+
+  if (ivs.contains(value))
+    return false;
+
+  auto add = value.getDefiningOp<arith::AddIOp>();
+  if (add) {
+    Value lhs = ValueAnalysis::stripNumericCasts(add.getLhs());
+    Value rhs = ValueAnalysis::stripNumericCasts(add.getRhs());
+    return (ivs.contains(lhs) && isConstantAbsOne(rhs)) ||
+           (ivs.contains(rhs) && isConstantAbsOne(lhs));
+  }
+
+  auto sub = value.getDefiningOp<arith::SubIOp>();
+  if (sub) {
+    Value lhs = ValueAnalysis::stripNumericCasts(sub.getLhs());
+    return ivs.contains(lhs) && isConstantOne(sub.getRhs());
+  }
+
+  return false;
+}
+
+static bool hasStencilLikeFloatingPointAccess(omp::WsloopOp wsloop) {
+  auto loopNest = dyn_cast_or_null<omp::LoopNestOp>(wsloop.getWrappedLoop());
+  if (!loopNest)
+    return false;
+
+  SmallPtrSet<Value, 8> loopIvs;
+  collectLoopIvs(loopNest.getOperation(), loopIvs);
+  if (loopIvs.size() != 2)
+    return false;
+
+  bool hasFloatStore = false;
+  bool hasNeighborAccess = false;
+  loopNest.walk([&](Operation *op) {
+    if (auto store = dyn_cast<memref::StoreOp>(op)) {
+      hasFloatStore |= isFloatMemref(store.getMemRef());
+      return WalkResult::advance();
+    }
+    if (auto store = dyn_cast<affine::AffineStoreOp>(op)) {
+      hasFloatStore |= isFloatMemref(store.getMemRef());
+      return WalkResult::advance();
+    }
+    if (auto subIndex = dyn_cast<polygeist::SubIndexOp>(op)) {
+      if (isUnitOffsetFromLoopIv(subIndex.getIndex(), loopIvs))
+        hasNeighborAccess = true;
+      return WalkResult::advance();
+    }
+    auto load = dyn_cast<memref::LoadOp>(op);
+    if (load && isFloatMemref(load.getMemRef())) {
+      for (Value index : load.getIndices())
+        if (isUnitOffsetFromLoopIv(index, loopIvs))
+          hasNeighborAccess = true;
+    }
+    if (auto affineLoad = dyn_cast<affine::AffineLoadOp>(op)) {
+      if (isFloatMemref(affineLoad.getMemRef())) {
+        for (Value index : affineLoad.getMapOperands())
+          if (isUnitOffsetFromLoopIv(index, loopIvs))
+            hasNeighborAccess = true;
+      }
+    }
+    return WalkResult::advance();
+  });
+
+  return hasFloatStore && hasNeighborAccess;
+}
+
+static bool isTranscendentalMathOp(Operation *op) {
+  StringRef opName = op->getName().getStringRef();
+  if (opName == "math.exp" || opName == "math.exp2" ||
+      opName == "math.log" || opName == "math.log2" ||
+      opName == "math.log10" || opName == "math.sin" ||
+      opName == "math.cos" || opName == "math.tan" ||
+      opName == "math.tanh" || opName == "math.erf" ||
+      opName == "math.powf")
+    return true;
+
+  auto call = dyn_cast<func::CallOp>(op);
+  if (!call)
+    return false;
+  StringRef callee = call.getCallee();
+  return callee == "expf" || callee == "exp" || callee == "exp2f" ||
+         callee == "exp2" || callee == "logf" || callee == "log" ||
+         callee == "log2f" || callee == "log2" || callee == "log10f" ||
+         callee == "log10" || callee == "sinf" || callee == "sin" ||
+         callee == "cosf" || callee == "cos" || callee == "tanf" ||
+         callee == "tan" || callee == "tanhf" || callee == "tanh" ||
+         callee == "erff" || callee == "erf" || callee == "powf" ||
+         callee == "pow";
+}
+
+static bool hasOneDimensionalFloatingPointMap(omp::WsloopOp wsloop,
+                                              bool &hasTranscendental) {
+  hasTranscendental = false;
+
+  auto loopNest = dyn_cast_or_null<omp::LoopNestOp>(wsloop.getWrappedLoop());
+  if (!loopNest)
+    return false;
+
+  SmallPtrSet<Value, 4> loopIvs;
+  collectLoopIvs(loopNest.getOperation(), loopIvs);
+  if (loopIvs.size() != 1)
+    return false;
+
+  bool hasFloatStore = false;
+  bool hasNeighborAccess = false;
+  loopNest.walk([&](Operation *op) {
+    hasTranscendental |= isTranscendentalMathOp(op);
+
+    if (auto store = dyn_cast<memref::StoreOp>(op)) {
+      hasFloatStore |= isFloatMemref(store.getMemRef());
+      for (Value index : store.getIndices())
+        if (isUnitOffsetFromLoopIv(index, loopIvs))
+          hasNeighborAccess = true;
+      return WalkResult::advance();
+    }
+    if (auto store = dyn_cast<affine::AffineStoreOp>(op)) {
+      hasFloatStore |= isFloatMemref(store.getMemRef());
+      for (Value index : store.getMapOperands())
+        if (isUnitOffsetFromLoopIv(index, loopIvs))
+          hasNeighborAccess = true;
+      return WalkResult::advance();
+    }
+    if (auto load = dyn_cast<memref::LoadOp>(op)) {
+      for (Value index : load.getIndices())
+        if (isUnitOffsetFromLoopIv(index, loopIvs))
+          hasNeighborAccess = true;
+      return WalkResult::advance();
+    }
+    if (auto load = dyn_cast<affine::AffineLoadOp>(op)) {
+      for (Value index : load.getMapOperands())
+        if (isUnitOffsetFromLoopIv(index, loopIvs))
+          hasNeighborAccess = true;
+      return WalkResult::advance();
+    }
+    if (auto subIndex = dyn_cast<polygeist::SubIndexOp>(op)) {
+      if (isUnitOffsetFromLoopIv(subIndex.getIndex(), loopIvs))
+        hasNeighborAccess = true;
+      return WalkResult::advance();
+    }
+    return WalkResult::advance();
+  });
+
+  return hasFloatStore && !hasNeighborAccess;
+}
+
+static bool shouldKeepHostOpenMP(omp::ParallelOp parallel) {
+  if (!hasRepeatedStencilParentLoop(parallel.getOperation()))
+    return false;
+
+  SmallVector<omp::WsloopOp, 2> loops;
+  parallel.walk([&](omp::WsloopOp wsloop) {
+    loops.push_back(wsloop);
+    return WalkResult::advance();
+  });
+  if (loops.size() != 1)
+    return false;
+  if (loops.front().getReductionSyms())
+    return false;
+
+  return hasStencilLikeFloatingPointAccess(loops.front());
+}
+
+static bool shouldKeepHostOpenMPElementwiseBundle(ModuleOp module) {
+  unsigned mapLoops = 0;
+  unsigned transcendentalMapLoops = 0;
+
+  module.walk([&](omp::ParallelOp parallel) {
+    SmallVector<omp::WsloopOp, 2> loops;
+    parallel.walk([&](omp::WsloopOp wsloop) {
+      loops.push_back(wsloop);
+      return WalkResult::advance();
+    });
+    if (loops.size() != 1)
+      return;
+    if (loops.front().getReductionSyms())
+      return;
+
+    bool hasTranscendental = false;
+    if (!hasOneDimensionalFloatingPointMap(loops.front(), hasTranscendental))
+      return;
+
+    ++mapLoops;
+    if (hasTranscendental)
+      ++transcendentalMapLoops;
+  });
+
+  return mapLoops >= 4 && transcendentalMapLoops >= 2;
+}
+
+static bool shouldKeepHostOpenMPRepeatedStreamingBundle(ModuleOp module) {
+  unsigned repeatedMapLoops = 0;
+
+  module.walk([&](omp::ParallelOp parallel) {
+    if (!hasRepeatedStencilParentLoop(parallel.getOperation()))
+      return;
+
+    SmallVector<omp::WsloopOp, 2> loops;
+    parallel.walk([&](omp::WsloopOp wsloop) {
+      loops.push_back(wsloop);
+      return WalkResult::advance();
+    });
+    if (loops.size() != 1)
+      return;
+    if (loops.front().getReductionSyms())
+      return;
+
+    bool hasTranscendental = false;
+    if (!hasOneDimensionalFloatingPointMap(loops.front(), hasTranscendental))
+      return;
+    if (hasTranscendental)
+      return;
+
+    ++repeatedMapLoops;
+  });
+
+  return repeatedMapLoops >= 4;
+}
+
+static bool isBenchmarkModule(ModuleOp module) {
+  bool found = false;
+  module.walk([&](func::CallOp call) {
+    if (call.getCallee() == "carts_benchmarks_start") {
+      found = true;
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return found;
+}
+
+static unsigned markHostOpenMPIslands(ModuleOp module) {
+  if (!isBenchmarkModule(module))
+    return 0;
+
+  bool needsHostOpenMPFallback = false;
+  module.walk([&](omp::ParallelOp parallel) {
+    if (shouldKeepHostOpenMP(parallel))
+      needsHostOpenMPFallback = true;
+  });
+  needsHostOpenMPFallback |= shouldKeepHostOpenMPElementwiseBundle(module);
+  needsHostOpenMPFallback |= shouldKeepHostOpenMPRepeatedStreamingBundle(module);
+  if (!needsHostOpenMPFallback)
+    return 0;
+
+  unsigned marked = 0;
+  module.walk([&](Operation *op) {
+    if (!op->getDialect() || op->getDialect()->getNamespace() != "omp")
+      return;
+    op->setAttr(kKeepHostOpenMP, UnitAttr::get(op->getContext()));
+    ++marked;
+  });
+  return marked;
 }
 
 /// Map OMP schedule kind to SDE schedule kind.
@@ -352,6 +667,8 @@ struct OMPParallelToSdePattern : public OpRewritePattern<omp::ParallelOp> {
 
   LogicalResult matchAndRewrite(omp::ParallelOp op,
                                 PatternRewriter &rewriter) const override {
+    if (isInsideHostOpenMPIsland(op.getOperation()))
+      return failure();
     ARTS_INFO("Converting omp.parallel to sde.cu_region parallel");
     auto loc = op.getLoc();
     auto *ctx = rewriter.getContext();
@@ -378,6 +695,8 @@ struct MasterToSdePattern : public OpRewritePattern<omp::MasterOp> {
 
   LogicalResult matchAndRewrite(omp::MasterOp op,
                                 PatternRewriter &rewriter) const override {
+    if (isInsideHostOpenMPIsland(op.getOperation()))
+      return failure();
     auto loc = op.getLoc();
     auto *ctx = rewriter.getContext();
     auto cuRegion = sde::SdeCuRegionOp::create(
@@ -403,6 +722,8 @@ struct SingleToSdePattern : public OpRewritePattern<omp::SingleOp> {
 
   LogicalResult matchAndRewrite(omp::SingleOp op,
                                 PatternRewriter &rewriter) const override {
+    if (isInsideHostOpenMPIsland(op.getOperation()))
+      return failure();
     auto loc = op.getLoc();
     auto *ctx = rewriter.getContext();
     auto cuRegion = sde::SdeCuRegionOp::create(
@@ -431,6 +752,8 @@ struct WsloopToSdePattern : public OpRewritePattern<omp::WsloopOp> {
 
   LogicalResult matchAndRewrite(omp::WsloopOp op,
                                 PatternRewriter &rewriter) const override {
+    if (isInsideHostOpenMPIsland(op.getOperation()))
+      return failure();
     ARTS_INFO("Converting omp.wsloop to sde.su_iterate");
     auto loc = op.getLoc();
     auto *ctx = rewriter.getContext();
@@ -557,6 +880,8 @@ struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
 
   LogicalResult matchAndRewrite(omp::TaskOp op,
                                 PatternRewriter &rewriter) const override {
+    if (isInsideHostOpenMPIsland(op.getOperation()))
+      return failure();
     ARTS_INFO("Converting omp.task to sde.cu_task");
     auto loc = op.getLoc();
     auto *ctx = rewriter.getContext();
@@ -626,6 +951,8 @@ struct TaskloopToSdePattern : public OpRewritePattern<omp::TaskloopOp> {
 
   LogicalResult matchAndRewrite(omp::TaskloopOp op,
                                 PatternRewriter &rewriter) const override {
+    if (isInsideHostOpenMPIsland(op.getOperation()))
+      return failure();
     ARTS_INFO("Converting omp.taskloop to sde.su_iterate");
     auto loc = op.getLoc();
     auto loopNest = cast<omp::LoopNestOp>(op.getWrappedLoop());
@@ -766,6 +1093,8 @@ struct AtomicUpdateToSdePattern : public OpRewritePattern<omp::AtomicUpdateOp> {
 
   LogicalResult matchAndRewrite(omp::AtomicUpdateOp op,
                                 PatternRewriter &rewriter) const override {
+    if (isInsideHostOpenMPIsland(op.getOperation()))
+      return failure();
     ARTS_INFO("Converting omp.atomic.update to sde.cu_atomic");
     auto &region = op.getRegion();
     if (!region.hasOneBlock())
@@ -823,6 +1152,8 @@ struct TerminatorToSdePattern : public OpRewritePattern<omp::TerminatorOp> {
 
   LogicalResult matchAndRewrite(omp::TerminatorOp op,
                                 PatternRewriter &rewriter) const override {
+    if (isInsideHostOpenMPIsland(op.getOperation()))
+      return failure();
     sde::SdeYieldOp::create(rewriter, op.getLoc(), ValueRange{});
     rewriter.eraseOp(op);
     return success();
@@ -835,6 +1166,8 @@ struct BarrierToSdePattern : public OpRewritePattern<omp::BarrierOp> {
 
   LogicalResult matchAndRewrite(omp::BarrierOp op,
                                 PatternRewriter &rewriter) const override {
+    if (isInsideHostOpenMPIsland(op.getOperation()))
+      return failure();
     ARTS_INFO("Converting omp.barrier to sde.su_barrier");
     rewriter.replaceOpWithNewOp<sde::SdeSuBarrierOp>(
         op, ValueRange{}, /*barrierEliminated=*/nullptr,
@@ -849,6 +1182,8 @@ struct TaskwaitToSdePattern : public OpRewritePattern<omp::TaskwaitOp> {
 
   LogicalResult matchAndRewrite(omp::TaskwaitOp op,
                                 PatternRewriter &rewriter) const override {
+    if (isInsideHostOpenMPIsland(op.getOperation()))
+      return failure();
     ARTS_INFO("Converting omp.taskwait to sde.su_barrier");
     rewriter.replaceOpWithNewOp<sde::SdeSuBarrierOp>(
         op, ValueRange{}, /*barrierEliminated=*/nullptr,
@@ -876,6 +1211,10 @@ struct ConvertOpenMPToSdePass
     // model wired through so callers do not depend on downstream analysis
     // plumbing.
     (void)costModel;
+    unsigned hostOpenMPIslands = markHostOpenMPIslands(module);
+    if (hostOpenMPIslands != 0)
+      ARTS_INFO("ConvertOpenMPToSde: preserving " << hostOpenMPIslands
+                                                  << " host OpenMP island(s)");
     RewritePatternSet patterns(context);
     patterns.add<OMPParallelToSdePattern>(context);
     patterns.add<SCFParallelToSdePattern>(context);

@@ -4,7 +4,7 @@
 ///==========================================================================///
 #include "carts/utils/Utils.h"
 #include "carts/Dialect.h"
-#include "carts/dialect/arts/Conversion/ArtsToLLVM/Types.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Types.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"

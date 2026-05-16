@@ -189,8 +189,11 @@ SDE IR, analysis, transforms, verify, and conversion all live under
 
 `core/` → `arts/` and `rt/` → `arts-rt/` for both `include/` and `lib/`. ARTS
 object materialization and ARTS-RT runtime ABI lowering live in physically
-separate trees. ARTS depends on the arts-rt dialect for the boundary lowering
-in `Conversion/ArtsToRt/`; that dependency is intentional.
+separate trees. Runtime-shaped DB/EDT/epoch lowering and the residual
+ARTS/ARTS-RT-to-LLVM codegen pass now live under
+`lib/carts/dialect/arts-rt/Conversion/`. ARTS may depend on the `arts_rt`
+dialect at the lowering boundary, but runtime ABI implementation files do not
+live under `dialect/arts/`.
 
 ### Phase 5: Utility Cleanup — Done
 

@@ -61,12 +61,16 @@ struct DbDistributedOwnershipPass
       setDistributedDbAllocation(alloc.getOperation(), eligibility.eligible);
       if (eligibility.eligible) {
         ++markedDistributed;
+        alloc->removeAttr(AttrNames::Operation::DistributedRejectReason);
         /// Stamp the distribution kind when the eligibility analysis specifies
         /// one (when a non-default distribution applies).
         if (eligibility.distributionKind)
           setEdtDistributionKind(alloc.getOperation(),
                                  *eligibility.distributionKind);
       } else {
+        alloc->setAttr(AttrNames::Operation::DistributedRejectReason,
+                       StringAttr::get(alloc.getContext(),
+                                       toString(eligibility.reason)));
         ARTS_DEBUG("Reject DbAlloc arts.id=" << getArtsId(alloc.getOperation())
                                              << " reason="
                                              << toString(eligibility.reason));

@@ -49,17 +49,10 @@ struct EpochNarrowingCounts {
   unsigned newEpochsCreated = 0;
 };
 
-using AttrNames::Operation::ContinuationForEpoch;
-using AttrNames::Operation::ControlDep;
-
 EpochNarrowingCounts narrowEpochScopes(ModuleOp module);
 unsigned processRegionForEpochFusion(Region &region,
-                                     const EpochAnalysis &epochAnalysis,
-                                     bool continuationEnabled);
+                                     const EpochAnalysis &epochAnalysis);
 bool tryAmortizeRepeatedEpochLoop(EpochOp epochOp);
-LogicalResult
-transformToContinuation(EpochOp epochOp,
-                        const EpochContinuationDecision &decision);
 
 } // namespace mlir::carts::arts::epoch_opt
 

@@ -18,7 +18,7 @@ namespace mlir::carts::arts {
 #define GEN_PASS_DEF_RUNTIMECALLOPT
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts
-#include "carts/dialect/arts/Conversion/ArtsToLLVM/Types.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Types.h"
 #include "carts/passes/Passes.h"
 #include "carts/utils/Debug.h"
 #include "carts/dialect/arts-rt/Utils/LoopInvarianceUtils.h"

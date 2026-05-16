@@ -68,6 +68,25 @@ module {
     }
     return
   }
+
+  func.func @codir_to_arts_anchors_nested_dispatch_barrier() {
+    %c0 = arith.constant 0 : index
+    %c2 = arith.constant 2 : index
+    %c4 = arith.constant 4 : index
+    %dep = sde.mu_alloc : memref<4x4xf32>
+    scf.for %i = %c0 to %c4 step %c2 {
+      scf.for %j = %c0 to %c4 step %c2 {
+        codir.codelet deps(%dep : memref<4x4xf32>) params(%i, %j : index, index)
+            attributes {completion_barrier, dep_modes = [#codir.access_mode<readwrite>]} {
+        ^bb0(%dep_arg: memref<4x4xf32>, %ii: index, %jj: index):
+          %v = memref.load %dep_arg[%ii, %jj] : memref<4x4xf32>
+          memref.store %v, %dep_arg[%ii, %jj] : memref<4x4xf32>
+          codir.yield
+        }
+      }
+    }
+    return
+  }
 }
 
 // CHECK-LABEL: func.func @codir_to_arts_materializes_arts
@@ -108,3 +127,12 @@ module {
 // CHECK: memref.load
 // CHECK: memref.store
 // CHECK: }
+
+// CHECK-LABEL: func.func @codir_to_arts_anchors_nested_dispatch_barrier
+// CHECK: scf.for
+// CHECK: scf.for
+// CHECK: arts.edt <task>
+// CHECK: }
+// CHECK: }
+// CHECK: arts.barrier
+// CHECK: return

@@ -46,6 +46,10 @@ extern "C" {
 /// Pre-warm OMP thread pool.
 void carts_benchmarks_warmup_omp(void);
 
+/// Mark a CARTS-generated binary as a host OpenMP fallback so benchmark setup
+/// uses OpenMP warmup even if ARTS symbols are linked.
+void carts_benchmarks_mark_host_openmp(void);
+
 /// Benchmark start hook for fair timing comparisons.
 /// - OpenMP reference: warms up the OMP thread pool and may emit `init.omp`.
 /// - ARTS binary: may emit `init.arts` (process start -> entering mainBody).
