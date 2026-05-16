@@ -2,16 +2,14 @@
 /// File: LoopUtils.h
 ///
 /// Utility functions for querying SCF loop properties.
-/// Lightweight inline helpers for worker-loop detection, innermost-loop
-/// checks, and bound matching — complements the heavier LoopAnalysis
-/// framework without requiring an AnalysisManager.
+/// Lightweight helpers for innermost-loop checks, loop IV recognition, and
+/// trip-count estimates. Complements the heavier LoopAnalysis framework
+/// without requiring an AnalysisManager.
 ///==========================================================================///
 
 #ifndef ARTS_UTILS_LOOPUTILS_H
 #define ARTS_UTILS_LOOPUTILS_H
 
-#include "carts/utils/ValueAnalysis.h"
-#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/OpenMP/OpenMPDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Interfaces/LoopLikeInterface.h"
@@ -20,13 +18,7 @@
 namespace mlir {
 namespace carts::arts {
 
-class EdtOp;
 class LoopNode;
-
-/// Check whether a scf::ForOp is a "worker loop" (i.e., contains at least one
-/// arts.edt operation anywhere in its body).
-/// Used by epoch-level passes to identify task-spawning loops.
-bool isWorkerLoop(scf::ForOp loop);
 
 /// Check whether a scf::ForOp is the innermost loop (contains no nested
 /// scf::ForOp operations). Used by strip-mining and other loop transforms
@@ -42,18 +34,6 @@ inline bool isInnermostLoop(scf::ForOp loop) {
   });
   return !hasNested;
 }
-
-/// Check whether two scf::ForOp loops have matching bounds (same lower bound,
-/// upper bound, and step). Uses ValueAnalysis::sameValue for comparison.
-inline bool haveCompatibleBounds(scf::ForOp a, scf::ForOp b) {
-  return ValueAnalysis::sameValue(a.getLowerBound(), b.getLowerBound()) &&
-         ValueAnalysis::sameValue(a.getUpperBound(), b.getUpperBound()) &&
-         ValueAnalysis::sameValue(a.getStep(), b.getStep());
-}
-
-/// Return the induction variable of a loop operation. Returns a null Value for
-/// unsupported loop types or if the loop body is empty.
-Value getLoopInductionVar(Operation *op);
 
 /// Check whether a value is a loop induction variable (i.e., a BlockArgument
 /// listed as an induction variable by its parent loop construct).
@@ -91,10 +71,6 @@ void collectWhileBounds(Value cond, Value iterArg, SmallVector<Value> &bounds);
 /// Compute the loop nesting depth of an operation by counting how many
 /// enclosing loop operations surround it.
 unsigned getLoopDepth(Operation *op);
-
-/// Returns true if the EDT's body contains any loop operations
-/// (scf::ForOp, scf::ParallelOp, affine::AffineForOp).
-bool containsLoop(arts::EdtOp edt);
 
 /// Return the nearest enclosing loop-like op that contains the given operation.
 /// Searches for loop-like operations and omp.wsloop.

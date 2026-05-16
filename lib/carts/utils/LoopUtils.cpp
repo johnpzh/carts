@@ -8,6 +8,8 @@
 #include "carts/dialect/arts/Analysis/loop/LoopNode.h"
 #include "carts/dialect/arts/Utils/BlockedAccessUtils.h"
 #include "carts/utils/Utils.h"
+#include "carts/utils/ValueAnalysis.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -21,37 +23,6 @@
 
 namespace mlir {
 namespace carts::arts {
-
-Value getLoopInductionVar(Operation *op) {
-  if (!op)
-    return Value();
-
-  if (auto scfFor = dyn_cast<scf::ForOp>(op))
-    return scfFor.getInductionVar();
-
-  if (auto loopNest = dyn_cast<omp::LoopNestOp>(op)) {
-    auto ivs = loopNest.getIVs();
-    if (ivs.empty())
-      return Value();
-    return ivs.front();
-  }
-
-  if (auto loopLike = dyn_cast<LoopLikeOpInterface>(op)) {
-    if (auto ivs = loopLike.getLoopInductionVars(); ivs && !ivs->empty())
-      return ivs->front();
-  }
-
-  return Value();
-}
-
-bool isWorkerLoop(scf::ForOp loop) {
-  bool hasEdt = false;
-  loop.walk([&](arts::EdtOp) {
-    hasEdt = true;
-    return WalkResult::interrupt();
-  });
-  return hasEdt;
-}
 
 bool isProvablyZeroLoopLowerBound(Value lb) {
   lb = ValueAnalysis::stripNumericCasts(lb);
@@ -206,19 +177,6 @@ void collectWhileBounds(Value cond, Value iterArg, SmallVector<Value> &bounds) {
       return;
     }
   }
-}
-
-bool containsLoop(EdtOp edt) {
-  bool found = false;
-  edt.getBody().walk([&](Operation *op) {
-    if (op != edt.getOperation() &&
-        isa<LoopLikeOpInterface, affine::AffineForOp>(op)) {
-      found = true;
-      return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
-  });
-  return found;
 }
 
 std::optional<int64_t> getStaticTripCount(Operation *loopOp) {

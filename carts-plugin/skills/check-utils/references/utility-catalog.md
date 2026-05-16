@@ -10,7 +10,7 @@ disagree.
 |----------|-----------------|----------|
 | Value constants/folding/provenance | `include/carts/utils/ValueAnalysis.h` | `isZeroConstant`, `isOneConstant`, `tryFoldConstantIndex`, `sameValue`, `dependsOn`, `stripMemrefViewOps` |
 | Index builders/general IR helpers | `include/carts/utils/Utils.h` | `createConstantIndex`, `createZeroIndex`, `createOneIndex`, `dominatesOrInAncestor`, `replaceUses` |
-| Loop shape and IV helpers | `include/carts/utils/LoopUtils.h` | `isLoopInductionVar`, `getLoopInductionVar`, `getStaticTripCount`, `findNearestLoop`, `getLoopDepth` |
+| Loop shape and IV helpers | `include/carts/utils/LoopUtils.h` | `isLoopInductionVar`, `getStaticTripCount`, `findNearestLoop`, `getLoopDepth` |
 | Loop invariance and hoisting | `include/carts/utils/LoopInvarianceUtils.h` | `isLoopInvariant`, `findHoistTarget`, `allOperandsDominate`, `isSafeDivRemToHoist` |
 | Deferred removal | `include/carts/utils/RemovalUtils.h` | `markForRemoval`, `removeAllMarked`, `replaceWithUndef` |
 | SDE access/planning facts | `include/carts/dialect/sde/Analysis` or `include/carts/dialect/sde/Utils` | `AffineAccessUtils`, `StructuredOpAnalysis`, `SDECostModel` |
@@ -52,7 +52,6 @@ the existing owner is wrong.
 | Get static trip count | `getStaticTripCount()` | `LoopUtils.h` |
 | Is innermost loop? | `isInnermostLoop()` | `LoopUtils.h` |
 | Is loop IV? | `isLoopInductionVar()` | `LoopUtils.h` |
-| Get primary loop IV | `getLoopInductionVar()` | `LoopUtils.h` |
 | Get loop depth | `getLoopDepth()` | `LoopUtils.h` |
 | Find nearest enclosing loop | `findNearestLoop()` | `LoopUtils.h` |
 | Trace value to DB alloc | `DbUtils::traceToDbAlloc()` | `DbUtils.h` |

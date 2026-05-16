@@ -89,6 +89,15 @@ static bool hoistInvariantOpsInLoop(scf::ForOp loop) {
   return changed;
 }
 
+static bool isWorkerLoop(scf::ForOp loop) {
+  bool hasEdt = false;
+  loop.walk([&](EdtOp) {
+    hasEdt = true;
+    return WalkResult::interrupt();
+  });
+  return hasEdt;
+}
+
 template <typename Predicate>
 static SmallVector<scf::ForOp> collectLoops(Operation *root,
                                             Predicate &&predicate) {
