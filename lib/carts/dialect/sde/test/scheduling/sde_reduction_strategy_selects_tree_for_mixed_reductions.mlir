@@ -5,7 +5,7 @@
 
 // CHECK-LABEL: // -----// IR Dump After ReductionStrategy (reduction-strategy) //----- //
 // CHECK: func.func @main
-// CHECK: sde.cu_region <parallel> scope(<local>) {
+// CHECK: sde.cu_region <parallel> {
 // CHECK: sde.su_iterate (%c0) to (%c16) step (%c1)
 // CHECK-SAME: #sde.reduction_kind<add>, #sde.reduction_kind<mul>
 // CHECK-SAME: reduction_strategy(<tree>)
@@ -24,7 +24,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %c1_i32 = arith.constant 1 : i32
     memref.store %c0_i32, %sum[%c0] : memref<1xi32>
     memref.store %c1_i32, %prod[%c0] : memref<1xi32>
-    sde.cu_region <parallel> scope(<local>) {
+    sde.cu_region <parallel> {
       "sde.su_iterate"(%c0, %c16, %c1, %sum_cast, %prod_cast) ({
       ^bb0(%iv: index):
         %lhs = memref.load %A[%iv] : memref<16xi32>

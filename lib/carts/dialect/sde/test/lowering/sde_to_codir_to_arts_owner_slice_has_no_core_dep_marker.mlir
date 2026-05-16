@@ -25,7 +25,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %c64 = arith.constant 64 : index
     %c128 = arith.constant 128 : index
 
-    sde.cu_region <parallel> scope(<local>) {
+    sde.cu_region <parallel> {
       sde.su_iterate (%c0) to (%c128) step (%c1) classification(<elementwise>) {
       ^bb0(%i: index):
         scf.for %j = %c0 to %c64 step %c1 {

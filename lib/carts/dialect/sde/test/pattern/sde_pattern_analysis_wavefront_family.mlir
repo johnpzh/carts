@@ -31,7 +31,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
   func.func @wavefront(%A: memref<18x18xf64>) {
     %c1 = arith.constant 1 : index
     %c16 = arith.constant 16 : index
-    sde.cu_region <parallel> scope(<local>) {
+    sde.cu_region <parallel> {
       sde.su_iterate (%c1, %c1) to (%c16, %c16) step (%c1, %c1) {
       ^bb0(%i: index, %j: index):
         %im1 = arith.subi %i, %c1 : index

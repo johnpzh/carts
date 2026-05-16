@@ -38,7 +38,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %c4 = arith.constant 4 : index
     %c16 = arith.constant 16 : index
     scf.for %t = %c0 to %c4 step %c1 {
-      sde.cu_region <parallel> scope(<local>) {
+      sde.cu_region <parallel> {
         sde.su_iterate (%c1) to (%c16) step (%c1) {
         ^bb0(%i: index):
           scf.for %j = %c1 to %c16 step %c1 {
@@ -63,7 +63,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
       %always = arith.cmpi uge, %t, %c0 : index
       scf.if %always {
       }
-      sde.cu_region <parallel> scope(<local>) {
+      sde.cu_region <parallel> {
         sde.su_iterate (%c1) to (%c16) step (%c1) {
         ^bb0(%i: index):
           scf.for %j = %c1 to %c16 step %c1 {

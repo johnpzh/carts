@@ -11,7 +11,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %c1 = arith.constant 1 : index
     %c16 = arith.constant 16 : index
     %cst = arith.constant 2.0 : f64
-    sde.cu_region <parallel> scope(<local>) {
+    sde.cu_region <parallel> {
       sde.su_iterate (%c0) to (%c16) step (%c1) classification(<elementwise>) {
       ^bb0(%iv: index):
         %val = memref.load %A[%iv] : memref<16xf64>

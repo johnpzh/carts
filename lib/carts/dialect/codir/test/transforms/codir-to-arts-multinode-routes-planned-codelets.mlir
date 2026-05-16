@@ -12,7 +12,7 @@ module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_worker
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c128 = arith.constant 128 : index
-    sde.cu_region <parallel> scope(<local>) {
+    sde.cu_region <parallel> {
       sde.su_iterate (%c0) to (%c128) step (%c1) classification(<elementwise>) {
       ^bb0(%i: index):
         %v = memref.load %A[%i, %c0] : memref<128x16xf32>

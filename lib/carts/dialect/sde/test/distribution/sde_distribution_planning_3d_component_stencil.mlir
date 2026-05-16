@@ -8,7 +8,7 @@
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
-// SDE: sde.cu_region <parallel> scope(<distributed>) {
+// SDE: sde.cu_region <parallel> {
 // SDE: sde.su_distribute <owner_compute> {
 // SDE: sde.su_iterate (%c1, %c1, %c1, %c0) to (%c15, %c15, %c15, %c3) step ({{.*}}) classification(<stencil>) {
 // SDE: } {accessMaxOffsets
@@ -42,7 +42,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %c1 = arith.constant 1 : index
     %c3 = arith.constant 3 : index
     %c15 = arith.constant 15 : index
-    sde.cu_region <parallel> scope(<distributed>) {
+    sde.cu_region <parallel> {
       sde.su_iterate (%c1, %c1, %c1, %c0) to (%c15, %c15, %c15, %c3) step (%c1, %c1, %c1, %c1) {
       ^bb0(%i: index, %j: index, %k: index, %c: index):
         %im1 = arith.subi %i, %c1 : index

@@ -20,7 +20,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f32, dense<32> : 
     %c128 = arith.constant 128 : index
     %c1 = arith.constant 1 : index
     %cst = arith.constant 1.000000e+00 : f32
-    sde.cu_region <parallel> scope(<local>) {
+    sde.cu_region <parallel> {
       sde.su_iterate (%c0) to (%c128) step (%c1) classification(<elementwise>) {
       ^bb0(%i: index):
         %v = memref.load %A[%i] : memref<128xf32>

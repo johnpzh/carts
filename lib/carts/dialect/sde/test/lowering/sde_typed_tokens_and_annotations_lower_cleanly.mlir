@@ -19,7 +19,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<i64, dense<64> : 
     %c0 = arith.constant 0 : index
     %c0_i32 = arith.constant 0 : i32
 
-    sde.cu_region <parallel> scope(<local>) {
+    sde.cu_region <parallel> {
       sde.cu_task deps(%dep : !sde.dep) {
         memref.store %c0_i32, %A[%c0] : memref<8xi32>
         sde.yield

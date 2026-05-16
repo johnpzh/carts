@@ -17,7 +17,7 @@
 // --- After ConvertOpenMPToSde ---
 // OMP: func.func @main
 // OMP: sde.cu_region <parallel>
-// OMP: sde.cu_region <single> scope(<local>)
+// OMP: sde.cu_region <single>
 // OMP: memref.load %{{.*}}[] : memref<i32>
 // OMP: arith.addi
 // OMP: memref.store %{{.*}}, %{{.*}}[] : memref<i32>

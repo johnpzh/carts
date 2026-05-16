@@ -32,7 +32,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %c1 = arith.constant 1 : index
     %c8 = arith.constant 8 : index
     scf.for %t = %c0 to %c8 step %c1 {
-      sde.cu_region <parallel> scope(<local>) {
+      sde.cu_region <parallel> {
         sde.su_iterate (%c0) to (%c8) step (%c1) {
         ^bb0(%b: index):
           scf.for %c = %c0 to %c8 step %c1 {
@@ -43,7 +43,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
         }
         sde.yield
       }
-      sde.cu_region <parallel> scope(<local>) {
+      sde.cu_region <parallel> {
         sde.su_iterate (%c0) to (%c8) step (%c1) {
         ^bb0(%channel: index):
           %v = memref.load %B[%c0, %channel] : memref<8x8xf64>

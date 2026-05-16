@@ -21,7 +21,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f32, dense<32> : 
     %c1 = arith.constant 1 : index
     %c8 = arith.constant 8 : index
     %A = memref.alloc() : memref<8xf32>
-    sde.cu_region <parallel> scope(<local>) {
+    sde.cu_region <parallel> {
       sde.su_iterate (%c0) to (%c8) step (%c1) classification(<elementwise>) {
       ^bb0(%i: index):
         %v = memref.load %A[%i] : memref<8xf32>

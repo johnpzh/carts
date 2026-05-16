@@ -17,7 +17,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
   func.func @main(%A: memref<16x16xf64>, %B: memref<16x16xf64>) {
     %c1 = arith.constant 1 : index
     %c15 = arith.constant 15 : index
-    sde.cu_region <parallel> scope(<local>) {
+    sde.cu_region <parallel> {
       sde.su_iterate (%c1) to (%c15) step (%c1) classification(<stencil>) {
       ^bb0(%i: index):
         scf.for %j = %c1 to %c15 step %c1 {

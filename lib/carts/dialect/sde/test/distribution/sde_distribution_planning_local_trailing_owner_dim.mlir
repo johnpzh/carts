@@ -35,7 +35,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %zero = arith.constant 0.000000e+00 : f64
     %A = memref.alloc() : memref<16x16x64xf64>
     %B = memref.alloc() : memref<16x16x64xf64>
-    sde.cu_region <parallel> scope(<local>) {
+    sde.cu_region <parallel> {
       sde.su_iterate (%c2) to (%c62) step (%c1) schedule(<static>) {
       ^bb0(%k: index):
         %scratch = memref.alloca() : memref<f64>
