@@ -14,9 +14,6 @@ include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 
-include "mlir/Dialect/LLVMIR/LLVMOpBase.td"
-include "mlir/Dialect/LLVMIR/LLVMInterfaces.td"
-
 /// ARTS Dialect
 include "Dialect.td"
 include "Attributes.td"
@@ -38,7 +35,6 @@ class Arts_InferShapedTypeOpAdaptor<string mnemonic, list<Trait> traits = []>
 def UndefOp : Arts_Op<"undef", [Pure]> {
   let summary = "More flexible undef op";
   let results = (outs AnyType : $result);
-  let hasCanonicalizer = true;
   let assemblyFormat = "attr-dict `:` type($result)";
   let skipDefaultBuilders = 1;
   let builders = [OpBuilder<(ins "Type"
