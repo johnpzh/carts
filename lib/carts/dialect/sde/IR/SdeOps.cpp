@@ -146,8 +146,8 @@ ParseResult SdeCuRegionOp::parse(OpAsmParser &parser, OperationState &result) {
   if (body->empty())
     body->push_back(new Block());
 
-  // If no iter_args and no terminator, add empty yield
-  // (preserves backward compat with NoTerminator-style IR)
+  // Match the custom assembly form that omits empty yields for no-result
+  // regions.
   Block &entry = body->front();
   if (!hasIterArgs &&
       (entry.empty() || !entry.back().hasTrait<OpTrait::IsTerminator>())) {

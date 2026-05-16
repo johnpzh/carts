@@ -1,8 +1,7 @@
 // RUN: %carts-compile %s --arts-config %arts_config --pipeline initial-cleanup --start-from initial-cleanup 2>&1 | %FileCheck %s
 
-// Legacy tensor cleanup is being retired. Keep this migration test as a
-// memref-native codelet parse/verify check for the same single-element update
-// shape that tensor subset ops used to model.
+// Memref-native codelets should parse and verify single-element update shapes
+// without tensor subset cleanup.
 
 module {
   // CHECK-LABEL: func.func @codelet_with_single_element_update
