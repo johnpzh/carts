@@ -45,7 +45,7 @@ ARTS_DEBUG_SETUP(data_ptr_hoisting);
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
-using namespace mlir::carts::arts::data_ptr_hoisting;
+using namespace mlir::carts::arts_rt::data_ptr_hoisting;
 
 namespace {
 

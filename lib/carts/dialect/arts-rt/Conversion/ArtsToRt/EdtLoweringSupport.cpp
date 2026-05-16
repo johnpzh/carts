@@ -2,8 +2,8 @@
 /// File: EdtLoweringSupport.cpp
 ///
 /// Helper functions extracted from EdtLowering.cpp to reduce file size.
-/// All functions live in the mlir::carts::arts::edt_lowering namespace and are
-/// declared in EdtLoweringInternal.h.
+/// All functions live in the mlir::carts::arts_rt::edt_lowering namespace and
+/// are declared in EdtLoweringInternal.h.
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLoweringInternal.h"
@@ -21,7 +21,9 @@ using namespace mlir::carts;
 using namespace mlir::carts::arts;
 using namespace mlir::carts::arts_rt;
 
-namespace mlir::carts::arts::edt_lowering {
+namespace mlir::carts::arts_rt::edt_lowering {
+
+using namespace ::mlir::carts::arts;
 
 ///===----------------------------------------------------------------------===///
 /// normalizeTaskDepSlice
@@ -340,4 +342,4 @@ Operation *getCanonicalDependencySource(Value dep) {
   return nullptr;
 }
 
-} // namespace mlir::carts::arts::edt_lowering
+} // namespace mlir::carts::arts_rt::edt_lowering
