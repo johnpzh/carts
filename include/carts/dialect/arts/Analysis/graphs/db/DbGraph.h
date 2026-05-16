@@ -35,16 +35,11 @@ public:
   ~DbGraph();
 
   void build();
-  void invalidate();
-  llvm::json::Value exportToJsonValue(bool includeAnalysis = false) const;
+  llvm::json::Value exportToJsonValue() const;
 
   /// Retrieve node accessors by concrete op type
   DbAllocNode *getDbAllocNode(DbAllocOp op) const;
   DbAcquireNode *getDbAcquireNode(DbAcquireOp op) const;
-
-  /// Convenience methods for getting or creating specific node types
-  DbAllocNode *getOrCreateAllocNode(DbAllocOp op);
-  DbAcquireNode *getOrCreateAcquireNode(DbAcquireOp op);
 
   /// Apply a function to every node (alloc/acquire)
   void forEachAllocNode(const std::function<void(DbAllocNode *)> &fn) const;
@@ -70,6 +65,9 @@ private:
   unsigned nextAllocId = 1;
 
   /// Private helpers
+  void invalidate();
+  DbAllocNode *getOrCreateAllocNode(DbAllocOp op);
+  DbAcquireNode *getOrCreateAcquireNode(DbAcquireOp op);
   void collectNodes();
   void computeOpOrder();
   void computeMetrics();
@@ -80,7 +78,7 @@ private:
   void processAcquireNode(DbAcquireNode *acq, DbAllocNode &info);
   void computeLoopDepth(DbAllocNode &info,
                         const SmallVectorImpl<DbAcquireNode *> &acquireNodes);
-private:
+
   DenseMap<Operation *, unsigned> opOrder;
   std::atomic<bool> built{false};
   std::atomic<bool> needsRebuild{true};

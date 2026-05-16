@@ -33,12 +33,9 @@ public:
 
   void build();
   void invalidate();
-  llvm::json::Value exportToJsonValue(bool includeAnalysis = false) const;
-  NodeBase *getOrCreateNode(Operation *op);
-  NodeBase *getNode(Operation *op) const;
+  llvm::json::Value exportToJsonValue() const;
   EdtNode *getEdtNode(EdtOp edt) const;
   void forEachNode(const std::function<void(NodeBase *)> &fn) const;
-  bool addEdge(NodeBase *from, NodeBase *to, EdgeBase *edge);
 
   /// Edt-specific methods
   bool isEdtReachable(EdtOp from, EdtOp to);
@@ -63,6 +60,9 @@ private:
   std::atomic<bool> needsRebuild{true};
 
   /// Private helpers
+  NodeBase *getOrCreateNode(Operation *op);
+  NodeBase *getNode(Operation *op) const;
+  bool addEdge(NodeBase *from, NodeBase *to, EdgeBase *edge);
   void collectNodes();
   void linkEdtsToLoops();
   void buildDependencies();

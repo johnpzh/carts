@@ -10,7 +10,6 @@
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/utils/LocationMetadata.h"
-#include "carts/utils/Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "llvm/Support/Debug.h"
@@ -326,32 +325,8 @@ void DbGraph::computeLoopDepth(
   info.maxLoopDepth = maxDepth;
 }
 
-llvm::json::Value DbGraph::exportToJsonValue(bool includeAnalysis) const {
+llvm::json::Value DbGraph::exportToJsonValue() const {
   using namespace llvm::json;
-
-  if (!includeAnalysis) {
-    /// Original graph visualization format
-    Object root;
-
-    Array nodesArr;
-    for (const auto &kv : allocNodes) {
-      DbAllocNode *allocNode = kv.second.get();
-      nodesArr.push_back(Object{{"id", sanitizeString(allocNode->getHierId())},
-                                {"group", "db"},
-                                {"nodeKind", "DbAlloc"}});
-      allocNode->forEachChildNode([&](NodeBase *child) {
-        if (auto *acq = dyn_cast<DbAcquireNode>(child)) {
-          nodesArr.push_back(Object{{"id", sanitizeString(acq->getHierId())},
-                                    {"group", "db"},
-                                    {"nodeKind", "DbAcquire"}});
-        }
-      });
-    }
-
-    root["nodes"] = std::move(nodesArr);
-    root["edges"] = llvm::json::Array();
-    return llvm::json::Value(std::move(root));
-  }
 
   /// ArtsMate DB entities export
   Array dbs;

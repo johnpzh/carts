@@ -168,8 +168,7 @@ void AnalysisManager::captureDiagnostics() {
     }
 
     auto &edtGraph = getEdtAnalysis().getOrCreateEdtGraph(func);
-    llvm::json::Value edtEntitiesValue =
-        edtGraph.exportToJsonValue(/*includeAnalysis=*/true);
+    llvm::json::Value edtEntitiesValue = edtGraph.exportToJsonValue();
     if (auto *edtArray = edtEntitiesValue.getAsArray()) {
       for (auto &edt : *edtArray) {
         if (auto *obj = edt.getAsObject()) {
@@ -191,8 +190,7 @@ void AnalysisManager::captureDiagnostics() {
     });
 
     auto &dbGraph = getDbAnalysis().getOrCreateGraph(func);
-    llvm::json::Value dbEntitiesValue =
-        dbGraph.exportToJsonValue(/*includeAnalysis=*/true);
+    llvm::json::Value dbEntitiesValue = dbGraph.exportToJsonValue();
     if (auto *dbArray = dbEntitiesValue.getAsArray()) {
       for (auto &db : *dbArray) {
         if (auto *obj = db.getAsObject()) {

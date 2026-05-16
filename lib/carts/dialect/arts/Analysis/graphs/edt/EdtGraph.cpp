@@ -16,7 +16,6 @@
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/utils/LocationMetadata.h"
 #include "carts/utils/OperationAttributes.h"
-#include "carts/utils/Utils.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -215,34 +214,8 @@ bool EdtGraph::areEdtsIndependent(EdtOp a, EdtOp b) {
   return !DbUtils::hasSharedWritableRootConflict(opA, opB);
 }
 
-llvm::json::Value EdtGraph::exportToJsonValue(bool includeAnalysis) const {
+llvm::json::Value EdtGraph::exportToJsonValue() const {
   using namespace llvm::json;
-
-  if (!includeAnalysis) {
-    /// Original graph visualization format
-    Object root;
-    Array nodesArr;
-    forEachNode([&](NodeBase *node) {
-      nodesArr.push_back(Object{{"id", sanitizeString(node->getHierId())},
-                                {"group", "edt"},
-                                {"nodeKind", "EdtTask"}});
-    });
-
-    Array edgesArr;
-    forEachNode([&](NodeBase *from) {
-      for (auto *edge : from->getOutEdges()) {
-        edgesArr.push_back(
-            Object{{"from", sanitizeString(edge->getFrom()->getHierId())},
-                   {"to", sanitizeString(edge->getTo()->getHierId())},
-                   {"edgeKind", "Dep"},
-                   {"label", edge->getType().str()}});
-      }
-    });
-
-    root["nodes"] = std::move(nodesArr);
-    root["edges"] = std::move(edgesArr);
-    return llvm::json::Value(std::move(root));
-  }
 
   /// ArtsMate-compatible EDT entities export
   Array edts;
