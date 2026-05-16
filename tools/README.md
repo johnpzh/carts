@@ -12,10 +12,8 @@ Use one command model only:
 - `carts ...` only if you explicitly generated the project-local wrapper with
   `dekk carts install --wrap` and exposed `./.install` on your `PATH`
 
-Do not use checked-in wrappers or direct `python tools/carts_cli.py` invocations
-as the public interface. The repo-local `tools/carts` file exists only as a
-compatibility shim for internal benchmark/tooling paths that still expect that
-entrypoint.
+Do not use direct `python tools/carts_cli.py` invocations as the public
+interface.
 
 ## Directory Layout
 
@@ -35,7 +33,7 @@ dekk carts skills generate
 dekk carts build
 dekk carts compile simple.c -O3 -o simple_arts
 dekk carts test
-dekk carts lit lib/arts/dialect/core/test/<case>.mlir
+dekk carts lit lib/carts/dialect/arts/test/<case>.mlir
 dekk carts benchmarks list
 ```
 

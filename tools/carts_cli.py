@@ -226,7 +226,7 @@ def benchmarks(
     if ctx.args:
         cmd.extend(ctx.args)
 
-    # Inject PYTHONPATH so benchmarks submodule can import carts_styles shim
+    # Expose shared CARTS Python helpers to the benchmark runner.
     tools_dir = str(Path(__file__).parent)
     result = run_subprocess(cmd, check=False, env={"PYTHONPATH": tools_dir})
     raise Exit(result.returncode)

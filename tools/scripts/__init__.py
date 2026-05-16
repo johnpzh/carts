@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from dekk import Colors, Exit, Symbols, print_debug, print_error
+from dekk import Colors, Exit, Symbols, console, print_debug, print_error
 
 from scripts.platform import is_verbose
 
@@ -81,6 +81,17 @@ def format_skipped(count: int) -> str:
 
 def format_summary_line(passed: int, failed: int, skipped: int) -> str:
     return f"{format_passed(passed)}  {format_failed(failed)}  {format_skipped(skipped)}"
+
+
+def print_footer(title: str, style: str = Colors.SUCCESS) -> None:
+    from rich import box
+    from rich.panel import Panel
+    from rich.text import Text
+
+    console.print()
+    console.print(Panel(Text.from_markup(title, style=style),
+                        box=box.HEAVY, border_style=style, padding=(0, 1)))
+    console.print()
 
 
 def run_subprocess(
