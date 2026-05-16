@@ -57,6 +57,10 @@ Post-M6 multinode investigation:
   gap so planned owner slices become internode EDTs with block/distributed DB
   ownership. Larger multinode sweeps before that point mostly measure launch
   overhead and should not be used as scaling evidence.
+- The 64-thread and 64-node measurement ladder is now tracked in
+  [`benchmark-64node-experiments.md`](./benchmark-64node-experiments.md). That
+  plan requires an ARTS shape gate before 64-node timing can be reported as
+  distributed scaling evidence.
 
 | Benchmark | M6 class | ARTS kernel | OpenMP kernel | Speedup | Owner | Next action |
 |---|---:|---:|---:|---:|---|---|

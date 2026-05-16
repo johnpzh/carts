@@ -14,6 +14,7 @@ Subplans:
 - [`memref-mu-token-rewrite.md`](./memref-mu-token-rewrite.md)
 - [`arts-materialization-cleanup.md`](./arts-materialization-cleanup.md)
 - [`performance-large64.md`](./performance-large64.md)
+- [`benchmark-64node-experiments.md`](./benchmark-64node-experiments.md)
 - [`verification-release.md`](./verification-release.md)
 
 Each subplan should state:

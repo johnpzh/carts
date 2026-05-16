@@ -214,6 +214,7 @@ Important current facts:
 | [`memref-mu-token-rewrite.md`](./plans/memref-mu-token-rewrite.md) | Make tiling real by rewriting MU, CU, and SU together at memref level. | ND/strided owner slices lower through token-local codelets without tensor-carrier paths. |
 | [`arts-materialization-cleanup.md`](./plans/arts-materialization-cleanup.md) | Convert CODIR directly to ARTS and remove DB rediscovery paths. | Supported benchmarks no longer need raw-memref `CreateDbs` materialization. |
 | [`performance-large64.md`](./plans/performance-large64.md) | Recover and stabilize benchmark performance at large/64. | Maintained benchmarks are correctness-clean and classified as fast or competitive. |
+| [`benchmark-64node-experiments.md`](./plans/benchmark-64node-experiments.md) | Define the 64-thread single-node and 64-node Slurm benchmark campaign, including shape gates, network config, problem sizes, and CARTS benchmark commands. | 64-node timings are reported only after ARTS IR proves internode EDTs with non-coarse distributed DB ownership. |
 | [`verification-release.md`](./plans/verification-release.md) | Keep every migration phase testable and reversible by evidence. | Each milestone has focused lit, pipeline, e2e, and benchmark evidence. |
 
 For the M6 post-restructuring validation+optimization loop see the
@@ -756,6 +757,11 @@ maintained benchmark lowering still emits coarse single-block DB roots and
 present. Treat those runs as multinode launch/correctness smokes only, not
 distributed scaling evidence, until CODIR-to-ARTS materializes planned owner
 slices as internode EDTs with block/distributed DB ownership.
+The measurement plan for the next 64-thread and 64-node campaign is
+[`benchmark-64node-experiments.md`](./plans/benchmark-64node-experiments.md).
+It keeps local large/64 timing separate from 64-node Slurm timing and requires
+an ARTS shape gate before any multinode result is described as scaling
+evidence.
 Phase B-E follow-ups moved owner-strip vector/reduction and 3-D component-slab
 benchmarks to fast or competitive by fixing CODIR dispatch-step construction,
 adding CODIR 2-D owner-tile dispatch, localizing SeisSol SU scratch, and
