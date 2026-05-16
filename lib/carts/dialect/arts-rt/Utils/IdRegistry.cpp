@@ -12,6 +12,7 @@
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
+using namespace mlir::carts::arts_rt;
 
 ARTS_DEBUG_SETUP(id_registry)
 

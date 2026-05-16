@@ -15,7 +15,7 @@
 #include <cstdint>
 
 namespace mlir {
-namespace carts::arts {
+namespace carts::arts_rt {
 
 /// Runtime-lowering ID registry for deterministic arts_id assignment.
 /// This class tracks:
@@ -24,7 +24,7 @@ namespace carts::arts {
 /// - Sequential ID assignment
 class IdRegistry {
 public:
-  static constexpr auto AttrName = AttrNames::Operation::ArtsId;
+  static constexpr auto AttrName = arts::AttrNames::Operation::ArtsId;
   static constexpr int64_t DefaultStride = 1000;
 
   IdRegistry() = default;
@@ -51,7 +51,7 @@ private:
   int64_t nextId = 1;
 };
 
-} // namespace carts::arts
+} // namespace carts::arts_rt
 } // namespace mlir
 
 #endif // CARTS_DIALECT_ARTS_RT_UTILS_IDREGISTRY_H
