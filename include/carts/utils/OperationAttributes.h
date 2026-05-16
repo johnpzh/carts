@@ -72,10 +72,6 @@ constexpr StringLiteral DbStaticOuterShape = "arts.db_static_outer_shape";
 /// provenance without transporting raw handle pointers.
 constexpr StringLiteral DbRootAllocId = "arts.db_root_alloc_id";
 
-/// GUID range detection annotations (set by GUIDRangeDetection)
-constexpr StringLiteral GuidRangeTripCount = "guid_range_trip_count";
-constexpr StringLiteral HasGuidRangeAlloc = "has_guid_range_alloc";
-
 /// LoweringContractOp attribute names (used in Dialect.cpp build method)
 namespace Contract {
 using namespace llvm;

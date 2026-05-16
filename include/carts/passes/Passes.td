@@ -63,14 +63,13 @@ def DbDistributedOwnership
 }
 
 def DbTransforms : Pass<"db-transforms", "mlir::ModuleOp"> {
-  let summary = "Post-DB transforms (contracts, halo, GUID, cleanup)";
+  let summary = "Post-DB transforms (contracts, halo, cleanup)";
   let description = [{
     Hosts DB-level transformations that run after DB partitioning and
     distributed ownership decisions are known. Current transforms:
     - DT-1: Contract persistence -- persist refined AcquireContractSummary
       back to IR via upsertLoweringContract().
     - DT-2: Stencil halo consolidation
-    - DT-4: GUID range allocation
     - DT-6: DB lifetime shortening
     - DT-7: Dead DB elimination
 

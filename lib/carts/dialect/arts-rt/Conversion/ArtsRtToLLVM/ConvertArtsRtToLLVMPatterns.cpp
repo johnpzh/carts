@@ -1522,22 +1522,6 @@ struct DbNumElementsPattern : public ArtsRtToLLVMPattern<DbNumElementsOp> {
   }
 };
 
-/// Pattern to convert arts.alloc operations (ARTS memory allocation)
-struct AllocPattern : public ArtsRtToLLVMPattern<AllocOp> {
-  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
-
-  LogicalResult matchAndRewrite(AllocOp op,
-                                PatternRewriter &rewriter) const override {
-    ARTS_INFO("Lowering Alloc Op " << op);
-    ArtsCodegen::RewriterGuard RG(*AC, rewriter);
-    auto resultType = dyn_cast<MemRefType>(op.getResult().getType());
-    if (!resultType)
-      return op.emitError("Expected MemRef type for result");
-    ++numMiscOpsConverted;
-    return success();
-  }
-};
-
 ///===----------------------------------------------------------------------===///
 /// Terminator Patterns
 ///===----------------------------------------------------------------------===///

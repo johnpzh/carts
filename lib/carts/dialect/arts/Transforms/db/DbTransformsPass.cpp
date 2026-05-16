@@ -10,7 +10,6 @@
 ///         back to IR via upsertLoweringContract().
 ///   DT-2: Stencil halo consolidation -- unify halo bounds from graph
 ///         analysis, raw IR attrs, and contract into unified min/max offsets.
-///   DT-4: GUID range allocation -- mark batch-GUID candidates.
 ///   DT-6: DB lifetime shortening -- remove cleanup-only acquire chains once
 ///         the reachable DB-use graph proves they feed no computation.
 ///   DT-7: Dead DB elimination -- remove root DBs whose reachable use graph is
@@ -30,7 +29,6 @@
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
 #include "carts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_DBTRANSFORMS
-#include "carts/dialect/arts/Transforms/db/transforms/GUIDRangeDetection.h"
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
 #include "carts/dialect/arts/Utils/DbUtils.h"
@@ -124,20 +122,6 @@ void DbTransformsPass::runOnOperation() {
   if (dt2Count > 0)
     ARTS_INFO("DT-2: consolidated stencil halos on " << dt2Count
                                                      << " acquires");
-
-  ///===------------------------------------------------------------------===///
-  /// DT-4: GUID range allocation
-  ///
-  /// Detect loops creating N GUIDs and mark them for batch allocation
-  /// via arts_guid_reserve_range(N). The marking pass stamps IR with
-  /// attributes that ConvertArtsRtToLLVM can consume.
-  ///===------------------------------------------------------------------===///
-  {
-    ModuleOp module = getOperation();
-    bool dt4Found = detectGUIDRangeCandidates(module);
-    if (dt4Found)
-      ARTS_INFO("DT-4: marked GUID range allocation candidates");
-  }
 
   ///===------------------------------------------------------------------===///
   /// DT-6: DB lifetime shortening

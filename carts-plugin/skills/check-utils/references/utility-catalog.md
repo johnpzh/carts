@@ -61,7 +61,6 @@ AttrNames::Operation::ArtsId           // "arts.id"
 AttrNames::Operation::Workers          // "arts.workers"
 AttrNames::Operation::DepPattern       // "arts.dep_pattern"
 AttrNames::Operation::PartitionMode    // "arts.partition_mode"
-AttrNames::Operation::GuidRangeTripCount // "arts.guid_range.trip_count"
 // ... see OperationAttributes.h for full list
 
 // Stencil attributes
