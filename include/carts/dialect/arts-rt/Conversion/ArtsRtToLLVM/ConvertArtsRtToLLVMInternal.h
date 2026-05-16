@@ -18,7 +18,7 @@
 
 namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm {
 
-using ::mlir::carts::arts::ArtsCodegen;
+using ::mlir::carts::arts_rt::ArtsCodegen;
 
 ///===----------------------------------------------------------------------===///
 /// ArtsRtToLLVMPattern base class

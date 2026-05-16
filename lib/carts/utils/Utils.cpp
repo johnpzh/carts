@@ -154,15 +154,15 @@ bool isArtsRuntimeQuery(Value val) {
 
   /// Check for func::CallOp (after lowering)
   if (auto callOp = dyn_cast<func::CallOp>(defOp)) {
-    std::optional<types::RuntimeFunction> fn =
-        types::runtimeFunctionFromName(callOp.getCallee());
+    std::optional<arts_rt::types::RuntimeFunction> fn =
+        arts_rt::types::runtimeFunctionFromName(callOp.getCallee());
     if (!fn)
       return false;
     switch (*fn) {
-    case types::ARTSRTL_arts_get_current_node:
-    case types::ARTSRTL_arts_get_total_nodes:
-    case types::ARTSRTL_arts_get_current_worker:
-    case types::ARTSRTL_arts_get_total_workers:
+    case arts_rt::types::ARTSRTL_arts_get_current_node:
+    case arts_rt::types::ARTSRTL_arts_get_total_nodes:
+    case arts_rt::types::ARTSRTL_arts_get_current_worker:
+    case arts_rt::types::ARTSRTL_arts_get_total_workers:
       return true;
     default:
       return false;

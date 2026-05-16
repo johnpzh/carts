@@ -40,7 +40,7 @@ PartitionMode getLoweredDbPartitionMode(DbAllocOp alloc) {
 
 } // namespace
 
-LayoutInfo mlir::carts::arts::buildLayoutInfo(Value source) {
+LayoutInfo mlir::carts::arts_rt::buildLayoutInfo(Value source) {
   LayoutInfo info;
 
   if (!source)
@@ -66,9 +66,10 @@ LayoutInfo mlir::carts::arts::buildLayoutInfo(Value source) {
   return info;
 }
 
-Value mlir::carts::arts::computeDbElementPointer(ArtsCodegen &AC, Location loc,
-                                          Value base, ArrayRef<Value> indices,
-                                          const LayoutInfo &layout) {
+Value mlir::carts::arts_rt::computeDbElementPointer(ArtsCodegen &AC,
+                                                    Location loc, Value base,
+                                                    ArrayRef<Value> indices,
+                                                    const LayoutInfo &layout) {
   if (indices.empty())
     return AC.castToLLVMPtr(base, loc);
 

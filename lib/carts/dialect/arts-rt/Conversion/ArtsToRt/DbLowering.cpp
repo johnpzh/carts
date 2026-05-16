@@ -556,7 +556,7 @@ void DbLoweringPass::updateAcquireUsers(DbAcquireOp acquireOp, Value newGuid,
 /// Helper function to get LLVM pointer from a base value and indices
 Value DbLoweringPass::getLLVMPtr(Value base, ValueRange opIndices,
                                  Location loc) {
-  arts::LayoutInfo layout = buildLayoutInfo(base);
+  LayoutInfo layout = buildLayoutInfo(base);
   SmallVector<Value> indices(opIndices.begin(), opIndices.end());
   return computeDbElementPointer(*AC, loc, base, indices, layout);
 }

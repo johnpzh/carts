@@ -19,10 +19,7 @@
 #include "carts/Dialect.h"
 
 namespace mlir {
-namespace carts::arts {
-
-/// Forward declarations
-class DbAllocOp;
+namespace carts::arts_rt {
 
 namespace types {
 
@@ -35,7 +32,7 @@ enum class RuntimeFunction {
 #undef ARTS_RTL_FUNCTIONS
 
 #define ARTS_RTL(Enum, ...)                                                    \
-  constexpr auto Enum = arts::types::RuntimeFunction::Enum;
+  constexpr auto Enum = RuntimeFunction::Enum;
 #define ARTS_RTL_FUNCTIONS
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def"
 #undef ARTS_RTL_FUNCTIONS
@@ -86,26 +83,27 @@ inline bool isRuntimeTopologyQuery(RuntimeFunction fn) {
 }
 
 } // end namespace types
-} // end namespace arts
+} // end namespace arts_rt
 } // end namespace mlir
 
 /// Specialization of DenseMapInfo for RuntimeFunction enum.
 namespace llvm {
-template <> struct DenseMapInfo<mlir::carts::arts::types::RuntimeFunction> {
-  static mlir::carts::arts::types::RuntimeFunction getEmptyKey() {
-    return static_cast<mlir::carts::arts::types::RuntimeFunction>(~0U);
+template <> struct DenseMapInfo<mlir::carts::arts_rt::types::RuntimeFunction> {
+  static mlir::carts::arts_rt::types::RuntimeFunction getEmptyKey() {
+    return static_cast<mlir::carts::arts_rt::types::RuntimeFunction>(~0U);
   }
 
-  static mlir::carts::arts::types::RuntimeFunction getTombstoneKey() {
-    return static_cast<mlir::carts::arts::types::RuntimeFunction>(~0U - 1);
+  static mlir::carts::arts_rt::types::RuntimeFunction getTombstoneKey() {
+    return static_cast<mlir::carts::arts_rt::types::RuntimeFunction>(~0U - 1);
   }
 
-  static unsigned getHashValue(mlir::carts::arts::types::RuntimeFunction val) {
+  static unsigned
+  getHashValue(mlir::carts::arts_rt::types::RuntimeFunction val) {
     return static_cast<unsigned>(val);
   }
 
-  static bool isEqual(mlir::carts::arts::types::RuntimeFunction lhs,
-                      mlir::carts::arts::types::RuntimeFunction rhs) {
+  static bool isEqual(mlir::carts::arts_rt::types::RuntimeFunction lhs,
+                      mlir::carts::arts_rt::types::RuntimeFunction rhs) {
     return lhs == rhs;
   }
 };

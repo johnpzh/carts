@@ -22,8 +22,11 @@
 
 namespace mlir {
 namespace carts::arts {
-using namespace types;
 class RuntimeConfig;
+} // namespace carts::arts
+
+namespace carts::arts_rt {
+using namespace types;
 
 class ArtsCodegen {
 public:
@@ -135,10 +138,10 @@ public:
   void setDistributedInitInWorkers(bool value) {
     distributedInitInWorkers = value;
   }
-  void setRuntimeConfig(const RuntimeConfig *machine) {
+  void setRuntimeConfig(const arts::RuntimeConfig *machine) {
     runtimeConfig = machine;
   }
-  const RuntimeConfig *getRuntimeConfig() const { return runtimeConfig; }
+  const arts::RuntimeConfig *getRuntimeConfig() const { return runtimeConfig; }
 
   /// Helper functions
   Value createZeroValue(Type elemType, Location loc);
@@ -228,7 +231,7 @@ private:
   SmallVector<func::FuncOp, 8> distributedInitNodeCallbacks;
   SmallVector<func::FuncOp, 8> distributedInitWorkerCallbacks;
   bool distributedInitInWorkers = false;
-  const RuntimeConfig *runtimeConfig = nullptr;
+  const arts::RuntimeConfig *runtimeConfig = nullptr;
 
   /// Helper functions
   void initializeTypes();
@@ -237,7 +240,7 @@ private:
                                       RuntimeFunction fnID);
 };
 
-} // namespace carts::arts
+} // namespace carts::arts_rt
 } // namespace mlir
 
 #endif // CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_CODEGENSUPPORT_H

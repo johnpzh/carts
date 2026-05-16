@@ -57,6 +57,7 @@ using namespace mlir::func;
 using namespace mlir::LLVM;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
+using namespace mlir::carts::arts_rt;
 using namespace mlir::arith;
 using namespace mlir::polygeist;
 using namespace mlir::cf;

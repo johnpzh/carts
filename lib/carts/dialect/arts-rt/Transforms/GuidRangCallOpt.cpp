@@ -47,6 +47,7 @@ ARTS_DEBUG_SETUP(guid_rang_call_opt);
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
+using namespace mlir::carts::arts_rt;
 
 namespace {
 

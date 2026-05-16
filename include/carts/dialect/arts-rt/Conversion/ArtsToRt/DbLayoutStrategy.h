@@ -14,13 +14,13 @@
 #include "llvm/ADT/SmallVector.h"
 
 namespace mlir {
-namespace carts::arts {
+namespace carts::arts_rt {
 
 class ArtsCodegen;
 
 struct LayoutInfo {
-  DbAllocOp alloc;
-  PartitionMode mode = PartitionMode::coarse;
+  arts::DbAllocOp alloc;
+  arts::PartitionMode mode = arts::PartitionMode::coarse;
   SmallVector<Value> sizes;
   SmallVector<Value> elementSizes;
   unsigned outerRank = 0;
@@ -37,7 +37,7 @@ Value computeDbElementPointer(ArtsCodegen &AC, Location loc, Value base,
                               ArrayRef<Value> indices,
                               const LayoutInfo &layout);
 
-} // namespace carts::arts
+} // namespace carts::arts_rt
 } // namespace mlir
 
 #endif // CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSTORT_DBLAYOUTSTRATEGY_H
