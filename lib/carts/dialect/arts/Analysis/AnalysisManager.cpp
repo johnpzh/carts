@@ -94,7 +94,7 @@ const StringAnalysis &AnalysisManager::getStringAnalysis() const {
 
 DbHeuristics &AnalysisManager::getDbHeuristics() {
   if (!dbHeuristics) {
-    dbHeuristics = std::make_unique<DbHeuristics>(runtimeConfig);
+    dbHeuristics = std::make_unique<DbHeuristics>();
   }
   return *dbHeuristics;
 }

@@ -1,43 +1,21 @@
 ///==========================================================================///
 /// File: DbHeuristics.cpp
 ///
-/// DB heuristic policy: decision recording, JSON export, and delegation to
-/// partitioning heuristics.
+/// DB heuristic policy: decision recording for DB materialization/refinement
+/// diagnostics.
 ///==========================================================================///
 
 #include "carts/dialect/arts/Analysis/heuristics/DbHeuristics.h"
 #include "carts/Dialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
-#include "carts/utils/Debug.h"
 #include "carts/dialect/arts/Utils/LocationMetadata.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
-ARTS_DEBUG_SETUP(db_heuristics)
-
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
-
-namespace {
-
-static std::string extractHeuristicId(llvm::StringRef rationale) {
-  if (rationale.starts_with("H1.")) {
-    size_t colonPos = rationale.find(':');
-    if (colonPos != std::string::npos)
-      return rationale.substr(0, colonPos).str();
-  }
-  return "Fallback";
-}
-
-} // namespace
-
-DbHeuristics::DbHeuristics(const RuntimeConfig &machine) : machine(machine) {}
-
-bool DbHeuristics::isSingleNode() const { return machine.isSingleNode(); }
-
-bool DbHeuristics::isValid() const { return machine.isValid(); }
 
 void DbHeuristics::recordDecision(llvm::StringRef heuristic, bool applied,
                                   llvm::StringRef rationale, Operation *op,
@@ -66,7 +44,7 @@ void DbHeuristics::recordDecision(llvm::StringRef heuristic, bool applied,
               ValueAnalysis::getConstantIndex(offsets[0], offset);
           bool sizeKnown = ValueAnalysis::getConstantIndex(sizes[0], count);
           if (offsetKnown && sizeKnown && allocId != 0) {
-            if (count > getMaxOuterDBs()) {
+            if (count > kMaxAffectedDbIds) {
               /// Cap: store only the range start for very large DB counts.
               affectedDbIds.push_back(allocId + offset);
             } else {
@@ -90,7 +68,7 @@ void DbHeuristics::recordDecision(llvm::StringRef heuristic, bool applied,
                   allStatic = false;
               }
               if (allStatic) {
-                if (totalDbs > getMaxOuterDBs()) {
+                if (totalDbs > kMaxAffectedDbIds) {
                   /// Cap: store only the first element for very large DB
                   /// counts.
                   affectedDbIds.push_back(allocId);
@@ -113,33 +91,4 @@ void DbHeuristics::recordDecision(llvm::StringRef heuristic, bool applied,
 
 llvm::ArrayRef<HeuristicDecision> DbHeuristics::getDecisions() const {
   return decisions;
-}
-
-void DbHeuristics::exportDecisionsToJson(llvm::json::OStream &J) const {
-  J.attributeArray("heuristic_decisions", [&]() {
-    for (const auto &d : decisions) {
-      J.object([&]() {
-        J.attribute("heuristic", d.heuristic);
-        J.attribute("applied", d.applied);
-        J.attribute("rationale", d.rationale);
-        J.attribute("target_id", d.affectedArtsId);
-        if (d.affectedAllocId != 0)
-          J.attribute("alloc_id", d.affectedAllocId);
-        if (!d.affectedDbIds.empty()) {
-          J.attributeArray("affected_db_ids", [&]() {
-            for (int64_t id : d.affectedDbIds)
-              J.value(id);
-          });
-        }
-        if (!d.sourceLocation.empty())
-          J.attribute("source_location", d.sourceLocation);
-        if (!d.costModelInputs.empty()) {
-          J.attributeObject("cost_model_inputs", [&]() {
-            for (const auto &kv : d.costModelInputs)
-              J.attribute(kv.first(), kv.second);
-          });
-        }
-      });
-    }
-  });
 }
