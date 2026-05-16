@@ -12,7 +12,6 @@
 #ifndef ARTS_DIALECT_SDE_TRANSFORMS_PASSES_H
 #define ARTS_DIALECT_SDE_TRANSFORMS_PASSES_H
 
-#include "carts/Dialect.h"
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/dialect/sde/IR/SdeDialect.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"

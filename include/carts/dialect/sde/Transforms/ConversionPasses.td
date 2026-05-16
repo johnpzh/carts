@@ -75,7 +75,6 @@ def ConvertOpenMPToSde : Pass<"convert-openmp-to-sde", "mlir::ModuleOp"> {
   let dependentDialects = ["::mlir::memref::MemRefDialect",
                            "::mlir::omp::OpenMPDialect",
                            "::mlir::carts::sde::CartsSdeDialect",
-                           "::mlir::carts::arts::ArtsDialect",
                            "::mlir::arith::ArithDialect",
                            "::mlir::scf::SCFDialect"];
   let constructor = "mlir::carts::sde::createConvertOpenMPToSdePass()";

@@ -15,7 +15,6 @@
 ///===----------------------------------------------------------------------===///
 
 #include "PolygeistToSdeUtils.h"
-#include "carts/Dialect.h"
 #include "carts/dialect/sde/Analysis/AffineAccessUtils.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
 #include "carts/utils/Debug.h"

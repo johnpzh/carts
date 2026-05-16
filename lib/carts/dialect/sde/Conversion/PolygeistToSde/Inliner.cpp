@@ -16,7 +16,6 @@
 ///==========================================================================///
 
 #define GEN_PASS_DEF_SDEINPUTINLINER
-#include "carts/Dialect.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
 namespace mlir::carts::sde {
 #include "carts/dialect/sde/Transforms/Passes.h.inc"

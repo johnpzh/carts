@@ -5,13 +5,12 @@
 /// conversion. Any remaining SDE op indicates a conversion failure.
 ///==========================================================================///
 
-#include "carts/Dialect.h"
 #include "carts/dialect/sde/IR/SdeDialect.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
 namespace mlir::carts::sde {
 #define GEN_PASS_DEF_VERIFYSDELOWERED
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 #include "mlir/Pass/Pass.h"
 
 using namespace mlir;
