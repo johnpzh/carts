@@ -41,7 +41,9 @@ set(LIBS
   MLIRCartsArts
   MLIRCartsArtsRt
   MLIRCartsSde
-  MLIRCartsTransforms
+  MLIRCartsSdeTransforms
+  MLIRCartsArtsTransforms
+  MLIRCartsArtsRtTransforms
   MLIRCartsCodir
   MLIRCartsCodirConversion
   MLIRCartsCodirTransforms

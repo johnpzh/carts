@@ -40,7 +40,7 @@ dialect/                     MLIR dialects (one subdirectory per CARTS dialect)
     Transforms/              DataPtrHoisting, RuntimeCallOpt, ScalarReplacement,
                              LoopVectorizationHints, AliasScopeGen
     Utils/                   ARTS-RT-specific utilities (IdRegistry)
-passes/                      Umbrella pass library (MLIRCartsTransforms)
+passes/                      Per-dialect pass library wiring
 utils/                       CARTS-shared utilities (Debug, LoopUtils,
                              OperationAttributes, PassInstrumentation,
                              RemovalUtils, StencilAttributes, Utils,

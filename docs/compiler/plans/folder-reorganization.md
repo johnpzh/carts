@@ -128,7 +128,7 @@ The legacy `include/arts/` and `lib/arts/` umbrellas no longer exist. The
 "core" subdirectory was renamed to `arts`; "rt" was renamed to `arts-rt`.
 
 CMake target names follow the same pattern: `MLIRCartsArts`, `MLIRCartsArtsRt`,
-`MLIRCartsSde`, `MLIRCartsCodir*`, and the umbrella `MLIRCartsTransforms`.
+`MLIRCartsSde`, `MLIRCartsCodir*`, and per-dialect transform libraries.
 
 Both follow-on items are also complete:
 
@@ -137,10 +137,9 @@ Both follow-on items are also complete:
   `mlir::carts::arts_rt::*`. TableGen `cppNamespace` strings track the new
   roots. The legacy `mlir::arts` namespace (which was ambiguous between
   project umbrella and ARTS dialect) is gone.
-- **`MLIRCartsTransforms` split**: now an umbrella that aggregates
-  `MLIRCartsSdeTransforms`, `MLIRCartsArtsTransforms`, and
-  `MLIRCartsArtsRtTransforms`. New consumers may link a single per-dialect
-  library; existing consumers keep working through the umbrella name.
+- **Transform-library split**: `MLIRCartsSdeTransforms`,
+  `MLIRCartsArtsTransforms`, and `MLIRCartsArtsRtTransforms` are direct link
+  targets. The former `MLIRCartsTransforms` compatibility aggregate is gone.
 
 ## Migration Phases
 

@@ -1,7 +1,6 @@
 ###===---------------------------------------------------------------===###
-### Per-dialect pass libraries (split from the former monolithic
-### MLIRCartsTransforms umbrella). MLIRCartsTransforms remains as a thin
-### umbrella that aggregates the per-dialect libraries.
+### Per-dialect pass libraries. Consumers link the dialect libraries they use
+### instead of a project-wide compatibility aggregate.
 ###===---------------------------------------------------------------===###
 
 set(_carts_common_link_libs
@@ -96,23 +95,8 @@ LINK_LIBS PUBLIC
   ${_carts_common_link_libs}
 )
 
-###===---------------------------------------------------------------===###
-### MLIRCartsTransforms — thin umbrella that pulls in all dialect libs.
-### Existing consumers link MLIRCartsTransforms; new consumers may link a
-### specific per-dialect library directly.
-###===---------------------------------------------------------------===###
-add_mlir_dialect_library(MLIRCartsTransforms
-  PARTIAL_SOURCES_INTENDED
-  Umbrella.cpp
-
-LINK_LIBS PUBLIC
-  MLIRCartsSdeTransforms
-  MLIRCartsArtsTransforms
-  MLIRCartsArtsRtTransforms
-)
-
-# All three per-dialect libraries (and the umbrella) need filesystem support
-# on older toolchains, and the Polygeist private dep.
+# All three per-dialect libraries need filesystem support on older toolchains
+# and the Polygeist private dep.
 foreach(_lib MLIRCartsSdeTransforms MLIRCartsArtsTransforms MLIRCartsArtsRtTransforms)
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)

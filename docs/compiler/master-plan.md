@@ -63,8 +63,8 @@ dialect) is gone.
 **CMake targets:** `MLIRCartsArts`, `MLIRCartsArtsRt`, `MLIRCartsSde`,
 `MLIRCartsCodir{,Conversion,Transforms,Utils}` for dialect IR; per-dialect
 pass libraries `MLIRCartsSdeTransforms`, `MLIRCartsArtsTransforms`,
-`MLIRCartsArtsRtTransforms`; thin umbrella `MLIRCartsTransforms` aggregates
-the three.
+`MLIRCartsArtsRtTransforms`. The old `MLIRCartsTransforms` aggregate has been
+removed; link the owning dialect transform library directly.
 
 Build + 170/170 lit + 27/27 e2e green.
 
@@ -285,8 +285,8 @@ Status legend: `[x]` complete; `[~]` partial; `[ ]` not started.
   lives under `include/carts/{dialect/{sde,codir,arts,arts-rt}, passes, utils,
   Dialect.h}` and `lib/carts/` mirrors it. Subdir `core/` was renamed to
   `arts/`; `rt/` to `arts-rt/`. CMake targets renamed to `MLIRCartsArts`,
-  `MLIRCartsArtsRt`, `MLIRCartsTransforms` (umbrella) plus per-dialect
-  transform libraries `MLIRCartsSdeTransforms`, `MLIRCartsArtsTransforms`,
+  `MLIRCartsArtsRt` plus per-dialect transform libraries
+  `MLIRCartsSdeTransforms`, `MLIRCartsArtsTransforms`,
   `MLIRCartsArtsRtTransforms` (split from the former monolith). Utility
   hierarchy is reclassified: shared utils stay in `carts/utils/`,
   dialect-specific utils live under each dialect's `Utils/`. C++ namespaces
@@ -738,8 +738,8 @@ top-level path migration landed on 2026-05-15: `include/arts/` and `lib/arts/`
 no longer exist; the source tree lives under `include/carts/` and `lib/carts/`
 with subdialects `sde`, `arts` (was `core`), `arts-rt` (was `rt`), and `codir`.
 Utilities are reclassified by ownership. CMake targets are renamed to the
-`MLIRCarts*` prefix and the umbrella pass library is split into per-dialect
-transform libraries. C++ namespaces are unified under
+`MLIRCarts*` prefix and pass code is split into per-dialect transform
+libraries. C++ namespaces are unified under
 `mlir::carts::{sde,arts,arts_rt,codir}`. The live route remains
 `sde-planning -> sde-to-codir -> codir-to-arts`; any direct SDE-to-ARTS/codelet
 wording in docs, skills, or tests is stale unless it is in a removal note.
@@ -860,8 +860,8 @@ pick the next concrete slice; use the Milestones to confirm exit gates.
   full top-level path rename (`include/arts/` → `include/carts/`, `core/` →
   `arts/`, `rt/` → `arts-rt/`) and per-dialect Utils/ wiring landed; lit/test
   paths and `tools/scripts/test.py` follow. Library targets renamed to
-  `MLIRCartsArts`, `MLIRCartsArtsRt`, `MLIRCartsTransforms` (with matching
-  PassIncGen targets).
+  `MLIRCartsArts`, `MLIRCartsArtsRt` plus per-dialect transform libraries
+  (with matching PassIncGen targets).
 
 ### C. CODIR Boundary
 
