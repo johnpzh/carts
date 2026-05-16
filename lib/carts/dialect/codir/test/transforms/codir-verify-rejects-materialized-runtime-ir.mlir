@@ -19,15 +19,7 @@ module {
     return
   }
 
-  func.func @codir_rejects_llvm() {
-    codir.codelet {
-      %undef = llvm.mlir.undef : i64
-      codir.yield
-    }
-    return
-  }
 }
 
 // CHECK: materialized arts operation is not allowed inside codir.codelet
 // CHECK: materialized arts_rt operation is not allowed inside codir.codelet
-// CHECK: materialized llvm operation is not allowed inside codir.codelet

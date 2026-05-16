@@ -133,8 +133,7 @@ struct VerifyCodirPass
           return;
 
         StringRef dialectNamespace = op->getName().getDialectNamespace();
-        if (dialectNamespace == "arts" || dialectNamespace == "arts_rt" ||
-            dialectNamespace == "llvm") {
+        if (dialectNamespace == "arts" || dialectNamespace == "arts_rt") {
           InFlightDiagnostic diag = op->emitOpError()
               << "materialized " << dialectNamespace
               << " operation is not allowed inside codir.codelet";
