@@ -1549,6 +1549,11 @@ struct UndefPattern : public ArtsRtToLLVMPattern<UndefOp> {
                                 PatternRewriter &rewriter) const override {
     ARTS_INFO("Lowering Undef Op " << op);
     Type resultType = op.getResult().getType();
+    if (LLVM::isCompatibleType(resultType)) {
+      rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, resultType);
+      ++numMiscOpsConverted;
+      return success();
+    }
     rewriter.replaceOpWithNewOp<polygeist::UndefOp>(op, resultType);
     ++numMiscOpsConverted;
     return success();

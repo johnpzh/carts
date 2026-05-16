@@ -779,10 +779,28 @@ Value ArtsCodegen::createIntConstant(int64_t value, Type type, Location loc) {
                                    getBuilder().getIntegerAttr(type, value));
 }
 
+static bool isUndefValue(Value value) {
+  Operation *def = value.getDefiningOp();
+  return def && (isa<LLVM::UndefOp>(def) || isa<polygeist::UndefOp>(def) ||
+                 isa<mlir::carts::arts::UndefOp>(def));
+}
+
+static Value createTypedUndef(ArtsCodegen &AC, Type type, Location loc) {
+  if (LLVM::isCompatibleType(type))
+    return AC.create<LLVM::UndefOp>(loc, type);
+  return AC.create<polygeist::UndefOp>(loc, type);
+}
+
 /// Casting
 Value ArtsCodegen::castParameter(mlir::Type targetType, Value source,
                                  Location loc, ParameterCastMode mode) {
   assert(targetType.isIntOrIndexOrFloat() && "Target type should be a number");
+  if (source.getType() == targetType)
+    return source;
+
+  if (isUndefValue(source))
+    return createTypedUndef(*this, targetType, loc);
+
   if (mode == ParameterCastMode::Bitwise) {
     auto srcType = source.getType();
     if (auto dstIntType = dyn_cast<IntegerType>(targetType)) {
