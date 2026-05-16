@@ -1041,7 +1041,7 @@ private:
                       DbMemoryPlacement memoryPlacement =
                           DbMemoryPlacement::Default) const {
     Value totalElems = AC->computeTotalElements(sizes, loc);
-    /// Keep DB creation always linearized here. The dedicated GuidRangCallOpt
+    /// Keep DB creation always linearized here. The dedicated GuidRangeCallOpt
     /// pass handles reserve->reserve_range promotion centrally after
     /// ARTS-RT-to-LLVM conversion.
     auto lowerBound = AC->createIndexConstant(0, loc);

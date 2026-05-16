@@ -85,7 +85,7 @@ def DataPtrHoisting
   let constructor = "mlir::carts::arts_rt::createDataPtrHoistingPass()";
 }
 
-def GuidRangCallOpt
+def GuidRangeCallOpt
     : Pass<"arts-guid-range-call-opt", "mlir::ModuleOp"> {
   let summary = "Rewrite per-iteration GUID reserve calls into GUID-range calls";
   let description = [{
@@ -116,7 +116,7 @@ def GuidRangCallOpt
     "::mlir::func::FuncDialect", "::mlir::arith::ArithDialect",
     "::mlir::scf::SCFDialect", "::mlir::LLVM::LLVMDialect"
   ];
-  let constructor = "mlir::carts::arts_rt::createGuidRangCallOptPass()";
+  let constructor = "mlir::carts::arts_rt::createGuidRangeCallOptPass()";
 }
 
 def RuntimeCallOpt

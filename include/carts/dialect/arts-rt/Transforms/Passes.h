@@ -46,7 +46,7 @@ createConvertArtsRtToLLVMPass(bool debug, bool distributedInitPerWorker,
 /// Hoist dependency/data pointer loads after runtime ABI lowering.
 std::unique_ptr<::mlir::Pass> createDataPtrHoistingPass();
 /// Rewrite scalar GUID reservation loops to range reservation calls.
-std::unique_ptr<::mlir::Pass> createGuidRangCallOptPass();
+std::unique_ptr<::mlir::Pass> createGuidRangeCallOptPass();
 /// Hoist and deduplicate pure ARTS runtime calls.
 std::unique_ptr<::mlir::Pass> createRuntimeCallOptPass();
 /// Generate LLVM alias scope metadata for ARTS data pointers.

@@ -1,5 +1,5 @@
 ///==========================================================================///
-/// File: EdtInvariantCodeMotion.cpp
+/// File: EdtICM.cpp
 ///
 /// Hoists loop-invariant computations inside EDT regions to reduce repeated
 /// work and improve downstream simplification opportunities.
@@ -65,7 +65,7 @@ void EdtICMPass::runOnOperation() {
   /// if (!changed)
   ///  markAllAnalysesPreserved();
 
-  ARTS_INFO_FOOTER(EdtInvariantCodeMotionPass);
+    ARTS_INFO_FOOTER(EdtICMPass);
   ARTS_DEBUG_REGION(module.dump(););
 }
 

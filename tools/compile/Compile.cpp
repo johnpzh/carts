@@ -345,7 +345,7 @@ static const std::array<llvm::StringLiteral, 14> kArtsRtToLLVMPasses = {
     "LowerAffine(func)",
     "ConvertArtsRtToLLVM",
     "LoweringContractCleanup",
-    "GuidRangCallOpt",
+    "GuidRangeCallOpt",
     "RuntimeCallOpt",
     "DataPtrHoisting",
     "PolygeistCanonicalize",
@@ -1287,7 +1287,7 @@ void buildArtsRtToLLVMPipeline(PassManager &pm, bool debug,
   /// decisions (for example N-D stencil halo slices). Clean them up only after
   /// that conversion has consumed them.
   pm.addPass(arts::createLoweringContractCleanupPass());
-  pm.addPass(arts_rt::createGuidRangCallOptPass());
+  pm.addPass(arts_rt::createGuidRangeCallOptPass());
   pm.addPass(arts_rt::createRuntimeCallOptPass());
   /// Hoist loop-invariant loads after ARTS-RT-to-LLVM lowering for
   /// vectorization/LICM.

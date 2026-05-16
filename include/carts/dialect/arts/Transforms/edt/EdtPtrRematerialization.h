@@ -1,5 +1,5 @@
 ///==========================================================================///
-/// File: EdtPointerRematerialization.h
+/// File: EdtPtrRematerialization.h
 ///
 /// Problem - When EDTs run on different nodes, pointer values passed as
 /// parameters may be invalid since:

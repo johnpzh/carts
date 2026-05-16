@@ -1,5 +1,5 @@
 ///==========================================================================///
-/// File: EdtPtrRematerialization.cpp
+/// File: EdtPtrRematerializationPass.cpp
 ///
 /// Rematerializes pointer-producing ops at EDT use sites to avoid carrying
 /// unnecessary pointer SSA values across rewritten EDT boundaries.

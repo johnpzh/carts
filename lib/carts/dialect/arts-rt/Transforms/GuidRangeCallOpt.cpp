@@ -1,5 +1,5 @@
 ///==========================================================================///
-/// File: GuidRangCallOpt.cpp
+/// File: GuidRangeCallOpt.cpp
 ///
 /// Rewrites per-iteration GUID reservation calls into GUID-range calls after
 /// ARTS-RT-to-LLVM lowering, when safe:
@@ -34,7 +34,7 @@
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 namespace mlir::carts::arts_rt {
-#define GEN_PASS_DEF_GUIDRANGCALLOPT
+#define GEN_PASS_DEF_GUIDRANGECALLOPT
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
 #include "carts/passes/Passes.h"
@@ -43,7 +43,7 @@ namespace mlir::carts::arts_rt {
 #include <cstdint>
 #include <limits>
 
-ARTS_DEBUG_SETUP(guid_rang_call_opt);
+ARTS_DEBUG_SETUP(guid_range_call_opt);
 
 using namespace mlir;
 using namespace mlir::carts;
@@ -62,8 +62,8 @@ static bool isGuidReserveCall(func::CallOp call) {
   return fn && *fn == types::ARTSRTL_arts_guid_reserve;
 }
 
-struct GuidRangCallOptPass
-    : public arts_rt::impl::GuidRangCallOptBase<GuidRangCallOptPass> {
+struct GuidRangeCallOptPass
+    : public arts_rt::impl::GuidRangeCallOptBase<GuidRangeCallOptPass> {
   void runOnOperation() override {
     ModuleOp module = getOperation();
     ArtsCodegen codegen(module, /*debug=*/false);
@@ -208,7 +208,7 @@ struct GuidRangCallOptPass
       }
     }
 
-    ARTS_INFO("GuidRangCallOpt: rewritten "
+    ARTS_INFO("GuidRangeCallOpt: rewritten "
               << rewrittenStatic << " static loops and " << rewrittenGuarded
               << " guarded dynamic loops");
   }
@@ -219,8 +219,8 @@ struct GuidRangCallOptPass
 namespace mlir {
 namespace carts::arts_rt {
 
-std::unique_ptr<Pass> createGuidRangCallOptPass() {
-  return std::make_unique<GuidRangCallOptPass>();
+std::unique_ptr<Pass> createGuidRangeCallOptPass() {
+  return std::make_unique<GuidRangeCallOptPass>();
 }
 
 } // namespace carts::arts_rt

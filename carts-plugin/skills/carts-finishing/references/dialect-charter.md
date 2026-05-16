@@ -78,7 +78,7 @@ tensor/linalg carriers survive the SDE-to-CODIR / CODIR-to-ARTS boundary.
 **Owns:** thin 1:1 mapping to ARTS C runtime calls + final low-level passes immediately before LLVM.
 
 - 14 ops mapping directly to runtime: `arts_rt.edt_create`, `record_dep`, `dep_gep`, `state_pack`, `create_epoch`, `wait_on_epoch`, etc.
-- 4 passes: `DataPtrHoisting`, `GuidRangCallOpt`, `RuntimeCallOpt`, `VerifyLowered`
+- 4 passes: `DataPtrHoisting`, `GuidRangeCallOpt`, `RuntimeCallOpt`, `VerifyLowered`
 - Pure code-gen intermediates with no semantic meaning of their own
 
 **IR level:** LLVM-near, flat. No regions, no contracts.
@@ -141,6 +141,6 @@ The user must decide these before further restructuring. Answers go to `docs/arc
 | CPS legality, candidate grouping, and dataflow/token planning | SDE |
 | CPS continuation materialization | ARTS/ARTS-RT, consuming SDE plans |
 | `arts_rt.edt_create` argument lowering | ARTS-RT |
-| LLVM-near final cleanup (DataPtrHoisting, GuidRangCallOpt) | ARTS-RT |
+| LLVM-near final cleanup (DataPtrHoisting, GuidRangeCallOpt) | ARTS-RT |
 | Polygeist→MLIR frontend bridge | frontend conversion, before SDE planning |
 | `linalg.*`, `tensor.*` ops | SDE only, transient |

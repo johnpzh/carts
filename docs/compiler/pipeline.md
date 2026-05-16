@@ -232,7 +232,7 @@ accepted.
 ```text
 ConvertArtsRtToLLVM
 LoweringContractCleanup
-GuidRangCallOpt
+GuidRangeCallOpt
 RuntimeCallOpt
 DataPtrHoisting
 PolygeistCanonicalize
