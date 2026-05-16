@@ -41,7 +41,6 @@
 #include "carts/Dialect.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts/Transforms/db/DbLayoutPlanUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_CREATEDBS
@@ -71,7 +70,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include <cstdint>
-#include <memory>
+#include <utility>
 
 /// Debug
 #include "carts/utils/Debug.h"
@@ -109,6 +108,11 @@ using namespace mlir;
 ///===----------------------------------------------------------------------===///
 namespace {
 
+template <typename OpTy, typename... Args>
+static OpTy createOp(OpBuilder &builder, Location loc, Args &&...args) {
+  return OpTy::create(builder, loc, std::forward<Args>(args)...);
+}
+
 static bool isForwardingMemrefAliasOp(Operation *op, Value source) {
   if (auto viewLike = dyn_cast<ViewLikeOpInterface>(op))
     return viewLike.getViewSource() == source && op->getNumResults() == 1;
@@ -127,7 +131,7 @@ static bool isForwardingMemrefAliasOp(Operation *op, Value source) {
 
 static Value materializeMemrefAsType(Value value, Type targetType,
                                      Operation *insertBefore,
-                                     ArtsCodegen &AC) {
+                                     OpBuilder &builder) {
   if (!value || value.getType() == targetType)
     return value;
   if (!isa<MemRefType>(value.getType()) || !isa<MemRefType>(targetType))
@@ -139,12 +143,12 @@ static Value materializeMemrefAsType(Value value, Type targetType,
   if (srcType.getRank() != dstType.getRank()) {
     if (srcType.getRank() == 1 && dstType.getRank() == 0 &&
         srcType.getElementType() == dstType.getElementType()) {
-      OpBuilder::InsertionGuard guard(AC.getBuilder());
-      AC.setInsertionPoint(insertBefore);
-      OpFoldResult zero = AC.getBuilder().getIndexAttr(0);
-      OpFoldResult one = AC.getBuilder().getIndexAttr(1);
-      return AC.create<memref::SubViewOp>(
-          insertBefore->getLoc(), dstType, value,
+      OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPoint(insertBefore);
+      OpFoldResult zero = builder.getIndexAttr(0);
+      OpFoldResult one = builder.getIndexAttr(1);
+      return createOp<memref::SubViewOp>(
+          builder, insertBefore->getLoc(), dstType, value,
           /*offsets=*/SmallVector<OpFoldResult>{zero},
           /*sizes=*/SmallVector<OpFoldResult>{one},
           /*strides=*/SmallVector<OpFoldResult>{one});
@@ -155,24 +159,26 @@ static Value materializeMemrefAsType(Value value, Type targetType,
   if (!memref::CastOp::areCastCompatible(srcType, dstType))
     return Value();
 
-  OpBuilder::InsertionGuard guard(AC.getBuilder());
-  AC.setInsertionPoint(insertBefore);
-  return AC.create<memref::CastOp>(insertBefore->getLoc(), dstType, value);
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPoint(insertBefore);
+  return createOp<memref::CastOp>(builder, insertBefore->getLoc(), dstType,
+                                  value);
 }
 
 static Value createCoarseDbRef(Value dbPtr, Operation *insertBefore,
-                               ArtsCodegen &AC) {
-  OpBuilder::InsertionGuard guard(AC.getBuilder());
-  AC.setInsertionPoint(insertBefore);
-  Value zero = AC.createIndexConstant(0, insertBefore->getLoc());
+                               OpBuilder &builder) {
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPoint(insertBefore);
+  Value zero =
+      createOp<arith::ConstantIndexOp>(builder, insertBefore->getLoc(), 0);
   SmallVector<Value, 1> indices{zero};
-  return AC.create<DbRefOp>(insertBefore->getLoc(), dbPtr,
-                            ArrayRef<Value>(indices))
+  return createOp<DbRefOp>(builder, insertBefore->getLoc(), dbPtr,
+                           ArrayRef<Value>(indices))
       .getResult();
 }
 
 static LogicalResult rewriteCoarseRawAccess(Operation *op, Value expectedRoot,
-                                            Value dbPtr, ArtsCodegen &AC) {
+                                            Value dbPtr, OpBuilder &builder) {
   if (isa<polygeist::SubIndexOp>(op)) {
     return op->emitError(
         "raw memref subindex reached Core DB materialization; SDE must "
@@ -196,9 +202,9 @@ static LogicalResult rewriteCoarseRawAccess(Operation *op, Value expectedRoot,
         "conversion");
   }
 
-  Value dbView = createCoarseDbRef(dbPtr, op, AC);
+  Value dbView = createCoarseDbRef(dbPtr, op, builder);
   Value typedView =
-      materializeMemrefAsType(dbView, access->memref.getType(), op, AC);
+      materializeMemrefAsType(dbView, access->memref.getType(), op, builder);
   if (!typedView) {
     return op->emitError(
         "cannot type the coarse DB view for raw memref access; SDE/CODIR "
@@ -233,7 +239,7 @@ struct CreateDbsPass : public impl::CreateDbsBase<CreateDbsPass> {
 private:
   ModuleOp module;
   mlir::carts::arts::AnalysisManager *AM = nullptr;
-  ArtsCodegen *AC = nullptr;
+  OpBuilder *builder = nullptr;
   DenseMap<Operation *, Operation *> dbPtrToOriginalAlloc;
   SetVector<Operation *> opsToRemove;
 
@@ -291,9 +297,8 @@ void CreateDbsPass::runOnOperation() {
   opsToRemove.clear();
   memrefInfo.clear();
 
-  /// Initialize ArtsCodegen
-  auto ownedAC = std::make_unique<ArtsCodegen>(module, false);
-  AC = ownedAC.get();
+  OpBuilder ownedBuilder(module.getContext());
+  builder = &ownedBuilder;
 
   ARTS_INFO_HEADER(CreateDbsPass);
   ARTS_DEBUG_REGION(module.dump(););
@@ -318,7 +323,7 @@ void CreateDbsPass::runOnOperation() {
   /// Phase 5-7: Cleanup and validation post-checks.
   cleanupAndFinalize();
 
-  AC = nullptr;
+  builder = nullptr;
   ARTS_INFO_FOOTER(CreateDbsPass);
   ARTS_DEBUG_REGION(module.dump(););
 }
@@ -404,9 +409,9 @@ void CreateDbsPass::projectSemanticContractToDbValue(Operation *sourceOp,
 
   transferOperationContract(sourceOp, targetOp);
 
-  OpBuilder::InsertionGuard guard(AC->getBuilder());
-  AC->setInsertionPointAfter(targetOp);
-  transferLoweringContract(sourceOp, contractTarget, AC->getBuilder(),
+  OpBuilder::InsertionGuard guard(*builder);
+  builder->setInsertionPointAfter(targetOp);
+  transferLoweringContract(sourceOp, contractTarget, *builder,
                            targetOp->getLoc());
 }
 
@@ -599,8 +604,8 @@ void CreateDbsPass::createDbAllocOps() {
     ARTS_DEBUG("Creating DB Alloc Op for memref " << *alloc);
     MemrefInfo &info = entry.second;
     Location loc = alloc->getLoc();
-    OpBuilder::InsertionGuard IG(AC->getBuilder());
-    AC->setInsertionPointAfter(alloc);
+    OpBuilder::InsertionGuard IG(*builder);
+    builder->setInsertionPointAfter(alloc);
 
     /// Skip local allocations that do not escape their defining EDT.
     /// These buffers are private to a single EDT and do not need datablocks.
@@ -666,11 +671,12 @@ void CreateDbsPass::createDbAllocOps() {
     for (unsigned i = 0; i < rank; ++i) {
       if (!isRankZero && memRefType.isDynamicDim(i)) {
         logicalElementSizes.push_back(
-            AC->create<arts::DbDimOp>(loc, allocValue, (int64_t)i));
+            createOp<arts::DbDimOp>(*builder, loc, allocValue, (int64_t)i));
       } else {
         int64_t dimSize =
             isRankZero ? 1 : static_cast<int64_t>(memRefType.getDimSize(i));
-        logicalElementSizes.push_back(AC->createIndexConstant(dimSize, loc));
+        logicalElementSizes.push_back(
+            createOp<arith::ConstantIndexOp>(*builder, loc, dimSize));
       }
     }
 
@@ -678,7 +684,7 @@ void CreateDbsPass::createDbAllocOps() {
     /// physical block layout, the corresponding MU/token/codelet materializer
     /// must have already rewritten the accesses before this pass.
     DbPhysicalLayoutPlan plan(PartitionMode::coarse);
-    sizes.push_back(AC->createIndexConstant(1, loc));
+    sizes.push_back(createOp<arith::ConstantIndexOp>(*builder, loc, 1));
     elementSizes.assign(logicalElementSizes.begin(), logicalElementSizes.end());
     PartitionMode partitionMode = PartitionMode::coarse;
     Operation *planSource = nullptr;
@@ -703,10 +709,11 @@ void CreateDbsPass::createDbAllocOps() {
     /// DBs without an explicit route stay on the creating node. Lowering
     /// materializes this sentinel into the runtime hint instead of pinning the
     /// allocation to rank 0.
-    auto route = createCurrentNodeRoute(AC->getBuilder(), loc);
-    auto dbAllocOp =
-        AC->create<DbAllocOp>(loc, mode, route, allocType, dbMode, elementType,
-                              sizes, elementSizes, partitionMode);
+    auto route = createCurrentNodeRoute(*builder, loc);
+    auto dbAllocOp = createOp<DbAllocOp>(
+        *builder,
+        loc, mode, route, allocType, dbMode, elementType, sizes, elementSizes,
+        partitionMode);
     ++numDbAllocsCreated;
 
     projectSemanticContractToDbValue(alloc, dbAllocOp.getOperation(),
@@ -773,22 +780,23 @@ void CreateDbsPass::initializeGlobalDbIfNeeded(Operation *alloc,
   ++numGlobalDbInitializations;
 
   Location loc = alloc->getLoc();
-  OpBuilder::InsertionGuard initGuard(AC->getBuilder());
-  AC->setInsertionPointAfter(dbAllocOp);
-  Value globalMemref = AC->create<memref::GetGlobalOp>(loc, globalOp.getType(),
-                                                       getGlobal.getNameAttr());
+  OpBuilder::InsertionGuard initGuard(*builder);
+  builder->setInsertionPointAfter(dbAllocOp);
+  Value globalMemref = createOp<memref::GetGlobalOp>(
+      *builder, loc, globalOp.getType(), getGlobal.getNameAttr());
 
   SmallVector<Value> zeroIndices;
   zeroIndices.reserve(dbAllocOp.getSizes().size());
   for (size_t i = 0; i < dbAllocOp.getSizes().size(); ++i)
-    zeroIndices.push_back(AC->createIndexConstant(0, loc));
+    zeroIndices.push_back(createOp<arith::ConstantIndexOp>(*builder, loc, 0));
 
   auto memRefType = cast<MemRefType>(globalOp.getType());
   unsigned rank = memRefType.getRank();
   if (rank == 0) {
-    Value dbRef = AC->create<DbRefOp>(loc, dbAllocOp.getPtr(), zeroIndices);
-    Value initVal = AC->create<memref::LoadOp>(loc, globalMemref);
-    AC->create<memref::StoreOp>(loc, initVal, dbRef);
+    Value dbRef =
+        createOp<DbRefOp>(*builder, loc, dbAllocOp.getPtr(), zeroIndices);
+    Value initVal = createOp<memref::LoadOp>(*builder, loc, globalMemref);
+    createOp<memref::StoreOp>(*builder, loc, initVal, dbRef);
     return;
   }
 
@@ -801,31 +809,34 @@ void CreateDbsPass::initializeGlobalDbIfNeeded(Operation *alloc,
       return;
     }
 
-    Value dbRef = AC->create<DbRefOp>(loc, dbAllocOp.getPtr(), zeroIndices);
-    AC->create<memref::StoreOp>(loc, initVal, dbRef, indices);
+    Value dbRef =
+        createOp<DbRefOp>(*builder, loc, dbAllocOp.getPtr(), zeroIndices);
+    createOp<memref::StoreOp>(*builder, loc, initVal, dbRef, indices);
   };
 
   SmallVector<Value> indices;
   indices.reserve(rank);
   auto emitLoopCopy = [&](auto &self, unsigned dim) -> void {
     if (dim == rank) {
-      Value initVal = AC->create<memref::LoadOp>(loc, globalMemref, indices);
+      Value initVal =
+          createOp<memref::LoadOp>(*builder, loc, globalMemref, indices);
       storeToDb(initVal, indices);
       return;
     }
 
-    Value lower = AC->createIndexConstant(0, loc);
+    Value lower = createOp<arith::ConstantIndexOp>(*builder, loc, 0);
     Value upper;
     if (memRefType.isDynamicDim(dim)) {
-      upper = AC->create<memref::DimOp>(loc, globalMemref, dim);
+      upper = createOp<memref::DimOp>(*builder, loc, globalMemref, dim);
     } else {
-      upper = AC->createIndexConstant(memRefType.getDimSize(dim), loc);
+      upper = createOp<arith::ConstantIndexOp>(*builder, loc,
+                                               memRefType.getDimSize(dim));
     }
-    Value step = AC->createIndexConstant(1, loc);
+    Value step = createOp<arith::ConstantIndexOp>(*builder, loc, 1);
 
-    auto loop = AC->create<scf::ForOp>(loc, lower, upper, step);
-    OpBuilder::InsertionGuard loopGuard(AC->getBuilder());
-    AC->setInsertionPointToStart(loop.getBody());
+    auto loop = createOp<scf::ForOp>(*builder, loc, lower, upper, step);
+    OpBuilder::InsertionGuard loopGuard(*builder);
+    builder->setInsertionPointToStart(loop.getBody());
     indices.push_back(loop.getInductionVar());
     self(self, dim + 1);
     indices.pop_back();
@@ -980,8 +991,8 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
     assert((sourceGuid && sourcePtr) && "Source guid and ptr must be non-null");
 
     /// Create acquire operation (pass both source guid and ptr)
-    OpBuilder::InsertionGuard IG(AC->getBuilder());
-    AC->setInsertionPoint(edt);
+    OpBuilder::InsertionGuard IG(*builder);
+    builder->setInsertionPoint(edt);
 
     /// Raw bridge acquires cover the whole physical DB range selected at
     /// allocation time. SDE-tokenized slices lower before this pass.
@@ -992,11 +1003,14 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
     SmallVector<Value> allocSizes(dbAllocOp.getSizes().begin(),
                                   dbAllocOp.getSizes().end());
     if (allocSizes.empty()) {
-      dbOffsets.push_back(AC->createIndexConstant(0, edt.getLoc()));
-      dbSizes.push_back(AC->createIndexConstant(1, edt.getLoc()));
+      dbOffsets.push_back(
+          createOp<arith::ConstantIndexOp>(*builder, edt.getLoc(), 0));
+      dbSizes.push_back(
+          createOp<arith::ConstantIndexOp>(*builder, edt.getLoc(), 1));
     } else {
       for (Value s : allocSizes) {
-        dbOffsets.push_back(AC->createIndexConstant(0, edt.getLoc()));
+        dbOffsets.push_back(
+            createOp<arith::ConstantIndexOp>(*builder, edt.getLoc(), 0));
         dbSizes.push_back(s);
       }
     }
@@ -1031,8 +1045,8 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
     auto createAcquire = [&](Location acquireLoc) {
       Type ptrType = acqPtr ? acqPtr.getType() : Type();
       if (DbUtils::getUnderlyingDbAlloc(acqPtr)) {
-        return AC->create<DbAcquireOp>(
-            acquireLoc, acquireMode, acqGuid, acqPtr, partMode,
+        return createOp<DbAcquireOp>(
+            *builder, acquireLoc, acquireMode, acqGuid, acqPtr, partMode,
             /*indices=*/SmallVector<Value>{}, /*offsets=*/dbOffsets,
             /*sizes=*/dbSizes,
             /*partition_indices=*/SmallVector<Value>{},
@@ -1040,8 +1054,8 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
             /*partition_sizes=*/SmallVector<Value>{});
       }
 
-      return AC->create<DbAcquireOp>(
-          acquireLoc, acquireMode, acqGuid, acqPtr, ptrType, partMode,
+      return createOp<DbAcquireOp>(
+          *builder, acquireLoc, acquireMode, acqGuid, acqPtr, ptrType, partMode,
           /*indices=*/SmallVector<Value>{}, /*offsets=*/dbOffsets,
           /*sizes=*/dbSizes,
           /*partition_indices=*/SmallVector<Value>{},
@@ -1090,9 +1104,9 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
                                localAcquireView, plan);
     }
 
-    OpBuilder::InsertionGuard releaseGuard(AC->getBuilder());
-    AC->setInsertionPoint(edt.getBody().front().getTerminator());
-    AC->create<DbReleaseOp>(edt.getLoc(), localAcquireView);
+    OpBuilder::InsertionGuard releaseGuard(*builder);
+    builder->setInsertionPoint(edt.getBody().front().getTerminator());
+    createOp<DbReleaseOp>(*builder, edt.getLoc(), localAcquireView);
   }
 
   /// After processing all memrefs, set EDT dependencies
@@ -1118,10 +1132,10 @@ void CreateDbsPass::insertDbFreeForDbAlloc(DbAllocOp dbAlloc,
 
   /// Insert DbFreeOp if we found a valid insertion point
   assert(insertionPoint && "Could not find insertion point for DbFreeOp");
-  OpBuilder::InsertionGuard IG(AC->getBuilder());
-  AC->setInsertionPoint(insertionPoint);
-  AC->create<DbFreeOp>(loc, dbAlloc.getGuid());
-  AC->create<DbFreeOp>(loc, dbAlloc.getPtr());
+  OpBuilder::InsertionGuard IG(*builder);
+  builder->setInsertionPoint(insertionPoint);
+  createOp<DbFreeOp>(*builder, loc, dbAlloc.getGuid());
+  createOp<DbFreeOp>(*builder, loc, dbAlloc.getPtr());
 }
 
 /// Rewrite uses in parent EDT based on DB allocation granularity.
@@ -1167,7 +1181,8 @@ void CreateDbsPass::rewriteUsesInParentEdt(MemrefInfo &memrefInfo) {
 
   Value rootValue = memrefInfo.alloc->getResult(0);
   for (Operation *user : users) {
-    if (failed(rewriteCoarseRawAccess(user, rootValue, dbAlloc.getPtr(), *AC))) {
+    if (failed(
+            rewriteCoarseRawAccess(user, rootValue, dbAlloc.getPtr(), *builder))) {
       signalPassFailure();
       return;
     }
@@ -1230,8 +1245,8 @@ void CreateDbsPass::rewriteUsesEverywhereWithPlan(
 
   auto materializeCoarseView = [&](Type targetType,
                                    Operation *insertBefore) -> Value {
-    Value view = createCoarseDbRef(dbAlloc.getPtr(), insertBefore, *AC);
-    return materializeMemrefAsType(view, targetType, insertBefore, *AC);
+    Value view = createCoarseDbRef(dbAlloc.getPtr(), insertBefore, *builder);
+    return materializeMemrefAsType(view, targetType, insertBefore, *builder);
   };
 
   std::function<void(Value, Value)> rewriteForwardedUses =
@@ -1258,16 +1273,16 @@ void CreateDbsPass::rewriteUsesEverywhereWithPlan(
 
           if (isForwardingMemrefAliasOp(user, oldValue)) {
             Value mappedSource = materializeMemrefAsType(
-                baseReplacement, oldValue.getType(), user, *AC);
+                baseReplacement, oldValue.getType(), user, *builder);
             if (!mappedSource)
               continue;
 
             IRMapping mapper;
             mapper.map(oldValue, mappedSource);
 
-            OpBuilder::InsertionGuard guard(AC->getBuilder());
-            AC->setInsertionPoint(user);
-            Operation *cloned = AC->clone(*user, mapper);
+            OpBuilder::InsertionGuard guard(*builder);
+            builder->setInsertionPoint(user);
+            Operation *cloned = builder->clone(*user, mapper);
 
             for (auto [oldResult, newResult] :
                  llvm::zip(user->getResults(), cloned->getResults()))
@@ -1279,7 +1294,7 @@ void CreateDbsPass::rewriteUsesEverywhereWithPlan(
           }
 
           Value typedReplacement = materializeMemrefAsType(
-              baseReplacement, oldValue.getType(), user, *AC);
+              baseReplacement, oldValue.getType(), user, *builder);
           if (!typedReplacement)
             continue;
           use->set(typedReplacement);
@@ -1331,8 +1346,8 @@ void CreateDbsPass::rewriteOpsToUseDbAcquire(
   /// Rewrite each tracked operation with DbRefOp pattern
   for (Operation *op : operations) {
     ARTS_DEBUG(" - Rewriting operation: " << *op);
-    OpBuilder::InsertionGuard ig(AC->getBuilder());
-    AC->setInsertionPoint(op);
+    OpBuilder::InsertionGuard ig(*builder);
+    builder->setInsertionPoint(op);
 
     /// Apply scope mapping to operands before rewriting
     for (OpOperand &operand : op->getOpOperands()) {
@@ -1347,7 +1362,7 @@ void CreateDbsPass::rewriteOpsToUseDbAcquire(
                           ? rawAlloc->getResult(0)
                           : Value();
     if (failed(
-            rewriteCoarseRawAccess(op, rootValue, localAcquireView, *AC))) {
+            rewriteCoarseRawAccess(op, rootValue, localAcquireView, *builder))) {
       signalPassFailure();
       return;
     }
