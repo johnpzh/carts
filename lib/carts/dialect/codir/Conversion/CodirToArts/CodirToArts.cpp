@@ -9,10 +9,103 @@ namespace mlir::carts::codir {
 #include "carts/dialect/codir/Conversion/Passes.h.inc"
 } // namespace mlir::carts::codir
 namespace {
+struct ArtsLaunchPolicy {
+  arts::EdtConcurrency concurrency = arts::EdtConcurrency::intranode;
+  Value route;
+};
+
 struct ConvertCodirToArtsPass
     : public codir::impl::ConvertCodirToArtsBase<
           ConvertCodirToArtsPass> {
   llvm::SmallDenseSet<Operation *, 16> loopCompletionBarriers;
+
+  bool hasArtsInterNodeRuntime(ModuleOp module) const {
+    std::optional<int64_t> totalNodes = arts::getRuntimeTotalNodes(module);
+    return totalNodes && *totalNodes > 1;
+  }
+
+  bool hasGenericWorkerPlan(codir::CodeletOp codelet) const {
+    if (!codelet)
+      return false;
+    return codelet.getDistributionKindAttr() ||
+           codelet.getIterationTopologyAttr() ||
+           codelet.getLogicalWorkerSliceAttr() ||
+           codelet.getPhysicalBlockShapeAttr();
+  }
+
+  scf::ForOp findGenericWorkerDispatchLoop(codir::CodeletOp codelet) const {
+    for (Operation *parent = codelet ? codelet->getParentOp() : nullptr; parent;
+         parent = parent->getParentOp()) {
+      auto loop = dyn_cast<scf::ForOp>(parent);
+      if (loop && containsValue(codelet.getParams(), loop.getInductionVar()))
+        return loop;
+    }
+    return {};
+  }
+
+  ArtsLaunchPolicy resolveArtsLaunchPolicy(codir::CodeletOp codelet,
+                                           OpBuilder &builder,
+                                           Location loc) const {
+    ArtsLaunchPolicy policy;
+    ModuleOp module = codelet ? codelet->getParentOfType<ModuleOp>() : nullptr;
+    if (!module || !hasArtsInterNodeRuntime(module) ||
+        !hasGenericWorkerPlan(codelet))
+      return policy;
+
+    scf::ForOp loop = findGenericWorkerDispatchLoop(codelet);
+    if (!loop)
+      return policy;
+
+    policy.concurrency = arts::EdtConcurrency::internode;
+    Value relative =
+        arith::SubIOp::create(builder, loc, loop.getInductionVar(),
+                              loop.getLowerBound());
+    Value ordinal =
+        arith::DivUIOp::create(builder, loc, relative, loop.getStep());
+    Value ordinalI32 =
+        arith::IndexCastOp::create(builder, loc, builder.getI32Type(), ordinal);
+    auto totalNodes =
+        arts::RuntimeQueryOp::create(builder, loc,
+                                     arts::RuntimeQueryKind::totalNodes);
+    policy.route = arith::RemUIOp::create(builder, loc, ordinalI32,
+                                          totalNodes.getResult());
+    return policy;
+  }
+
+  Operation *getCompletionBarrierAnchor(codir::CodeletOp codelet,
+                                        arts::EdtOp task) {
+    Operation *nearestLoop = nullptr;
+    Operation *dispatchAnchor = nullptr;
+    bool matchedDispatchLoop = false;
+
+    for (Operation *parent = task->getParentOp(); parent;
+         parent = parent->getParentOp()) {
+      auto loop = dyn_cast<scf::ForOp>(parent);
+      if (!loop) {
+        if (matchedDispatchLoop)
+          break;
+        continue;
+      }
+
+      if (!nearestLoop)
+        nearestLoop = parent;
+
+      if (containsValue(codelet.getParams(), loop.getInductionVar())) {
+        dispatchAnchor = parent;
+        matchedDispatchLoop = true;
+        continue;
+      }
+
+      if (matchedDispatchLoop)
+        break;
+    }
+
+    if (dispatchAnchor)
+      return dispatchAnchor;
+    if (nearestLoop)
+      return nearestLoop;
+    return task.getOperation();
+  }
 
   void runOnOperation() override {
     ModuleOp module = getOperation();
@@ -187,9 +280,18 @@ struct ConvertCodirToArtsPass
         taskParams.push_back(elementSize);
       }
     }
-    auto task = arts::EdtOp::create(builder, loc, arts::EdtType::task,
-                                    arts::EdtConcurrency::intranode, taskDeps,
-                                    taskParams);
+    // CODIR carries only generic worker-plan facts. The ARTS boundary is the
+    // first place where runtime topology can turn that plan into inter-node
+    // EDT placement and routing.
+    ArtsLaunchPolicy launch =
+        resolveArtsLaunchPolicy(codelet, builder, loc);
+    auto task = launch.route
+                    ? arts::EdtOp::create(builder, loc, arts::EdtType::task,
+                                          launch.concurrency, launch.route,
+                                          taskDeps, taskParams)
+                    : arts::EdtOp::create(builder, loc, arts::EdtType::task,
+                                          launch.concurrency, taskDeps,
+                                          taskParams);
     propagateCodirPlanToArts(codelet, task);
     bool isTaskDepend = static_cast<bool>(codelet.getTaskDependAttr());
     bool requiresOrderedDependBarrier =
@@ -267,14 +369,7 @@ struct ConvertCodirToArtsPass
           codelet.getContext(), arts::ArtsBarrierReason::required_memory);
       arts::BarrierOp::create(barrierBuilder, loc, reason);
     } else if (isTaskDepend || requiresCompletionBarrier) {
-      Operation *barrierAnchor = task.getOperation();
-      for (Operation *parent = task->getParentOp(); parent;
-           parent = parent->getParentOp()) {
-        if (isa<scf::ForOp>(parent)) {
-          barrierAnchor = parent;
-          break;
-        }
-      }
+      Operation *barrierAnchor = getCompletionBarrierAnchor(codelet, task);
 
       if (barrierAnchor == task.getOperation() ||
           loopCompletionBarriers.insert(barrierAnchor).second) {
