@@ -25,14 +25,13 @@ using namespace mlir::carts;
 
 namespace {
 
-static bool hasLocalParallelScope(sde::SdeSuIterateOp op) {
+static bool isInsideParallelRegion(sde::SdeSuIterateOp op) {
   for (Operation *current = op->getParentOp(); current;
        current = current->getParentOp()) {
     auto cuRegion = dyn_cast<sde::SdeCuRegionOp>(current);
     if (!cuRegion || cuRegion.getKind() != sde::SdeCuKind::parallel)
       continue;
-    auto scope = cuRegion.getConcurrencyScope();
-    return !scope || *scope == sde::SdeConcurrencyScope::local;
+    return true;
   }
   return false;
 }
@@ -288,8 +287,7 @@ static sde::SdeSuIterateOp promoteRank2OutOfPlaceStencilOwnerLoop(
   if (oldCuRegion) {
     auto newCuRegion = sde::SdeCuRegionOp::create(
         builder, loc, /*resultTypes=*/TypeRange{}, oldCuRegion.getKindAttr(),
-        oldCuRegion.getConcurrencyScopeAttr(), oldCuRegion.getNowaitAttr(),
-        /*iterArgs=*/ValueRange{});
+        oldCuRegion.getNowaitAttr(), /*iterArgs=*/ValueRange{});
     cloneBlock = &sde::ensureBlock(newCuRegion.getBody());
     builder.setInsertionPointToStart(cloneBlock);
   }
@@ -459,7 +457,7 @@ struct PatternAnalysisPass
         auto memoryEffects = sde::collectStructuredMemoryEffects(op.getBody());
         if (!memoryEffects.hasUnknownEffects &&
             sde::hasInPlaceSelfRead(memoryEffects) &&
-            hasLocalParallelScope(op))
+            isInsideParallelRegion(op))
           op.setInPlaceSharedStateAttr(UnitAttr::get(op.getContext()));
 
         ARTS_DEBUG("stamped generic SDE pattern facts on su_iterate");

@@ -44,15 +44,12 @@ static LogicalResult checkSdeCpsPortableCarry(Operation *op, StringRef role,
 // SdeCuRegionOp — custom assembly format + verifier
 //===----------------------------------------------------------------------===//
 
-// Print: sde.cu_region <kind> [scope(<scope>)] [nowait]
+// Print: sde.cu_region <kind> [nowait]
 //        [iter_args(%a = %init : type) -> (type)]
 //        { body } [attr-dict]
 void SdeCuRegionOp::print(OpAsmPrinter &p) {
   // Print kind enum in angle-bracket form: <parallel>, <single>, <task>
   p << " <" << stringifySdeCuKind(getKind()) << ">";
-  if (auto scope = getConcurrencyScope()) {
-    p << " scope(<" << stringifySdeConcurrencyScope(*scope) << ">)";
-  }
   if (getNowait())
     p << " nowait";
   if (!getIterArgs().empty()) {
@@ -72,11 +69,10 @@ void SdeCuRegionOp::print(OpAsmPrinter &p) {
   p << " ";
   p.printRegion(getBody(), /*printEntryBlockArgs=*/false,
                 /*printBlockTerminators=*/!getIterArgs().empty());
-  p.printOptionalAttrDict((*this)->getAttrs(),
-                          {"kind", "concurrency_scope", "nowait"});
+  p.printOptionalAttrDict((*this)->getAttrs(), {"kind", "nowait"});
 }
 
-// Parse: sde.cu_region <kind> [scope(<scope>)] [nowait]
+// Parse: sde.cu_region <kind> [nowait]
 //        [iter_args(%a = %init : type) -> (type)]
 //        { body } [attr-dict]
 ParseResult SdeCuRegionOp::parse(OpAsmParser &parser, OperationState &result) {
@@ -87,16 +83,6 @@ ParseResult SdeCuRegionOp::parse(OpAsmParser &parser, OperationState &result) {
     SdeCuKindAttr kindAttr;
     if (parser.parseCustomAttributeWithFallback(kindAttr, Type{}, "kind",
                                                 result.attributes))
-      return failure();
-  }
-
-  // Parse optional scope: scope(<local>) | scope(<distributed>)
-  if (succeeded(parser.parseOptionalKeyword("scope"))) {
-    SdeConcurrencyScopeAttr scopeAttr;
-    if (parser.parseLParen() ||
-        parser.parseCustomAttributeWithFallback(
-            scopeAttr, Type{}, "concurrency_scope", result.attributes) ||
-        parser.parseRParen())
       return failure();
   }
 

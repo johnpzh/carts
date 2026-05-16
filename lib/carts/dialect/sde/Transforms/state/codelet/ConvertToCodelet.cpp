@@ -402,7 +402,6 @@ static LogicalResult convertCuRegion(sde::SdeCuRegionOp region) {
     OpBuilder rebuilder(region);
     auto newRegion = sde::SdeCuRegionOp::create(
         rebuilder, loc, /*resultTypes=*/TypeRange{}, region.getKindAttr(),
-        region.getConcurrencyScopeAttr(),
         region.getNowaitAttr() ? UnitAttr::get(ctx) : nullptr,
         /*iterArgs=*/ValueRange{});
 

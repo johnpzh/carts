@@ -333,7 +333,6 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
         rewriter, loc, /*resultTypes=*/TypeRange{},
         sde::SdeCuKindAttr::get(rewriter.getContext(),
                                 sde::SdeCuKind::parallel),
-        /*concurrency_scope=*/nullptr,
         /*nowait=*/nullptr,
         /*iterArgs=*/ValueRange{});
     insertionBlock = &sde::ensureBlock(outerCuRegion.getBody());
@@ -396,7 +395,6 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
   auto innerCuRegion = sde::SdeCuRegionOp::create(
       rewriter, loc, /*resultTypes=*/TypeRange{},
       sde::SdeCuKindAttr::get(rewriter.getContext(), sde::SdeCuKind::parallel),
-      /*concurrency_scope=*/nullptr,
       /*nowait=*/nullptr,
       /*iterArgs=*/ValueRange{});
   Block &innerBlk = sde::ensureBlock(innerCuRegion.getBody());

@@ -699,7 +699,6 @@ static void stripCuRegionTensorArgs(ModuleOp module,
     OpBuilder rebuilder(cuRegion);
     auto newRegion = sde::SdeCuRegionOp::create(
         rebuilder, loc, TypeRange{keptResultTypes}, cuRegion.getKindAttr(),
-        cuRegion.getConcurrencyScopeAttr(),
         cuRegion.getNowaitAttr() ? UnitAttr::get(ctx) : nullptr,
         ValueRange{keptIterArgs});
 

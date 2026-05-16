@@ -359,7 +359,6 @@ struct OMPParallelToSdePattern : public OpRewritePattern<omp::ParallelOp> {
     auto cuRegion = sde::SdeCuRegionOp::create(
         rewriter, loc, /*resultTypes=*/TypeRange{},
         sde::SdeCuKindAttr::get(ctx, sde::SdeCuKind::parallel),
-        /*concurrency_scope=*/nullptr,
         /*nowait=*/nullptr,
         /*iterArgs=*/ValueRange{});
 
@@ -384,7 +383,6 @@ struct MasterToSdePattern : public OpRewritePattern<omp::MasterOp> {
     auto cuRegion = sde::SdeCuRegionOp::create(
         rewriter, loc, /*resultTypes=*/TypeRange{},
         sde::SdeCuKindAttr::get(ctx, sde::SdeCuKind::single),
-        sde::SdeConcurrencyScopeAttr::get(ctx, sde::SdeConcurrencyScope::local),
         /*nowait=*/nullptr,
         /*iterArgs=*/ValueRange{});
     Block &old = op.getRegion().front();
@@ -410,7 +408,6 @@ struct SingleToSdePattern : public OpRewritePattern<omp::SingleOp> {
     auto cuRegion = sde::SdeCuRegionOp::create(
         rewriter, loc, /*resultTypes=*/TypeRange{},
         sde::SdeCuKindAttr::get(ctx, sde::SdeCuKind::single),
-        sde::SdeConcurrencyScopeAttr::get(ctx, sde::SdeConcurrencyScope::local),
         nowaitAttr(ctx, op.getNowait()),
         /*iterArgs=*/ValueRange{});
     Block &old = op.getRegion().front();
@@ -527,7 +524,6 @@ struct WsloopToSdePattern : public OpRewritePattern<omp::WsloopOp> {
     auto innerCuRegion = sde::SdeCuRegionOp::create(
         rewriter, loc, /*resultTypes=*/TypeRange{},
         sde::SdeCuKindAttr::get(ctx, sde::SdeCuKind::parallel),
-        /*concurrency_scope=*/nullptr,
         /*nowait=*/nullptr,
         /*iterArgs=*/ValueRange{});
     Block &innerBlk = sde::ensureBlock(innerCuRegion.getBody());
@@ -700,7 +696,6 @@ struct SCFParallelToSdePattern : public OpRewritePattern<scf::ParallelOp> {
     auto cuRegion = sde::SdeCuRegionOp::create(
         rewriter, loc, /*resultTypes=*/TypeRange{},
         sde::SdeCuKindAttr::get(ctx, sde::SdeCuKind::parallel),
-        /*concurrency_scope=*/nullptr,
         /*nowait=*/nullptr,
         /*iterArgs=*/ValueRange{});
     Block &parBlk = sde::ensureBlock(cuRegion.getBody());

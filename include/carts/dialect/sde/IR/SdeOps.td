@@ -125,14 +125,6 @@ def SdeScheduleKind
     ]>;
 def SdeScheduleKindAttr : CartsSde_I32EnumAttr<"schedule", SdeScheduleKind>;
 
-def SdeConcurrencyScope
-    : CartsSde_I32Enum<"SdeConcurrencyScope", "Concurrency scope", [
-      I32EnumAttrCase<"local", 0, "local">,
-      I32EnumAttrCase<"distributed", 1, "distributed">
-    ]>;
-def SdeConcurrencyScopeAttr
-    : CartsSde_I32EnumAttr<"concurrency_scope", SdeConcurrencyScope>;
-
 def SdeDistributionKind
     : CartsSde_I32Enum<"SdeDistributionKind", "Distribution advisory hint", [
       I32EnumAttrCase<"owner_compute", 0, "owner_compute">,
@@ -235,11 +227,11 @@ def SdeCuRegionOp
   let summary = "Parallel or single execution region";
   let description = [{
     Captures `omp.parallel`, `omp.single`, `omp.master`. Represents a
-    region of computation that runs with a given concurrency kind and scope.
+    source-level compute region. The region kind records OpenMP execution
+    semantics such as parallel, single, or task; concrete machine topology and
+    distributed placement are resolved later by ARTS.
 
     The `nowait` attribute preserves OpenMP nowait semantics. The
-    `concurrency_scope` attribute indicates local vs distributed execution.
-
     Optional `iter_args` thread loop-carried SSA values through the region body.
     When present, the body block receives matching block arguments and the
     region must terminate with `sde.yield` returning updated values. When
@@ -248,7 +240,6 @@ def SdeCuRegionOp
 
   let arguments = (ins
     SdeCuKindAttr:$kind,
-    OptionalAttr<SdeConcurrencyScopeAttr>:$concurrency_scope,
     UnitAttr:$nowait,
     Variadic<AnyType>:$iterArgs
   );

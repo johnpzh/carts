@@ -638,7 +638,6 @@ static void threadThroughCuRegion(sde::SdeCuRegionOp cuRegion,
   OpBuilder outerBuilder(cuRegion);
   auto newCuRegion = sde::SdeCuRegionOp::create(
       outerBuilder, loc, TypeRange{newResultTypes}, cuRegion.getKindAttr(),
-      cuRegion.getConcurrencyScopeAttr(),
       cuRegion.getNowaitAttr() ? UnitAttr::get(ctx) : nullptr,
       ValueRange{newIterArgs});
 
