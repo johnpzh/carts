@@ -34,10 +34,12 @@ AM->getDbAnalysis().getDbAcquireNode(acquire)  // Node lookup
 
 **Naming** — DB passes: `Db` prefix. EDT passes: `Edt` prefix. LLVM style: 2-space indent, CamelCase types, camelCase variables.
 
-**Utility reuse** — before adding ANY new static helper function, run
-`/check-utils <function-name>` to verify it doesn't already exist in
-`include/carts/utils/` or `include/carts/dialect/arts/Analysis/`. The codebase has 250+
-shared utilities across 13 files. See `/refactor-utils` for the full catalog.
+**Utility reuse** — before adding ANY new static helper function, use
+`carts-check-utils <function-name>` to verify the behavior does not already
+exist in `include/carts/utils`, `include/carts/dialect/*/Utils`,
+`include/carts/dialect/*/Analysis`, or a pass-area support file such as
+`*Support.cpp`, `*Internal.h`, or a boundary-specific conversion helper. Use
+`carts-refactor-utils` for larger utility moves.
 
 ## Key Source Locations
 

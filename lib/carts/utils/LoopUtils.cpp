@@ -11,7 +11,6 @@
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/OpenMP/OpenMPDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -191,27 +190,6 @@ std::optional<int64_t> getStaticTripCount(Operation *loopOp) {
   if (auto loopLike = dyn_cast<LoopLikeOpInterface>(loopOp))
     return getStaticTripCount(loopLike);
   return std::nullopt;
-}
-
-int64_t getRepeatedParentTripProduct(Operation *op, int64_t maxProduct) {
-  if (!op)
-    return 1;
-
-  int64_t product = 1;
-  for (Operation *parent = op->getParentOp(); parent;
-       parent = parent->getParentOp()) {
-    if (isa<func::FuncOp>(parent))
-      break;
-    auto tripOpt = getStaticTripCount(parent);
-    if (!tripOpt || *tripOpt <= 1)
-      continue;
-    if (*tripOpt >= maxProduct / product)
-      return maxProduct;
-    product *= *tripOpt;
-    if (product >= maxProduct)
-      return maxProduct;
-  }
-  return product;
 }
 
 bool hasFloatingPointType(Type type) {

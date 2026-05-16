@@ -12,7 +12,7 @@ Do not hardcode project attribute strings in pass logic.
 Quick scan:
 
 ```bash
-rg -n '"arts\.' lib/arts --glob '*.cpp' | rg -v 'AttrNames|DEBUG|ARTS_DEBUG|arts_debug'
+rg -n '"arts\.' lib/carts include/carts --glob '*.cpp' --glob '*.h' | rg -v 'AttrNames|DEBUG|ARTS_DEBUG|arts_debug'
 ```
 
 ## Analysis Access
@@ -24,7 +24,7 @@ inside the analysis implementation itself.
 Quick scan:
 
 ```bash
-rg -n 'getDbGraph|getEdtGraph|\.getGraph\(\)|\.invalidate\(' lib/arts --glob '*.cpp'
+rg -n 'getDbGraph|getEdtGraph|\.getGraph\(\)|\.invalidate\(' lib/carts include/carts --glob '*.cpp' --glob '*.h'
 ```
 
 ## Utility Duplication
@@ -36,7 +36,7 @@ attribute helpers.
 Quick scan:
 
 ```bash
-rg -n '^static .*\\(' lib/arts include/arts --glob '*.cpp' --glob '*.h'
+rg -n '^static .*\\(' lib/carts include/carts --glob '*.cpp' --glob '*.h'
 ```
 
 ## File Placement

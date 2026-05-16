@@ -7,8 +7,8 @@
 /// without requiring an AnalysisManager.
 ///==========================================================================///
 
-#ifndef ARTS_UTILS_LOOPUTILS_H
-#define ARTS_UTILS_LOOPUTILS_H
+#ifndef CARTS_UTILS_LOOPUTILS_H
+#define CARTS_UTILS_LOOPUTILS_H
 
 #include "mlir/Dialect/OpenMP/OpenMPDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -94,13 +94,6 @@ bool isLoopFullRange(LoopNode *loop, Value dimSize);
 /// Returns std::nullopt when the trip count cannot be proven statically.
 std::optional<int64_t> getStaticTripCount(Operation *loopOp);
 
-/// Compute a capped product of static enclosing loop trip counts.
-/// Starts at the parent of `op`, so the operation's own trip count is excluded.
-/// Useful for repeated-dispatch cost models that need a lightweight estimate
-/// of how many times a region is re-entered.
-int64_t getRepeatedParentTripProduct(Operation *op,
-                                     int64_t maxProduct = 1 << 20);
-
 /// Return true when a type is a floating-point type (F16, BF16, F32, F64, F80,
 /// F128) or a vector of one.
 bool hasFloatingPointType(Type type);
@@ -112,4 +105,4 @@ bool operationTouchesFloatingPoint(Operation *op);
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // ARTS_UTILS_LOOPUTILS_H
+#endif // CARTS_UTILS_LOOPUTILS_H

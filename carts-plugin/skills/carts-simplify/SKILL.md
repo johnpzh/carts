@@ -29,8 +29,8 @@ before commit, PR review, or final task completion.
      `.carts/` or are not intentional fixtures.
 5. Check reuse before keeping new helpers:
    ```bash
-   rg "<function-or-concept>" include/arts lib/arts docs
-   rg "static .*<concept>|<attribute>|<predicate>" lib/arts
+   rg "<function-or-concept>" include/carts lib/carts docs
+   rg "static .*<concept>|<attribute>|<predicate>" lib/carts include/carts
    ```
    Use `carts-check-utils` when a helper, predicate, string utility, IR query,
    or attribute helper was added or changed.

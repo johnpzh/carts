@@ -26,6 +26,11 @@ Do not create new files such as `LoopIVUtils`, `DbHelperUtils`, or
 `ValueHelpers` unless the category is genuinely new and the patch explains why
 the existing owner is wrong.
 
+Known legacy mismatch: `LoopUtils.h` still contains floating-point type/op
+predicates used by loop-vectorization code. Do not add more type predicates
+there; move or place new broad type/value predicates under the shared value or
+IR helper owner instead.
+
 ## Search Cheatsheet
 
 | If you need to... | Check first | File |
