@@ -39,9 +39,9 @@ class LoopNode;
 ///
 /// This is graph-owned state. It captures what the compiler proved about one
 /// depend-clause entry or inferred partition entry, not the final rewrite
-/// payload and not the semantic contract boundary. DbPartitioning translates
-/// these facts into pass-local summaries and then into planner/rewriter inputs
-/// expressed in the canonical IR contract vocabulary.
+/// payload and not the semantic contract boundary. DbAnalysis translates these
+/// facts into pass-facing summaries expressed in the canonical IR contract
+/// vocabulary.
 struct DbPartitionEntryFact {
   PartitionInfo partition;
   Value representativeOffset;
@@ -69,8 +69,7 @@ struct DbDimPartitionFact {
 /// Ownership:
 ///   - produced and cached by graph-side analysis
 ///   - exposed through DbAnalysis
-///   - consumed by controller passes such as DbPartitioning as supporting
-///     evidence
+///   - consumed by DB refinement/lowering passes as supporting evidence
 ///   - recomputable from IR/analysis state
 ///   - never used directly as the final rewrite contract or semantic authority
 struct DbAcquirePartitionFacts {

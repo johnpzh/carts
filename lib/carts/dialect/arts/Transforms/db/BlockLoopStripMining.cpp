@@ -2,7 +2,8 @@
 /// File: BlockLoopStripMining.cpp
 ///
 /// Strip-mine innermost loops that access block-partitioned datablocks.
-/// This is a late DB-aware cleanup that must run after DbPartitioning.
+/// This is a late DB-aware cleanup that must run after DB partition metadata
+/// has been materialized and refined.
 /// It removes per-iteration div/rem + db_ref overhead by introducing a
 /// block loop and local index loop, reusing db_ref per block.
 ///

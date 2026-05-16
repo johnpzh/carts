@@ -102,7 +102,7 @@ void normalizeTaskDepSlice(ArtsCodegen *AC, DbAcquireOp acquire,
   SmallVector<Value, 4> mergedOffsets, mergedSizes;
   /// normalizeTaskDepSlice may refine only a leading owner-space prefix from
   /// partition_* metadata. Preserve the remaining owner slots so N-D acquires
-  /// keep the same DB rank that DbPartitioning established.
+  /// keep the same DB rank that DB refinement established.
   DbUtils::mergeNormalizedBlockSlice(AC->getBuilder(), loc, acquire.getOffsets(),
                             acquire.getSizes(), outerSizes, offsets, sizes,
                             mergedOffsets, mergedSizes);

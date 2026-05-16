@@ -41,9 +41,10 @@ class LoopAnalysis;
 
 class DbAnalysis : public ArtsAnalysis {
 public:
-  /// Pass-facing summary used by DbPartitioning while assembling heuristic and
-  /// planner inputs. This is a transient query result synthesized from the
-  /// canonical IR contract plus graph-derived caches, not a second authority.
+  /// Pass-facing summary used by DB refinement and lowering helpers while
+  /// assembling partition-aware rewrites. This is a transient query result
+  /// synthesized from the canonical IR contract plus graph-derived caches, not
+  /// a second authority.
   struct AcquirePartitionSummary {
     PartitionMode mode = PartitionMode::coarse;
     SmallVector<Value> partitionOffsets;

@@ -2,7 +2,7 @@
 /// File: DbScratchElimination.cpp
 ///
 /// Eliminate task-private single-element scratch DBs by replacing them with
-/// local allocas.  Runs after DbModeTightening / DbPartitioning have
+/// local allocas. Runs after DbModeTightening and DB refinement have
 /// established stable acquire and dependency structure.
 ///==========================================================================///
 

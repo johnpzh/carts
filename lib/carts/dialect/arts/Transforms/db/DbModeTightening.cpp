@@ -1,7 +1,8 @@
 ///==========================================================================///
 /// File: DbModeTightening.cpp
 /// Pass for DB mode tightening and storage-type inference.
-/// Partitioning logic has been moved to DbPartitioning.cpp.
+/// Partitioning facts come from DbAnalysis; this pass only reconciles DB modes
+/// and storage policy against those facts and observed uses.
 ///
 /// Example:
 ///   Before:

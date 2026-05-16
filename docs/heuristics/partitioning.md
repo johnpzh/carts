@@ -113,10 +113,9 @@ What each layer owns:
 
 Important implementation detail:
 - `DbAllocNode` stores direct child acquires in the DB graph.
-- `DbPartitioning` does not only look at those direct children; it recursively
-  walks nested acquire nodes via `collectAcquireNodesForAlloc()` and
-  `collectAcquireNodesRecursive()`.
-- So the pass does visit all acquire nodes reachable from one allocation.
+- `DbAllocNode` recursively walks nested acquire nodes via
+  `collectAcquireNodesRecursive()`, so graph consumers can see every acquire
+  node reachable from one allocation.
 - The rest of this guide describes the current implementation model.
 
 ### 2.1) The Actual Analysis Objects In Code
@@ -144,24 +143,12 @@ Today the partitioning pipeline is built from these layers of state:
      - `isValid`
      - `hasIndirectAccess`
 
-3. `AcquirePartitionInfo`
-   - `DbPartitioning`'s working copy of the acquire summary.
-   - Adds:
-     - `accessPattern`
-     - `preservesDependencyMode`
-     - `needsFullRange`
-
-4. `AcquireInfo` / `PartitioningContext`
-   - The heuristic voting layer.
-   - Consumes facts already prepared by the graph/pipeline.
-   - Does not own canonical legality state.
-
-5. `DbBlockPlanResolver` + `DbPartitionPlanner`
-   - Turn the chosen mode into a concrete rewrite plan:
-     - `blockSizes`
-     - `partitionedDims`
-     - allocation shape
-     - per-acquire rewrite payloads
+3. DB refinement and lowering consumers
+   - `DbModeTightening`, `CreateDbs`, and ARTS-RT slice normalization consume
+     the pass-facing summary and the canonical lowering-contract attrs.
+   - These consumers may refine modes, block-localized sizes, and dependency
+     slices, but they do not own semantic distribution or source-pattern
+     authority.
 
 ### 2.2) Current Canonical Model
 
@@ -175,8 +162,9 @@ per DbAlloc
 ```
 
 That information lives in `DbAcquirePartitionFacts` on `DbAcquireNode`.
-`DbAllocNode` aggregates it. `DbPartitioning` translates it into pass-local
-decisions and rewrite payloads.
+`DbAllocNode` aggregates it. `DbAnalysis` translates graph facts into
+pass-facing summaries while the canonical rewrite payload remains in IR attrs
+and lowering contracts.
 
 DB mode note (in/out/inout):
 - Db access mode is adjusted by the Db pass based on actual loads/stores.
@@ -288,8 +276,8 @@ Stencil exception:
 
 `tiling_2d` exception:
 - For `tiling_2d` output acquires (`inout`) with explicit 2D owner hints,
-  `DbPartitioning` can infer partition dims `[0,1]` and keep those hints even
-  when generic dim inference would otherwise be incomplete.
+  DB analysis/refinement can infer partition dims `[0,1]` and keep those hints
+  even when generic dim inference would otherwise be incomplete.
 - Read-only inputs in the same loop may still follow regular block localization
   rules; only writable ownership is forced to N-D alignment.
 
@@ -307,10 +295,10 @@ Today the safety logic is spread across three places:
      - missing offset dependence
      - non-leading read-only stencil accesses
 
-3. `DbPartitioning`
-   - after the final block plan is chosen, any acquire whose inferred
-     `partitionDims` disagree with the chosen `partitionedDims` is forced to
-     full-range
+3. DB refinement/lowering consumers
+   - when an acquire's inferred partition dims disagree with the materialized
+     DB rank or ownership metadata, the acquire is kept full-range rather than
+     emitting an unsound partial slice
 
 This safety net is necessary, but it is later than ideal. The cleaner design is
 to keep per-dimension access proposals all the way into heuristic voting so the
@@ -1051,9 +1039,10 @@ Example access A[i,j,k]:
 - Analysis (patterns, bounds, partition dims): DbAcquireNode / DbAllocNode
 - Pass-facing acquire summary: `DbAnalysis::analyzeAcquirePartition`
 - Decisions (H1.*): `evaluatePartitioningHeuristics` + H1.7 per-acquire voting
-- Coordination + plan: DbPartitioning
-- Mode reconciliation: local controller logic in `DbPartitioning`
-- Block sizing + chosen dims: `DbBlockPlanResolver`
+- Coordination + plan: SDE/CODIR lowering contracts plus DB analysis summaries
+- Mode reconciliation: `DbModeTightening`
+- Block sizing + chosen dims: SDE/CODIR layout metadata, `DbLayoutPlanUtils`,
+  and DB analysis refinement
 - Layout materialization: direct SDE/CODIR-to-ARTS lowering for MU storage and
   tokens; `CreateDbs` only for remaining coarse raw memrefs.
 - Index localization for tiled layouts: SDE/CODIR token-local memref rewrite.
