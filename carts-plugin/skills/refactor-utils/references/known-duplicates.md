@@ -34,7 +34,7 @@ unless a second real consumer appears.
 | `getForwardedMemrefAliasSource`, `getForwardedMemrefAliasResult` | `lib/carts/dialect/sde/Conversion/PolygeistToSde/MemrefNormalization.cpp` | SDE conversion-specific alias cleanup. Extract to SDE Analysis/Utils only with a second SDE consumer. |
 | `tryGetAffineExpr` | `lib/carts/dialect/sde/Analysis/StructuredOpAnalysis.cpp` | SDE structured analysis internals; keep in analysis until exported API is needed. |
 | `ensureBlock` | `include/carts/dialect/sde/Transforms/Passes.h` | SDE region-construction convenience used across SDE passes. If it grows, move to SDE Utils. |
-| `analyzeLegacyLoop` | ARTS block-loop strip-mining support | Coupled to block-loop strip-mining internals; not a generic loop helper. |
+| `analyzeSingleDimBlockLoop` | ARTS block-loop strip-mining support | Coupled to block-loop strip-mining internals; not a generic loop helper. |
 
 ## Current Static-Helper Risk
 

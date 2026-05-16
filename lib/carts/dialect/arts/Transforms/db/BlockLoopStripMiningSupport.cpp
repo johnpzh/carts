@@ -16,9 +16,6 @@ using namespace mlir::carts::arts;
 
 namespace mlir::carts::arts::block_loop_strip_mining {
 
-const llvm::StringLiteral kStripMiningGeneratedAttr =
-    AttrNames::Operation::StripMiningGenerated;
-
 bool isGeneratedByStripMining(scf::ForOp loop) {
   return loop->hasAttr(AttrNames::Operation::StripMiningGenerated);
 }
@@ -272,7 +269,8 @@ matchNormalizedSignedRemainderNeighborhood(arith::SelectOp selectOp, Value iv) {
 }
 
 bool recordRemPattern(Value lhs, Value rhs, Value remResult, Value iv,
-                      LoopBlockInfo &info, ArrayRef<Operation *> patternOps) {
+                      SingleDimBlockLoopInfo &info,
+                      ArrayRef<Operation *> patternOps) {
   auto offsetOpt = extractInvariantOffset(lhs, iv);
   if (!offsetOpt)
     return false;
@@ -308,7 +306,7 @@ bool recordRemPattern(Value lhs, Value rhs, Value remResult, Value iv,
 }
 
 bool matchNormalizedSignedRemainder(arith::SelectOp selectOp, Value iv,
-                                    LoopBlockInfo &info) {
+                                    SingleDimBlockLoopInfo &info) {
   auto rem = selectOp.getFalseValue().getDefiningOp<arith::RemSIOp>();
   if (!rem)
     return false;
@@ -788,9 +786,9 @@ analyzeNeighborhoodLoop(scf::ForOp loop, DominanceInfo &domInfo) {
   return *bestCandidate;
 }
 
-std::optional<LoopBlockInfo> analyzeLegacyLoop(scf::ForOp loop,
-                                               DominanceInfo &domInfo) {
-  LoopBlockInfo info;
+std::optional<SingleDimBlockLoopInfo>
+analyzeSingleDimBlockLoop(scf::ForOp loop, DominanceInfo &domInfo) {
+  SingleDimBlockLoopInfo info;
   Value iv = loop.getInductionVar();
   Value loopLowerBound = loop.getLowerBound();
 
@@ -1209,7 +1207,8 @@ bool stripMineNeighborhoodLoop(scf::ForOp loop,
   return true;
 }
 
-bool stripMineLegacyLoop(scf::ForOp loop, const LoopBlockInfo &info) {
+bool stripMineSingleDimBlockLoop(scf::ForOp loop,
+                                 const SingleDimBlockLoopInfo &info) {
   Location loc = loop.getLoc();
   OpBuilder builder(loop);
   auto step = ValueAnalysis::getConstantIndexStripped(loop.getStep());

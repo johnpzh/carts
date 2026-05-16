@@ -79,7 +79,7 @@ struct NeighborhoodExprInfo {
   int64_t offsetConst = 0;
 };
 
-struct LoopBlockInfo {
+struct SingleDimBlockLoopInfo {
   Value blockSizeVal;
   std::optional<int64_t> blockSizeConst;
   std::optional<int64_t> lowerBoundConst;
@@ -93,8 +93,6 @@ struct LoopBlockInfo {
 
 using NeighborhoodReplacementMap = llvm::DenseMap<Operation *, Value>;
 using NeighborhoodEraseSet = llvm::DenseSet<Operation *>;
-
-extern const llvm::StringLiteral kStripMiningGeneratedAttr;
 
 bool isGeneratedByStripMining(scf::ForOp loop);
 void markGeneratedByStripMining(scf::ForOp loop);
@@ -124,10 +122,11 @@ std::optional<NeighborhoodPattern>
 matchNormalizedSignedRemainderNeighborhood(arith::SelectOp selectOp, Value iv);
 
 bool recordRemPattern(Value lhs, Value rhs, Value remResult, Value iv,
-                      LoopBlockInfo &info, ArrayRef<Operation *> patternOps);
+                      SingleDimBlockLoopInfo &info,
+                      ArrayRef<Operation *> patternOps);
 
 bool matchNormalizedSignedRemainder(arith::SelectOp selectOp, Value iv,
-                                    LoopBlockInfo &info);
+                                    SingleDimBlockLoopInfo &info);
 
 bool isAlignedOffset(Value offset, Value blockSize,
                      const std::optional<int64_t> &blockSizeConst,
@@ -177,8 +176,8 @@ bool isBetterNeighborhoodCandidate(const NeighborhoodLoopInfo &lhs,
 std::optional<NeighborhoodLoopInfo>
 analyzeNeighborhoodLoop(scf::ForOp loop, DominanceInfo &domInfo);
 
-std::optional<LoopBlockInfo> analyzeLegacyLoop(scf::ForOp loop,
-                                               DominanceInfo &domInfo);
+std::optional<SingleDimBlockLoopInfo>
+analyzeSingleDimBlockLoop(scf::ForOp loop, DominanceInfo &domInfo);
 
 Value buildNeighborhoodBoundaryValue(
     OpBuilder &builder, Location loc,
@@ -195,7 +194,8 @@ bool stripMineNeighborhoodLoopImpl(
 bool stripMineNeighborhoodLoop(scf::ForOp loop,
                                const NeighborhoodLoopInfo &info);
 
-bool stripMineLegacyLoop(scf::ForOp loop, const LoopBlockInfo &info);
+bool stripMineSingleDimBlockLoop(scf::ForOp loop,
+                                 const SingleDimBlockLoopInfo &info);
 
 } // namespace mlir::carts::arts::block_loop_strip_mining
 

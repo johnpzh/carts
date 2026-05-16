@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from docker_build_ops import docker_build
-from docker_cleanup_ops import _run_docker_clean, docker_clean, docker_commit
+from docker_cleanup_ops import docker_clean, docker_commit
 from docker_cluster_ops import docker_exec, docker_start, docker_status, docker_stop
 from docker_update_ops import docker_update
 
@@ -29,5 +29,4 @@ __all__ = [
     "docker_commit",
     "docker_status",
     "docker_exec",
-    "_run_docker_clean",
 ]

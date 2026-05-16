@@ -53,11 +53,6 @@ def docker_clean():
     print_success("Docker cleanup completed")
 
 
-def _run_docker_clean() -> None:
-    """Backward compatible clean hook used by `carts clean --docker`."""
-    docker_clean()
-
-
 def docker_commit():
     """Commit current workspace from arts-node-1 into arts-node:built."""
     print_header("CARTS Docker Commit")

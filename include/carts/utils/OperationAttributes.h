@@ -75,12 +75,6 @@ constexpr StringLiteral DbRootAllocId = "arts.db_root_alloc_id";
 /// LoweringContractOp attribute names (used in Dialect.cpp build method)
 namespace Contract {
 using namespace llvm;
-/// Contract attribute name for dep pattern
-constexpr StringLiteral DepPatternKey = "dep_pattern";
-/// These are the same as Operation:: versions; kept as aliases for readability.
-constexpr auto DistributionKind = Operation::DistributionKind;
-constexpr auto DistributionPattern = Operation::DistributionPattern;
-constexpr auto DistributionVersion = Operation::DistributionVersion;
 constexpr StringLiteral OwnerDims = "owner_dims";
 constexpr StringLiteral SupportedBlockHalo = "supported_block_halo";
 constexpr StringLiteral StencilIndependentDims = "stencil_independent_dims";
@@ -146,40 +140,6 @@ constexpr StringLiteral InterleaveCount = "arts.rt.interleave_count";
 
 } // namespace AttrNames
 
-inline void copyCoreExecutionHintAttrs(Operation *source, Operation *dest) {
-  if (!source || !dest)
-    return;
-
-  UnitAttr inPlaceSafe;
-  UnitAttr inPlaceSharedState;
-  IntegerAttr vectorizeWidth;
-  IntegerAttr unrollFactor;
-  IntegerAttr interleaveCount;
-
-  if (auto edtOp = dyn_cast<EdtOp>(source)) {
-    inPlaceSafe = edtOp.getInPlaceSafeAttr();
-    inPlaceSharedState = edtOp.getInPlaceSharedStateAttr();
-    vectorizeWidth = edtOp.getVectorizeWidthAttr();
-    unrollFactor = edtOp.getUnrollFactorAttr();
-    interleaveCount = edtOp.getInterleaveCountAttr();
-  } else {
-    return;
-  }
-
-  if (auto edtOp = dyn_cast<EdtOp>(dest)) {
-    if (inPlaceSafe)
-      edtOp.setInPlaceSafeAttr(inPlaceSafe);
-    if (inPlaceSharedState)
-      edtOp.setInPlaceSharedStateAttr(inPlaceSharedState);
-    if (vectorizeWidth)
-      edtOp.setVectorizeWidthAttr(vectorizeWidth);
-    if (unrollFactor)
-      edtOp.setUnrollFactorAttr(unrollFactor);
-    if (interleaveCount)
-      edtOp.setInterleaveCountAttr(interleaveCount);
-  }
-}
-
 inline void copyCoreExecutionHintAttrsToRtFunction(EdtOp source,
                                                    Operation *dest) {
   if (!source || !dest)
@@ -190,40 +150,6 @@ inline void copyCoreExecutionHintAttrsToRtFunction(EdtOp source,
     dest->setAttr(AttrNames::Operation::Rt::UnrollFactor, attr);
   if (auto attr = source.getInterleaveCountAttr())
     dest->setAttr(AttrNames::Operation::Rt::InterleaveCount, attr);
-}
-
-enum class MetadataProvenanceKind : uint8_t {
-  Exact = 0,
-  Transferred = 1,
-  Recomputed = 2,
-  Recovered = 3
-};
-
-inline StringRef metadataProvenanceToString(MetadataProvenanceKind kind) {
-  switch (kind) {
-  case MetadataProvenanceKind::Exact:
-    return "exact";
-  case MetadataProvenanceKind::Transferred:
-    return "transferred";
-  case MetadataProvenanceKind::Recomputed:
-    return "recomputed";
-  case MetadataProvenanceKind::Recovered:
-    return "recovered";
-  }
-  return "exact";
-}
-
-inline std::optional<MetadataProvenanceKind>
-parseMetadataProvenance(StringRef value) {
-  if (value == "exact")
-    return MetadataProvenanceKind::Exact;
-  if (value == "transferred")
-    return MetadataProvenanceKind::Transferred;
-  if (value == "recomputed")
-    return MetadataProvenanceKind::Recomputed;
-  if (value == "recovered")
-    return MetadataProvenanceKind::Recovered;
-  return std::nullopt;
 }
 
 /// Check if an operation has a StringAttr with the given name whose value
@@ -702,32 +628,6 @@ inline void setMetadataOriginId(Operation *op, int64_t id) {
   auto type = IntegerType::get(ctx, 64);
   op->setAttr(AttrNames::Operation::MetadataOriginId,
               IntegerAttr::get(type, id));
-}
-
-inline std::optional<MetadataProvenanceKind>
-getMetadataProvenance(Operation *op) {
-  if (!op)
-    return std::nullopt;
-  auto attr =
-      op->getAttrOfType<StringAttr>(AttrNames::Operation::MetadataProvenance);
-  if (!attr)
-    return std::nullopt;
-  return parseMetadataProvenance(attr.getValue());
-}
-
-inline void setMetadataProvenance(Operation *op, MetadataProvenanceKind kind) {
-  if (!op)
-    return;
-  op->setAttr(
-      AttrNames::Operation::MetadataProvenance,
-      StringAttr::get(op->getContext(), metadataProvenanceToString(kind)));
-}
-
-inline void ensureMetadataProvenance(Operation *op,
-                                     MetadataProvenanceKind kind) {
-  if (!op || op->hasAttr(AttrNames::Operation::MetadataProvenance))
-    return;
-  setMetadataProvenance(op, kind);
 }
 
 inline std::optional<StringRef> getOutlinedFunc(Operation *op) {

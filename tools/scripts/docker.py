@@ -11,7 +11,6 @@ if str(_DOCKER_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_DOCKER_SCRIPTS_DIR))
 
 from docker_cli import (  # noqa: E402
-    _run_docker_clean,
     docker_build,
     docker_callback,
     docker_clean,
@@ -34,5 +33,4 @@ __all__ = [
     "docker_commit",
     "docker_status",
     "docker_exec",
-    "_run_docker_clean",
 ]

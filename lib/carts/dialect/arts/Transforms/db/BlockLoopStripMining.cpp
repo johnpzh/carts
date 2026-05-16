@@ -66,11 +66,11 @@ struct BlockLoopStripMiningPass
         if (!isInnermostLoop(loop))
           return WalkResult::advance();
 
-        auto info = analyzeLegacyLoop(loop, domInfo);
+        auto info = analyzeSingleDimBlockLoop(loop, domInfo);
         if (!info)
           return WalkResult::advance();
 
-        if (stripMineLegacyLoop(loop, *info)) {
+        if (stripMineSingleDimBlockLoop(loop, *info)) {
           ARTS_DEBUG("Applied block strip-mining to loop");
           changed = true;
           return WalkResult::interrupt();
