@@ -131,6 +131,19 @@ struct VerifyCodirPass
       bodyRegion.walk([&](Operation *op) {
         if (op == codelet.getOperation())
           return;
+
+        StringRef dialectNamespace = op->getName().getDialectNamespace();
+        if (dialectNamespace == "arts" || dialectNamespace == "arts_rt" ||
+            dialectNamespace == "llvm") {
+          InFlightDiagnostic diag = op->emitOpError()
+              << "materialized " << dialectNamespace
+              << " operation is not allowed inside codir.codelet";
+          diag.attachNote(codelet.getLoc())
+              << "CODIR codelets must stay runtime-neutral until "
+                 "codir-to-arts or later lowering";
+          failed = true;
+        }
+
         for (auto [operandIndex, operand] : llvm::enumerate(op->getOperands())) {
           Region *operandRegion = operand.getParentRegion();
           if (operandRegion && bodyRegion.isAncestor(operandRegion))
