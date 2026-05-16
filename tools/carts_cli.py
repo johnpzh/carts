@@ -226,9 +226,7 @@ def benchmarks(
     if ctx.args:
         cmd.extend(ctx.args)
 
-    # Expose shared CARTS Python helpers to the benchmark runner.
-    tools_dir = str(Path(__file__).parent)
-    result = run_subprocess(cmd, check=False, env={"PYTHONPATH": tools_dir})
+    result = run_subprocess(cmd, check=False)
     raise Exit(result.returncode)
 
 
