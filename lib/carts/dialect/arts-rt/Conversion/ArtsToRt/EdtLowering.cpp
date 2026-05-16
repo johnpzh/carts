@@ -550,7 +550,7 @@ Value EdtLoweringPass::computeDependencyCount(Location loc,
       if (!seenSources.insert(source).second)
         continue;
     SmallVector<Value> sizes = RtDbUtils::getDepSizesFromDb(dep);
-    Value numElements = AC->create<DbNumElementsOp>(loc, sizes);
+    Value numElements = AC->computeTotalElements(sizes, loc);
     numElements = AC->castToInt(AC->Int32, numElements, loc);
     depCount = AC->create<arith::AddIOp>(loc, depCount, numElements);
   }

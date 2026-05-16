@@ -1,7 +1,11 @@
+// RUN: %carts-compile %s --arts-config %arts_config --start-from pre-lowering --pipeline pre-lowering | %FileCheck %s --check-prefix=PRE --implicit-check-not=arts.db_num_elements
 // RUN: %carts-compile %s --arts-config %arts_config --start-from pre-lowering --pipeline arts-rt-to-llvm | %FileCheck %s
 
 // A single-element acquire with an explicit DB index still records a direct
 // dependency on that indexed source DB, not on slot zero.
+
+// PRE-LABEL: func.func @indexed_single_db_dependency
+// PRE: arts_rt.edt_create
 
 // CHECK-LABEL: func.func @indexed_single_db_dependency
 // CHECK-SAME: (%[[LANE:arg[0-9]+]]: index,
