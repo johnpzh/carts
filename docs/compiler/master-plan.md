@@ -159,7 +159,7 @@ Important current facts:
     `lib/carts/dialect/codir/Conversion/SdeToCodir/TaskDepSliceUtils.*`
     instead of `codir/Utils`, so the CODIR dialect utility library no longer
     depends on SDE.
-- The Core raw DB indexers have been removed. `CreateDbs` may only materialize
+- The ARTS raw DB indexers have been removed. `CreateDbs` may only materialize
   coarse whole-storage raw memrefs; a blocked/tiled raw memref reaching it is
   a boundary error because SDE/CODIR must own the token-local access rewrite.
 - `verify-arts-objects-only` now also guards the distributed boundary: an
@@ -494,7 +494,7 @@ build emits a 75×4800 row-strip DB and a parametric per-block EDT (5 params,
 dynamic dep count). With one big coarse block the runtime cannot fan out:
 the entire matmul is serialized into a single 64-thread codelet, which
 explains the ~30x gap. Likely culprit: commit `d5f01952` (`Materialize coarse
-SDE memory units before Core lowering`). Session dump:
+SDE memory units before ARTS lowering`). Session dump:
 `.carts/sessions/20260515-032018-matrix-shape-baseline/`.
 
 **Resolution status (2026-05-15):** CODIR-to-ARTS now selects DB layout from
@@ -544,7 +544,7 @@ Tasks:
   materialization fix and record checksum-clean fast results.
 - [x] Demote unsupported SDE physical storage attrs before the raw `CreateDbs`
   bridge while preserving semantic stencil/distribution metadata, and keep a
-  Core negative test so raw blocked layouts still fail at `CreateDbs`.
+  ARTS negative test so raw blocked layouts still fail at `CreateDbs`.
 - [ ] Implement SDE contraction phase plans for `gemm`, `2mm`, and `3mm`
   without hardcoded benchmark constants.
 - [ ] Add generic CODIR/ARTS-RT cleanup only after codelet shape is correct.

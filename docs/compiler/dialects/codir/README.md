@@ -11,4 +11,4 @@ Primary docs:
 
 - [`analysis.md`](./analysis.md)
 - [`optimizations.md`](./optimizations.md)
-- Existing migration note: [`../../codir/README.md`](../../codir/README.md)
+- Migration plan: [`../../plans/codir-edt-isolation.md`](../../plans/codir-edt-isolation.md)

@@ -11,4 +11,4 @@ Primary docs:
 
 - [`analysis.md`](./analysis.md)
 - [`optimizations.md`](./optimizations.md)
-- Existing migration note: [`../../core/README.md`](../../core/README.md)
+- Migration plan: [`../../plans/arts-materialization-cleanup.md`](../../plans/arts-materialization-cleanup.md)

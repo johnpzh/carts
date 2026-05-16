@@ -260,7 +260,7 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
           std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
       // One-dimensional halo stencils form a dependency pipeline between
       // neighboring owner blocks. Planning modestly more owner blocks than
-      // hardware workers gives Core enough ready tasks to keep workers busy
+      // logical worker capacity gives later ARTS scheduling enough ready tasks
       // without flooding the runtime with tiny stencil slices.
       if (ownerLoopDims.size() == 1)
         workers *= 2;
@@ -564,7 +564,8 @@ struct DistributionPlanningPass
       if (rewrite.op.getNumResults() > 0) {
         // su_iterate with iter_arg results: can't wrap in su_distribute
         // (NoTerminator op can't forward results). Stamp distribution kind
-        // directly on the su_iterate — SuIterateToArtsPattern reads it.
+        // directly on the su_iterate; SDE-to-CODIR carries it forward and the
+        // ARTS materialization boundary consumes the CODIR plan fact.
         rewrite.op.setDistributionKindAttr(
             sde::SdeDistributionKindAttr::get(&getContext(), rewrite.kind));
         continue;

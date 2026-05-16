@@ -87,7 +87,7 @@ def DbReleaseTypeAttr : Arts_I32EnumAttr<"release_type", DbReleaseType>;
 
 def ArtsPlanIterationTopology
     : Arts_I32Enum<"ArtsPlanIterationTopology",
-                   "Core ARTS physical iteration topology", [
+                   "ARTS physical iteration topology", [
       I32EnumAttrCase<"owner_strip", 0, "owner_strip">,
       I32EnumAttrCase<"owner_tile", 1, "owner_tile">,
       I32EnumAttrCase<"owner_tile_2d", 2, "owner_tile_2d">
@@ -98,7 +98,7 @@ def ArtsPlanIterationTopologyAttr
 
 def ArtsPlanRepetitionStructure
     : Arts_I32Enum<"ArtsPlanRepetitionStructure",
-                   "Core ARTS repeated-wave structure", [
+                   "ARTS repeated-wave structure", [
       I32EnumAttrCase<"none", 0, "none">,
       I32EnumAttrCase<"pair_step", 1, "pair_step">,
       I32EnumAttrCase<"k_step", 2, "k_step">,
@@ -110,7 +110,7 @@ def ArtsPlanRepetitionStructureAttr
 
 def ArtsPlanAsyncStrategy
     : Arts_I32Enum<"ArtsPlanAsyncStrategy",
-                   "Core ARTS async-loop strategy", [
+                   "ARTS async-loop strategy", [
       I32EnumAttrCase<"blocking", 0, "blocking">,
       I32EnumAttrCase<"advance_edt", 1, "advance_edt">
     ]>;
@@ -119,7 +119,7 @@ def ArtsPlanAsyncStrategyAttr
 
 def ArtsBarrierReason
     : Arts_I32Enum<"ArtsBarrierReason",
-                   "Core ARTS barrier preservation or elimination reason", [
+                   "ARTS barrier preservation or elimination reason", [
       I32EnumAttrCase<"redundant", 0, "redundant">,
       I32EnumAttrCase<"required_memory", 1, "required_memory">,
       I32EnumAttrCase<"timestep_stage_boundary", 2,
@@ -179,7 +179,7 @@ def DbAccessPattern
     ]>;
 def DbAccessPatternAttr : Arts_I32EnumAttr<"access_pattern", DbAccessPattern>;
 
-/// Distribution strategy carried by SDE-authored Core materialization plans.
+/// Distribution strategy carried by SDE/CODIR-authored ARTS materialization plans.
 def EdtDistributionKind
     : Arts_I32Enum<"EdtDistributionKind", "EDT distribution strategy kind", [
       I32EnumAttrCase<"block", 0, "block">,

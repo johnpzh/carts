@@ -136,7 +136,7 @@ def SdeDistributionKindAttr
 
 def SdeIterationTopology
     : CartsSde_I32Enum<"SdeIterationTopology",
-                      "SDE physical iteration topology", [
+                      "SDE element-space iteration topology", [
       I32EnumAttrCase<"owner_strip", 0, "owner_strip">,
       I32EnumAttrCase<"owner_tile", 1, "owner_tile">,
       I32EnumAttrCase<"owner_tile_2d", 2, "owner_tile_2d">
@@ -196,7 +196,7 @@ def SdeResourceQueryOp : CartsSde_Op<"resource_query", [Pure]> {
   let description = [{
     Queries a runtime-neutral execution resource needed to build SDE-level
     symbolic grain expressions. The result is target-neutral SDE intent; the
-    Core lowering boundary binds it to the concrete runtime mechanism.
+    ARTS lowering boundary binds it to the concrete runtime mechanism.
 
     `logical_workers` is the number of logical execution slots available to an
     SDE scheduling unit. It does not name a concrete runtime worker,
@@ -389,6 +389,8 @@ def SdeSuIterateOp
     OptionalAttr<ArrayAttr>:$ownerDims,
     OptionalAttr<ArrayAttr>:$spatialDims,
     OptionalAttr<ArrayAttr>:$writeFootprint,
+    // Element-space/storage layout facts authored by SDE. These do not encode
+    // runtime nodes, routes, or concrete ARTS worker placement.
     OptionalAttr<ArrayAttr>:$physicalOwnerDims,
     OptionalAttr<ArrayAttr>:$physicalBlockShape,
     OptionalAttr<ArrayAttr>:$logicalWorkerSlice,

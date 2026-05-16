@@ -29,13 +29,13 @@
 /// - The target SDE/CODIR path emits explicit MU storage and codelet
 ///   deps/params that materialize to DB/EDT ops before this raw bridge.
 /// - CreateDbs materializes only remaining coarse raw EDT memref captures into
-///   Core DB ops. Tiled/block-local access rewriting is an SDE MU/token
+///   ARTS DB ops. Tiled/block-local access rewriting is an SDE MU/token
 ///   responsibility and must not be rediscovered here.
 ///
 /// CreateDbs must not rediscover tensor/linalg partition policy.  Its
 /// remaining raw bridge is intentionally limited to a whole-storage DB ref
 /// (`db_ref[0]`) plus the original memref access. Structured/tiled layouts
-/// must lower through canonical MU/token/codelet form before Core.
+/// must lower through canonical MU/token/codelet form before ARTS.
 ///==========================================================================///
 
 #include "carts/Dialect.h"
@@ -180,7 +180,7 @@ static LogicalResult rewriteCoarseRawAccess(Operation *op, Value expectedRoot,
                                             Value dbPtr, OpBuilder &builder) {
   if (isa<polygeist::SubIndexOp>(op)) {
     return op->emitError(
-        "raw memref subindex reached Core DB materialization; SDE must "
+        "raw memref subindex reached ARTS DB materialization; SDE must "
         "rewrite tiled or sliced MU/token views before ARTS conversion");
   }
 
@@ -188,7 +188,7 @@ static LogicalResult rewriteCoarseRawAccess(Operation *op, Value expectedRoot,
   if (!access) {
     if (isa<memref::CopyOp>(op)) {
       return op->emitError(
-          "raw memref copy reached Core DB materialization; SDE/CODIR must "
+          "raw memref copy reached ARTS DB materialization; SDE/CODIR must "
           "materialize explicit MU/token copies before ARTS conversion");
     }
     return success();
@@ -196,7 +196,7 @@ static LogicalResult rewriteCoarseRawAccess(Operation *op, Value expectedRoot,
 
   if (expectedRoot && access->memref != expectedRoot) {
     return op->emitError(
-        "raw memref view/alias access reached Core DB materialization; "
+        "raw memref view/alias access reached ARTS DB materialization; "
         "SDE must rewrite accesses to token-local memref views before ARTS "
         "conversion");
   }
@@ -679,7 +679,7 @@ void CreateDbsPass::createDbAllocOps() {
       }
     }
 
-    /// Coarse is the only raw-memref bridge left in Core. If SDE authored a
+    /// Coarse is the only raw-memref bridge left in ARTS. If SDE authored a
     /// physical block layout, the corresponding MU/token/codelet materializer
     /// must have already rewritten the accesses before this pass.
     DbPhysicalLayoutPlan plan(PartitionMode::coarse);
