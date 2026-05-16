@@ -13,7 +13,6 @@
 #define ARTS_DIALECT_CORE_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
 
 #include "carts/dialect/arts/Transforms/db/DbLayoutPlan.h"
-#include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Operation.h"
@@ -27,13 +26,6 @@ namespace carts::arts {
 /// layout plan needed to create a block DB immediately.
 bool hasPhysicalDbLayoutPlan(Operation *op);
 
-/// Resolve structured plan attrs on `planSource` into a concrete DB rewrite
-/// plan for an allocation with the provided logical element extents.
-FailureOr<DbPhysicalLayoutPlan> resolvePhysicalDbLayoutPlan(Operation *planSource,
-                                                     ValueRange elementSizes,
-                                                     OpBuilder &builder,
-                                                     Location loc);
-
 /// Resolve explicit owner-dimension and physical-block-shape attrs into a
 /// concrete DB rewrite plan for an allocation with the provided logical element
 /// extents. This is for dialect boundaries that have SDE/CODIR-authored plan
@@ -42,21 +34,6 @@ FailureOr<DbPhysicalLayoutPlan>
 resolvePhysicalDbLayoutPlan(ArrayAttr ownerDimsAttr, ArrayAttr blockShapeAttr,
                             ValueRange elementSizes, OpBuilder &builder,
                             Location loc);
-
-/// Return true when a read task's owner layout names the same source owner
-/// dimensions but uses a different physical block shape. This is a layout
-/// translation case: Core should keep worker-local dependency windows and
-/// convert logical element windows into source DB block coordinates.
-bool hasReadOnlySourceLayoutMismatch(DbAllocOp sourceAlloc,
-                                     Operation *taskPlanSource,
-                                     const LoweringContractInfo &contract);
-
-/// Project the source allocation's physical block shape onto the contract's
-/// owner dimensions. Returns nullopt when source layout attrs cannot prove a
-/// compatible owner mapping.
-std::optional<SmallVector<int64_t, 4>>
-getSourceOwnerBlockShape(DbAllocOp sourceAlloc,
-                         const LoweringContractInfo &contract);
 
 } // namespace carts::arts
 } // namespace mlir

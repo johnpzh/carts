@@ -278,7 +278,6 @@ private:
                                 const DbPhysicalLayoutPlan &plan);
   void rewriteUsesInParentEdt(MemrefInfo &memrefInfo);
   Operation *findPhysicalLayoutPlanSource(Operation *alloc);
-  void projectStructuredPlanToDbValue(Operation *sourceOp, DbAllocOp dbAlloc);
   void rewriteUsesEverywhereWithPlan(Operation *alloc, DbAllocOp dbAlloc,
                                      const DbPhysicalLayoutPlan &plan);
 };
@@ -511,19 +510,6 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
   return selected;
 }
 
-void CreateDbsPass::projectStructuredPlanToDbValue(Operation *sourceOp,
-                                                   DbAllocOp dbAlloc) {
-  if (!sourceOp || !dbAlloc)
-    return;
-  copyPlanAttrs(sourceOp, dbAlloc.getOperation());
-  transferOperationContract(sourceOp, dbAlloc.getOperation());
-
-  OpBuilder::InsertionGuard guard(AC->getBuilder());
-  AC->setInsertionPointAfter(dbAlloc);
-  transferLoweringContract(sourceOp, dbAlloc.getPtr(), AC->getBuilder(),
-                           dbAlloc.getLoc());
-}
-
 ///===----------------------------------------------------------------------===///
 /// Allocation Type Inference
 ///===----------------------------------------------------------------------===///
@@ -725,7 +711,6 @@ void CreateDbsPass::createDbAllocOps() {
 
     projectSemanticContractToDbValue(alloc, dbAllocOp.getOperation(),
                                      dbAllocOp.getPtr());
-    projectStructuredPlanToDbValue(planSource, dbAllocOp);
 
     /// Initialize global DBs
     initializeGlobalDbIfNeeded(alloc, dbAllocOp, plan, allocType);

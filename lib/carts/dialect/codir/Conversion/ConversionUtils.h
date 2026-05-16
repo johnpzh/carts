@@ -395,12 +395,14 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
                   arts::ArtsPlanAsyncStrategyAttr::get(
                       ctx, convertAsyncStrategy(async.getValue())));
   }
-  if (auto ownerDims = codelet.getPlanOwnerDimsAttr())
-    task->setAttr("planOwnerDims", ownerDims);
-  if (auto physicalOwnerDims = codelet.getPhysicalOwnerDimsAttr())
-    task->setAttr("planOwnerDims", physicalOwnerDims);
-  if (auto blockShape = codelet.getPhysicalBlockShapeAttr())
-    task->setAttr("planPhysicalBlockShape", blockShape);
+  ArrayAttr physicalBlockShape = codelet.getPhysicalBlockShapeAttr();
+  if (physicalBlockShape) {
+    if (auto physicalOwnerDims = codelet.getPhysicalOwnerDimsAttr())
+      setPlanOwnerDimsAttr(task.getOperation(), physicalOwnerDims);
+    setPlanPhysicalBlockShapeAttr(task.getOperation(), physicalBlockShape);
+  } else if (auto ownerDims = codelet.getPlanOwnerDimsAttr()) {
+    setPlanOwnerDimsAttr(task.getOperation(), ownerDims);
+  }
   if (auto workerSlice = codelet.getLogicalWorkerSliceAttr())
     task->setAttr("planLogicalWorkerSlice", workerSlice);
   if (auto haloShape = codelet.getPhysicalHaloShapeAttr())

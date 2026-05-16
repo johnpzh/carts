@@ -155,6 +155,15 @@ Important current facts:
 - The Core raw DB indexers have been removed. `CreateDbs` may only materialize
   coarse whole-storage raw memrefs; a blocked/tiled raw memref reaching it is
   a boundary error because SDE/CODIR must own the token-local access rewrite.
+- `verify-arts-objects-only` now also guards the distributed boundary: an
+  `internode` ARTS task may not depend on a coarse single-block aggregate user
+  DB. If that happens, the fix belongs in SDE/CODIR MU/token/codelet
+  materialization, not in late ARTS `CreateDbs` recovery.
+- CODIR may carry generic scheduling/distribution intent before storage is
+  ready, but CODIR-to-ARTS only turns that intent into `internode` EDT routing
+  when physical owner/block storage metadata is present (or the codelet has no
+  DB dependencies). Planned-but-unmaterialized user DBs stay local instead of
+  creating remote coarse DB traffic.
 - The tensor raising/lowering passes (`RaiseMemrefToTensor`, `RaiseToTensor`,
   `LowerToMemref`) are no longer in any live pass list, but the source still
   lives under `lib/carts/dialect/sde/Transforms/state/raising/`. M3
@@ -769,8 +778,9 @@ attribution and focused evidence. The highest-leverage post-M6 slices are:
   currently demoted stencil/reduction/nested-memref plans when token-local
   rewrites are available. The raw bridge must stay coarse and guarded until it
   is deleted. Highest-priority correctness gaps are explicit OpenMP reduction
-  materialization before CODIR and opaque full-memref call handling inside
-  token-local codelets.
+  materialization before CODIR, opaque full-memref call handling inside
+  token-local codelets, and host whole-view initialization/verification over
+  block DB storage so distributed kernels do not fall back to coarse roots.
 
 Use [`utility-ownership.md`](./plans/utility-ownership.md) and the
 `check-utils` skill before adding or moving helper code in any of the above

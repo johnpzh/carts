@@ -220,6 +220,14 @@ Current implementation:
   marked multi-DB allocations:
   - route = `linearIndex % artsGetTotalNodes()`
   - unmarked allocations keep the existing route behavior.
+- Boundary guard: after CODIR-to-ARTS materialization, an `internode` task must
+  not depend on a coarse single-block aggregate user DB. This keeps distributed
+  execution from silently scaling one large DB through remote task traffic.
+  SDE/CODIR must materialize the block DB layout before ARTS binds routes.
+- CODIR-to-ARTS only binds DB-dependent codelets to `internode` placement when
+  the codelet carries physical owner/block storage metadata. Distribution
+  intent without a materialized storage plan remains local until the SDE/CODIR
+  MU/token path can create shaped DBs.
 
 Current eligibility policy is intentionally conservative:
 - allocation is host-level (outside `arts.edt`)
@@ -249,6 +257,11 @@ Future work:
 - distributed free policy beyond current `artsShutdown()` behavior
 - writer-aware ownership (align DB route with writer EDT node)
 - broader eligibility (stencil arrays, global initializers with distributed init EDTs)
+- post-allocation distribution for host-initialized data:
+  - scatter writable owner blocks from a temporary root DB when initialization is
+    naturally single-node
+  - replicate read-only/read-mostly DBs after initialization, using the runtime
+    duplicate path once lowering emits it
 
 ## 7. IR Contract
 

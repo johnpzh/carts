@@ -74,6 +74,10 @@ mode.
   (currently round-robin).
 - `--distributed-db` also enables the distributed init path (reserve in
   `initPerNode`, owner-local create in `initPerWorker`) for marked DBs.
+- A coarse single-block aggregate DB is not an acceptable backing store for an
+  internode task. The verifier treats that as a dialect-boundary error, because
+  ARTS cannot recover token-local block views after SDE/CODIR skipped
+  materialization.
 
 So, partitioning decides *shape*; distributed ownership decides *which node owns
 each shaped DB entry*.

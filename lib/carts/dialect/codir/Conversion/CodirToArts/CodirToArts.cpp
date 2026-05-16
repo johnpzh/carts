@@ -33,6 +33,14 @@ struct ConvertCodirToArtsPass
            codelet.getPhysicalBlockShapeAttr();
   }
 
+  bool hasDistributedLaunchStoragePlan(codir::CodeletOp codelet) const {
+    if (!hasGenericWorkerPlan(codelet))
+      return false;
+    if (codelet.getDeps().empty())
+      return true;
+    return hasCodirPhysicalOwnerSlicePlan(codelet);
+  }
+
   scf::ForOp findGenericWorkerDispatchLoop(codir::CodeletOp codelet) const {
     for (Operation *parent = codelet ? codelet->getParentOp() : nullptr; parent;
          parent = parent->getParentOp()) {
@@ -49,7 +57,7 @@ struct ConvertCodirToArtsPass
     ArtsLaunchPolicy policy;
     ModuleOp module = codelet ? codelet->getParentOfType<ModuleOp>() : nullptr;
     if (!module || !hasArtsInterNodeRuntime(module) ||
-        !hasGenericWorkerPlan(codelet))
+        !hasDistributedLaunchStoragePlan(codelet))
       return policy;
 
     scf::ForOp loop = findGenericWorkerDispatchLoop(codelet);
