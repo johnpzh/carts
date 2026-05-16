@@ -11,7 +11,7 @@ module attributes {arts.runtime_total_nodes = 1 : i64, arts.runtime_total_worker
     %route = arith.constant -1 : i32
 
     %guid, %ptr = arts.db_alloc[<in>, <heap>, <read>, <stencil>, <stencil>] route(%route : i32) sizes[%c4] elementType(f64) elementSizes[%c4] : (memref<?xi64>, memref<?xmemref<?xf64>>)
-    %acq_guid, %acq_ptr = arts.db_acquire[<in>] (%guid : memref<?xi64>, %ptr : memref<?xmemref<?xf64>>) partitioning(<stencil>, indices[], offsets[%c0, %c2], sizes[%c1, %c1]) {partition_offsets_segments = array<i32: 1, 2>, partition_sizes_segments = array<i32: 1, 1>} -> (memref<?xi64>, memref<?xmemref<?xf64>>)
+    %acq_guid, %acq_ptr = arts.db_acquire[<in>] (%guid : memref<?xi64>, %ptr : memref<?xmemref<?xf64>>) partitioning(<stencil>, indices[], offsets[%c0, %c2], sizes[%c1, %c1]), indices[] {partition_offsets_segments = array<i32: 1, 2>, partition_sizes_segments = array<i32: 1, 1>} -> (memref<?xi64>, memref<?xmemref<?xf64>>)
     arts.db_release(%acq_ptr) : memref<?xmemref<?xf64>>
     arts.db_free(%guid) : memref<?xi64>
     arts.db_free(%ptr) : memref<?xmemref<?xf64>>

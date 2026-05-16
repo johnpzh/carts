@@ -266,7 +266,7 @@ def DbAcquireOp : Arts_Op<"db_acquire", [AttrSizedOperandSegments]> {
         (`,` `sizes` `[` $partition_sizes^ `]`)?
       `)`
     )?
-    (`,` `indices` `[` $indices^ `]`)?
+    `,` `indices` `[` $indices `]`
     (`,` `offsets` `[` $offsets^ `]`)?
     (`,` `sizes` `[` $sizes^ `]`)?
     ( `bounds_valid` `(` $bounds_valid^ `)` )?
