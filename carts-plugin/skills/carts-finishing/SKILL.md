@@ -51,10 +51,10 @@ When invoked (default action `next`):
 |---|---|---|
 | 0 (task #1) | decision | Use `AskUserQuestion` for the 5 open charter questions in `references/dialect-charter.md` "Open questions". Save answers under `docs/architecture/charter-decisions.md`. |
 | 1 (#2) | baseline | Run `dekk carts test`, `dekk carts test --suite e2e`, `dekk carts benchmarks run --size small`. Snapshot to `.results/baseline-YYYY-MM-DD.json`. Add multinode lit rule per `references/phase-plan.md` Phase 1. |
-| 2 (#3) | targeted-fix | Edit `lib/carts/dialect/arts/Analysis/heuristics/PartitioningHeuristics.cpp` near line 706. Add depth guard. Test against the 8 affected samples. |
+| 2 (#3) | retired diagnostic | The monolithic partitioning heuristic pass is gone. If metadata-copy recursion or DB-mode churn reappears, inspect the live `copyArtsMetadataAttrs` call sites, `DbAnalysis`, and `DbTransformsPass`; do not recreate the retired partitioning layer. |
 | 3 (#4) | targeted-fix | Edit `lib/carts/dialect/sde/Conversion/PolygeistToSde/MemrefNormalization.cpp` first; `CreateDbs.cpp` is only the ARTS coarse raw bridge and boundary guard. The fix is in shape normalization, NOT in DB partitioning. See `references/triage-rubric.md` anti-pattern #1. |
 | 4 (#5) | per-item iteration | One sample at a time. Use the per-item workflow below. |
-| 5 (#6) | targeted-fix | Edit `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp:74-92`. Add `hasEnoughDistributedWork()` gates for elementwise/matmul/reduction. |
+| 5 (#6) | targeted-fix | Keep SDE distribution planning target-neutral. Add or adjust distributed eligibility in ARTS DB ownership/refinement so ARTS consumes SDE/CODIR contracts and abstract-machine topology without pushing topology decisions back into SDE or CODIR. |
 | 6 (#7) | per-item iteration | One sample at a time, multinode. See `references/multinode-failures.md` before opening any file. |
 | 7 (#8) | baseline | Re-run benchmark suite single-node. Document each regression vs the 2026-03-11 snapshot. |
 | 8 (#9) | per-item iteration | One benchmark at a time, multinode. Same workflow as Phase 6. |
@@ -99,7 +99,7 @@ This skill cites but does not duplicate:
 - `docs/architecture/architecture-reaudit-2026-04-11.md`, `architecture-gap-analysis-2026-04-11.md` — audit findings
 - `docs/compiler/pipeline.md` — current 16+2 stage pipeline
 - `docs/compiler/sample-suite-triage.md` — current sample status (2026-04-13 snapshot)
-- `docs/compiler/cps-failure-surfaces.md`, `ownership-proof-gaps.md` — failure taxonomy
+- `tools/compile/Compile.cpp` plus ARTS DB/ownership implementation anchors — current failure taxonomy lives with the pipeline and refinement code
 
 **If any project doc disagrees with this skill, the project doc wins.** Update the skill to match. The references in this skill are distilled rubrics meant to be fast to consult during iteration; the project docs are authoritative.
 

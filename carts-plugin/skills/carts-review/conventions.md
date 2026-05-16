@@ -42,8 +42,9 @@ rg -n '^static .*\\(' lib/arts include/arts --glob '*.cpp' --glob '*.h'
 ## File Placement
 
 - SDE semantics: `lib/carts/dialect/sde`.
-- Core DB/EDT/epoch/analysis: `lib/carts/dialect/core`.
-- Runtime-shaped lowering: `lib/carts/dialect/rt`.
+- CODIR codelet isolation: `lib/carts/dialect/codir`.
+- ARTS DB/EDT/epoch/analysis: `lib/carts/dialect/arts`.
+- ARTS-RT runtime-shaped lowering: `lib/carts/dialect/arts-rt`.
 - Shared utilities: `include/carts/utils`, `lib/carts/utils`, or dialect-specific
   support utilities when the helper is not globally meaningful.
 

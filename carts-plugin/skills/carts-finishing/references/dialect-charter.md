@@ -34,7 +34,7 @@ This file is a fast-lookup distillation. If it disagrees with the docs above, th
 
 **Forbidden:**
 - Touching any `arts.*` op
-- Including any header from `core/Analysis` or `core/Transforms`
+- Including any header from retired ARTS-era path aliases
 - Baking ARTS-specific runtime semantics into decisions (decisions should be expressible as portable contracts)
 
 ### CODIR (`codir.*`) — Codelet isolation
@@ -61,7 +61,7 @@ objects.
 - DBs: alloc, partition, distributed-ownership marking, mode tightening, scratch elimination
 - EDTs: structural opt, ICM, distribution contract realization, orchestration
 - Scope: local vs distributed, using abstract-machine analysis
-- Implementation loops: local `scf.for` control flow inside concrete Core objects
+- Implementation loops: local `scf.for` control flow inside concrete ARTS objects
 - Epochs: creation, CPS scheduling, optimization
 - Contract attributes: encode SDE decisions for downstream consumption
 
@@ -70,7 +70,7 @@ tensor/linalg carriers survive the SDE-to-CODIR / CODIR-to-ARTS boundary.
 
 **Forbidden:**
 - Re-deriving classifications SDE already stamped (Invariant 5)
-- Emitting `arts_rt.*` ops before stage 16/17
+- Emitting `arts_rt.*` ops before `pre-lowering`
 - Performing semantic analysis from scratch (consume SDE contracts instead)
 
 ### ARTS-RT (`arts_rt.*`) — Runtime API mapping
@@ -97,9 +97,9 @@ These are placement rules. If you are tempted to break one, update the charter f
 
 3. **ARTS-RT has zero semantic deps on ARTS/SDE.** ARTS-RT passes only touch `arts_rt.*` ops. If an ARTS-RT pass needs to inspect ARTS semantics, the pass belongs in ARTS.
 
-4. **SDE does not include any header from `core/Analysis/` or `core/Transforms/`.** Mechanical check; grep for it.
+4. **SDE does not include any header from retired ARTS-era path aliases.** Mechanical check; grep for old path aliases.
 
-5. **Cost-model-driven decisions belong in the *decision-owner*, not the *realizer*.** SDE stamps a contract (e.g., tile geometry); core consumes it. If both compute the same thing, one is wrong.
+5. **Cost-model-driven decisions belong in the *decision-owner*, not the *realizer*.** SDE stamps a contract (e.g., tile geometry); ARTS consumes it. If both compute the same thing, one is wrong.
 
 ## Currently-known violations (2026-04-11 audit)
 
@@ -107,9 +107,9 @@ These do not block correctness but should be cleaned up in Phase 9. Cite when de
 
 | # | Violation | Files | Fix |
 |---|---|---|---|
-| 1 | Wavefront family detection in core, should be SDE (Invariant 5) | `lib/carts/dialect/arts/Analysis/heuristics/StructuredKernelPlanAnalysis.cpp`, `core/Transforms/dep/Seidel2DWavefrontPattern.cpp` | Move family + tile geometry into `PatternAnalysis` or a later SDE wavefront-planning pass; refactor core realizers to consume the contract. |
-| 2 | KernelTransforms re-detects elementwise/stencil/matmul (Invariant 5) | `lib/carts/dialect/arts/Transforms/kernel/KernelTransforms.cpp` | Delete `ElementwisePipelinePattern` (redundant); refactor `StencilTilingNDPattern` and `MatmulReductionPattern` to consume SDE contracts. |
-| 3 | DepTransforms creates `EpochOp`/`EdtOp` from re-detected wavefront/Jacobi patterns (Invariants 1 & 5) | `lib/carts/dialect/arts/Transforms/dep/DepTransforms.cpp`, `core/Transforms/dep/Seidel2DWavefrontPattern.cpp` | Enhance `PatternAnalysis` and SDE dependency planning; refactor `DepTransforms` to consume lowered SDE contracts. |
+| 1 | Wavefront family detection in ARTS, should be SDE (Invariant 5) | `lib/carts/dialect/sde/Transforms/state/PatternAnalysis.cpp`, `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`, `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp`, `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` | Move family + tile geometry into `PatternAnalysis` or a later SDE wavefront-planning pass; refactor ARTS realizers to consume the contract. |
+| 2 | ARTS re-detects elementwise/stencil/matmul facts that SDE already proved (Invariant 5) | `lib/carts/dialect/sde/Transforms/state/PatternAnalysis.cpp`, `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp`, `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` | Refactor ARTS refinement to consume SDE/CODIR contracts instead of reclassifying source semantics. |
+| 3 | ARTS creates epoch/EDT structure from re-detected wavefront/Jacobi patterns (Invariants 1 & 5) | `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`, `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp`, `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` | Enhance `PatternAnalysis` and SDE dependency planning; refactor ARTS materialization/refinement to consume lowered SDE contracts. |
 | 4 | Doc disagreement: `op-classification.md` says `arts.lowering_contract` and `arts.omp_dep` should migrate to SDE; `pass-placement.md` says the live pipeline keeps planning inside `sde-planning`. | `docs/architecture/op-classification.md` vs `docs/architecture/pass-placement.md` | `pass-placement.md` is current; the migration is aspirational and tracked under violation #1. |
 
 ## Open questions (Phase 0 / task #1)
@@ -118,9 +118,9 @@ The user must decide these before further restructuring. Answers go to `docs/arc
 
 1. **DestinationStyleOpInterface on SDE ops.** Make CU/SU ops implement `ins`/`outs` for tensor composition, or keep transient `linalg.generic` carriers? Recommendation: keep transient until benchmarks are green, then upgrade. (Effort if upgrading: 8–10h.)
 
-2. **Scope of `PatternAnalysis`.** Does it own ALL semantic pattern approval (incl. wavefront/Jacobi), or split later execution planning into a separate SDE wavefront pass? Recommendation: keep pattern approval centralized; otherwise core keeps re-deriving and Invariant 5 stays broken.
+2. **Scope of `PatternAnalysis`.** Does it own ALL semantic pattern approval (incl. wavefront/Jacobi), or split later execution planning into a separate SDE wavefront pass? Recommendation: keep pattern approval centralized; otherwise ARTS keeps re-deriving and Invariant 5 stays broken.
 
-3. **Plug `ARTSCostModel` into all heuristics.** ~20 hardcoded thresholds remain in `PartitioningHeuristics`, `DistributionHeuristics`, `DbHeuristics`. Effort 12–16h. Recommendation: defer until phase 8 is green; cost model only matters once structural plumbing is correct.
+3. **Plug `ARTSCostModel` into live decision owners.** Do not resurrect retired monolithic partition/distribution heuristic passes; remaining thresholds belong in `DbHeuristics`, SDE planning, or ARTS ownership/refinement according to the contract they decide. Effort 12–16h. Recommendation: defer until phase 8 is green; cost model only matters once structural plumbing is correct.
 
 4. **Backend-neutral SDE narrative.** Docs aspire to multi-backend (Legion / StarPU / GPU) but namespace, schedule kinds, and conversion target are all ARTS-tied. Keep aspiration or reframe as ARTS-optimized? Recommendation: reframe; pretending otherwise misleads contributors.
 
@@ -132,15 +132,15 @@ The user must decide these before further restructuring. Answers go to `docs/arc
 |---|---|
 | A loop classification (stencil, matmul, reduction, etc.) | SDE (`PatternAnalysis`) |
 | A reduction strategy choice (atomic / tree / accumulate) | SDE (`ReductionStrategy`) |
-| A scope choice (local vs distributed) | Core, using abstract-machine analysis |
+| A scope choice (local vs distributed) | ARTS, using abstract-machine analysis |
 | A schedule choice (static / dynamic / guided) | SDE (`ScheduleRefinement`) |
-| Tile / chunk / halo geometry **as a contract** | SDE (decision); core (realization) |
-| DB allocation / acquire / release / partitioning | core |
-| EDT structural rewrite, fusion, distribution | core |
-| Epoch creation | core |
+| Tile / chunk / halo geometry **as a contract** | SDE (decision); ARTS (realization) |
+| DB allocation / acquire / release / partitioning | ARTS |
+| EDT structural rewrite, fusion, distribution | ARTS |
+| Epoch creation | ARTS |
 | CPS legality, candidate grouping, and dataflow/token planning | SDE |
-| CPS continuation materialization | core/RT, consuming SDE plans |
-| `arts_rt.edt_create` argument lowering | RT |
-| LLVM-near final cleanup (DataPtrHoisting, GuidRangCallOpt) | RT |
-| Polygeist→MLIR frontend bridge | core/Conversion (NOT core/Transforms) |
+| CPS continuation materialization | ARTS/ARTS-RT, consuming SDE plans |
+| `arts_rt.edt_create` argument lowering | ARTS-RT |
+| LLVM-near final cleanup (DataPtrHoisting, GuidRangCallOpt) | ARTS-RT |
+| Polygeist→MLIR frontend bridge | frontend conversion, before SDE planning |
 | `linalg.*`, `tensor.*` ops | SDE only, transient |

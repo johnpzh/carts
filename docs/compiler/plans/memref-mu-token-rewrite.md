@@ -16,7 +16,7 @@ Changing only CU/SU loop shape is not a tiling transformation. If the MU storage
 and codelet accesses still address the original whole memref incorrectly, the
 compiler either loses locality or needs late ARTS layout recovery. That is the
 source of much of the current complexity around `CreateDbs` and DB indexers.
-The Core raw indexers have now been removed; blocked/tiled accesses must be
+The ARTS raw indexers have now been removed; blocked/tiled accesses must be
 handled by this SDE/CODIR rewrite path.
 
 ## Current Surface

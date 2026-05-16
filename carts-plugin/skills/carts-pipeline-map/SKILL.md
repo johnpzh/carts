@@ -15,7 +15,7 @@ order. The compiler source and live manifest beat docs.
    dekk carts pipeline --json
    ```
 2. Use `--pipeline=<stage>` to stop after a stage.
-3. Use `--start-from=<stage>` only with core stages, and ensure the start stage
+3. Use `--start-from=<stage>` only with main pipeline stages, and ensure the start stage
    is not after the stop stage.
 4. Use `dekk carts compile <file> -O3 --all-pipelines -o .carts/outputs/stages/<case>`
    when stage output, pass dumps, or dialect-boundary artifacts are needed.

@@ -49,5 +49,5 @@ you are specifically fixing outdated docs.
   rejects any surviving SDE operation.
 - `post-db-refinement` runs DB/EDT refinements and contract validation after
   DB mode tightening.
-- `pre-lowering` lowers Core DB/EDT/epoch objects to RT-shaped operations and
+- `pre-lowering` lowers ARTS DB/EDT/epoch objects to ARTS-RT-shaped operations and
   verifies the result with `VerifyPreLowered`.

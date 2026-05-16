@@ -41,8 +41,8 @@ shared utilities across 13 files. See `/refactor-utils` for the full catalog.
 
 ## Key Source Locations
 
-- Core transforms: `lib/carts/dialect/arts/Transforms/`
-- ArtsToRt conversion: `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/`
+- ARTS transforms: `lib/carts/dialect/arts/Transforms/`
+- ARTS-RT pre-lowering: `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/`
 - SDE transforms: `lib/carts/dialect/sde/Transforms/`
 - LLVM conversion: `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/`
 - Analysis: `lib/carts/dialect/arts/Analysis/`
@@ -52,10 +52,10 @@ shared utilities across 13 files. See `/refactor-utils` for the full catalog.
 
 ## Creating a New Pass
 
-1. Create source in the appropriate dialect directory (`lib/carts/dialect/{core,rt,sde}/Transforms/`)
+1. Create source in the appropriate dialect directory (`lib/carts/dialect/{sde,codir,arts,arts-rt}/...`)
 2. Add declaration in `include/carts/passes/Passes.h`
 3. Register in pipeline at appropriate stage in `tools/compile/Compile.cpp`
-4. Add lit test in the co-located `test/` directory (`lib/carts/dialect/{core,rt,sde}/test/`)
+4. Add lit test in the co-located `test/` directory (`lib/carts/dialect/{sde,codir,arts,arts-rt}/test/`)
 5. `dekk carts format` then `dekk carts test --suite contracts`
 
 ## Thread Safety

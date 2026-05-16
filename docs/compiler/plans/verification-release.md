@@ -149,7 +149,7 @@ The restructuring is complete when:
 - EDTs are isolated from above and lower from explicit deps/params;
 - tensor-carrier paths are gone for supported cases;
 - raw-memref `CreateDbs` is removed or limited to a coarse bridge plus
-  unsupported diagnostics for non-coarse inputs, and Core DB indexer
-  removed DB indexer paths stay removed;
+  unsupported diagnostics for non-coarse inputs, and removed ARTS DB indexer
+  paths stay removed;
 - maintained benchmarks are correctness-clean and classified;
 - no late ARTS policy decision belongs in SDE or CODIR.

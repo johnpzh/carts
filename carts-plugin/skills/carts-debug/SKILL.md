@@ -98,7 +98,7 @@ dekk carts benchmarks run <suite/name> --size large --timeout 120 \
   --results-dir .carts/outputs/<topic>-thread-triage
 ```
 
-5. If the crash only appears at high thread count, inspect Core/RT scheduling,
+5. If the crash only appears at high thread count, inspect ARTS/ARTS-RT scheduling,
    dependency release, DB lifetime, and task resource assumptions before
    changing SDE semantic planning.
 6. If the crash appears at one thread, inspect lowering shape, pointer

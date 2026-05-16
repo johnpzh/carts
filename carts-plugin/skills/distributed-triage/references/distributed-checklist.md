@@ -24,7 +24,7 @@ Look for:
 - `distribution_kind`, `distribution_pattern`, `distribution_version`
 - writable task acquires that should preserve owner hints
 - `DbAllocOp` instances marked `distributed`
-- cases where SDE distribution planning should have produced distributed Core
+- cases where SDE distribution planning should have produced distributed ARTS
   DB/EDT contracts but did not
 
 ## 3. Ownership Eligibility Questions

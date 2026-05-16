@@ -2,7 +2,7 @@
 
 Start here when the symptom depends on pass order, graph freshness, or stale metadata.
 
-## Core APIs
+## ARTS APIs
 
 - `include/carts/dialect/arts/Analysis/AnalysisDependencies.h`
 - `include/carts/dialect/arts/Analysis/AnalysisManager.h`

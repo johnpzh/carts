@@ -43,15 +43,15 @@ Phases are ordered to minimize attribution noise:
 
 **Why now:** locks the green/red snapshot before any fix. Every later regression-guard run compares against this.
 
-## Phase 2 — Recursion guard on copyArtsMetadataAttrs (task #3)
+## Phase 2 — Retired metadata-copy diagnostic (task #3)
 
 **Type:** targeted-fix
 
-**Stop condition:** the 8 affected samples (concurrent, jacobi/for, mixed_access, mixed_orientation, parallel_for/{loops,reduction,single}, rows/chunks) transition from crash to legible diagnostic. Regression-guard passes.
+**Stop condition:** no live skill or doc points agents at the deleted monolithic partitioning layer. Regression-guard passes if code changes are needed.
 
-**Action:** edit `lib/carts/dialect/arts/Analysis/heuristics/PartitioningHeuristics.cpp` near line 706. Add a depth counter + assertion when `copyArtsMetadataAttrs` recurses past a sane depth.
+**Action:** do not recreate the retired partitioning pass. If metadata-copy recursion or DB-mode churn reappears, inspect live `copyArtsMetadataAttrs` call sites, `DbAnalysis`, and `DbTransformsPass` contract persistence.
 
-**Why now:** turns 8 crashes into diagnostics. Helps validate that phase 3 fixes the right thing.
+**Why now:** prevents future agents from patching a dead surface instead of the live producer/rewrite contract.
 
 **Effort:** ~1h.
 
@@ -63,11 +63,11 @@ Phases are ordered to minimize attribution noise:
 
 **Actions:**
 
-1. Edit `lib/carts/dialect/arts/Transforms/db/CreateDbs.cpp` `createDbAcquire()` to recognize heap-allocated arrays (`int *A = malloc(N*sizeof(int))` → `memref<?xmemref<?xT>>`) and produce N-element DBs of T instead of 1-element DBs holding a pointer.
+1. Fix heap-array shape before ARTS in `lib/carts/dialect/sde/Conversion/PolygeistToSde/MemrefNormalization.cpp` and, where OpenMP lowering owns the fact, `lib/carts/dialect/sde/Conversion/OmpToSde/ConvertOpenMPToSde.cpp`.
 
-2. Edit `lib/carts/dialect/sde/Conversion/PolygeistToSde/MemrefNormalization.cpp` to handle `memref<?xmemref<?>>` as a first-class heap-array pattern before ARTS sees it.
+2. If a supported case still needs tiled/block materialization, extend direct CODIR-to-ARTS token-local materialization instead of expanding `CreateDbs`. `CreateDbs.cpp` is only the guarded coarse raw-memref bridge and must reject non-coarse raw layout plans.
 
-3. **Critical (anti-pattern 1):** the fix is in shape normalization. Do NOT touch `DbPartitioning::downgrade_to_coarse` or any partition-mode-selection heuristic. That layer is responding correctly to the wrong input shape; fixing it there would silently mask the issue.
+3. **Critical (anti-pattern 1):** the fix is in shape normalization or direct CODIR-to-ARTS materialization. Do NOT touch DB mode selection to mask the input shape. That layer is responding correctly to the wrong input shape; fixing it there would silently preserve coarse wrappers.
 
 **Effort:** ~7h primary + secondary.
 
@@ -90,13 +90,13 @@ Phases are ordered to minimize attribution noise:
 
 **Order suggestion:** simplest first (parallel, task), then elementwise, then matmul, then reduction, then stencil, then wavefront. Each "easy" green builds confidence the rubric is working before tackling harder cases.
 
-## Phase 5 — Core distributed ownership gates (task #6)
+## Phase 5 — ARTS distributed ownership gates (task #6)
 
 **Type:** targeted-fix
 
 **Stop condition:** `DbDistributedOwnership` marks DBs with the `distributed` UnitAttr for elementwise, matmul, and reduction classifications when `--distributed-db` is set. The 9 originally-passing samples (now extended to all 26 if phase 4 is green) compile under `-O3 --distributed-db`.
 
-**Action:** keep SDE distribution planning target-neutral and add the distributed eligibility gate in Core ownership/refinement. Core should consume SDE classification, window, and physical layout contracts, then use abstract-machine analysis to decide whether the realized DB/EDT shape is local or distributed.
+**Action:** keep SDE distribution planning target-neutral and add the distributed eligibility gate in ARTS ownership/refinement. ARTS should consume SDE/CODIR classification, window, and physical layout contracts, then use abstract-machine analysis to decide whether the realized DB/EDT shape is local or distributed.
 
 **Effort:** ~2h.
 
@@ -150,14 +150,14 @@ Phases are ordered to minimize attribution noise:
 
 1. **2h** — Confirm `SdeMemrefNormalization` handles heap-array patterns before `CreateDbs`; `CreateDbs` should stay a guarded coarse raw bridge.
 
-2. **1h** — Verify `ScalarReplacement` lives in `rt/Transforms/` (the audit reports it as already moved; confirm and remove any stale references in `core/`).
+2. **1h** — Verify `ScalarReplacement` lives under the ARTS-RT tree and remove any stale references to retired path names.
 
 3. **4h** — Keep active SDE passes wired in `Compile.cpp`; obsolete
    state/codelet and tensor raising/lowering sources have been removed.
 
-4. **6h** — Add SDE-contract early-exit guards to the 4 ARTS PatternPipeline passes (StencilTilingND, MatmulReduction, LoopReordering, DepTransforms) so they defer when SDE has stamped a contract. Per `docs/plan.md` Phase 3A–3D.
+4. **6h** — Add SDE-contract early-exit guards to ARTS refinement passes so they defer when SDE has stamped a contract. Per `docs/plan.md` Phase 3A–3D.
 
-5. **12h** — Decouple semantic detection from structural rewriting in DepTransforms / KernelTransforms. Move wavefront / Jacobi family detection into SDE (extend `PatternAnalysis` or add a later SDE wavefront-planning pass). Make core passes consumers, not detectors. Enforces Invariant 5.
+5. **12h** — Decouple semantic detection from structural rewriting in ARTS DB/EDT refinement. Move wavefront / Jacobi family detection into SDE (extend `PatternAnalysis` or add a later SDE wavefront-planning pass). Make ARTS passes consumers, not detectors. Enforces Invariant 5.
 
 Each sub-step must pass regression-guard against ALL samples and benchmarks in single-node and multinode.
 
@@ -171,7 +171,7 @@ Each sub-step must pass regression-guard against ALL samples and benchmarks in s
 
 **Actions:**
 
-1. Distill `docs/compiler/fix-attribution-log.md` into `docs/compiler/cps-failure-surfaces.md` and `ownership-proof-gaps.md` updates.
+1. Distill `docs/compiler/fix-attribution-log.md` into live plan updates and implementation anchors for CPS/ownership failures.
 2. Update `docs/architecture/pass-placement.md` with final placement rules.
 3. Update `docs/plan.md` status sections (replace 2026-04-12 snapshot with current).
 4. Promote `docs/compiler/sample-suite-triage.md` from "snapshot" to "verified green baseline."
@@ -185,7 +185,7 @@ Each sub-step must pass regression-guard against ALL samples and benchmarks in s
 | 0 | none — direct user dialogue |
 | 1 | none — direct CLI |
 | 2 | `carts-pass-dev` if the depth-guard pattern is non-obvious |
-| 3 | `carts-pass-dev` for the CreateDbs change; `carts-stage-diff` to verify the IR change at stage 5 |
+| 3 | `carts-pass-dev` for the SDE normalization / CODIR materialization change; `carts-stage-diff` to verify named stages `sde-input-normalization`, `sde-planning`, `sde-to-codir`, `codir-to-arts`, and `create-dbs` |
 | 4 | per item: `carts-miscompile-triage`, `carts-debug`, `carts-analysis-triage`, `carts-stage-diff` |
 | 5 | `carts-pass-dev` for the gate additions |
 | 6 | per item: `carts-distributed-triage` (always start here for multinode), then `carts-miscompile-triage` if the symptom reduces to wrong output |

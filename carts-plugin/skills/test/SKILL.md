@@ -23,8 +23,8 @@ dekk carts lit -- --filter=pattern lib/carts/dialect/    # Filter by pattern
 ## Test Organization
 
 - `lib/carts/dialect/sde/test/` — SDE dialect lit tests (stages 1-2)
-- `lib/carts/dialect/arts/test/` — Core dialect lit tests (stages 3-16)
-- `lib/carts/dialect/arts-rt/test/` — RT dialect lit tests (stages 17-18)
+- `lib/carts/dialect/arts/test/` — ARTS dialect lit tests
+- `lib/carts/dialect/arts-rt/test/` — ARTS-RT dialect lit tests
 - `tests/cli/` — CLI flag tests
 - `tests/verify/` — Cross-dialect verifier tests
 - `samples/` — Integration tests (end-to-end compile + run)

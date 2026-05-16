@@ -79,8 +79,8 @@ git add 'lib/carts/dialect/*/test/Output/' 'tests/*/Output/'
 ## Key Directories
 
 ```
-lib/carts/dialect/arts/test/Output/                  # Core dialect fixtures
-lib/carts/dialect/arts-rt/test/Output/                    # RT dialect fixtures
+lib/carts/dialect/arts/test/Output/                  # ARTS dialect fixtures
+lib/carts/dialect/arts-rt/test/Output/               # ARTS-RT dialect fixtures
 lib/carts/dialect/sde/test/Output/                   # SDE dialect fixtures
 lib/carts/dialect/arts/test/partitioning/safety/Output/ # Partition safety fixtures
 tests/verify/Output/                                # Verifier fixtures

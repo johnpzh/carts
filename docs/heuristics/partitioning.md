@@ -13,7 +13,7 @@ Related guide:
 
 ---
 
-## 0) The Core Distinction: Allocation Layout vs Acquire Range
+## 0) The Key Distinction: Allocation Layout vs Acquire Range
 
 Partitioning has two orthogonal concepts:
 
@@ -90,10 +90,10 @@ Partitioning is intentionally split into roles. The rule is:
 
 - SDE `PatternAnalysis`, tiling, and distribution planning decide policy while
   source/tensor facts are visible.
-- Core acquire/alloc analyses validate and refine the already-authored DB shape.
+- ARTS acquire/alloc analyses validate and refine the already-authored DB shape.
 - `CreateDbs` bridges only coarse raw memrefs that have not reached direct
   MU/token materialization.
-- Blocked/tiled raw memrefs are rejected at Core; SDE/CODIR must rewrite those
+- Blocked/tiled raw memrefs are rejected at ARTS; SDE/CODIR must rewrite those
   accesses into token-local memref coordinates before ARTS.
 
 Flow of responsibility:
@@ -108,12 +108,12 @@ What each layer owns:
   `DbAcquirePartitionFacts`.
 - DbAllocNode: aggregation across acquires for one allocation.
 - SDE `PatternAnalysis`/distribution/tiling passes: policy. They prove owner
-  dims, task grain, access windows, and physical block shape before Core.
+  dims, task grain, access windows, and physical block shape before ARTS.
 - `CreateDbs`: temporary coarse bridge. It may create a whole-storage
   `arts.db_alloc`/`arts.db_acquire` for direct raw memref load/store uses, but
   it must not consume blocked/tiled SDE layout plans.
 - SDE/CODIR token-local rewrite: execution for tiled layouts. It localizes
-  memref loads/stores using the approved pattern/MU plan before Core.
+  memref loads/stores using the approved pattern/MU plan before ARTS.
 
 Important implementation detail:
 - `DbAllocNode` stores direct child acquires in the DB graph.
@@ -200,17 +200,15 @@ The actual pass flow is:
 1. Build or rebuild the DB graph.
 2. For one `DbAllocOp`, recursively collect all `DbAcquireNode`s.
 3. For each acquire, call `DbAnalysis::analyzeAcquirePartition(...)`.
-4. Convert that into `AcquirePartitionInfo`.
-5. Build `PartitioningContext` for heuristic voting.
-6. Ask heuristics for:
-   - allocation mode
-   - per-acquire `needsFullRange`
-7. Reconcile acquire modes.
-8. Resolve block sizes and `partitionedDims`.
-9. Force safety fallbacks for acquires whose inferred dims disagree with the
-   chosen plan.
-10. Build `DbPhysicalLayoutPlan` from SDE plan attrs and materialize alloc +
-    acquires.
+4. Use the returned `AcquirePartitionSummary` as the pass-facing acquire
+   evidence.
+5. Record DB choices through `DbHeuristics` when diagnostics need the decision
+   history.
+6. Resolve SDE/CODIR-authored layout plans through `DbLayoutPlanUtils`.
+7. Let `DbTransformsPass` persist and refine contracts after concrete DB/EDT
+   objects exist.
+8. Keep unsafe acquires full-range in DB analysis/refinement rather than hiding
+   them behind a legacy fallback heuristic.
 
 The important point is that the pass is already split into:
 - analysis that builds acquire facts
@@ -221,16 +219,16 @@ The design corresponding to this flow is captured in this guide.
 
 ### 3.1 Allocation-Level Heuristics (H1.1-H1.6)
 
-This is the current intent (see
-`lib/carts/dialect/arts/Analysis/heuristics/PartitioningHeuristics.cpp` and the
-`DbHeuristics` wrapper):
+This is the current intent (see `DbHeuristics`, `DbAnalysis`, and
+`DbLayoutPlanUtils`; the retired monolithic partitioning heuristic entry points
+no longer exist):
 
 - H1.1: Read-only + single-node + no partition capability -> Coarse
 - H1.1b: Read-only + single-node + all block-capable acquires are full-range -> Coarse
 - H1.2: Direct writes + indirect reads -> Block (indirect uses full-range)
 - H1.2b: Direct + indirect writes -> Block (indirect uses full-range)
-- H1.3: legacy Core stencil fallback may preserve ESD-style block/window
-  contracts when SDE already stamped halo facts, else fallback
+- H1.3: stencil contracts are consumed only when SDE/CODIR stamped explicit
+  halo/window facts and the direct materialization path can preserve them
   - Special-case: read-only stencil on single-node -> Coarse (avoid halo overhead)
 - H1.3b: Double-buffer stencil (jacobi-style) -> Block when all writes are uniform
   - Detects: stencil reads + uniform writes (no cross-element write dependencies)
@@ -305,8 +303,9 @@ Today the safety logic is spread across three places:
      emitting an unsound partial slice
 
 This safety net is necessary, but it is later than ideal. The cleaner design is
-to keep per-dimension access proposals all the way into heuristic voting so the
-wrong mode is less likely to be chosen in the first place.
+to keep per-dimension access proposals all the way into `DbAnalysis` and
+`DbLayoutPlanUtils` so the wrong mode is less likely to be materialized in the
+first place.
 
 ### 3.2.2) Mixed-Dimension Design Example
 
@@ -859,7 +858,7 @@ boundaries, but it must not expand the logical iteration domain.
 Current policy:
 
 1) Explicit compile-time block hints (`PartitioningHint blockSize > 1`)
-   - If loop lower bound is a known constant and misaligned, direct Core
+   - If loop lower bound is a known constant and misaligned, direct ARTS
      materialization may
      align the chunking base downward.
    - The generated inner loop is then clamped back to the original
@@ -1042,7 +1041,8 @@ Example access A[i,j,k]:
 
 - Analysis (patterns, bounds, partition dims): DbAcquireNode / DbAllocNode
 - Pass-facing acquire summary: `DbAnalysis::analyzeAcquirePartition`
-- Decisions (H1.*): `evaluatePartitioningHeuristics` + H1.7 per-acquire voting
+- Decisions: `DbHeuristics` records DB choices while DB analysis and layout
+  utilities provide the per-acquire evidence
 - Coordination + plan: SDE/CODIR lowering contracts plus DB analysis summaries
 - Mode reconciliation: `DbModeTightening`
 - Block sizing + chosen dims: SDE/CODIR layout metadata, `DbLayoutPlanUtils`,

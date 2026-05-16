@@ -8,7 +8,7 @@ Run in order. Stop at the first failure and investigate.
 
 1. **Recompile.** `dekk carts build` (full rebuild if the change touches common utilities or TableGen). Verify clean compile.
 
-2. **Per-dialect lit tests.** `dekk carts lit lib/carts/dialect/{sde,core,rt}/test/` filtered to the touched pass(es). All pass. Metadata-only fixtures may not exercise OpenMP conversion; do not treat that as a regression by itself.
+2. **Per-dialect lit tests.** `dekk carts lit lib/carts/dialect/{sde,codir,arts,arts-rt}/test/` filtered to the touched pass(es). All pass. Metadata-only fixtures may not exercise OpenMP conversion; do not treat that as a regression by itself.
 
 3. **Pass-test suite.** `dekk carts test`. Full pass-test suite (fast). No new failures.
 
@@ -30,7 +30,7 @@ Run in order. Stop at the first failure and investigate.
 
 You may skip an item only with explicit reason. Document the skip in the fix-attribution log entry.
 
-- Skip 8 (multinode) if the fix demonstrably cannot affect distribution: doc-only change, comment fix, RT-only LLVM-near pass, or pure SDE analysis with no contract change.
+- Skip 8 (multinode) if the fix demonstrably cannot affect distribution: doc-only change, comment fix, ARTS-RT-only LLVM-near pass, or pure SDE analysis with no contract change.
 - Skip 10 (clean rebuild) for trivial doc/comment changes.
 - **Never skip 5 (suite snapshot).** Even doc changes have produced regressions when build artifacts shifted.
 

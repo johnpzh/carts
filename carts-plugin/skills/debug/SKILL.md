@@ -54,7 +54,8 @@ dekk carts compile <file.mlir> --arts-debug db_partitioning,loop_fusion
 
 **C input** compiles through Polygeist first, saving `<name>.mlir`. For full pipeline inspection, take that `.mlir` and use `--all-pipelines`.
 
-**Debug channel convention**: `snake_case(PassFilename)` — e.g., `DbPartitioning.cpp` -> `db_partitioning`.
+**Debug channel convention**: `snake_case(PassFilename)` — for example
+`DbModeTightening.cpp` maps to `db_mode_tightening`.
 
 Use `dekk carts pipeline --json` for the canonical stage list.
 

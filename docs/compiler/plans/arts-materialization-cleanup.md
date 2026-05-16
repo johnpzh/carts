@@ -18,7 +18,7 @@ Relevant current areas:
 - `CreateDbs`
 - `VerifyArtsObjectsOnly`
 - `VerifyEdtCreated`
-- DB/EDT/epoch analyses under the current `core/` source tree
+- DB/EDT/epoch analyses under the ARTS source tree
 
 ## Target Contract
 
@@ -65,7 +65,7 @@ Exit gate:
 - Move direct materialization responsibilities into CODIR-to-ARTS.
 - Convert unsupported raw cases into clear diagnostics instead of silent policy
   inference.
-- Keep the current Core implementation limited to coarse `db_ref[0]` raw
+- Keep the current ARTS implementation limited to coarse `db_ref[0]` raw
   memrefs. Blocked/tiled raw memrefs are unsupported at this boundary because
   SDE/CODIR must have already rewritten token-local accesses.
 
@@ -76,7 +76,7 @@ Exit gate:
 
 ### Phase 3: Remove Remaining Raw Bridge
 
-- Keep Core raw DB indexers deleted.
+- Keep ARTS raw DB indexers deleted.
 - Move any remaining coarse raw-memref cases into direct CODIR-to-ARTS
   materialization.
 - Delete `CreateDbs` when supported samples and benchmarks no longer require

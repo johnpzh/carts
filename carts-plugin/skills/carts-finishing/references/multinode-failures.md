@@ -20,7 +20,7 @@ If the rubric here does not match, escalate to `carts-distributed-triage` with t
 
 **Symptom:** `(null reference)` at runtime. Worker hangs on `arts_db_acquire`. Or segfault.
 
-**Root cause:** `DbDistributedOwnership` in Core DB refinement did not mark the DB, or the eligibility check is too conservative.
+**Root cause:** `DbDistributedOwnership` in ARTS DB refinement did not mark the DB, or the eligibility check is too conservative.
 
 **Fix usually belongs in:**
 - `lib/carts/dialect/arts/Transforms/db/DbDistributedEligibility.cpp` (eligibility rules — too restrictive)
@@ -28,17 +28,17 @@ If the rubric here does not match, escalate to `carts-distributed-triage` with t
 
 ### 2. Distributed window mismatch
 
-**Surface:** Core materialization or DB refinement emits a stencil window that
-is too narrow for a DB that Core will run distributed; remote workers cannot
+**Surface:** ARTS materialization or DB refinement emits a stencil window that
+is too narrow for a DB that ARTS will run distributed; remote workers cannot
 reach halo elements.
 
 **Symptom:** stencil values at boundary are garbage, or out-of-bounds access.
 
-**Root cause:** the SDE halo/window contract is incomplete, or Core DB
+**Root cause:** the SDE halo/window contract is incomplete, or ARTS DB
 refinement applied a local-only window while marking the DB as distributed.
 
 **Fix usually belongs in:** SDE distribution planning only when the source
-halo/window contract is wrong; otherwise Core DB refinement should validate the
+halo/window contract is wrong; otherwise ARTS DB refinement should validate the
 `distributed` attr before narrowing.
 
 ### 3. Halo / remote-data ownership gap
@@ -47,9 +47,9 @@ halo/window contract is wrong; otherwise Core DB refinement should validate the
 
 **Symptom:** task hangs waiting for remote acquire to complete, or reads stale/wrong values from the halo region.
 
-**Root cause:** Core DB refinement computed a halo for local-only operation and did not widen for distributed neighbors.
+**Root cause:** ARTS DB refinement computed a halo for local-only operation and did not widen for distributed neighbors.
 
-**Fix usually belongs in:** `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` or the DB refinement helper that stamps the window. When marking a DB distributed, validate that halo bounds cover all transitive neighbors. See `docs/compiler/ownership-proof-gaps.md` §2.3 for the full proof obligation.
+**Fix usually belongs in:** `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` or the DB refinement helper that stamps the window. When marking a DB distributed, validate that halo bounds cover all transitive neighbors and cross-check `DbDistributedOwnership.cpp`, `DbDistributedEligibility.cpp`, and `DbAnalysis.cpp`.
 
 ### 4. GUID coherence (same data, different handles on nodes)
 
@@ -118,8 +118,10 @@ If a sample passes single-node but fails multinode:
 ## Reference docs
 
 - `docs/architecture/arts-rt-dialect.md` — RT lowering contract
-- `docs/compiler/ownership-proof-gaps.md` — formal ownership obligations
-- `docs/compiler/cps-failure-surfaces.md` — CPS-related failure taxonomy
+- `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` — DB/window refinement
+- `lib/carts/dialect/arts/Transforms/db/DbDistributedOwnership.cpp` and `lib/carts/dialect/arts/Analysis/db/DbDistributedEligibility.cpp` — distributed ownership gates
+- `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp` — DB/acquire facts
+- `tools/compile/Compile.cpp` — canonical pipeline tokens and stage ordering
 - `carts-plugin/skills/distributed-triage/SKILL.md` — sister triage skill
 - `carts-plugin/skills/distributed-triage/references/distributed-checklist.md`
 - `carts-plugin/skills/distributed-triage/references/distributed-codepaths.md`

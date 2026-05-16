@@ -15,7 +15,7 @@ point.
 - SDE distribution planning.
 - Codelet materialization through `sde-to-codir` and `codir-to-arts`; any
   surviving SDE operation is a boundary failure.
-- Core DB refinement.
+- ARTS DB refinement.
 - Distributed DB ownership.
 - Post-DB refinement.
 - Pre-lowering and runtime route materialization.

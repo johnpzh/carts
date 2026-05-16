@@ -20,9 +20,9 @@ parameters:
 | Stage Range | Directory | Dialect |
 |-------------|-----------|---------|
 | 1-2 (metadata, raise) | `lib/carts/dialect/sde/test/` | SDE |
-| 3-16 (core transforms) | `lib/carts/dialect/arts/test/` | Core |
-| 13-14 (partitioning) | `lib/carts/dialect/arts/test/partitioning/safety/` | Core (safety) |
-| 17-18 (lowering) | `lib/carts/dialect/arts-rt/test/` | RT |
+| ARTS transforms | `lib/carts/dialect/arts/test/` | ARTS |
+| DB partition safety | `lib/carts/dialect/arts/test/partitioning/safety/` | ARTS |
+| ARTS-RT lowering | `lib/carts/dialect/arts-rt/test/` | ARTS-RT |
 | Verifiers | `tests/verify/` | Cross-dialect |
 | CLI flags | `tests/cli/` | Infrastructure |
 | End-to-end | `samples/` | Integration |

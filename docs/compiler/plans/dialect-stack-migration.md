@@ -26,16 +26,16 @@ Important current names:
 - `sde-to-codir` materializes SDE codelet plans as isolated CODIR codelets.
 - `codir-to-arts` materializes CODIR codelets as ARTS DB/EDT objects and
   rejects any SDE operation that survived `sde-to-codir`.
-- `create-dbs` runs remaining raw-memref DB materialization. Core raw DB
+- `create-dbs` runs remaining raw-memref DB materialization. ARTS raw DB
   indexers have been removed; only coarse whole-storage materialization
   remains while direct CODIR coverage is completed.
 - `pre-lowering` contains DB, EDT, and epoch lowering.
-- Source paths still use `lib/carts/dialect/core`, `lib/carts/dialect/sde`, and
-  `lib/carts/dialect/rt`.
-- Target source paths are staged under `include/carts/dialect/...` and
-  `lib/carts/dialect/...`. CODIR is the first build-visible target dialect
-  skeleton: `codir.codelet` and `codir.yield` parse and verify in the
-  `carts/dialect/codir` tree. The `convert-sde-to-codir`,
+- Source paths now use `lib/carts/dialect/sde`,
+  `lib/carts/dialect/codir`, `lib/carts/dialect/arts`, and
+  `lib/carts/dialect/arts-rt`; retired `core/` and `rt/` path references are
+  documentation bugs.
+- CODIR is build-visible: `codir.codelet` and `codir.yield` parse and verify in
+  the `carts/dialect/codir` tree. The `convert-sde-to-codir`,
   `codir-codelet-opt`, `verify-codir`, and `convert-codir-to-arts` passes are
   in the default staged pipeline.
   `verify-codir` owns CODIR-only operand-shape checks: deps are memory
@@ -50,8 +50,8 @@ Important current names:
 - CODIR is a CARTS-owned codelet dialect.
 - `arts` is the abstract ARTS-machine dialect.
 - `arts-rt` is the runtime ABI bridge.
-- Current `core/` and `rt/` source paths may remain during migration, but docs
-  and new code should use the target conceptual names.
+- Retired `core/` and `rt/` source paths must not be used in new docs or code.
+  Use the concrete SDE/CODIR/ARTS/ARTS-RT names.
 
 ## Phases
 

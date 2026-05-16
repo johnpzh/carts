@@ -104,7 +104,7 @@ annotation level.
 | Cannon-style shifts | Feasible but complex | Not implemented (future) |
 | SUMMA-style broadcast panels | Feasible via events/active messages | Not implemented (future) |
 | 2.5D replication | Possible but high complexity | Runtime can create/read cached duplicates through DB frontiers; compiler-directed eager replication is not implemented |
-| Stencil halo | Strong | SDE stamps halo/window facts; current raw-memref fallback materializes block slices without a dedicated halo rewriter |
+| Stencil halo | Strong | SDE stamps halo/window facts; CODIR/direct ARTS materialization must preserve token-local block/window views. The raw `create-dbs` bridge is coarse-only and rejects blocked/tiled physical layout attrs |
 
 ### 2.2 Why CARTS currently prefers 2D tiling over Cannon/SUMMA
 
@@ -131,8 +131,8 @@ Selection order matters:
    - internode (`TwoLevel`) -> `two_level`
    - block-cyclic strategy -> `block_cyclic`
    - tiling strategy -> `tiling_2d`
-   - flat strategy -> pattern fallback below
-3. Pattern fallback (flat/default):
+   - flat strategy -> default flat-pattern mapping below
+3. Default flat-pattern mapping:
    - `triangular` -> `block_cyclic`
    - `stencil`/`uniform`/`unknown` -> `block`
 
@@ -154,8 +154,8 @@ validate SDE contracts rather than redefine semantic pattern family.
 - SDE `PatternAnalysis` classifies work families, access windows, reductions,
   and distribution intent while source semantics are still visible.
 - `DistributionPlanning` consumes those SDE facts and stamps the contract that
-  Core materialization uses.
-- Core DB analysis validates concrete DB/EDT/epoch shape and should not recover
+  ARTS materialization uses.
+- ARTS DB analysis validates concrete DB/EDT/epoch shape and should not recover
   semantic loop families from implementation loops.
 
 ### 4.2 EDT-facing view
@@ -180,9 +180,9 @@ memref work that has not yet become canonical MU token/codelet form.
   token-local views.
 - `codir-to-arts`: CODIR deps and codelets become ARTS DB/acquire/EDT objects,
   followed by residual non-codelet SDE compatibility lowering and verification.
-- `create-dbs`: transitional raw-memref bridge. It consumes SDE-authored layout
-  attrs and dependency slices, then creates DB objects and localizes raw memref
-  uses. It must not choose distribution policy.
+- `create-dbs`: guarded coarse raw-memref bridge. It creates whole-storage
+  `arts.db_alloc`/`arts.db_acquire` for residual raw EDT captures only.
+  SDE/CODIR must handle token-local tiled/block rewrites before ARTS.
 - `db-opt`: tightens DB access modes from real uses.
 - `post-db-refinement`: validates and refines DB/EDT contracts.
 - `late-concurrency-cleanup`: strip-mining, hoisting, and late cleanup
@@ -212,10 +212,10 @@ Current implementation:
 - `DbAllocOp` supports a `distributed` marker attribute.
 - Pass: `DbDistributedOwnershipPass`
   (`lib/carts/dialect/arts/Transforms/db/DbDistributedOwnership.cpp`).
-- Pipeline placement: Core DB refinement after SDE distribution planning
+- Pipeline placement: ARTS DB refinement after SDE distribution planning
   (gated by `--distributed-db` in `carts-compile`).
-- `--distributed-db` relies on SDE-authored work units and Core DB ownership
-  marking; late Core loop-carrier producers are not part of the contract.
+- `--distributed-db` relies on SDE-authored work units and ARTS DB ownership
+  marking; late ARTS loop-carrier producers are not part of the contract.
 - Lowering support: `ConvertArtsRtToLLVM` uses round-robin route selection for
   marked multi-DB allocations:
   - route = `linearIndex % artsGetTotalNodes()`
@@ -274,14 +274,14 @@ Future work:
 
 ## 7. IR Contract
 
-SDE distribution planning and direct Core materialization may stamp concrete
-Core object attrs:
+SDE distribution planning and direct ARTS materialization may stamp concrete
+ARTS object attrs:
 
 - `distribution_kind` (`#arts.distribution_kind<...>`)
 - `distribution_pattern` (`#arts.distribution_pattern<...>`)
 - `distribution_version = 1`
 
-These attributes represent SDE-forwarded contracts and Core machine-binding
+These attributes represent SDE-forwarded contracts and ARTS machine-binding
 facts. They are not a fallback semantic classifier.
 
 ## 8. Loop Transform Compatibility (R8)
@@ -314,9 +314,9 @@ explicit plan data rather than a late ARTS semantic loop carrier.
 
 ### 9.1 Acquire rewriting helpers
 
-- DB acquire-window planning uses SDE-authored access windows and Core DB
+- DB acquire-window planning uses SDE-authored access windows and ARTS DB
   refinement validation.
-- Stencil and block windows should be explicit contract facts before Core
+- Stencil and block windows should be explicit contract facts before ARTS
   lowering consumes them.
 
 ### 9.2 Task loop lowering helpers
@@ -324,11 +324,11 @@ explicit plan data rather than a late ARTS semantic loop carrier.
 - Dispatch and task-local `scf.for` loops are implementation control flow
   generated by the materializer.
 - Reduction materialization consumes SDE reduction accumulators, kinds, and
-  strategy; Core does not rediscover missing reduction semantics.
+  strategy; ARTS does not rediscover missing reduction semantics.
 
 ### 9.3 Partitioning integration for 2D owner hints
 
-Core DB refinement consumes tiling-2D owner hints on writable (`inout`) task acquires to force N-D block ownership where valid.
+ARTS DB refinement consumes tiling-2D owner hints on writable (`inout`) task acquires to force N-D block ownership where valid.
 
 This coupling is what keeps data ownership and routed work aligned for
 `matmul` loops when H2 selects `tiling_2d`.
@@ -368,7 +368,7 @@ dekk carts compile gemm.mlir -O3 --arts-config arts.cfg --pipeline=codir-to-arts
 Expected checks:
 - SDE planning attrs are present before CODIR-to-ARTS materialization when
   applicable.
-- Core `distribution_kind/pattern/version` attrs are present on concrete
+- ARTS `distribution_kind/pattern/version` attrs are present on concrete
   DB/EDT/epoch objects after `codir-to-arts` when the plan needs them.
 - checksums unchanged for benchmark kernels
 - node/thread counters show non-zero work on remote nodes for distributed runs
@@ -383,7 +383,7 @@ Practical principles adopted from systems like Halide/Legion/Chapel/HPF/GSPMD/Ch
 - Prefer analysis-backed decisions over pass-local ad-hoc classification.
 
 In CARTS, this maps to:
-- SDE-owned pattern/distribution planning first, with Core materialization
+- SDE-owned pattern/distribution planning first, with ARTS materialization
   consuming that plan directly
 - specialized task/acquire materialization components for execution
 - DB/EDT analysis APIs as single pattern source of truth

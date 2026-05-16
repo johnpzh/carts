@@ -18,8 +18,10 @@ parameters:
 ## Purpose
 
 Trace and explain why the compiler chose a specific partitioning mode or
-distribution strategy. The compiler has 22 named heuristic rules and 21
-hardcoded thresholds — this skill makes those decisions transparent.
+distribution strategy. The live compiler no longer has a monolithic
+partitioning-heuristic pass; `DbHeuristics` records decisions while
+`DbAnalysis`, `DbLayoutPlanUtils`, and the DB refinement passes own the
+evidence and rewrites.
 
 ## Quick Diagnostic Commands
 
@@ -40,9 +42,9 @@ dekk carts compile <file> --pipeline=db-opt --arts-debug=db_mode_tightening 2>&1
 dekk carts compile <file> --diagnose --diagnose-output /tmp/diag.json 2>/dev/null
 ```
 
-## H1 Partition Heuristic Chain
+## DB Partition Decision Surface
 
-The compiler evaluates these rules **in order** — first match wins:
+Use these labels as diagnostic categories, not as source-file entry points:
 
 | Rule | Condition | Result | Typical Trigger |
 |------|-----------|--------|-----------------|
@@ -58,7 +60,7 @@ The compiler evaluates these rules **in order** — first match wins:
 | H1.S1 | Element-wise stencil | STENCIL | Fine-grained stencil |
 | H1.S2 | Block-capable stencil | STENCIL | Block stencil with halo |
 | H1.E1 | Element-wise capable | FINE | Per-element partitioning |
-| H1.F | Fallback | COARSE | Safety default |
+| Residual raw bridge | Unsupported or unproven ownership | COARSE or diagnostic | Coarse only for residual raw memrefs; non-coarse raw layout plans fail at `CreateDbs` |
 
 ## H2 Distribution Strategy Selection
 
@@ -70,22 +72,15 @@ The compiler evaluates these rules **in order** — first match wins:
 | Triangular | any | BlockCyclic |
 | Stencil/Uniform/Unknown | any | Block |
 
-## Hardcoded Thresholds
-
-| Threshold | Value | Location | Purpose |
-|-----------|-------|----------|---------|
-| kMaxOuterDBs | 1024 | PartitioningHeuristics.h:67 | Max partitions before coarse materialization |
-| kMaxDepsPerEDT | 8 | PartitioningHeuristics.h:68 | Per-EDT acquire threshold |
-| kMinInnerBytes | 64 | PartitioningHeuristics.h:69 | Minimum inner-rank byte size |
-
 ## Key Source Files
 
 ```
-include/carts/dialect/arts/Analysis/heuristics/PartitioningHeuristics.h  — H1 data structures
-lib/carts/dialect/arts/Analysis/heuristics/PartitioningHeuristics.cpp     — H1 evaluation chain
-include/carts/dialect/arts/Analysis/heuristics/DistributionHeuristics.h   — H2 data structures
-lib/carts/dialect/arts/Analysis/heuristics/DistributionHeuristics.cpp     — H2 strategy selection
-lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp    — Core DB refinement controller
+include/carts/dialect/arts/Analysis/heuristics/DbHeuristics.h — DB decision records
+lib/carts/dialect/arts/Analysis/heuristics/DbHeuristics.cpp — diagnostic recording
+include/carts/dialect/arts/Analysis/db/DbAnalysis.h — canonical DB/acquire facts
+lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp — acquire summaries and refinement facts
+include/carts/dialect/arts/Transforms/db/DbLayoutPlanUtils.h — layout plan helpers
+lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp — DB refinement controller
 lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp — SDE-to-CODIR materialization
 lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp — CODIR-to-ARTS materialization
 ```

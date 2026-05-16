@@ -25,20 +25,20 @@ and destroyed.
 | SDE | `sde::` | 3 (`sde-planning`) | Semantic contracts, pattern classification, MU/CU/SU planning |
 | CODIR | `codir::` | 4-5 | Codelet isolation, explicit deps/params, token-local views |
 | ARTS | `arts::` | 5-12 | DB/EDT/epoch orchestration and analysis |
-| ARTS-RT | `arts_rt::` / `rt::` | 12-13 | Runtime ABI and LLVM-facing call mapping |
+| ARTS-RT | `arts_rt::` | 12-13 | Runtime ABI and LLVM-facing call mapping |
 
 ## Dialect Boundaries
 
 ```
 C/OMP source
-  → [Stage 3]    sde-planning: OMP → SDE (ConvertOpenMPToSde) →
+  → [sde-planning]    OMP → SDE (ConvertOpenMPToSde) →
                  SDE transforms and MU/CU/SU planning
-  → [Stage 4]    sde-to-codir: SDE codelets → isolated CODIR codelets
-  → [Stage 5]    codir-to-arts: CODIR deps/codelets → ARTS DB/acquire/EDT
-  → [Stage 6-11] ARTS transforms (arts.edt, arts.db_*, arts.epoch, scf.for)
-  → [Stage 12]   ARTS → ARTS-RT lowering in pre-lowering
+  → [sde-to-codir]    SDE codelets → isolated CODIR codelets
+  → [codir-to-arts]   CODIR deps/codelets → ARTS DB/acquire/EDT
+  → [ARTS stages]     ARTS transforms (arts.edt, arts.db_*, arts.epoch, scf.for)
+  → [pre-lowering]    ARTS → ARTS-RT lowering
                  (EdtLowering.cpp, EpochLowering.cpp, DbLowering.cpp)
-  → [Stage 13]   ARTS-RT → LLVM lowering in arts-rt-to-llvm
+  → [arts-rt-to-llvm] ARTS-RT → LLVM lowering
                  (ConvertArtsRtToLLVM + rt-specific RuntimeCallOpt etc.)
 ```
 
@@ -55,7 +55,7 @@ C/OMP source
 
 ## Op Lifecycle Quick Reference
 
-### Core Ops
+### ARTS Ops
 | Op | Created | Lowered | Stages Active |
 |----|---------|---------|---------------|
 | `arts.edt` | codir-to-arts (5) | pre-lowering (12) | 5-12 |
@@ -65,7 +65,7 @@ C/OMP source
 | `arts.epoch` | codir-to-arts (5) or epochs (11) | pre-lowering (12) | 5-12 |
 | `arts.barrier` | codir-to-arts (5) | epochs (11) | 5-11 |
 
-### RT Ops
+### ARTS-RT Ops
 | Op | Created | Lowered | Stages Active |
 |----|---------|---------|---------------|
 | `arts_rt.edt_create` | pre-lowering (12) | arts-rt-to-llvm (13) | 12-13 |
@@ -79,10 +79,10 @@ SDE planning ops are created in `sde-planning`; codelet ops are consumed by
 
 | Op | Created | Lowered |
 |----|---------|---------|
-| `sde.cu_codelet` | ConvertOpenMPToSde / SDE planning (stage 3) | ConvertSdeToCodir (stage 4) |
-| `sde.cu_task` | ConvertOpenMPToSde / SDE planning (stage 3) | ConvertSdeToCodir (stage 4); leftovers fail VerifySdeLowered |
-| `sde.su_iterate` | ConvertOpenMPToSde / SDE planning (stage 3) | SDE-to-CODIR scheduling-unit materialization; leftovers fail VerifySdeLowered |
-| `sde.mu_reduction_decl` | ConvertOpenMPToSde / SDE planning (stage 3) | SDE/CODIR reduction materialization; leftovers fail VerifySdeLowered |
+| `sde.cu_codelet` | ConvertOpenMPToSde / `sde-planning` | `sde-to-codir` |
+| `sde.cu_task` | ConvertOpenMPToSde / `sde-planning` | `sde-to-codir`; leftovers fail VerifySdeLowered |
+| `sde.su_iterate` | ConvertOpenMPToSde / `sde-planning` | SDE-to-CODIR scheduling-unit materialization; leftovers fail VerifySdeLowered |
+| `sde.mu_reduction_decl` | ConvertOpenMPToSde / `sde-planning` | SDE/CODIR reduction materialization; leftovers fail VerifySdeLowered |
 
 ## Tracing Commands
 
@@ -129,7 +129,7 @@ lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ # ARTS-RT → LLVM cleanup/re
 
 When asked to trace an op:
 
-1. Identify the op and its dialect (SDE, core, or RT)
+1. Identify the op and its dialect (SDE, CODIR, ARTS, or ARTS-RT)
 2. Search for creation sites (`builder.create<OpType>`)
 3. Search for transformation sites (`isa<>`, pattern matches)
 4. Search for lowering/erasure sites (`replaceOp`, conversion patterns)
