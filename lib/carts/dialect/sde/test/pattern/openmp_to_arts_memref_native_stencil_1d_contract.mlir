@@ -20,7 +20,7 @@
 // CHECK: arith.addf
 // CHECK: arith.addf
 
-// After full pipeline: stencil contract stamped on Core task dispatch.
+// After full pipeline: stencil contract stamped on ARTS task dispatch.
 // CHECK: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: arts.edt
 // CHECK-SAME: depPattern = #arts.dep_pattern<stencil_tiling_nd>

@@ -1,7 +1,7 @@
 // Verify the memref-native pipeline for a scalar single+wsloop pattern:
 //   1. ConvertOpenMPToSde wraps su_iterate body in cu_region <parallel>
 //   2. ConvertCodirToArts preserves scalar single state on the
-//      user-visible alloca and lower the loop to Core task dispatch
+//      user-visible alloca and lower the loop to ARTS task dispatch
 
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 \
 // RUN:   | awk '/IR Dump After ConvertOpenMPToSde/,/IR Dump After PatternAnalysis/' \

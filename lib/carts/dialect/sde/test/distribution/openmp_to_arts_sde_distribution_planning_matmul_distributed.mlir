@@ -2,7 +2,7 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 
-// Verify that SDE classifies direct-memory matmul before Core, applies local
+// Verify that SDE classifies direct-memory matmul before ARTS, applies local
 // column strip-mining, and keeps physical ownership row-strip until input DBs
 // can be tiled with the output.
 

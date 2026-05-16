@@ -17,7 +17,7 @@
 // SDE: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) nowait classification(<elementwise_pipeline>) {
 // SDE-NOT: classification(<elementwise>)
 
-// After ConvertCodirToArts: single fused Core task dispatch with both computations.
+// After ConvertCodirToArts: fused ARTS task dispatch with both computations.
 // ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // ARTS: func.func @main
 // ARTS: arts.edt <task>

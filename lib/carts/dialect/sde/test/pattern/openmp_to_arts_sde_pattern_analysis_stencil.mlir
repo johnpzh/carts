@@ -2,7 +2,7 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 
 // Verify that SDE PatternAnalysis authors runtime-neutral neighborhood facts
-// before Core lowering, and that the final SDE plan is translated at the
+// before ARTS lowering, and that the final SDE plan is translated at the
 // dialect boundary.
 
 // SDE-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //

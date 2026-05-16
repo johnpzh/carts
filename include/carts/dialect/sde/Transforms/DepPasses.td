@@ -96,7 +96,7 @@ def Vectorization
     scheduling unit.
 
     This pass does not raise to tensor/linalg, does not create target vector
-    IR, and does not cross the dialect boundary. Later Core/RT lowering may
+    IR, and does not cross the dialect boundary. Later ARTS/ARTS-RT lowering may
     translate the SDE hints into target loop metadata after storage and task
     materialization are fixed.
   }];

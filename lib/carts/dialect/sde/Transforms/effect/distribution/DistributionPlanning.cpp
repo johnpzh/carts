@@ -245,8 +245,9 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
     return;
 
   /// First-dimension unclassified loops are owned by the uniform/matmul
-  /// planners below. This fallback is for imperfect local stencil/update
-  /// nests whose owner IV indexes a later physical output dimension.
+  /// planners below. This secondary owner-dim path handles imperfect local
+  /// stencil/update nests whose owner IV indexes a later physical output
+  /// dimension.
   if (!isStencil && sde::findLoopIndexedOutputPlan(op))
     return;
 
@@ -290,9 +291,9 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
     }
   }
 
-  std::optional<sde::LoopIndexedOutputPlan> fallbackPlan =
+  std::optional<sde::LoopIndexedOutputPlan> secondaryPlan =
       sde::findConsistentLoopIndexedOutputPlanWithOwnerDims(op);
-  if (!fallbackPlan || fallbackPlan->ownerPhysicalDims.size() != 1)
+  if (!secondaryPlan || secondaryPlan->ownerPhysicalDims.size() != 1)
     return;
 
   auto effects = sde::collectStructuredMemoryEffects(op.getBody());
@@ -304,7 +305,7 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
     if (!effects.reads.contains(written))
       continue;
     if (!sde::allRootAccessesStayWithinOwnerSlice(
-            op, written, fallbackPlan->ownerPhysicalDims))
+            op, written, secondaryPlan->ownerPhysicalDims))
       return;
   }
 
@@ -312,7 +313,7 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
       std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
   SmallVector<int64_t, 4> ownerDims;
   SmallVector<int64_t, 4> physicalBlockShape;
-  if (!buildOwnerDimPlan(*fallbackPlan, workers, ownerDims,
+  if (!buildOwnerDimPlan(*secondaryPlan, workers, ownerDims,
                          physicalBlockShape))
     return;
   applyPhysicalPlan(op, ownerDims, physicalBlockShape);

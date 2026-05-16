@@ -4,7 +4,7 @@
 /// Plan SDE barriers between scheduling units. Independent barriers are marked
 /// for elimination. Required timestep barriers are annotated as stage
 /// boundaries, and SDE-owned CPS candidates get explicit completion tokens so
-/// Core can consume the plan without re-discovering the dataflow shape.
+/// ARTS can consume the plan without re-discovering the dataflow shape.
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"

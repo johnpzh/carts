@@ -35,7 +35,7 @@ def MemoryUnitMaterialization
     consumed at boundary conversion to form acquire windows for supported
     elementwise/matmul owner slices. Stencil, reduction, halo, and other
     complex blocked plans remain on the raw bridge until their SDE-local view
-    rewrite exists. The pass does not rediscover DB layouts or perform Core
+    rewrite exists. The pass does not rediscover DB layouts or perform ARTS
     index rewriting.
   }];
   let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect",

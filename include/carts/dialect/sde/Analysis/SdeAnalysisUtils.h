@@ -32,7 +32,7 @@ inline Block *getSuIterateComputeBlock(SdeSuIterateOp op) {
 }
 
 /// Root-level memory effects for an SDE structured region. This intentionally
-/// stays in SDE because memref reads/writes are SDE scheduling facts, not Core
+/// stays in SDE because memref reads/writes are SDE scheduling facts, not ARTS
 /// object-graph facts.
 struct StructuredMemoryEffectSummary {
   llvm::DenseSet<Value> reads;

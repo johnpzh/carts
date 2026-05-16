@@ -7,7 +7,7 @@
 namespace mlir::carts::sde {
 #define GEN_PASS_DEF_VERIFYSDECPSPLAN
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Pass/Pass.h"
 #include "llvm/ADT/DenseMap.h"
