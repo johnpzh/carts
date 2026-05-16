@@ -12,9 +12,9 @@
 #include "PolygeistToSdeUtils.h"
 #include "carts/Dialect.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 #include "carts/utils/Debug.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -67,7 +67,7 @@ static std::optional<Value> getStoredValueToToken(memref::AllocaOp allocaOp) {
 }
 
 struct SdeHandleDepsPass
-    : public mlir::carts::arts::impl::SdeHandleDepsBase<SdeHandleDepsPass> {
+    : public mlir::carts::sde::impl::SdeHandleDepsBase<SdeHandleDepsPass> {
   void runOnOperation() override;
 
 private:

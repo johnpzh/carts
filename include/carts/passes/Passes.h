@@ -117,7 +117,9 @@ class PolygeistDialect;
 #define GEN_PASS_REGISTRATION
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 
+namespace mlir::carts::sde {
 #define GEN_PASS_REGISTRATION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
+} // namespace mlir::carts::sde
 
 #endif /// ARTS_PASSES_PASSES_H

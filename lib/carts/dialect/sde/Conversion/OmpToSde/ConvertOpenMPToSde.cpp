@@ -30,10 +30,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_CONVERTOPENMPTOSDE
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -1198,7 +1198,7 @@ struct TaskwaitToSdePattern : public OpRewritePattern<omp::TaskwaitOp> {
 
 namespace {
 struct ConvertOpenMPToSdePass
-    : public arts::impl::ConvertOpenMPToSdeBase<ConvertOpenMPToSdePass> {
+    : public sde::impl::ConvertOpenMPToSdeBase<ConvertOpenMPToSdePass> {
 
   explicit ConvertOpenMPToSdePass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}

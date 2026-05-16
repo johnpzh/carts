@@ -8,10 +8,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_BARRIERELIMINATION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
@@ -694,7 +694,7 @@ static unsigned stampAdjacentLoopCandidates(scf::ForOp loop,
 }
 
 struct BarrierEliminationPass
-    : public arts::impl::BarrierEliminationBase<BarrierEliminationPass> {
+    : public sde::impl::BarrierEliminationBase<BarrierEliminationPass> {
   explicit BarrierEliminationPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 

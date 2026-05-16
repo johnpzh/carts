@@ -15,10 +15,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_SCALARFORWARDING
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -72,7 +72,7 @@ static Region *getOutermostEnclosingRegion(Region *inner,
 }
 
 struct ScalarForwardingPass
-    : public arts::impl::ScalarForwardingBase<ScalarForwardingPass> {
+    : public sde::impl::ScalarForwardingBase<ScalarForwardingPass> {
   void runOnOperation() override {
     ModuleOp module = getOperation();
     unsigned forwarded = 0;

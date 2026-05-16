@@ -11,10 +11,10 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/IRMapping.h"
 
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_PATTERNANALYSIS
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "carts/utils/Debug.h"
 ARTS_DEBUG_SETUP(semantic_contracts);
@@ -351,7 +351,7 @@ derivePattern(const sde::StructuredLoopSummary &summary,
 }
 
 struct PatternAnalysisPass
-    : public arts::impl::PatternAnalysisBase<PatternAnalysisPass> {
+    : public sde::impl::PatternAnalysisBase<PatternAnalysisPass> {
   explicit PatternAnalysisPass(sde::SDECostModel *costModel = nullptr) {
     (void)costModel;
   }

@@ -7,10 +7,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_VECTORIZATION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "carts/utils/Debug.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
@@ -177,7 +177,7 @@ static void stampVectorPlan(sde::SdeSuIterateOp op,
 }
 
 struct VectorizationPass
-    : public arts::impl::VectorizationBase<VectorizationPass> {
+    : public sde::impl::VectorizationBase<VectorizationPass> {
   explicit VectorizationPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 

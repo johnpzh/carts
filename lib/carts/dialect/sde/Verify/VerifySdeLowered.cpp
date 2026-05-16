@@ -8,7 +8,7 @@
 #include "carts/Dialect.h"
 #include "carts/dialect/sde/IR/SdeDialect.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_VERIFYSDELOWERED
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts
@@ -20,7 +20,7 @@ using namespace mlir::carts;
 namespace {
 
 struct VerifySdeLoweredPass
-    : public arts::impl::VerifySdeLoweredBase<VerifySdeLoweredPass> {
+    : public sde::impl::VerifySdeLoweredBase<VerifySdeLoweredPass> {
   void runOnOperation() override {
     auto *sdeDialect = getOperation()
                            ->getContext()

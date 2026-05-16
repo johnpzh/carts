@@ -18,9 +18,9 @@
 #define GEN_PASS_DEF_SDEINPUTINLINER
 #include "carts/Dialect.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 #include "carts/utils/Utils.h"
 #include "mlir/Analysis/CallGraph.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -254,7 +254,7 @@ struct SdeInputInlinerInterface : public mlir::InlinerInterface {
 };
 
 struct SdeInputInlinerPass
-    : public mlir::carts::arts::impl::SdeInputInlinerBase<
+    : public mlir::carts::sde::impl::SdeInputInlinerBase<
           SdeInputInlinerPass> {
 
   void runOnOperation() override {

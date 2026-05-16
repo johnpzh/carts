@@ -7,10 +7,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_TILING
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/utils/LoopUtils.h"
@@ -765,7 +765,7 @@ static void stampDirectMatmulTilePlan(sde::SdeSuIterateOp op,
       op.getContext(), sde::SdeIterationTopology::owner_strip));
 }
 
-struct TilingPass : public arts::impl::TilingBase<TilingPass> {
+struct TilingPass : public sde::impl::TilingBase<TilingPass> {
   explicit TilingPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 

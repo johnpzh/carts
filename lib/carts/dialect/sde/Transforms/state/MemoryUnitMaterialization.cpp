@@ -6,10 +6,10 @@
 
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_MEMORYUNITMATERIALIZATION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "carts/utils/ValueAnalysis.h"
 
@@ -147,7 +147,7 @@ static FailureOr<Value> createMuAllocForRoot(Value root,
 }
 
 struct MemoryUnitMaterializationPass
-    : public arts::impl::MemoryUnitMaterializationBase<
+    : public sde::impl::MemoryUnitMaterializationBase<
           MemoryUnitMaterializationPass> {
   void runOnOperation() override {
     ModuleOp module = getOperation();

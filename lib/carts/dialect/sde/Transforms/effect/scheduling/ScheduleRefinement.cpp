@@ -11,10 +11,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_SCHEDULEREFINEMENT
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -105,7 +105,7 @@ selectSymbolicSchedule(sde::SDECostModel &costModel) {
 }
 
 struct ScheduleRefinementPass
-    : public arts::impl::ScheduleRefinementBase<ScheduleRefinementPass> {
+    : public sde::impl::ScheduleRefinementBase<ScheduleRefinementPass> {
   explicit ScheduleRefinementPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 

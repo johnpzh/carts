@@ -49,7 +49,7 @@ using namespace mlir::carts::arts;
 using namespace mlir::carts;
 using namespace mlir::omp;
 
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_SDEMEMREFNORMALIZATION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts
@@ -328,7 +328,7 @@ static bool isInnerWrapperOfInlinedPattern(Value alloc) {
 ///===----------------------------------------------------------------------===///
 
 struct SdeMemrefNormalizationPass
-    : public mlir::carts::arts::impl::SdeMemrefNormalizationBase<
+    : public mlir::carts::sde::impl::SdeMemrefNormalizationBase<
           SdeMemrefNormalizationPass> {
 
   void runOnOperation() override;

@@ -8,10 +8,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_REDUCTIONSTRATEGY
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "carts/dialect/sde/Utils/SDECostModel.h"
 
@@ -69,7 +69,7 @@ getReductionKinds(sde::SdeSuIterateOp op) {
 }
 
 struct ReductionStrategyPass
-    : public arts::impl::ReductionStrategyBase<ReductionStrategyPass> {
+    : public sde::impl::ReductionStrategyBase<ReductionStrategyPass> {
   explicit ReductionStrategyPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 

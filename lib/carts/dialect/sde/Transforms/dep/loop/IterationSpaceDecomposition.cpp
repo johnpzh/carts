@@ -27,10 +27,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_ITERATIONSPACEDECOMPOSITION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "carts/utils/Debug.h"
 #include "carts/utils/Utils.h"
@@ -316,7 +316,7 @@ static bool peelBoundaryLoop(BoundaryPeelingMatch &match) {
 }
 
 struct IterationSpaceDecompositionPass
-    : public arts::impl::IterationSpaceDecompositionBase<
+    : public sde::impl::IterationSpaceDecompositionBase<
           IterationSpaceDecompositionPass> {
   using Base::Base;
 

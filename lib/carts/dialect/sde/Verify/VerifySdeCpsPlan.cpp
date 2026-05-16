@@ -4,7 +4,7 @@
 
 #include "carts/dialect/sde/IR/SdeDialect.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_VERIFYSDECPSPLAN
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts
@@ -258,7 +258,7 @@ static void verifyCandidateBarrierControlEdges(
 }
 
 struct VerifySdeCpsPlanPass
-    : public arts::impl::VerifySdeCpsPlanBase<VerifySdeCpsPlanPass> {
+    : public sde::impl::VerifySdeCpsPlanBase<VerifySdeCpsPlanPass> {
   void runOnOperation() override {
     DenseMap<Operation *, DenseMap<int64_t, CpsGroupInfo>> groupsByScope;
     DenseMap<Operation *, DenseMap<int64_t, CpsGroupInfo>>

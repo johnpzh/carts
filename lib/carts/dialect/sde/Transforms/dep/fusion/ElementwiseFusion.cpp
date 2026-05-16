@@ -6,10 +6,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_ELEMENTWISEFUSION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -426,7 +426,7 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
 }
 
 struct ElementwiseFusionPass
-    : public arts::impl::ElementwiseFusionBase<ElementwiseFusionPass> {
+    : public sde::impl::ElementwiseFusionBase<ElementwiseFusionPass> {
   void runOnOperation() override {
     bool changed = true;
     while (changed) {

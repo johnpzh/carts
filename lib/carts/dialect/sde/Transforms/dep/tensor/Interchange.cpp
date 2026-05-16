@@ -17,10 +17,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_LOOPINTERCHANGE
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -786,7 +786,7 @@ static bool interchangeDirectMemoryMatmulAccumulator(Block &body) {
 }
 
 struct LoopInterchangePass
-    : public arts::impl::LoopInterchangeBase<LoopInterchangePass> {
+    : public sde::impl::LoopInterchangeBase<LoopInterchangePass> {
 
   /// Try stencil halo-based interchange for stencil classification.
   /// Reads accessMinOffsets/accessMaxOffsets, computes per-dim halo width,

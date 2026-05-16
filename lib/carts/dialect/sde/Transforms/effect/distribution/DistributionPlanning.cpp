@@ -8,10 +8,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_DISTRIBUTIONPLANNING
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "carts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
@@ -541,7 +541,7 @@ chooseDistributionKind(sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
 }
 
 struct DistributionPlanningPass
-    : public arts::impl::DistributionPlanningBase<DistributionPlanningPass> {
+    : public sde::impl::DistributionPlanningBase<DistributionPlanningPass> {
   explicit DistributionPlanningPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 

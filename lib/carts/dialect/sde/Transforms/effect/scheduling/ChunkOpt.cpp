@@ -7,10 +7,10 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::sde {
 #define GEN_PASS_DEF_CHUNKOPT
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -121,7 +121,7 @@ struct ChunkRewrite {
   std::optional<int64_t> chunkSize;
 };
 
-struct ChunkOptPass : public arts::impl::ChunkOptBase<ChunkOptPass> {
+struct ChunkOptPass : public sde::impl::ChunkOptBase<ChunkOptPass> {
   explicit ChunkOptPass(sde::SDECostModel *costModel = nullptr)
       : costModel(costModel) {}
 
