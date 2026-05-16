@@ -30,9 +30,6 @@ namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_EDTLOWERING
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
-#include "carts/dialect/arts/Analysis/AnalysisManager.h"
-#include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
-#include "carts/dialect/arts/Analysis/db/OwnershipProof.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLoweringInternal.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
@@ -94,6 +91,27 @@ using namespace mlir::carts::arts_rt;
 using namespace mlir::carts::arts::edt_lowering;
 
 namespace {
+
+static bool hasSingleDbSlot(Operation *dbOp) {
+  if (!dbOp)
+    return false;
+
+  SmallVector<Value> sizes = DbUtils::getSizesFromDb(dbOp);
+  if (sizes.empty())
+    return true;
+
+  return llvm::all_of(sizes, [](Value size) {
+    return ValueAnalysis::isOneLikeValue(size);
+  });
+}
+
+static bool getBoolAttr(Operation *op, llvm::StringLiteral name) {
+  if (!op)
+    return false;
+  if (auto attr = op->getAttrOfType<BoolAttr>(name))
+    return attr.getValue();
+  return false;
+}
 
 static std::optional<std::pair<SmallVector<Value, 4>, SmallVector<Value, 4>>>
 trySynthesizeElementSlice(ArtsCodegen *AC, DbAcquireOp acquire, Location loc) {
@@ -198,22 +216,22 @@ static bool hasTrustedPartitionedWriteContract(DbAcquireOp acquire) {
   if (!contractOp)
     return false;
 
-  OwnershipProof proof = readOwnershipProof(contractOp.getOperation());
-  if (!(proof.ownerDimReachability && proof.partitionAccessMapping &&
-        proof.haloLegality))
-    proof = computeOwnershipProof(contractOp);
-  return proof.ownerDimReachability && proof.partitionAccessMapping &&
-         proof.haloLegality;
+  Operation *contract = contractOp.getOperation();
+  return getBoolAttr(contract,
+                     AttrNames::Operation::Proof::OwnerDimReachability) &&
+         getBoolAttr(contract,
+                     AttrNames::Operation::Proof::PartitionAccessMapping) &&
+         getBoolAttr(contract, AttrNames::Operation::Proof::HaloLegality);
 }
 
 static bool canUseUnorderedLocalWrite(DbAcquireOp acquire, EdtOp edtOp,
-                                      mlir::carts::arts::AnalysisManager *AM) {
+                                      ModuleOp module) {
   if (!acquire || !edtOp || acquire.getMode() != ArtsMode::out)
     return false;
   if (edtOp.getConcurrency() != EdtConcurrency::intranode)
     return false;
-  if (AM && AM->getRuntimeConfig().hasValidNodeCount() &&
-      AM->getRuntimeConfig().getNodeCount() != 1)
+  if (auto totalNodes = getRuntimeTotalNodes(module);
+      totalNodes && *totalNodes != 1)
     return false;
   return hasTrustedPartitionedWriteContract(acquire);
 }
@@ -222,14 +240,12 @@ static bool canUseUnorderedLocalWrite(DbAcquireOp acquire, EdtOp edtOp,
 /// EDT Lowering Pass Implementation
 ///===----------------------------------------------------------------------===///
 struct EdtLoweringPass : public arts_rt::impl::EdtLoweringBase<EdtLoweringPass> {
-  explicit EdtLoweringPass(mlir::carts::arts::AnalysisManager *AM = nullptr,
-                           uint64_t idStride = IdRegistry::DefaultStride)
-      : idStride(idStride), AM(AM) {}
+  explicit EdtLoweringPass(uint64_t idStride = IdRegistry::DefaultStride)
+      : idStride(idStride) {}
   EdtLoweringPass(const EdtLoweringPass &other)
       : arts_rt::impl::EdtLoweringBase<EdtLoweringPass>(other),
         idStride(other.idStride), functionCounter(other.functionCounter),
-        module(other.module), AM(other.AM), AC(other.AC),
-        idRegistry(other.idRegistry) {}
+        module(other.module), AC(other.AC), idRegistry(other.idRegistry) {}
   void runOnOperation() override;
 
 private:
@@ -265,14 +281,10 @@ private:
   LogicalResult insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
                                     const SmallVector<Value> &deps);
 
-  mlir::carts::arts::AnalysisManager &getAnalysisManager();
-
   /// Attributes
   uint64_t idStride = IdRegistry::DefaultStride;
   unsigned functionCounter = 0;
   ModuleOp module;
-  mlir::carts::arts::AnalysisManager *AM = nullptr;
-  std::unique_ptr<mlir::carts::arts::AnalysisManager> ownedAM;
   ArtsCodegen *AC = nullptr;
   IdRegistry idRegistry;
 };
@@ -283,27 +295,13 @@ private:
 /// Pass Implementation
 ///===----------------------------------------------------------------------===///
 
-mlir::carts::arts::AnalysisManager &EdtLoweringPass::getAnalysisManager() {
-  if (!AM) {
-    ownedAM = std::make_unique<mlir::carts::arts::AnalysisManager>(module);
-    AM = ownedAM.get();
-  }
-  return *AM;
-}
-
 void EdtLoweringPass::runOnOperation() {
   module = getOperation();
   auto ownedAC = std::make_unique<ArtsCodegen>(module, false);
   AC = ownedAC.get();
-  mlir::carts::arts::AnalysisManager &analysisManager = getAnalysisManager();
 
   ARTS_INFO_HEADER(EdtLoweringPass);
   ARTS_DEBUG_REGION(module.dump(););
-
-  /// Snapshot EDT capture contracts before nested lowering mutates parent EDT
-  /// bodies. DbAnalysis must be fresh because dependency contracts are read
-  /// from the DB graph while outlining.
-  analysisManager.getDbAnalysis().invalidate();
 
   ARTS_DEBUG_HEADER(TaskEdtLowering);
   SmallVector<EdtOp, 8> taskEdts;
@@ -314,12 +312,7 @@ void EdtLoweringPass::runOnOperation() {
       edtOp.emitError("Failed to lower task EDT");
       return signalPassFailure();
     }
-    /// Each lowerEdt call outlines the EDT body, invalidating any cached
-    /// DbGraph nodes that reference block arguments or operations from the
-    /// old EDT body. Invalidate so the next EDT's analysis rebuilds fresh.
-    analysisManager.getDbAnalysis().invalidate();
   }
-  analysisManager.getDbAnalysis().invalidate();
 
   ARTS_INFO_FOOTER(EdtLoweringPass);
   AC = nullptr;
@@ -1163,7 +1156,7 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
       runtimeDbMode = static_cast<int32_t>(dbMode);
     }
     if (dbMode == DbMode::write &&
-        canUseUnorderedLocalWrite(dbAcquireOp, edtOp, AM)) {
+        canUseUnorderedLocalWrite(dbAcquireOp, edtOp, module)) {
       runtimeDbMode = kArtsRuntimeDbModeRw;
       ARTS_DEBUG("Using unordered local DB_MODE_RW for proven partitioned "
                  "out dependency");
@@ -1425,8 +1418,8 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
                                                 << " for dep " << depIndex);
 
     /// Replace remaining uses of the dependency placeholder with the dependency
-    bool isSingleElement = DbAnalysis::hasSingleSize(
-        originalDeps[depIndex].getDefiningOp<DbAcquireOp>());
+    bool isSingleElement =
+        hasSingleDbSlot(originalDeps[depIndex].getDefiningOp<DbAcquireOp>());
     bool isNestedMemref = false;
     if (auto mt = dyn_cast<MemRefType>(placeholder.getType()))
       isNestedMemref = isa<MemRefType>(mt.getElementType());
@@ -2029,12 +2022,7 @@ namespace mlir {
 namespace carts::arts_rt {
 
 std::unique_ptr<Pass> createEdtLoweringPass(uint64_t idStride) {
-  return std::make_unique<EdtLoweringPass>(nullptr, idStride);
-}
-
-std::unique_ptr<Pass> createEdtLoweringPass(arts::AnalysisManager *AM,
-                                            uint64_t idStride) {
-  return std::make_unique<EdtLoweringPass>(AM, idStride);
+  return std::make_unique<EdtLoweringPass>(idStride);
 }
 
 } // namespace carts::arts_rt

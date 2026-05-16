@@ -1145,14 +1145,14 @@ void buildEpochsPipeline(PassManager &pm, arts::AnalysisManager *AM) {
 }
 
 /// Pre-lowering passes.
-void buildPreLoweringPipeline(PassManager &pm, arts::AnalysisManager *AM) {
+void buildPreLoweringPipeline(PassManager &pm) {
   /// TODO(PERF): EdtAllocaSinkingPass runs twice (late concurrency cleanup
   /// and here).
   pm.addPass(arts::createEdtAllocaSinkingPass());
   addCanonicalizeAndCSE(pm);
   pm.addPass(arts_rt::createDbLoweringPass(ArtsIdStride));
   addCanonicalizeAndCSE(pm);
-  pm.addPass(arts_rt::createEdtLoweringPass(AM, ArtsIdStride));
+  pm.addPass(arts_rt::createEdtLoweringPass(ArtsIdStride));
   addCanonicalizeAndCSE(pm);
   pm.addPass(arts::createVerifyEdtLoweredPass());
   pm.addPass(createLoopInvariantCodeMotionPass());
@@ -1337,8 +1337,8 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        /*dependsOn=*/kDepPostDbRefinement},
       {StageId::PreLowering, "pre-lowering", StageKind::Core, true, true, true,
        "Error when pre-lowering DBs, EDTs, and Epochs", kPreLoweringPasses,
-       [](PassManager &pm, const StageExecutionContext &ctx) {
-         buildPreLoweringPipeline(pm, ctx.analysisManager);
+       [](PassManager &pm, const StageExecutionContext &) {
+         buildPreLoweringPipeline(pm);
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepPreLowering},

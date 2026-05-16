@@ -13,16 +13,32 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/DbLayoutStrategy.h"
-#include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/utils/OperationAttributes.h"
+#include "carts/utils/ValueAnalysis.h"
 #include "mlir/IR/Operation.h"
 
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
 using namespace mlir::carts::arts_rt;
+
+namespace {
+
+PartitionMode getLoweredDbPartitionMode(DbAllocOp alloc) {
+  if (auto mode = getPartitionMode(alloc.getOperation()))
+    return *mode;
+
+  bool singleOuterSlot = llvm::all_of(alloc.getSizes(), [](Value size) {
+    int64_t value;
+    return ValueAnalysis::getConstantIndex(size, value) && value == 1;
+  });
+  return singleOuterSlot ? PartitionMode::coarse : PartitionMode::fine_grained;
+}
+
+} // namespace
 
 LayoutInfo mlir::carts::arts::buildLayoutInfo(Value source) {
   LayoutInfo info;
@@ -33,7 +49,7 @@ LayoutInfo mlir::carts::arts::buildLayoutInfo(Value source) {
   if (Operation *rootAllocOp = DbUtils::getUnderlyingDbAlloc(source)) {
     if (auto alloc = dyn_cast<DbAllocOp>(rootAllocOp)) {
       info.alloc = alloc;
-      info.mode = DbAnalysis::getPartitionModeFromStructure(alloc);
+      info.mode = getLoweredDbPartitionMode(alloc);
       info.sizes.assign(alloc.getSizes().begin(), alloc.getSizes().end());
       info.elementSizes.assign(alloc.getElementSizes().begin(),
                                alloc.getElementSizes().end());

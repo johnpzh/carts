@@ -22,7 +22,6 @@
 
 namespace mlir::carts::arts {
 
-class AnalysisManager;
 class RuntimeConfig;
 
 } // namespace mlir::carts::arts
@@ -36,8 +35,6 @@ namespace mlir::carts::arts_rt {
 std::unique_ptr<::mlir::Pass> createDbLoweringPass(uint64_t idStride = 1000);
 /// Lower outlined ARTS EDT objects into ARTS-RT launch/dependency ops.
 std::unique_ptr<::mlir::Pass> createEdtLoweringPass(uint64_t idStride = 1000);
-std::unique_ptr<::mlir::Pass>
-createEdtLoweringPass(arts::AnalysisManager *AM, uint64_t idStride = 1000);
 /// Lower ARTS epochs into ARTS-RT epoch ops.
 std::unique_ptr<::mlir::Pass> createEpochLoweringPass();
 /// Lower runtime-shaped ARTS/ARTS-RT ops to LLVM dialect runtime calls.
