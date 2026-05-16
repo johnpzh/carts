@@ -10,7 +10,7 @@
 
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
-#include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
@@ -125,7 +125,7 @@ Value resolveGuidStorageForAcquireSource(Value sourceGuid, Value sourcePtr) {
   if (auto dbRefOp = dyn_cast_or_null<DbRefOp>(def))
     return resolveGuidStorageForAcquireSource({}, dbRefOp.getSource());
 
-  Operation *underlying = DbUtils::getUnderlyingDb(sourcePtr);
+  Operation *underlying = RtDbUtils::getUnderlyingDb(sourcePtr);
   if (auto allocOp = dyn_cast_or_null<DbAllocOp>(underlying))
     return allocOp.getGuid();
   if (auto acquireOp = dyn_cast_or_null<DbAcquireOp>(underlying))
@@ -142,7 +142,7 @@ SmallVector<Value, 4> resolveOuterSizesForGuid(Value dbGuid, ArtsCodegen *AC,
   if (!dbGuid)
     return sizes;
 
-  if (auto allocOp = DbUtils::getAllocOpFromGuid(dbGuid)) {
+  if (auto allocOp = RtDbUtils::getAllocOpFromGuid(dbGuid)) {
     sizes.assign(allocOp.getSizes().begin(), allocOp.getSizes().end());
     return sizes;
   }
@@ -177,7 +177,7 @@ static SmallVector<Value> materializeDbRefElementSizes(DbRefOp op,
     return {};
 
   DbAllocOp selectedAlloc = nullptr;
-  if (auto *rawAlloc = DbUtils::getUnderlyingDbAlloc(op.getSource()))
+  if (auto *rawAlloc = RtDbUtils::getUnderlyingDbAlloc(op.getSource()))
     selectedAlloc = dyn_cast<DbAllocOp>(rawAlloc);
   if (selectedAlloc &&
       selectedAlloc.getElementSizes().size() !=
@@ -434,7 +434,7 @@ struct DbAllocPattern : public ArtsRtToLLVMPattern<DbAllocOp> {
     else
       nextId = getArtsId(op);
 
-    DbLoweringInfo dbLowering = DbUtils::extractDbLoweringInfo(op);
+    DbLoweringInfo dbLowering = RtDbUtils::extractDbLoweringInfo(op);
     auto &dbSizes = dbLowering.sizes;
     bool isSingleElement = dbLowering.isSingleElement;
     DbMemoryPlacement dbMemoryPlacement = getDbMemoryPlacement(
@@ -1185,8 +1185,8 @@ struct DbRefPattern : public ArtsRtToLLVMPattern<DbRefOp> {
 
     SmallVector<Value> indices(op.getIndices().begin(), op.getIndices().end());
     SmallVector<Value> outerSizes;
-    if (Operation *underlyingDb = DbUtils::getUnderlyingDb(source))
-      outerSizes = DbUtils::getSizesFromDb(underlyingDb);
+    if (Operation *underlyingDb = RtDbUtils::getUnderlyingDb(source))
+      outerSizes = RtDbUtils::getSizesFromDb(underlyingDb);
     if (outerSizes.empty())
       outerSizes = materializeStaticDbOuterShape(source, AC, loc);
 
@@ -1344,7 +1344,7 @@ struct DbReleasePattern : public ArtsRtToLLVMPattern<DbReleaseOp> {
     ARTS_INFO("Lowering DbRelease Op " << op);
     ArtsCodegen::RewriterGuard RG(*AC, rewriter);
     Value source = op.getSource();
-    Operation *underlyingDb = DbUtils::getUnderlyingDb(source);
+    Operation *underlyingDb = RtDbUtils::getUnderlyingDb(source);
     Value guidStorage;
     if (auto alloc = dyn_cast_or_null<DbAllocOp>(underlyingDb))
       guidStorage = alloc.getGuid();
@@ -1361,7 +1361,7 @@ struct DbReleasePattern : public ArtsRtToLLVMPattern<DbReleaseOp> {
       };
 
       if (auto storageTy = dyn_cast<MemRefType>(guidStorage.getType())) {
-        SmallVector<Value> releaseSizes = DbUtils::getSizesFromDb(underlyingDb);
+        SmallVector<Value> releaseSizes = RtDbUtils::getSizesFromDb(underlyingDb);
         if (releaseSizes.empty()) {
           Value zero = AC->createIndexConstant(0, op.getLoc());
           emitRelease(AC->create<memref::LoadOp>(op.getLoc(), guidStorage,
@@ -1406,7 +1406,7 @@ struct DbFreePattern : public ArtsRtToLLVMPattern<DbFreeOp> {
     ARTS_INFO("Lowering DbFree Op " << op);
     ArtsCodegen::RewriterGuard RG(*AC, rewriter);
     Value source = op.getSource();
-    Operation *underlyingDb = DbUtils::getUnderlyingDb(source);
+    Operation *underlyingDb = RtDbUtils::getUnderlyingDb(source);
     Value guidStorage;
     bool sourceIsGuidStorage = false;
 
@@ -1430,7 +1430,7 @@ struct DbFreePattern : public ArtsRtToLLVMPattern<DbFreeOp> {
       };
 
       if (auto storageTy = dyn_cast<MemRefType>(guidStorage.getType())) {
-        SmallVector<Value> destroySizes = DbUtils::getSizesFromDb(underlyingDb);
+        SmallVector<Value> destroySizes = RtDbUtils::getSizesFromDb(underlyingDb);
         if (destroySizes.empty()) {
           Value zero = AC->createIndexConstant(0, op.getLoc());
           emitDestroy(AC->create<memref::LoadOp>(op.getLoc(), guidStorage,

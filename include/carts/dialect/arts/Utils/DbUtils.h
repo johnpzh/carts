@@ -78,9 +78,9 @@ public:
   ///===----------------------------------------------------------------------===////
 
   /// Extract lowering info (sizes, offsets, indices, isSingleElement) from
-  /// a datablock operation. Handles DbAcquireOp and DepDbAcquireOp by
-  /// extracting dependency sizes/offsets/indices; for other ops (e.g.
-  /// DbAllocOp) falls back to op.getSizes() with empty offsets/indices.
+  /// a datablock operation. Handles DbAcquireOp by extracting dependency
+  /// sizes/offsets/indices; for other ops (e.g. DbAllocOp) falls back to
+  /// op.getSizes() with empty offsets/indices.
   template <typename OpType>
   static DbLoweringInfo extractDbLoweringInfo(OpType op);
 
@@ -90,7 +90,7 @@ public:
   /// Functions for extracting sizes, element sizes, and offsets from datablocks
 
   /// Extract sizes from a datablock operation.
-  /// Supports DbAllocOp, DbAcquireOp, and DepDbAcquireOp.
+  /// Supports DbAllocOp and DbAcquireOp.
   static SmallVector<Value> getSizesFromDb(Operation *dbOp);
 
   /// Extract sizes from a datablock pointer value.

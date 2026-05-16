@@ -15,7 +15,7 @@
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/DbLayoutStrategy.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
-#include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/IR/Operation.h"
@@ -46,7 +46,7 @@ LayoutInfo mlir::carts::arts::buildLayoutInfo(Value source) {
   if (!source)
     return info;
 
-  if (Operation *rootAllocOp = DbUtils::getUnderlyingDbAlloc(source)) {
+  if (Operation *rootAllocOp = RtDbUtils::getUnderlyingDbAlloc(source)) {
     if (auto alloc = dyn_cast<DbAllocOp>(rootAllocOp)) {
       info.alloc = alloc;
       info.mode = getLoweredDbPartitionMode(alloc);
@@ -57,7 +57,7 @@ LayoutInfo mlir::carts::arts::buildLayoutInfo(Value source) {
   }
 
   if (info.sizes.empty()) {
-    SmallVector<Value> sizes = DbUtils::getSizesFromDb(source);
+    SmallVector<Value> sizes = RtDbUtils::getSizesFromDb(source);
     info.sizes.assign(sizes.begin(), sizes.end());
   }
 
@@ -75,7 +75,7 @@ Value mlir::carts::arts::computeDbElementPointer(ArtsCodegen &AC, Location loc,
   SmallVector<Value> fallbackSizes;
   ArrayRef<Value> sizes = layout.sizes;
   if (sizes.empty()) {
-    fallbackSizes = DbUtils::getSizesFromDb(base);
+    fallbackSizes = RtDbUtils::getSizesFromDb(base);
     sizes = fallbackSizes;
   }
 

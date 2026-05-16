@@ -26,7 +26,7 @@ namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_DBLOWERING
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
-#include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/utils/Debug.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/dialect/arts-rt/Utils/IdRegistry.h"
@@ -68,6 +68,7 @@ static llvm::Statistic numAllocsSkippedAlreadyLowered{
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
+using namespace mlir::carts::arts_rt;
 
 namespace {
 
@@ -90,7 +91,7 @@ static void normalizeBlockHaloAcquireSlice(ArtsCodegen *AC, DbAcquireOp acquire,
     return;
 
   auto alloc =
-      dyn_cast_or_null<DbAllocOp>(DbUtils::getUnderlyingDbAlloc(sourcePtr));
+      dyn_cast_or_null<DbAllocOp>(RtDbUtils::getUnderlyingDbAlloc(sourcePtr));
   if (!alloc)
     return;
 
@@ -136,13 +137,13 @@ static void normalizeBlockHaloAcquireSlice(ArtsCodegen *AC, DbAcquireOp acquire,
   }
 
   SmallVector<Value, 4> offsets, sizes;
-  DbUtils::convertElementSliceToBlockSlice(AC->getBuilder(), loc, dimElementOffsets,
-                                  dimElementSizes, dimBlockSpans,
-                                  dimTotalBlocks, offsets, sizes);
+  RtDbUtils::convertElementSliceToBlockSlice(
+      AC->getBuilder(), loc, dimElementOffsets, dimElementSizes, dimBlockSpans,
+      dimTotalBlocks, offsets, sizes);
   SmallVector<Value, 4> mergedOffsets, mergedSizes;
-  DbUtils::mergeNormalizedBlockSlice(AC->getBuilder(), loc, acquire.getOffsets(),
-                            acquire.getSizes(), outerSizes, offsets, sizes,
-                            mergedOffsets, mergedSizes);
+  RtDbUtils::mergeNormalizedBlockSlice(
+      AC->getBuilder(), loc, acquire.getOffsets(), acquire.getSizes(),
+      outerSizes, offsets, sizes, mergedOffsets, mergedSizes);
 
   acquire.getOffsetsMutable().assign(mergedOffsets);
   acquire.getSizesMutable().assign(mergedSizes);

@@ -34,7 +34,7 @@ namespace mlir::carts::arts_rt {
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLoweringInternal.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/passes/Passes.h"
-#include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/dialect/arts-rt/Utils/IdRegistry.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
@@ -96,7 +96,7 @@ static bool hasSingleDbSlot(Operation *dbOp) {
   if (!dbOp)
     return false;
 
-  SmallVector<Value> sizes = DbUtils::getSizesFromDb(dbOp);
+  SmallVector<Value> sizes = RtDbUtils::getSizesFromDb(dbOp);
   if (sizes.empty())
     return true;
 
@@ -154,7 +154,7 @@ trySynthesizeElementSlice(ArtsCodegen *AC, DbAcquireOp acquire, Location loc) {
     blockExtents.assign(contract->spatial.blockShape.begin(),
                         contract->spatial.blockShape.end());
   } else if (auto alloc = dyn_cast_or_null<DbAllocOp>(
-                 DbUtils::getUnderlyingDbAlloc(acquire.getSourcePtr()))) {
+                 RtDbUtils::getUnderlyingDbAlloc(acquire.getSourcePtr()))) {
     blockExtents.assign(alloc.getElementSizes().begin(),
                         alloc.getElementSizes().end());
   }
@@ -550,7 +550,7 @@ Value EdtLoweringPass::computeDependencyCount(Location loc,
     if (Operation *source = getCanonicalDependencySource(dep))
       if (!seenSources.insert(source).second)
         continue;
-    SmallVector<Value> sizes = DbUtils::getDepSizesFromDb(dep);
+    SmallVector<Value> sizes = RtDbUtils::getDepSizesFromDb(dep);
     Value numElements = AC->create<DbNumElementsOp>(loc, sizes);
     numElements = AC->castToInt(AC->Int32, numElements, loc);
     depCount = AC->create<arith::AddIOp>(loc, depCount, numElements);
@@ -688,7 +688,7 @@ EdtLoweringPass::packParams(Location loc, EdtEnvManager &envManager,
     /// inside the outlined function to create DynLoadOp/DynStoreOp for
     /// multi-dynamic-dim memref accesses via DbRefOp → Pointer2MemrefOp.
     if (auto *rawAlloc =
-            DbUtils::getUnderlyingDbAlloc(dbAcquireOp.getSourcePtr())) {
+            RtDbUtils::getUnderlyingDbAlloc(dbAcquireOp.getSourcePtr())) {
       if (auto alloc = dyn_cast<DbAllocOp>(rawAlloc)) {
         for (Value elemSz : alloc.getElementSizes())
           if (failed(appendIfMissing(elemSz)))
@@ -1043,7 +1043,7 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
       } else {
         /// Get elementSizes from underlying allocation for stride computation
         auto alloc = dyn_cast_or_null<DbAllocOp>(
-            DbUtils::getUnderlyingDbAlloc(dbAcquireOp.getSourcePtr()));
+            RtDbUtils::getUnderlyingDbAlloc(dbAcquireOp.getSourcePtr()));
 
         /// ESD slice transport delivers a compacted copy of the requested
         /// byte range. When the allocation is coarse (single partition),
@@ -1125,10 +1125,10 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
     byteSizes.push_back(byteSize);
 
     DbAllocOp allocForHint =
-        dyn_cast_or_null<DbAllocOp>(DbUtils::getUnderlyingDbAlloc(dep));
+        dyn_cast_or_null<DbAllocOp>(RtDbUtils::getUnderlyingDbAlloc(dep));
     if (dbAcquireOp && !allocForHint) {
       if (auto *rawAlloc =
-              DbUtils::getUnderlyingDbAlloc(dbAcquireOp.getSourcePtr()))
+              RtDbUtils::getUnderlyingDbAlloc(dbAcquireOp.getSourcePtr()))
         allocForHint = dyn_cast<DbAllocOp>(rawAlloc);
     }
 
@@ -1144,7 +1144,7 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
     /// even if the underlying allocation is WRITE-only. The allocation mode is
     /// only used to narrow (not widen) the access when the arts mode is not
     /// already read.
-    DbMode dbMode = DbUtils::convertArtsModeToDbMode(artsMode);
+    DbMode dbMode = RtDbUtils::convertArtsModeToDbMode(artsMode);
     int32_t runtimeDbMode =
         artsMode == ArtsMode::inout ? kArtsRuntimeDbModeRw
                                     : static_cast<int32_t>(dbMode);
@@ -1350,7 +1350,7 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
           continue;
       }
       SmallVector<Value> prevSizes =
-          DbUtils::getDepSizesFromDb(originalDeps[i]);
+          RtDbUtils::getDepSizesFromDb(originalDeps[i]);
       SmallVector<Value> prevResolved = resolveParam(prevSizes, loc);
       Value prevElems = AC->computeTotalElements(prevResolved, loc);
       base = AC->create<arith::AddIOp>(loc, base, prevElems);
@@ -1369,9 +1369,9 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
     AC->setInsertionPoint(placeholder.getDefiningOp());
     Value baseOffset = computeBaseOffset(depIndex, loc);
     SmallVector<Value> depSizes =
-        resolveParam(DbUtils::getDepSizesFromDb(originalDeps[depIndex]), loc);
+        resolveParam(RtDbUtils::getDepSizesFromDb(originalDeps[depIndex]), loc);
     SmallVector<Value> depOffsets =
-        resolveParam(DbUtils::getDepOffsetsFromDb(originalDeps[depIndex]), loc);
+        resolveParam(RtDbUtils::getDepOffsetsFromDb(originalDeps[depIndex]), loc);
     SmallVector<Value> depStrides = AC->computeStridesFromSizes(depSizes, loc);
 
     auto originalAcquire = originalDeps[depIndex].getDefiningOp<DbAcquireOp>();
@@ -1385,7 +1385,7 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
     /// memrefs.
     SmallVector<Value> allocElementSizes;
     if (auto *rawAlloc =
-            DbUtils::getUnderlyingDbAlloc(originalDeps[depIndex])) {
+            RtDbUtils::getUnderlyingDbAlloc(originalDeps[depIndex])) {
       if (auto alloc = dyn_cast<DbAllocOp>(rawAlloc))
         allocElementSizes.assign(alloc.getElementSizes().begin(),
                                  alloc.getElementSizes().end());

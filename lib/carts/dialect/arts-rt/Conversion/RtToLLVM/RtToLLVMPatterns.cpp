@@ -11,7 +11,7 @@
 
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
-#include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
@@ -573,7 +573,7 @@ private:
     if (!boundsValid)
       return nullptr;
 
-    DbAllocOp allocOp = DbUtils::getAllocOpFromGuid(dbGuid);
+    DbAllocOp allocOp = RtDbUtils::getAllocOpFromGuid(dbGuid);
 
     if (allocOp && !allocOp.getSizes().empty())
       return AC->computeTotalElements(allocOp.getSizes(), allocOp.getLoc());
@@ -916,7 +916,7 @@ private:
     auto dbAcquireOp = dbGuid.getDefiningOp<DbAcquireOp>();
     auto depDbAcquireOp = dbGuid.getDefiningOp<DepDbAcquireOp>();
     if (!dbAcquireOp && !depDbAcquireOp) {
-      Operation *underlying = DbUtils::getUnderlyingDb(dbGuid);
+      Operation *underlying = RtDbUtils::getUnderlyingDb(dbGuid);
       if (underlying) {
         dbAcquireOp = dyn_cast<DbAcquireOp>(underlying);
         depDbAcquireOp = dyn_cast<DepDbAcquireOp>(underlying);
@@ -924,7 +924,7 @@ private:
     }
 
     if (dbAcquireOp) {
-      result.dbInfo = DbUtils::extractDbLoweringInfo(dbAcquireOp);
+      result.dbInfo = RtDbUtils::extractDbLoweringInfo(dbAcquireOp);
       result.guidStorage =
           dbAcquireOp.getSourceGuid() ? dbAcquireOp.getSourceGuid() : dbGuid;
       result.allocSizes = resolveOuterSizesForGuid(dbGuid, AC, loc);
@@ -948,7 +948,7 @@ private:
       }
 
       if (auto alloc = dyn_cast_or_null<DbAllocOp>(
-              DbUtils::getUnderlyingDbAlloc(dbAcquireOp.getSourcePtr()))) {
+              RtDbUtils::getUnderlyingDbAlloc(dbAcquireOp.getSourcePtr()))) {
         Type elementType = alloc.getElementType();
         if (auto memrefType = dyn_cast<MemRefType>(elementType))
           elementType = memrefType.getElementType();
@@ -974,7 +974,7 @@ private:
         }
       }
     } else if (depDbAcquireOp) {
-      result.dbInfo = DbUtils::extractDbLoweringInfo(depDbAcquireOp);
+      result.dbInfo = RtDbUtils::extractDbLoweringInfo(depDbAcquireOp);
       rebaseDepIterationWindow(result, loc);
       result.guidStorage = depDbAcquireOp.getGuid();
       result.depStruct = depDbAcquireOp.getDepStruct();
@@ -1005,7 +1005,7 @@ private:
     result.useDepv =
         depInfo.depStruct && depInfo.baseOffset &&
         (accessMode == DepAccessMode::from_depv ||
-         isa_and_nonnull<DepDbAcquireOp>(DbUtils::getUnderlyingDb(dbGuid)));
+         isa_and_nonnull<DepDbAcquireOp>(RtDbUtils::getUnderlyingDb(dbGuid)));
 
     result.totalDBs = result.useDepv
                           ? Value()
@@ -1206,7 +1206,7 @@ private:
     const bool useDepv =
         depStruct && baseOffset &&
         (accessMode == DepAccessMode::from_depv ||
-         isa_and_nonnull<DepDbAcquireOp>(DbUtils::getUnderlyingDb(dbGuid)));
+         isa_and_nonnull<DepDbAcquireOp>(RtDbUtils::getUnderlyingDb(dbGuid)));
 
     /// Extend boundsValid with DB index check for stencil cases.
     /// When the allocation is coarse (totalDBs == 1), all workers bind to the

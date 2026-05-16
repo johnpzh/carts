@@ -5,7 +5,6 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/Utils/DbUtils.h"
-#include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -30,7 +29,6 @@ ARTS_DEBUG_SETUP(db_utils);
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
-using namespace mlir::carts::arts_rt;
 
 namespace {
 
@@ -60,10 +58,6 @@ static Operation *resolveRootAllocFromAttr(Value v) {
     }
     if (auto dbRef = dyn_cast<DbRefOp>(defOp)) {
       v = dbRef.getSource();
-      continue;
-    }
-    if (auto dbGep = dyn_cast<DbGepOp>(defOp)) {
-      v = dbGep.getBasePtr();
       continue;
     }
     break;
@@ -282,11 +276,6 @@ DbLoweringInfo DbUtils::extractDbLoweringInfo(OpType op) {
     info.sizes = getDepSizesFromDb(acqOp.getOperation());
     info.offsets = getDepOffsetsFromDb(acqOp.getOperation());
     info.indices.assign(acqOp.getIndices().begin(), acqOp.getIndices().end());
-  } else if (auto depAcqOp = dyn_cast<DepDbAcquireOp>(op.getOperation())) {
-    info.sizes = getDepSizesFromDb(depAcqOp.getOperation());
-    info.offsets = getDepOffsetsFromDb(depAcqOp.getOperation());
-    info.indices.assign(depAcqOp.getIndices().begin(),
-                        depAcqOp.getIndices().end());
   } else {
     info.sizes.assign(op.getSizes().begin(), op.getSizes().end());
     info.offsets.clear();
@@ -307,8 +296,6 @@ DbLoweringInfo DbUtils::extractDbLoweringInfo(OpType op) {
 /// Explicit template instantiations for the operation types used in lowering.
 template DbLoweringInfo
 DbUtils::extractDbLoweringInfo<DbAcquireOp>(DbAcquireOp op);
-template DbLoweringInfo
-DbUtils::extractDbLoweringInfo<DepDbAcquireOp>(DepDbAcquireOp op);
 template DbLoweringInfo DbUtils::extractDbLoweringInfo<DbAllocOp>(DbAllocOp op);
 
 ///===----------------------------------------------------------------------===///
@@ -328,8 +315,6 @@ Operation *DbUtils::getUnderlyingDb(Value v, unsigned depth) {
   /// Case 1: Direct DbAllocOp result (either guid or ptr).
   if (auto acq = v.getDefiningOp<DbAcquireOp>())
     return acq.getOperation();
-  if (auto depAcq = v.getDefiningOp<DepDbAcquireOp>())
-    return depAcq.getOperation();
   if (auto alloc = v.getDefiningOp<DbAllocOp>())
     return alloc.getOperation();
   /// Case 2: DbAcquireOp — trace through sourceGuid or sourcePtr.
@@ -351,8 +336,6 @@ Operation *DbUtils::getUnderlyingDb(Value v, unsigned depth) {
   if (Operation *def = v.getDefiningOp()) {
     if (Operation *rootAlloc = resolveRootAllocFromAttr(v))
       return rootAlloc;
-    if (auto gep = dyn_cast<DbGepOp>(def))
-      return getUnderlyingDb(gep.getBasePtr(), depth + 1);
     if (auto ptrToInt = dyn_cast<LLVM::PtrToIntOp>(def))
       return getUnderlyingDb(ptrToInt.getArg(), depth + 1);
     if (auto intToPtr = dyn_cast<LLVM::IntToPtrOp>(def))
@@ -371,7 +354,7 @@ Operation *DbUtils::getUnderlyingDb(Value v, unsigned depth) {
     return rootAlloc;
 
   if (Operation *root = ValueAnalysis::getUnderlyingOperation(v))
-    if (isa<DbAcquireOp, DepDbAcquireOp, DbAllocOp>(root))
+    if (isa<DbAcquireOp, DbAllocOp>(root))
       return root;
 
   return nullptr;
@@ -396,10 +379,6 @@ DbAllocOp DbUtils::getAllocOpFromGuid(Value dbGuid) {
   if (auto dbAcquireOp = dbGuid.getDefiningOp<DbAcquireOp>())
     return dbAcquireOp.getSourceGuid()
                ? dbAcquireOp.getSourceGuid().getDefiningOp<DbAllocOp>()
-               : nullptr;
-  if (auto depDbAcquireOp = dbGuid.getDefiningOp<DepDbAcquireOp>())
-    return depDbAcquireOp.getGuid()
-               ? depDbAcquireOp.getGuid().getDefiningOp<DbAllocOp>()
                : nullptr;
   return nullptr;
 }
@@ -438,10 +417,6 @@ SmallVector<Value> DbUtils::getSizesFromDb(Operation *dbOp) {
     return SmallVector<Value>(acquireOp.getSizes().begin(),
                               acquireOp.getSizes().end());
   }
-  if (auto depDbAcquireOp = dyn_cast<DepDbAcquireOp>(dbOp)) {
-    return SmallVector<Value>(depDbAcquireOp.getSizes().begin(),
-                              depDbAcquireOp.getSizes().end());
-  }
   return {};
 }
 
@@ -466,10 +441,6 @@ SmallVector<Value> DbUtils::getDepSizesFromDb(Operation *dbOp) {
     return sizes;
   }
 
-  if (auto depAcquireOp = dyn_cast_or_null<DepDbAcquireOp>(dbOp))
-    return SmallVector<Value>(depAcquireOp.getSizes().begin(),
-                              depAcquireOp.getSizes().end());
-
   return {};
 }
 
@@ -487,10 +458,6 @@ SmallVector<Value> DbUtils::getDepOffsetsFromDb(Operation *dbOp) {
     getAcquireDepSlice(acquireOp, sizes, offsets);
     return offsets;
   }
-
-  if (auto depAcquireOp = dyn_cast_or_null<DepDbAcquireOp>(dbOp))
-    return SmallVector<Value>(depAcquireOp.getOffsets().begin(),
-                              depAcquireOp.getOffsets().end());
 
   return {};
 }

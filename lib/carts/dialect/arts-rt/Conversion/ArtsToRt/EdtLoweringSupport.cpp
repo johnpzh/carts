@@ -9,7 +9,7 @@
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLoweringInternal.h"
 
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
-#include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -68,7 +68,7 @@ void normalizeTaskDepSlice(ArtsCodegen *AC, DbAcquireOp acquire,
     return;
 
   auto alloc = dyn_cast_or_null<DbAllocOp>(
-      DbUtils::getUnderlyingDbAlloc(acquire.getSourcePtr()));
+      RtDbUtils::getUnderlyingDbAlloc(acquire.getSourcePtr()));
   if (!alloc)
     return;
 
@@ -97,16 +97,16 @@ void normalizeTaskDepSlice(ArtsCodegen *AC, DbAcquireOp acquire,
   }
 
   SmallVector<Value, 4> offsets, sizes;
-  DbUtils::convertElementSliceToBlockSlice(AC->getBuilder(), loc, dimElementOffsets,
-                                  dimElementSizes, dimBlockSpans,
-                                  dimTotalBlocks, offsets, sizes);
+  RtDbUtils::convertElementSliceToBlockSlice(
+      AC->getBuilder(), loc, dimElementOffsets, dimElementSizes, dimBlockSpans,
+      dimTotalBlocks, offsets, sizes);
   SmallVector<Value, 4> mergedOffsets, mergedSizes;
   /// normalizeTaskDepSlice may refine only a leading owner-space prefix from
   /// partition_* metadata. Preserve the remaining owner slots so N-D acquires
   /// keep the same DB rank that DB refinement established.
-  DbUtils::mergeNormalizedBlockSlice(AC->getBuilder(), loc, acquire.getOffsets(),
-                            acquire.getSizes(), outerSizes, offsets, sizes,
-                            mergedOffsets, mergedSizes);
+  RtDbUtils::mergeNormalizedBlockSlice(
+      AC->getBuilder(), loc, acquire.getOffsets(), acquire.getSizes(),
+      outerSizes, offsets, sizes, mergedOffsets, mergedSizes);
 
   acquire.getOffsetsMutable().assign(mergedOffsets);
   acquire.getSizesMutable().assign(mergedSizes);
@@ -320,7 +320,7 @@ Value loadRepresentativeGuidScalar(ArtsCodegen *AC, Location loc,
 ///===----------------------------------------------------------------------===///
 
 DepSourceInfo resolveDepSource(Value dep) {
-  Operation *underlyingDb = DbUtils::getUnderlyingDb(dep);
+  Operation *underlyingDb = RtDbUtils::getUnderlyingDb(dep);
   DepSourceInfo info;
   info.dbAcquire = dyn_cast_or_null<DbAcquireOp>(underlyingDb);
   info.depDbAcquire = dyn_cast_or_null<DepDbAcquireOp>(underlyingDb);
