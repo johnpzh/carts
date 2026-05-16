@@ -314,9 +314,11 @@ static bool shouldKeepHostOpenMP(omp::ParallelOp parallel) {
   return hasStencilLikeFloatingPointAccess(loops.front());
 }
 
-static bool shouldKeepHostOpenMPElementwiseBundle(ModuleOp module) {
+static void collectHostOpenMPElementwiseBundleParallels(
+    ModuleOp module, SmallVectorImpl<omp::ParallelOp> &parallels) {
   unsigned mapLoops = 0;
   unsigned transcendentalMapLoops = 0;
+  SmallVector<omp::ParallelOp> candidateParallels;
 
   module.walk([&](omp::ParallelOp parallel) {
     SmallVector<omp::WsloopOp, 2> loops;
@@ -336,13 +338,17 @@ static bool shouldKeepHostOpenMPElementwiseBundle(ModuleOp module) {
     ++mapLoops;
     if (hasTranscendental)
       ++transcendentalMapLoops;
+    candidateParallels.push_back(parallel);
   });
 
-  return mapLoops >= 4 && transcendentalMapLoops >= 2;
+  if (mapLoops >= 4 && transcendentalMapLoops >= 2)
+    parallels.append(candidateParallels.begin(), candidateParallels.end());
 }
 
-static bool shouldKeepHostOpenMPRepeatedStreamingBundle(ModuleOp module) {
+static void collectHostOpenMPRepeatedStreamingBundleParallels(
+    ModuleOp module, SmallVectorImpl<omp::ParallelOp> &parallels) {
   unsigned repeatedMapLoops = 0;
+  SmallVector<omp::ParallelOp> candidateParallels;
 
   module.walk([&](omp::ParallelOp parallel) {
     if (!hasRepeatedStencilParentLoop(parallel.getOperation()))
@@ -365,9 +371,11 @@ static bool shouldKeepHostOpenMPRepeatedStreamingBundle(ModuleOp module) {
       return;
 
     ++repeatedMapLoops;
+    candidateParallels.push_back(parallel);
   });
 
-  return repeatedMapLoops >= 4;
+  if (repeatedMapLoops >= 4)
+    parallels.append(candidateParallels.begin(), candidateParallels.end());
 }
 
 static bool isBenchmarkModule(ModuleOp module) {
@@ -386,23 +394,35 @@ static unsigned markHostOpenMPIslands(ModuleOp module) {
   if (!isBenchmarkModule(module))
     return 0;
 
-  bool needsHostOpenMPFallback = false;
+  SmallVector<omp::ParallelOp> fallbackParallels;
   module.walk([&](omp::ParallelOp parallel) {
     if (shouldKeepHostOpenMP(parallel))
-      needsHostOpenMPFallback = true;
+      fallbackParallels.push_back(parallel);
   });
-  needsHostOpenMPFallback |= shouldKeepHostOpenMPElementwiseBundle(module);
-  needsHostOpenMPFallback |= shouldKeepHostOpenMPRepeatedStreamingBundle(module);
-  if (!needsHostOpenMPFallback)
-    return 0;
+  collectHostOpenMPElementwiseBundleParallels(module, fallbackParallels);
+  collectHostOpenMPRepeatedStreamingBundleParallels(module, fallbackParallels);
 
+  llvm::DenseSet<Operation *> markedParallels;
+  llvm::DenseSet<Operation *> markedOps;
   unsigned marked = 0;
-  module.walk([&](Operation *op) {
+  auto markIfOpenMP = [&](Operation *op) {
     if (!op->getDialect() || op->getDialect()->getNamespace() != "omp")
+      return;
+    if (!markedOps.insert(op).second)
       return;
     op->setAttr(kKeepHostOpenMP, UnitAttr::get(op->getContext()));
     ++marked;
-  });
+  };
+
+  for (omp::ParallelOp parallel : fallbackParallels) {
+    if (!markedParallels.insert(parallel.getOperation()).second)
+      continue;
+    markIfOpenMP(parallel.getOperation());
+    parallel->walk([&](Operation *op) {
+      if (op != parallel.getOperation())
+        markIfOpenMP(op);
+    });
+  }
   return marked;
 }
 
