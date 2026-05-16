@@ -98,7 +98,7 @@ performance plan unless the SDE analysis can explain why the chosen owner
 slices are independent or why their dependency windows are complete.
 
 The latest CPS contract follows this rule. `BarrierElimination` marks full-timestep
-`advance_edt` stages as SDE CPS candidates only when SDE can provide an
+`advance_stage` stages as SDE CPS candidates only when SDE can provide an
 explicit control boundary. Adjacent candidates are not allowed to be attrs-only:
 SDE inserts a completion token and a token-consuming timestep barrier before it
 stamps the group. `VerifySdeCpsPlan` rejects candidate pairs without that

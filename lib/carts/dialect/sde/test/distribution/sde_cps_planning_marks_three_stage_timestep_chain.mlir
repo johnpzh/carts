@@ -9,7 +9,7 @@
 // CHECK: scf.for
 // CHECK: sde.su_iterate
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: cps_candidate_group_id = 0 : i64
 // CHECK-SAME: cps_candidate_requires_tokenized_dataflow
 // CHECK-SAME: cps_candidate_stage_count = 3 : i64
@@ -20,7 +20,7 @@
 // CHECK-SAME: barrierReason = #sde.barrier_reason<timestep_stage_boundary>
 // CHECK: sde.su_iterate
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: cps_candidate_group_id = 0 : i64
 // CHECK-SAME: cps_candidate_requires_tokenized_dataflow
 // CHECK-SAME: cps_candidate_stage_count = 3 : i64
@@ -31,7 +31,7 @@
 // CHECK-SAME: barrierReason = #sde.barrier_reason<timestep_stage_boundary>
 // CHECK: sde.su_iterate
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: cps_candidate_group_id = 0 : i64
 // CHECK-SAME: cps_candidate_requires_tokenized_dataflow
 // CHECK-SAME: cps_candidate_stage_count = 3 : i64

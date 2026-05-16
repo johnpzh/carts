@@ -2,14 +2,14 @@
 
 // A standalone out-of-place stencil stays stencil_tiling_nd. A same-shape
 // copy/stencil pair with alternating read/write roots is an SDE Jacobi
-// timestep candidate. It stays on advance_edt until SDE rewrites the pair into
+// timestep candidate. It stays on advance_stage until SDE rewrites the pair into
 // explicit CPS dataflow tokens.
 
 // CHECK-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
 // CHECK: func.func @jacobi_pair
 // CHECK: sde.su_iterate
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: pattern = #sde.pattern<uniform>
 // CHECK-SAME: repetitionStructure = #sde.repetition_structure<full_timestep>
 // CHECK: sde.su_barrier
@@ -17,7 +17,7 @@
 // CHECK: sde.su_iterate
 // CHECK-SAME: classification(<stencil>)
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: pattern = #sde.pattern<jacobi_alternating_buffers>
 // CHECK-SAME: repetitionStructure = #sde.repetition_structure<full_timestep>
 // CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //

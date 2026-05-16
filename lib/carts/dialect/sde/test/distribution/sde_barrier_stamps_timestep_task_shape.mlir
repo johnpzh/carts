@@ -1,20 +1,20 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s
 
 // SDE recognizes same-shape dependent elementwise stages as timestep waves.
-// Barrier analysis keeps them on advance_edt until the SDE CPS dataflow rewrite
+// Barrier analysis keeps them on advance_stage until the SDE CPS dataflow rewrite
 // can make token/control carries explicit.
 
 // CHECK-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
 // CHECK: func.func @timestep_pair
 // CHECK: sde.su_iterate
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: repetitionStructure = #sde.repetition_structure<full_timestep>
 // CHECK: sde.su_barrier
 // CHECK-SAME: barrierReason = #sde.barrier_reason<timestep_stage_boundary>
 // CHECK: sde.su_iterate
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: repetitionStructure = #sde.repetition_structure<full_timestep>
 // CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: func.func @timestep_pair

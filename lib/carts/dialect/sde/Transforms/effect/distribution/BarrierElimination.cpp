@@ -96,7 +96,7 @@ static bool isSdeCpsCandidateStage(sde::SdeSuIterateOp op) {
   if (!repetition || *repetition != sde::SdeRepetitionStructure::full_timestep)
     return false;
   auto strategy = op.getAsyncStrategy();
-  return strategy && *strategy == sde::SdeAsyncStrategy::advance_edt;
+  return strategy && *strategy == sde::SdeAsyncStrategy::advance_stage;
 }
 
 static void setBarrierReason(sde::SdeSuBarrierOp barrier,
@@ -219,7 +219,7 @@ static void stampRepeatedTimestepPlan(sde::SdeSuIterateOp op) {
         op.getContext(), sde::SdeRepetitionStructure::full_timestep));
   if (!op.getAsyncStrategyAttr())
     op.setAsyncStrategyAttr(sde::SdeAsyncStrategyAttr::get(
-        op.getContext(), sde::SdeAsyncStrategy::advance_edt));
+        op.getContext(), sde::SdeAsyncStrategy::advance_stage));
 }
 
 static void coarsenRepeatedStencilSlice(sde::SdeSuIterateOp op) {

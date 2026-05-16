@@ -2,7 +2,7 @@
 
 // Same-shape out-of-place stencil stages that exchange A/B buffers are a
 // timestep candidate even when both stages are classified as stencils. They
-// keep the regular stencil_tiling_nd dependency pattern and remain advance_edt
+// keep the regular stencil_tiling_nd dependency pattern and remain advance_stage
 // until SDE rewrites the pair into explicit CPS dataflow tokens.
 
 // CHECK-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
@@ -10,7 +10,7 @@
 // CHECK: sde.su_iterate
 // CHECK-SAME: classification(<stencil>)
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: pattern = #sde.pattern<stencil_tiling_nd>
 // CHECK-SAME: repetitionStructure = #sde.repetition_structure<full_timestep>
 // CHECK: sde.su_barrier
@@ -18,7 +18,7 @@
 // CHECK: sde.su_iterate
 // CHECK-SAME: classification(<stencil>)
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: pattern = #sde.pattern<stencil_tiling_nd>
 // CHECK-SAME: repetitionStructure = #sde.repetition_structure<full_timestep>
 // CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //

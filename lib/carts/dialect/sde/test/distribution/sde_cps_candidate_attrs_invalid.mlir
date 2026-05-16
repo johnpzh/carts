@@ -51,7 +51,7 @@ module {
       %v = memref.load %A[%i] : memref<16xf64>
       memref.store %v, %B[%i] : memref<16xf64>
       sde.yield
-    } {asyncStrategy = #sde.async_strategy<advance_edt>,
+    } {asyncStrategy = #sde.async_strategy<advance_stage>,
        cps_candidate_group_id = 0 : i64,
        cps_candidate_requires_tokenized_dataflow = 1 : i64,
        cps_candidate_stage_count = 1 : i64,
@@ -70,7 +70,7 @@ module {
         %v = memref.load %A[%i] : memref<16xf64>
         memref.store %v, %B[%i] : memref<16xf64>
         sde.yield
-      } {asyncStrategy = #sde.async_strategy<advance_edt>,
+      } {asyncStrategy = #sde.async_strategy<advance_stage>,
          cps_candidate_group_id = 42 : i64,
          cps_candidate_requires_tokenized_dataflow,
          cps_candidate_stage_count = 2 : i64,
@@ -86,7 +86,7 @@ module {
         %v = memref.load %B[%i] : memref<16xf64>
         memref.store %v, %A[%i] : memref<16xf64>
         sde.yield
-      } {asyncStrategy = #sde.async_strategy<advance_edt>,
+      } {asyncStrategy = #sde.async_strategy<advance_stage>,
          cps_candidate_group_id = 42 : i64,
          cps_candidate_requires_tokenized_dataflow,
          cps_candidate_stage_count = 2 : i64,
@@ -111,7 +111,7 @@ module {
       %v = memref.load %A[%i] : memref<16xf64>
       memref.store %v, %B[%i] : memref<16xf64>
       sde.yield
-    } {asyncStrategy = #sde.async_strategy<advance_edt>,
+    } {asyncStrategy = #sde.async_strategy<advance_stage>,
        cps_candidate_group_id = 43 : i64,
        cps_candidate_requires_tokenized_dataflow,
        cps_candidate_stage_count = 2 : i64,
@@ -122,7 +122,7 @@ module {
       %v = memref.load %B[%i] : memref<16xf64>
       memref.store %v, %A[%i] : memref<16xf64>
       sde.yield
-    } {asyncStrategy = #sde.async_strategy<advance_edt>,
+    } {asyncStrategy = #sde.async_strategy<advance_stage>,
        cps_candidate_group_id = 43 : i64,
        cps_candidate_requires_tokenized_dataflow,
        cps_candidate_stage_count = 2 : i64,

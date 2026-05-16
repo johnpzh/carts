@@ -2,13 +2,13 @@
 
 // SDE barrier analysis identifies the repeated timestep pair. SDE CPS planning
 // groups it as a candidate, emits a stage-completion token for the barrier
-// edge, and leaves asyncStrategy on advance_edt until every carry is explicit.
+// edge, and leaves asyncStrategy on advance_stage until every carry is explicit.
 
 // CHECK-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
 // CHECK: func.func @timestep_pair
 // CHECK: sde.su_iterate
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: cps_candidate_group_id = 0 : i64
 // CHECK-SAME: cps_candidate_requires_tokenized_dataflow
 // CHECK-SAME: cps_candidate_stage_count = 2 : i64
@@ -19,7 +19,7 @@
 // CHECK-SAME: barrierReason = #sde.barrier_reason<timestep_stage_boundary>
 // CHECK: sde.su_iterate
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: cps_candidate_group_id = 0 : i64
 // CHECK-SAME: cps_candidate_requires_tokenized_dataflow
 // CHECK-SAME: cps_candidate_stage_count = 2 : i64

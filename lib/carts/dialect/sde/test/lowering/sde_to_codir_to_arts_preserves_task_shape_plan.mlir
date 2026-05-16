@@ -22,7 +22,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
         %v = arith.index_cast %i : index to i32
         memref.store %v, %A[%i] : memref<8xi32>
         sde.yield
-      } {asyncStrategy = #sde.async_strategy<advance_edt>, repetitionStructure = #sde.repetition_structure<full_timestep>}
+      } {asyncStrategy = #sde.async_strategy<advance_stage>, repetitionStructure = #sde.repetition_structure<full_timestep>}
       sde.yield
     }
     return

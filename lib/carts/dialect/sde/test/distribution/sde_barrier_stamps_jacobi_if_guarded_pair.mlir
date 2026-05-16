@@ -12,7 +12,7 @@
 // CHECK: sde.su_iterate
 // CHECK-SAME: classification(<stencil>)
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: cps_candidate_group_id = 0 : i64
 // CHECK-SAME: cps_candidate_requires_tokenized_dataflow
 // CHECK-SAME: cps_candidate_stage_count = 2 : i64
@@ -26,7 +26,7 @@
 // CHECK: sde.su_iterate
 // CHECK-SAME: classification(<stencil>)
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: cps_candidate_group_id = 0 : i64
 // CHECK-SAME: cps_candidate_requires_tokenized_dataflow
 // CHECK-SAME: cps_candidate_stage_count = 2 : i64

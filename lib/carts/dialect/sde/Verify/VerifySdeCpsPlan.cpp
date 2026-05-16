@@ -88,10 +88,10 @@ static LogicalResult verifyCandidateAttrSet(sde::SdeSuIterateOp op) {
                 "full_timestep";
 
     auto strategy = op.getAsyncStrategy();
-    if (!strategy || *strategy != sde::SdeAsyncStrategy::advance_edt)
+    if (!strategy || *strategy != sde::SdeAsyncStrategy::advance_stage)
       return op.emitOpError()
              << "sde.cps candidate plan requires sde.async_strategy "
-                "advance_edt until tokenized dataflow exists";
+                "advance_stage until tokenized dataflow exists";
 
     auto group = op->getAttrOfType<IntegerAttr>(kCpsCandidateGroupId);
     auto index = op->getAttrOfType<IntegerAttr>(kCpsCandidateStageIndex);

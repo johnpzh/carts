@@ -227,7 +227,7 @@ convertAsyncStrategy(sde::SdeAsyncStrategy strategy) {
   switch (strategy) {
   case sde::SdeAsyncStrategy::blocking:
     return codir::CodirAsyncStrategy::blocking;
-  case sde::SdeAsyncStrategy::advance_edt:
+  case sde::SdeAsyncStrategy::advance_stage:
     return codir::CodirAsyncStrategy::advance_stage;
   case sde::SdeAsyncStrategy::cps_chain:
     return codir::CodirAsyncStrategy::cps_chain;

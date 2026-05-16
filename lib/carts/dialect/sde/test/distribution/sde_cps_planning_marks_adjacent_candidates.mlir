@@ -10,7 +10,7 @@
 // CHECK: sde.cu_region
 // CHECK: sde.su_iterate
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: cps_candidate_group_id = 0 : i64
 // CHECK-SAME: cps_candidate_requires_tokenized_dataflow
 // CHECK-SAME: cps_candidate_stage_count = 2 : i64
@@ -22,7 +22,7 @@
 // CHECK: sde.cu_region
 // CHECK: sde.su_iterate
 // CHECK: } {
-// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_edt>
+// CHECK-SAME: asyncStrategy = #sde.async_strategy<advance_stage>
 // CHECK-SAME: cps_candidate_group_id = 0 : i64
 // CHECK-SAME: cps_candidate_requires_tokenized_dataflow
 // CHECK-SAME: cps_candidate_stage_count = 2 : i64
@@ -56,7 +56,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
             memref.store %sum, %B[%i, %j] : memref<18x18xf64>
           }
           sde.yield
-        } {asyncStrategy = #sde.async_strategy<advance_edt>,
+        } {asyncStrategy = #sde.async_strategy<advance_stage>,
            repetitionStructure = #sde.repetition_structure<full_timestep>}
         sde.yield
       }
@@ -81,7 +81,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
             memref.store %sum, %A[%i, %j] : memref<18x18xf64>
           }
           sde.yield
-        } {asyncStrategy = #sde.async_strategy<advance_edt>,
+        } {asyncStrategy = #sde.async_strategy<advance_stage>,
            repetitionStructure = #sde.repetition_structure<full_timestep>}
         sde.yield
       }

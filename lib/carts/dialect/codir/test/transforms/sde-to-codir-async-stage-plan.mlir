@@ -12,7 +12,7 @@ module {
         %v = arith.index_cast %i : index to i32
         memref.store %v, %A[%i] : memref<8xi32>
         sde.yield
-      } {asyncStrategy = #sde.async_strategy<advance_edt>,
+      } {asyncStrategy = #sde.async_strategy<advance_stage>,
          repetitionStructure = #sde.repetition_structure<full_timestep>}
       sde.yield
     }
