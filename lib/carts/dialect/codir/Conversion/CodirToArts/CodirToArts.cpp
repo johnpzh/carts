@@ -4,25 +4,16 @@
 /// Materializes CODIR codelets as abstract ARTS DB/EDT objects.
 ///==========================================================================///
 #include "../ConversionUtils.h"
+#include "carts/dialect/arts/Utils/LaunchPolicyUtils.h"
 namespace mlir::carts::codir {
 #define GEN_PASS_DEF_CONVERTCODIRTOARTS
 #include "carts/dialect/codir/Conversion/Passes.h.inc"
 } // namespace mlir::carts::codir
 namespace {
-struct ArtsLaunchPolicy {
-  arts::EdtConcurrency concurrency = arts::EdtConcurrency::intranode;
-  Value route;
-};
-
 struct ConvertCodirToArtsPass
     : public codir::impl::ConvertCodirToArtsBase<
           ConvertCodirToArtsPass> {
   llvm::SmallDenseSet<Operation *, 16> loopCompletionBarriers;
-
-  bool hasArtsInterNodeRuntime(ModuleOp module) const {
-    std::optional<int64_t> totalNodes = arts::getRuntimeTotalNodes(module);
-    return totalNodes && *totalNodes > 1;
-  }
 
   bool hasGenericWorkerPlan(codir::CodeletOp codelet) const {
     if (!codelet)
@@ -49,35 +40,6 @@ struct ConvertCodirToArtsPass
         return loop;
     }
     return {};
-  }
-
-  ArtsLaunchPolicy resolveArtsLaunchPolicy(codir::CodeletOp codelet,
-                                           OpBuilder &builder,
-                                           Location loc) const {
-    ArtsLaunchPolicy policy;
-    ModuleOp module = codelet ? codelet->getParentOfType<ModuleOp>() : nullptr;
-    if (!module || !hasArtsInterNodeRuntime(module) ||
-        !hasDistributedLaunchStoragePlan(codelet))
-      return policy;
-
-    scf::ForOp loop = findGenericWorkerDispatchLoop(codelet);
-    if (!loop)
-      return policy;
-
-    policy.concurrency = arts::EdtConcurrency::internode;
-    Value relative =
-        arith::SubIOp::create(builder, loc, loop.getInductionVar(),
-                              loop.getLowerBound());
-    Value ordinal =
-        arith::DivUIOp::create(builder, loc, relative, loop.getStep());
-    Value ordinalI32 =
-        arith::IndexCastOp::create(builder, loc, builder.getI32Type(), ordinal);
-    auto totalNodes =
-        arts::RuntimeQueryOp::create(builder, loc,
-                                     arts::RuntimeQueryKind::totalNodes);
-    policy.route = arith::RemUIOp::create(builder, loc, ordinalI32,
-                                          totalNodes.getResult());
-    return policy;
   }
 
   Operation *getCompletionBarrierAnchor(codir::CodeletOp codelet,
@@ -291,8 +253,10 @@ struct ConvertCodirToArtsPass
     // CODIR carries only generic worker-plan facts. The ARTS boundary is the
     // first place where runtime topology can turn that plan into inter-node
     // EDT placement and routing.
-    ArtsLaunchPolicy launch =
-        resolveArtsLaunchPolicy(codelet, builder, loc);
+    arts::ArtsLaunchPolicy launch = arts::resolveArtsLaunchPolicy(
+        codelet->getParentOfType<ModuleOp>(),
+        findGenericWorkerDispatchLoop(codelet),
+        hasDistributedLaunchStoragePlan(codelet), builder, loc);
     auto task = launch.route
                     ? arts::EdtOp::create(builder, loc, arts::EdtType::task,
                                           launch.concurrency, launch.route,
