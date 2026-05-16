@@ -1,6 +1,6 @@
 ###===---------------------------------------------------------------===###
 ### Per-dialect pass libraries. Consumers link the dialect libraries they use
-### instead of a project-wide compatibility aggregate.
+### instead of a project-wide aggregate.
 ###===---------------------------------------------------------------===###
 
 set(_carts_common_link_libs

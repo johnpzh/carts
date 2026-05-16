@@ -47,9 +47,9 @@ If any item is false, move it to the owning dialect `Utils/`, an owning
 analysis API, a current shared `include/carts/utils` helper, or a pass-area
 support file.
 
-Judge ownership by path and semantic layer first. Some shared utilities still
-live in namespace `mlir::carts::arts` for compatibility, but that namespace
-does not make a helper ARTS-owned when the file is under `include/carts/utils`.
+Judge ownership by path and semantic layer first. A helper under
+`include/carts/utils` is shared CARTS infrastructure even when most current
+callers are ARTS-heavy.
 
 ## Placement Matrix
 

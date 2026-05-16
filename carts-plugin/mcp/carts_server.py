@@ -18,7 +18,7 @@ server = FastMCP("carts")
 @server.tool()
 async def carts_build(args: str = "") -> str:
     """Build CARTS and related components"""
-    cmd = shlex.split("python tools/carts_cli.py build") + shlex.split(args)
+    cmd = shlex.split("dekk carts build") + shlex.split(args)
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
@@ -32,7 +32,7 @@ async def carts_build(args: str = "") -> str:
 @server.tool()
 async def carts_compile(args: str = "") -> str:
     """Run the CARTS compilation pipeline"""
-    cmd = shlex.split("python tools/carts_cli.py compile") + shlex.split(args)
+    cmd = shlex.split("dekk carts compile") + shlex.split(args)
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
@@ -46,7 +46,7 @@ async def carts_compile(args: str = "") -> str:
 @server.tool()
 async def carts_pipeline(args: str = "") -> str:
     """Inspect compiler pipeline stages"""
-    cmd = shlex.split("python tools/carts_cli.py pipeline") + shlex.split(args)
+    cmd = shlex.split("dekk carts pipeline") + shlex.split(args)
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
@@ -60,7 +60,7 @@ async def carts_pipeline(args: str = "") -> str:
 @server.tool()
 async def carts_triage_benchmark(args: str = "") -> str:
     """Run the benchmark triage workflow"""
-    cmd = shlex.split("python tools/carts_cli.py triage-benchmark") + shlex.split(args)
+    cmd = shlex.split("dekk carts triage-benchmark") + shlex.split(args)
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
@@ -74,7 +74,7 @@ async def carts_triage_benchmark(args: str = "") -> str:
 @server.tool()
 async def carts_test(args: str = "") -> str:
     """Run the CARTS test suite"""
-    cmd = shlex.split("python tools/carts_cli.py test") + shlex.split(args)
+    cmd = shlex.split("dekk carts test") + shlex.split(args)
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
@@ -88,7 +88,7 @@ async def carts_test(args: str = "") -> str:
 @server.tool()
 async def carts_benchmarks(args: str = "") -> str:
     """Build and run benchmark workloads"""
-    cmd = shlex.split("python tools/carts_cli.py benchmarks") + shlex.split(args)
+    cmd = shlex.split("dekk carts benchmarks") + shlex.split(args)
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )

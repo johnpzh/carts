@@ -34,6 +34,29 @@ namespace carts::arts {
 /// Dominance Utilities
 ///===----------------------------------------------------------------------===///
 
+bool hasFloatingPointType(Type type) {
+  if (!type)
+    return false;
+  if (type.isF16() || type.isBF16() || type.isF32() || type.isF64() ||
+      type.isF80() || type.isF128())
+    return true;
+  if (auto vectorType = dyn_cast<VectorType>(type))
+    return hasFloatingPointType(vectorType.getElementType());
+  return false;
+}
+
+bool operationTouchesFloatingPoint(Operation *op) {
+  for (Value operand : op->getOperands()) {
+    if (hasFloatingPointType(operand.getType()))
+      return true;
+  }
+  for (Value result : op->getResults()) {
+    if (hasFloatingPointType(result.getType()))
+      return true;
+  }
+  return false;
+}
+
 bool dominatesOrInAncestor(Value v, Operation *op, DominanceInfo &domInfo) {
   if (!v || !op)
     return false;

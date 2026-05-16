@@ -29,6 +29,12 @@ bool simplifyIR(ModuleOp module, DominanceInfo &domInfo);
 /// Type and Size Utilities
 uint64_t getElementTypeByteSize(Type elementType);
 MemRefType getElementMemRefType(Type elementType, ArrayRef<Value> elementSizes);
+/// Return true when a type is a floating-point type (F16, BF16, F32, F64, F80,
+/// F128) or a vector of one.
+bool hasFloatingPointType(Type type);
+/// Return true when any operand or result of an operation has a floating-point
+/// type.
+bool operationTouchesFloatingPoint(Operation *op);
 
 /// String Utilities
 std::string sanitizeString(StringRef s);

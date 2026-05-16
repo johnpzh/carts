@@ -139,7 +139,7 @@ Both follow-on items are also complete:
   project umbrella and ARTS dialect) is gone.
 - **Transform-library split**: `MLIRCartsSdeTransforms`,
   `MLIRCartsArtsTransforms`, and `MLIRCartsArtsRtTransforms` are direct link
-  targets. The former `MLIRCartsTransforms` compatibility aggregate is gone.
+  targets. The former `MLIRCartsTransforms` aggregate is gone.
 
 ## Migration Phases
 

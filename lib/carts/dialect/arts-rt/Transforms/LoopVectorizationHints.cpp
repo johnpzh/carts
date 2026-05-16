@@ -38,8 +38,8 @@ namespace mlir::carts::arts_rt {
 } // namespace mlir::carts::arts_rt
 
 #include "carts/utils/Debug.h"
-#include "carts/utils/LoopUtils.h"
 #include "carts/utils/OperationAttributes.h"
+#include "carts/utils/Utils.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Builders.h"

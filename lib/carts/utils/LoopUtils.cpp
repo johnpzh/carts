@@ -192,28 +192,5 @@ std::optional<int64_t> getStaticTripCount(Operation *loopOp) {
   return std::nullopt;
 }
 
-bool hasFloatingPointType(Type type) {
-  if (!type)
-    return false;
-  if (type.isF16() || type.isBF16() || type.isF32() || type.isF64() ||
-      type.isF80() || type.isF128())
-    return true;
-  if (auto vectorType = dyn_cast<VectorType>(type))
-    return hasFloatingPointType(vectorType.getElementType());
-  return false;
-}
-
-bool operationTouchesFloatingPoint(Operation *op) {
-  for (Value operand : op->getOperands()) {
-    if (hasFloatingPointType(operand.getType()))
-      return true;
-  }
-  for (Value result : op->getResults()) {
-    if (hasFloatingPointType(result.getType()))
-      return true;
-  }
-  return false;
-}
-
 } // namespace carts::arts
 } // namespace mlir
