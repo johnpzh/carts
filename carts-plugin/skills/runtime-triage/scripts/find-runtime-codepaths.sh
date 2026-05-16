@@ -7,7 +7,7 @@ git grep -n \
   -e 'CreateEpoch' \
   -e 'wait_on_epoch' \
   -e 'Continue' \
-  -e 'ConvertArtsToLLVM' \
+  -e 'ConvertArtsRtToLLVM' \
   -e 'EdtLowering' \
   -e 'artsActiveMessageWithDb' \
   -e 'distributed_db_init' \

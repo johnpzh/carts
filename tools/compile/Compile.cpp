@@ -181,7 +181,7 @@ enum class StageId {
   LateConcurrencyCleanup,
   Epochs,
   PreLowering,
-  ArtsToLLVM,
+  ArtsRtToLLVM,
   PostO3Opt,
   LLVMIREmission
 };
@@ -229,6 +229,7 @@ struct DialectGroupDescriptor {
 static constexpr llvm::StringLiteral kCompletePipelineToken = "complete";
 static constexpr llvm::StringLiteral kPostO3OptToken = "post-o3-opt";
 static constexpr llvm::StringLiteral kLLVMIREmissionToken = "llvm-ir-emission";
+static constexpr llvm::StringLiteral kArtsRtToLLVMToken = "arts-rt-to-llvm";
 
 static cl::opt<std::string> Pipeline(
     "pipeline",
@@ -346,9 +347,9 @@ static const std::array<llvm::StringLiteral, 22> kPreLoweringPasses = {
     "CSE",
     "VerifyEpochLowered",
     "VerifyPreLowered"};
-static const std::array<llvm::StringLiteral, 14> kArtsToLLVMPasses = {
+static const std::array<llvm::StringLiteral, 14> kArtsRtToLLVMPasses = {
     "LowerAffine(func)",
-    "ConvertArtsToLLVM",
+    "ConvertArtsRtToLLVM",
     "LoweringContractCleanup",
     "GuidRangCallOpt",
     "RuntimeCallOpt",
@@ -406,7 +407,7 @@ static constexpr llvm::StringLiteral kCurrentArtsStages[] = {
     "edt-transforms", "create-dbs", "db-opt", "post-db-refinement",
     "late-concurrency-cleanup", "epochs"};
 static constexpr llvm::StringLiteral kCurrentArtsRtStages[] = {
-    "pre-lowering", "arts-to-llvm"};
+    "pre-lowering", "arts-rt-to-llvm"};
 
 static constexpr llvm::StringLiteral kTargetFrontendStages[] = {
     "frontend-normalization"};
@@ -1156,48 +1157,48 @@ void buildPreLoweringPipeline(PassManager &pm, arts::AnalysisManager *AM) {
   /// and here).
   pm.addPass(arts::createEdtAllocaSinkingPass());
   addCanonicalizeAndCSE(pm);
-  pm.addPass(arts::createDbLoweringPass(ArtsIdStride));
+  pm.addPass(arts_rt::createDbLoweringPass(ArtsIdStride));
   addCanonicalizeAndCSE(pm);
-  pm.addPass(arts::createEdtLoweringPass(AM, ArtsIdStride));
+  pm.addPass(arts_rt::createEdtLoweringPass(AM, ArtsIdStride));
   addCanonicalizeAndCSE(pm);
   pm.addPass(arts::createVerifyEdtLoweredPass());
   pm.addPass(createLoopInvariantCodeMotionPass());
   /// Hoist loop-invariant DB/dep pointer loads before scalar replacement;
-  /// buildArtsToLLVMPipeline runs hoisting again after Arts->LLVM materializes
-  /// new loads.
-  pm.addPass(arts::createDataPtrHoistingPass());
+  /// buildArtsRtToLLVMPipeline runs hoisting again after ARTS-RT-to-LLVM
+  /// materializes new loads.
+  pm.addPass(arts_rt::createDataPtrHoistingPass());
   addCanonicalizeAndCSE(pm);
-  pm.addPass(arts::createScalarReplacementPass());
+  pm.addPass(arts_rt::createScalarReplacementPass());
   addCanonicalizeAndCSE(pm);
-  pm.addPass(arts::createEpochLoweringPass());
+  pm.addPass(arts_rt::createEpochLoweringPass());
   addCanonicalizeAndCSE(pm);
   pm.addPass(arts::createVerifyEpochLoweredPass());
   pm.addPass(arts::createVerifyPreLoweredPass());
 }
 
-/// ARTS to LLVM conversion passes.
-void buildArtsToLLVMPipeline(PassManager &pm, bool debug,
-                             bool distributedInitPerWorker,
-                             const arts::RuntimeConfig *machine) {
+/// ARTS-RT to LLVM conversion passes.
+void buildArtsRtToLLVMPipeline(PassManager &pm, bool debug,
+                               bool distributedInitPerWorker,
+                               const arts::RuntimeConfig *machine) {
   pm.addNestedPass<func::FuncOp>(createLowerAffinePass());
-  pm.addPass(arts::createConvertArtsToLLVMPass(debug, distributedInitPerWorker,
-                                               machine));
-  /// ConvertArtsToLLVM still consults lowering contracts for late dependency
+  pm.addPass(arts_rt::createConvertArtsRtToLLVMPass(
+      debug, distributedInitPerWorker, machine));
+  /// ConvertArtsRtToLLVM still consults lowering contracts for late dependency
   /// decisions (for example N-D stencil halo slices). Clean them up only after
   /// that conversion has consumed them.
   pm.addPass(arts::createLoweringContractCleanupPass());
-  pm.addPass(arts::createGuidRangCallOptPass());
-  pm.addPass(arts::createRuntimeCallOptPass());
-  /// Hoist loop-invariant loads after Arts->LLVM lowering for
+  pm.addPass(arts_rt::createGuidRangCallOptPass());
+  pm.addPass(arts_rt::createRuntimeCallOptPass());
+  /// Hoist loop-invariant loads after ARTS-RT-to-LLVM lowering for
   /// vectorization/LICM.
-  pm.addPass(arts::createDataPtrHoistingPass());
+  pm.addPass(arts_rt::createDataPtrHoistingPass());
   addCanonicalizeAndCSE(pm);
   pm.addPass(createMem2Reg());
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
   pm.addPass(createControlFlowSinkPass());
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
   pm.addPass(arts::createVerifyDbLoweredPass());
-  pm.addPass(arts::createVerifyLoweredPass());
+  pm.addPass(arts_rt::createVerifyLoweredPass());
 }
 
 /// Additional optimizations (post-ARTS pipeline).
@@ -1223,8 +1224,8 @@ void buildLLVMIREmissionPipeline(PassManager &pm, bool convertOpenMP) {
   pm.addPass(createConvertIndexToLLVMPass());
   pm.addPass(createConvertControlFlowToLLVMPass());
   pm.addPass(createReconcileUnrealizedCastsPass());
-  pm.addPass(arts::createAliasScopeGenPass());
-  pm.addPass(arts::createLoopVectorizationHintsPass());
+  pm.addPass(arts_rt::createAliasScopeGenPass());
+  pm.addPass(arts_rt::createLoopVectorizationHintsPass());
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
   pm.addPass(createCSEPass());
 }
@@ -1250,7 +1251,7 @@ static constexpr llvm::StringLiteral kDepPostDbRefinement[] = {
     "post-db-refinement"};
 static constexpr llvm::StringLiteral kDepPreLowering[] = {
     "epochs", "late-concurrency-cleanup"};
-static constexpr llvm::StringLiteral kDepArtsToLLVM[] = {"pre-lowering"};
+static constexpr llvm::StringLiteral kDepArtsRtToLLVM[] = {"pre-lowering"};
 static ArrayRef<StageDescriptor> getStageRegistry() {
   static const std::array<StageDescriptor, 15> kStageRegistry = {{
       {StageId::SdeInputNormalization, "sde-input-normalization", StageKind::Core, true, true,
@@ -1348,13 +1349,13 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepPreLowering},
-      {StageId::ArtsToLLVM, "arts-to-llvm", StageKind::Core, true, true,
-       false, "Error when converting ARTS to LLVM", kArtsToLLVMPasses,
+      {StageId::ArtsRtToLLVM, kArtsRtToLLVMToken, StageKind::Core, true, true,
+       false, "Error when lowering ARTS-RT to LLVM", kArtsRtToLLVMPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
-         buildArtsToLLVMPipeline(pm, Debug, DistributedDb, ctx.machine);
+         buildArtsRtToLLVMPipeline(pm, Debug, DistributedDb, ctx.machine);
        },
        isStageEnabledAlways,
-       /*dependsOn=*/kDepArtsToLLVM},
+       /*dependsOn=*/kDepArtsRtToLLVM},
       {StageId::PostO3Opt, kPostO3OptToken, StageKind::Epilogue, false, false,
        false, "Error when running classical optimizations", kPostO3OptPasses,
        [](PassManager &pm, const StageExecutionContext &) {
@@ -1362,14 +1363,14 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
          buildAdditionalOptPipeline(optPM);
        },
        isStageEnabledWhenOptRequested,
-       /*dependsOn=*/kDepArtsToLLVM},
+       /*dependsOn=*/kDepArtsRtToLLVM},
       {StageId::LLVMIREmission, kLLVMIREmissionToken, StageKind::Epilogue, false, false,
        false, "Error when emitting LLVM IR", kLLVMIREmissionPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildLLVMIREmissionPipeline(pm, hasResidualOpenMP(ctx.module));
        },
        isStageEnabledWhenEmitLLVMRequested,
-       /*dependsOn=*/kDepArtsToLLVM},
+       /*dependsOn=*/kDepArtsRtToLLVM},
   }};
   return kStageRegistry;
 }
@@ -1459,7 +1460,7 @@ buildPassManager(ModuleOp module, MLIRContext &context,
 
   int startIndex = stageIndex(startFrom, StageKind::Core);
   int stopIndex = stopAt ? stageIndex(*stopAt, StageKind::Core)
-                         : stageIndex(StageId::ArtsToLLVM, StageKind::Core);
+                         : stageIndex(StageId::ArtsRtToLLVM, StageKind::Core);
   if (startIndex < 0 || stopIndex < 0) {
     ARTS_ERROR(
         "Invalid pipeline selection: --start-from="

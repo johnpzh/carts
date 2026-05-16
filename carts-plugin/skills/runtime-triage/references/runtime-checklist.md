@@ -28,7 +28,7 @@ Use this checklist after compilation succeeds but the produced program fails at 
 
 ## Codepaths Worth Reading
 
-- `lib/carts/dialect/arts/Conversion/ArtsToLLVM/ConvertArtsToLLVM.cpp`
+- `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVM.cpp`
 - `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
 - `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLowering.cpp`

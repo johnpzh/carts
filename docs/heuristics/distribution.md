@@ -49,7 +49,7 @@ automatically:
 
 1. **Distributes memory like MPI** — each node allocates only its portion of
    data (via `DbDistributedOwnershipPass` and round-robin route selection in
-   `ConvertArtsToLLVM`). Memory capacity scales with node count.
+   `ConvertArtsRtToLLVM`). Memory capacity scales with node count.
 2. **Distributes computation like AMT** — tasks are routed to nodes based on
    data ownership, with work-stealing for dynamic load balancing. No manual
    message passing required.
@@ -103,7 +103,7 @@ annotation level.
 | 2D block tiling (matmul-oriented) | Good when input/intermediate reuse is also planned | Strategy exists, but direct-memory 2D output ownership is rejected for current one-node GEMM-family paths unless SDE also proves matching panel/intermediate reuse |
 | Cannon-style shifts | Feasible but complex | Not implemented (future) |
 | SUMMA-style broadcast panels | Feasible via events/active messages | Not implemented (future) |
-| 2.5D replication | Possible but high complexity | Not implemented (future) |
+| 2.5D replication | Possible but high complexity | Runtime can create/read cached duplicates through DB frontiers; compiler-directed eager replication is not implemented |
 | Stencil halo | Strong | SDE stamps halo/window facts; current raw-memref fallback materializes block slices without a dedicated halo rewriter |
 
 ### 2.2 Why CARTS currently prefers 2D tiling over Cannon/SUMMA
@@ -216,7 +216,7 @@ Current implementation:
   (gated by `--distributed-db` in `carts-compile`).
 - `--distributed-db` relies on SDE-authored work units and Core DB ownership
   marking; late Core loop-carrier producers are not part of the contract.
-- Lowering support: `ConvertArtsToLLVM` uses round-robin route selection for
+- Lowering support: `ConvertArtsRtToLLVM` uses round-robin route selection for
   marked multi-DB allocations:
   - route = `linearIndex % artsGetTotalNodes()`
   - unmarked allocations keep the existing route behavior.
@@ -239,9 +239,11 @@ Current eligibility policy is intentionally conservative:
   the allowed flow
 - acquire users must be EDT-backed
 - allocation is consumed by internode EDTs
-- has at least one internode writer access (read-only internode DBs are
-  rejected)
-- reject stencil-style read-only internode uses
+- read-only/read-only-after-init distributed DBs may request runtime duplicate
+  preference on read dependency slots; this is a runtime cache/duplicate hint,
+  not an eager compiler scatter/replicate ABI
+- stencil-style read-only internode uses are only eligible when ARTS marks the
+  DB as replicated and ARTS-RT can rely on runtime duplicate-frontier behavior
 
 Distributed init split is implemented:
 - `Codegen.cpp` generates a `distributed_db_init` callback that runs on ALL
@@ -249,9 +251,14 @@ Distributed init split is implemented:
 - `Codegen.cpp` also generates `distributed_db_init_worker` in
   `initPerWorker`; only the primary local worker performs DB creation, and only
   for GUIDs whose rank matches the local node (`artsGuidGetRank(guid) == node`).
-- `ConvertArtsToLLVM.cpp` lowers marked multi-DB allocations with
+- `ConvertArtsRtToLLVM.cpp` lowers marked multi-DB allocations with
   `route = linearIndex % artsGetTotalNodes()`. Runtime DB creation remains
   local-only via `artsDbCreateWithGuid(AndArtsId)` semantics.
+- ARTS runtime replication is demand-driven: read-only dependency slots can
+  carry `ARTS_DEP_FLAG_PREFER_DUPLICATE`, and the runtime tracks duplicate
+  ranks through DB frontiers and invalidates/updates them on later writes. The
+  compiler does not yet emit an explicit "replicate this initialized aggregate
+  to all nodes now" operation.
 
 Future work:
 - distributed free policy beyond current `artsShutdown()` behavior
@@ -260,8 +267,10 @@ Future work:
 - post-allocation distribution for host-initialized data:
   - scatter writable owner blocks from a temporary root DB when initialization is
     naturally single-node
-  - replicate read-only/read-mostly DBs after initialization, using the runtime
-    duplicate path once lowering emits it
+  - add an explicit compiler-facing publish/replicate operation for read-only
+    or read-mostly DBs after initialization, using the existing runtime
+    duplicate/frontier machinery intentionally instead of relying only on
+    demand-driven reads
 
 ## 7. IR Contract
 

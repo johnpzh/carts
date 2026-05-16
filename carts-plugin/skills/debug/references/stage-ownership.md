@@ -12,7 +12,7 @@ Use this when deciding where to start a bisection.
 | `db-opt` | Did load/store reality produce the correct in/out/inout modes? |
 | `post-db-refinement` | Did validation or cleanup destroy a valid contract? |
 | `pre-lowering` | Is the runtime-facing IR still semantically correct before LLVM conversion? |
-| `arts-to-llvm` | Did final lowering or route emission break an otherwise-correct plan? |
+| `arts-rt-to-llvm` | Did final lowering or route emission break an otherwise-correct plan? |
 
 Fast default for unknown compiler failures:
 

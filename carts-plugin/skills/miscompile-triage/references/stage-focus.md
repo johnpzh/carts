@@ -9,7 +9,7 @@ Use this as a starting point for pipeline bisection.
 | DB count, acquire mode, or DB shape wrong | `codir-to-arts`, `create-dbs`, `db-opt` |
 | Work chunks or distribution attrs look wrong | `sde-planning`, `codir-to-arts`, `post-db-refinement` |
 | Full-range/coarse/block decision wrong | `post-db-refinement` |
-| Runtime call structure wrong but high-level IR is fine | `pre-lowering`, `arts-to-llvm` |
+| Runtime call structure wrong but high-level IR is fine | `pre-lowering`, `arts-rt-to-llvm` |
 
 If you do not know where to begin, dump:
 

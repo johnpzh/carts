@@ -7,9 +7,9 @@
 /// conversion.
 ///==========================================================================///
 
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/ConvertArtsToLLVMInternal.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVMInternal.h"
 
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
@@ -32,7 +32,7 @@
 
 #include "carts/utils/Debug.h"
 #include "llvm/ADT/Statistic.h"
-ARTS_DEBUG_SETUP(convert_arts_to_llvm);
+ARTS_DEBUG_SETUP(convert_arts_rt_to_llvm);
 
 static llvm::Statistic numEdtOpsConverted{
     "rt_to_llvm", "NumEdtOpsConverted",
@@ -53,15 +53,15 @@ static llvm::Statistic numMiscOpsConverted{
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
-using namespace mlir::carts::arts::convert_arts_to_llvm;
+using namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm;
 using namespace mlir::carts::arts_rt;
 
 ///===----------------------------------------------------------------------===///
 /// Epoch Patterns
 ///===----------------------------------------------------------------------===///
 
-struct CreateEpochPattern : public ArtsToLLVMPattern<CreateEpochOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct CreateEpochPattern : public ArtsRtToLLVMPattern<CreateEpochOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(CreateEpochOp op,
                                 PatternRewriter &rewriter) const override {
@@ -91,8 +91,8 @@ struct CreateEpochPattern : public ArtsToLLVMPattern<CreateEpochOp> {
 };
 
 /// Pattern to convert arts.wait_on_epoch operations
-struct WaitOnEpochPattern : public ArtsToLLVMPattern<WaitOnEpochOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct WaitOnEpochPattern : public ArtsRtToLLVMPattern<WaitOnEpochOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(WaitOnEpochOp op,
                                 PatternRewriter &rewriter) const override {
@@ -110,8 +110,8 @@ struct WaitOnEpochPattern : public ArtsToLLVMPattern<WaitOnEpochOp> {
 ///===----------------------------------------------------------------------===///
 
 /// Pattern to convert arts.record_dep operations
-struct RecordDepPattern : public ArtsToLLVMPattern<RecordDepOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct RecordDepPattern : public ArtsRtToLLVMPattern<RecordDepOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(RecordDepOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1389,8 +1389,8 @@ private:
 /// Pattern to convert arts.increment_dep operations.
 /// In arts v2, the latch mechanism has been removed. IncrementDepOp is now a
 /// no-op that simply gets erased during lowering.
-struct IncrementDepPattern : public ArtsToLLVMPattern<IncrementDepOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct IncrementDepPattern : public ArtsRtToLLVMPattern<IncrementDepOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(IncrementDepOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1406,8 +1406,8 @@ struct IncrementDepPattern : public ArtsToLLVMPattern<IncrementDepOp> {
 ///===----------------------------------------------------------------------===///
 
 /// Pattern to convert arts.edt_param_pack operations
-struct EdtParamPackPattern : public ArtsToLLVMPattern<EdtParamPackOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct EdtParamPackPattern : public ArtsRtToLLVMPattern<EdtParamPackOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(EdtParamPackOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1452,8 +1452,8 @@ struct EdtParamPackPattern : public ArtsToLLVMPattern<EdtParamPackOp> {
 };
 
 /// Pattern to convert arts.edt_param_unpack operations
-struct EdtParamUnpackPattern : public ArtsToLLVMPattern<EdtParamUnpackOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct EdtParamUnpackPattern : public ArtsRtToLLVMPattern<EdtParamUnpackOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(EdtParamUnpackOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1484,8 +1484,8 @@ struct EdtParamUnpackPattern : public ArtsToLLVMPattern<EdtParamUnpackOp> {
 ///===----------------------------------------------------------------------===///
 
 /// Pattern to convert arts.dep_gep operations
-struct DepGepOpPattern : public ArtsToLLVMPattern<DepGepOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct DepGepOpPattern : public ArtsRtToLLVMPattern<DepGepOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(DepGepOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1543,8 +1543,8 @@ struct DepGepOpPattern : public ArtsToLLVMPattern<DepGepOp> {
 };
 
 /// Pattern to convert arts.dep_db_acquire operations
-struct DepDbAcquireOpPattern : public ArtsToLLVMPattern<DepDbAcquireOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct DepDbAcquireOpPattern : public ArtsRtToLLVMPattern<DepDbAcquireOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(DepDbAcquireOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1629,8 +1629,8 @@ struct DepDbAcquireOpPattern : public ArtsToLLVMPattern<DepDbAcquireOp> {
 };
 
 /// Pattern to convert arts.db_gep operations to LLVM GEP using element strides
-struct DbGepOpPattern : public ArtsToLLVMPattern<DbGepOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct DbGepOpPattern : public ArtsRtToLLVMPattern<DbGepOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(DbGepOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1674,8 +1674,8 @@ struct DbGepOpPattern : public ArtsToLLVMPattern<DbGepOp> {
 };
 
 /// Pattern to convert arts.edt_create operations (key EDT creation)
-struct EdtCreatePattern : public ArtsToLLVMPattern<EdtCreateOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct EdtCreatePattern : public ArtsRtToLLVMPattern<EdtCreateOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(EdtCreateOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1769,8 +1769,8 @@ struct EdtCreatePattern : public ArtsToLLVMPattern<EdtCreateOp> {
 /// State and Bind Patterns
 ///===----------------------------------------------------------------------===///
 
-struct StatePackPattern : public ArtsToLLVMPattern<StatePackOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct StatePackPattern : public ArtsRtToLLVMPattern<StatePackOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(StatePackOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1813,8 +1813,8 @@ struct StatePackPattern : public ArtsToLLVMPattern<StatePackOp> {
 /// Pattern to lower arts.state_unpack to loads + casts.
 /// Each i64 element is loaded from the state memref and cast back to the
 /// target type.
-struct StateUnpackPattern : public ArtsToLLVMPattern<StateUnpackOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct StateUnpackPattern : public ArtsRtToLLVMPattern<StateUnpackOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(StateUnpackOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1842,8 +1842,8 @@ struct StateUnpackPattern : public ArtsToLLVMPattern<StateUnpackOp> {
 
 /// Pattern to lower arts.dep_bind to a pass-through.
 /// At LLVM level, the GUID itself is the slot identifier.
-struct DepBindPattern : public ArtsToLLVMPattern<DepBindOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct DepBindPattern : public ArtsRtToLLVMPattern<DepBindOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(DepBindOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1856,8 +1856,8 @@ struct DepBindPattern : public ArtsToLLVMPattern<DepBindOp> {
 
 /// Pattern to lower arts.dep_forward to identity (pass-through).
 /// At runtime level the forwarded dependency slot value is unchanged.
-struct DepForwardPattern : public ArtsToLLVMPattern<DepForwardOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct DepForwardPattern : public ArtsRtToLLVMPattern<DepForwardOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(DepForwardOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1872,7 +1872,7 @@ struct DepForwardPattern : public ArtsToLLVMPattern<DepForwardOp> {
 /// Pattern Population
 ///===----------------------------------------------------------------------===///
 
-namespace mlir::carts::arts::convert_arts_to_llvm {
+namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm {
 
 void populateRtToLLVMPatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
   MLIRContext *context = patterns.getContext();
@@ -1895,4 +1895,4 @@ void populateRtToLLVMPatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
   patterns.add<DepBindPattern, DepForwardPattern>(context, AC);
 }
 
-} // namespace mlir::carts::arts::convert_arts_to_llvm
+} // namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm

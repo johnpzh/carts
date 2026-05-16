@@ -5,8 +5,9 @@ alwaysApply: false
 # MLIR Pass Development for CARTS
 
 ## Pass Location and Structure
-- Passes should be in [lib/arts/passes/](mdc:lib/arts/passes/)
-- Pass declarations in [include/arts/passes/](mdc:include/arts/passes/)
+- ARTS passes should be in [lib/carts/dialect/arts/](mdc:lib/carts/dialect/arts/)
+- ARTS-RT passes should be in [lib/carts/dialect/arts-rt/](mdc:lib/carts/dialect/arts-rt/)
+- Pass declarations live in [include/carts/passes/Passes.td](mdc:include/carts/passes/Passes.td) or [include/carts/dialect/arts-rt/Transforms/Passes.td](mdc:include/carts/dialect/arts-rt/Transforms/Passes.td)
 - Use `Pass` suffix for pass classes
 - Implement `runOnOperation()` method
 
@@ -48,7 +49,7 @@ def MyARTSPass : Pass<"my-arts-pass", "mlir::ModuleOp"> {
 ```
 
 ## Common ARTS Pass Types
-- **Conversion Passes**: OpenMP → ARTS, ARTS → LLVM
+- **Conversion Passes**: OpenMP/SDE/CODIR → ARTS, ARTS → ARTS-RT, ARTS-RT → LLVM
 - **Optimization Passes**: EDT optimization, invariant code motion
 - **Analysis Passes**: DataBlock identification, dependency analysis
 - **Transformation Passes**: Code restructuring, pointer rematerialization
@@ -75,16 +76,16 @@ LLVM_DEBUG({
 - Handle edge cases gracefully
 
 ## Key ARTS Passes
-Reference these existing passes in [lib/arts/passes/](mdc:lib/arts/passes/):
-- `ConvertOpenMPToArts.cpp`: OpenMP to ARTS conversion
-- `ConvertArtsToLLVM.cpp`: ARTS to LLVM conversion
-- `CreateDbs.cpp`: DataBlock identification
-- `EdtStructuralOpt.cpp`: EDT optimization
+Reference these existing passes:
+- [CreateDbs.cpp](mdc:lib/carts/dialect/arts/Transforms/db/CreateDbs.cpp): DataBlock identification
+- [EdtStructuralOpt.cpp](mdc:lib/carts/dialect/arts/Transforms/edt/EdtStructuralOpt.cpp): EDT optimization
+- [ConvertArtsRtToLLVM.cpp](mdc:lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVM.cpp): runtime ABI lowering
 # MLIR Pass Development for CARTS
 
 ## Pass Location and Structure
-- Passes should be in [lib/arts/passes/](mdc:lib/arts/passes/)
-- Pass declarations in [include/arts/passes/](mdc:include/arts/passes/)
+- ARTS passes should be in [lib/carts/dialect/arts/](mdc:lib/carts/dialect/arts/)
+- ARTS-RT passes should be in [lib/carts/dialect/arts-rt/](mdc:lib/carts/dialect/arts-rt/)
+- Pass declarations live in [include/carts/passes/Passes.td](mdc:include/carts/passes/Passes.td) or [include/carts/dialect/arts-rt/Transforms/Passes.td](mdc:include/carts/dialect/arts-rt/Transforms/Passes.td)
 - Use `Pass` suffix for pass classes
 - Implement `runOnOperation()` method
 
@@ -126,7 +127,7 @@ def MyARTSPass : Pass<"my-arts-pass", "mlir::ModuleOp"> {
 ```
 
 ## Common ARTS Pass Types
-- **Conversion Passes**: OpenMP → ARTS, ARTS → LLVM
+- **Conversion Passes**: OpenMP/SDE/CODIR → ARTS, ARTS → ARTS-RT, ARTS-RT → LLVM
 - **Optimization Passes**: EDT optimization, invariant code motion
 - **Analysis Passes**: DataBlock identification, dependency analysis
 - **Transformation Passes**: Code restructuring, pointer rematerialization
@@ -153,8 +154,7 @@ LLVM_DEBUG({
 - Handle edge cases gracefully
 
 ## Key CARTS Passes
-Reference these existing passes in [lib/arts/passes/](mdc:lib/arts/passes/):
-- `ConvertOpenMPToArts.cpp`: OpenMP to ARTS conversion
-- `ConvertArtsToLLVM.cpp`: ARTS to LLVM conversion
-- `CreateDbs.cpp`: DataBlock identification
-- `EdtStructuralOpt.cpp`: EDT optimization
+Reference these existing passes:
+- [CreateDbs.cpp](mdc:lib/carts/dialect/arts/Transforms/db/CreateDbs.cpp): DataBlock identification
+- [EdtStructuralOpt.cpp](mdc:lib/carts/dialect/arts/Transforms/edt/EdtStructuralOpt.cpp): EDT optimization
+- [ConvertArtsRtToLLVM.cpp](mdc:lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVM.cpp): runtime ABI lowering

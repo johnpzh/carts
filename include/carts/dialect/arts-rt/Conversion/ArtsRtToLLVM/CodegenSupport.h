@@ -5,11 +5,11 @@
 /// ARTS-RT lowering.
 ///==========================================================================///
 
-#ifndef CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSTOLLVM_CODEGENSUPPORT_H
-#define CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSTOLLVM_CODEGENSUPPORT_H
+#ifndef CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_CODEGENSUPPORT_H
+#define CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_CODEGENSUPPORT_H
 
 #include "carts/Dialect.h"
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Types.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Types.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Builders.h"
@@ -212,7 +212,7 @@ public:
 #define ARTS_STRUCT_TYPE(VarName, StructName, ...)                             \
   LLVM::LLVMStructType VarName = nullptr;                                      \
   MemRefType VarName##Ptr = nullptr;
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Kinds.def"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def"
   LLVM::LLVMPointerType llvmPtr = nullptr;
   ///}
 
@@ -240,4 +240,4 @@ private:
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSTOLLVM_CODEGENSUPPORT_H
+#endif // CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_CODEGENSUPPORT_H

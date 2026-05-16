@@ -2,7 +2,7 @@
 /// File: GuidRangCallOpt.cpp
 ///
 /// Rewrites per-iteration GUID reservation calls into GUID-range calls after
-/// ARTS-to-LLVM lowering, when safe:
+/// ARTS-RT-to-LLVM lowering, when safe:
 ///
 ///   scf.for %i = 0 to N step 1 {
 ///     %g = call @arts_guid_reserve(type, route0)
@@ -27,15 +27,15 @@
 /// - else: keep per-iteration reserve semantics
 ///==========================================================================///
 
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/CodegenSupport.h"
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Types.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Types.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_GUIDRANGCALLOPT
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::arts_rt
 #include "carts/passes/Passes.h"
 #include "carts/utils/Debug.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -59,7 +59,7 @@ static bool isGuidReserveCall(func::CallOp call) {
 }
 
 struct GuidRangCallOptPass
-    : public arts::impl::GuidRangCallOptBase<GuidRangCallOptPass> {
+    : public arts_rt::impl::GuidRangCallOptBase<GuidRangCallOptPass> {
   void runOnOperation() override {
     ModuleOp module = getOperation();
     ArtsCodegen codegen(module, /*debug=*/false);
@@ -213,11 +213,11 @@ struct GuidRangCallOptPass
 } // namespace
 
 namespace mlir {
-namespace carts::arts {
+namespace carts::arts_rt {
 
 std::unique_ptr<Pass> createGuidRangCallOptPass() {
   return std::make_unique<GuidRangCallOptPass>();
 }
 
-} // namespace carts::arts
+} // namespace carts::arts_rt
 } // namespace mlir

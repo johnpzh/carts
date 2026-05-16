@@ -8,7 +8,7 @@ alwaysApply: false
 The ARTS runtime is in [./external/arts/](mdc:external/arts/) and provides core functionality for EDT management, DataBlock management, and distributed execution.
 
 ## Key Runtime Functions
-When working with code generation in [lib/arts/passes/ConvertArtsToLLVM.cpp](mdc:lib/arts/passes/ConvertArtsToLLVM.cpp), these runtime functions are called:
+When working with runtime ABI lowering in [lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVM.cpp](mdc:lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVM.cpp), these runtime functions are called:
 
 ### Memory Management
 ```cpp
@@ -41,7 +41,7 @@ void artsYield();
 ```
 
 ## Runtime Function Declarations
-Runtime functions are declared in [include/arts/codegen/Kinds.def](mdc:include/arts/codegen/Kinds.def) using:
+Runtime functions are declared in [include/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def](mdc:include/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def) using:
 ```cpp
 __ARTS_RTL(artsMalloc, VoidPtr, SizeTy)
 __ARTS_RTL(artsEdtCreate, ArtsGuid, EdtFnPtr, Int32, Int32, Int64Ptr, Int32)

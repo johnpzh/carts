@@ -1,7 +1,7 @@
-// RUN: %carts-compile %s --arts-config %arts_config --start-from arts-to-llvm --pipeline arts-to-llvm | %FileCheck %s
+// RUN: %carts-compile %s --arts-config %arts_config --start-from arts-rt-to-llvm --pipeline arts-rt-to-llvm | %FileCheck %s
 
 // A large uniform DB split across many runtime DBs may have sub-16MiB
-// per-partition payloads. ARTS-to-LLVM should still choose interleaved
+// per-partition payloads. ARTS-RT-to-LLVM should still choose interleaved
 // placement when the aggregate allocation is large enough.
 
 // CHECK-LABEL: func.func @uniform_multi_db_aggregate_interleaves

@@ -1,8 +1,8 @@
-// RUN: %carts-compile %s --arts-config %arts_config --start-from arts-to-llvm --pipeline arts-to-llvm \
+// RUN: %carts-compile %s --arts-config %arts_config --start-from arts-rt-to-llvm --pipeline arts-rt-to-llvm \
 // RUN:   | %FileCheck %s
 
 // Runtime DB stride arithmetic may be created as affine.apply during
-// pre-lowering. The arts-to-llvm stage must lower it before LLVM conversion
+// pre-lowering. The arts-rt-to-llvm stage must lower it before LLVM conversion
 // rewrites adjacent index values to i64, or LLVM translation sees residual
 // unrealized casts.
 

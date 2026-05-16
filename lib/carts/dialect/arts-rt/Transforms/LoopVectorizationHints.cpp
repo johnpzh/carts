@@ -32,10 +32,10 @@
 
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
 
-namespace mlir::carts::arts {
+namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_LOOPVECTORIZATIONHINTS
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::arts_rt
 
 #include "carts/utils/Debug.h"
 #include "carts/utils/LoopUtils.h"
@@ -695,7 +695,7 @@ createOuterLoopHints(MLIRContext *ctx, bool mustProgress, unsigned unrollCount,
 }
 
 struct LoopVectorizationHintsPass
-    : public arts::impl::LoopVectorizationHintsBase<
+    : public arts_rt::impl::LoopVectorizationHintsBase<
           LoopVectorizationHintsPass> {
   unsigned vectorWidth = 0;
   unsigned interleaveCount = 4;
@@ -859,11 +859,11 @@ struct LoopVectorizationHintsPass
 /// Pass creation and registration
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace carts::arts {
+namespace carts::arts_rt {
 
 std::unique_ptr<Pass> createLoopVectorizationHintsPass() {
   return std::make_unique<LoopVectorizationHintsPass>();
 }
 
-} // namespace carts::arts
+} // namespace carts::arts_rt
 } // namespace mlir

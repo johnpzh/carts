@@ -130,7 +130,7 @@ void DbTransformsPass::runOnOperation() {
   ///
   /// Detect loops creating N GUIDs and mark them for batch allocation
   /// via arts_guid_reserve_range(N). The marking pass stamps IR with
-  /// attributes that ConvertArtsToLLVM can consume.
+  /// attributes that ConvertArtsRtToLLVM can consume.
   ///===------------------------------------------------------------------===///
   {
     ModuleOp module = getOperation();

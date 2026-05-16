@@ -1,8 +1,8 @@
-// RUN: %carts-compile %s --arts-config %arts_config --start-from arts-to-llvm --pipeline arts-to-llvm | %FileCheck %s
+// RUN: %carts-compile %s --arts-config %arts_config --start-from arts-rt-to-llvm --pipeline arts-rt-to-llvm | %FileCheck %s
 
 // Lowering can leave db_ref operations in an already outlined function after
 // arts_rt.dep_db_acquire has been lowered to raw depv pointer-table storage.
-// ARTS-to-LLVM must consume that residual db_ref before the source db_acquire
+// ARTS-RT-to-LLVM must consume that residual db_ref before the source db_acquire
 // is rewritten away.
 
 // CHECK-LABEL: func.func @residual_db_ref_from_depv

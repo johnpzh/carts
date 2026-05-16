@@ -66,7 +66,7 @@ conditionally when requested.
 | 10 | late-concurrency-cleanup | Is hoisting/sinking correct? |
 | 11 | epochs | Are epochs created correctly? |
 | 12 | pre-lowering | Are EDTs/DBs/epochs lowered to RT calls? |
-| 13 | arts-to-llvm | Is final LLVM IR correct? |
+| 13 | arts-rt-to-llvm | Is final LLVM IR correct? |
 
 ## Bisection Strategy by Symptom
 
@@ -78,7 +78,7 @@ conditionally when requested.
 | Wrong loop bounds | sde-planning (3), then late-concurrency-cleanup (10) |
 | Missing DB | codir-to-arts (5), create-dbs (7), then db-opt (8) |
 | Pattern/semantic issue | sde-planning (3) — inspect SDE sub-passes via `--arts-debug=<pass>` |
-| LLVM crash | arts-to-llvm (13), then pre-lowering (12) |
+| LLVM crash | arts-rt-to-llvm (13), then pre-lowering (12) |
 
 ## What to Look for in Diffs
 

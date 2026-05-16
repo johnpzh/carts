@@ -12,7 +12,7 @@
 /// scf::ForOp loops, identifies those whose body contains exactly one
 /// DbAllocOp, computes the trip count when bounds are statically
 /// analyzable, and stamps the IR with attributes that a later lowering
-/// phase (ConvertArtsToLLVM / DbAllocPattern) can consume.
+/// phase (ConvertArtsRtToLLVM / DbAllocPattern) can consume.
 ///
 /// Markings:
 ///   DbAllocOp  -> "guid_range_trip_count" : I64Attr
@@ -27,7 +27,7 @@
 ///   - No rewriting is performed; only attributes are attached.
 ///
 /// TODO(DT-4): This is annotation-only — attributes are stamped but
-/// ConvertArtsToLLVM.cpp's DbAllocPattern does not consume
+/// ConvertArtsRtToLLVM.cpp's DbAllocPattern does not consume
 /// guid_range_trip_count. Lowering needs to: (1) check for
 /// guid_range_trip_count on DbAllocOp, (2) hoist allocation outside the
 /// loop, (3) replace N artsGuidReserve() with one

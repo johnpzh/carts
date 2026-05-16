@@ -48,7 +48,7 @@ Driver stages:
 10. `late-concurrency-cleanup`
 11. `epochs`
 12. `pre-lowering`
-13. `arts-to-llvm`
+13. `arts-rt-to-llvm`
 
 `--pipeline` also accepts the sentinel `complete`. `--start-from` accepts core
 stages only.
@@ -223,14 +223,14 @@ VerifyEpochLowered
 VerifyPreLowered
 ```
 
-### `arts-to-llvm`
+### `arts-rt-to-llvm`
 
-The token name is still `arts-to-llvm` for pipeline compatibility. The source
-implementation lives under `dialect/arts-rt/Conversion/` because this stage is
-runtime ABI and LLVM-facing lowering.
+This is the ARTS-RT-owned runtime ABI and LLVM-facing lowering stage. The
+canonical manifest token is `arts-rt-to-llvm`; no legacy stage alias is
+accepted.
 
 ```text
-ConvertArtsToLLVM
+ConvertArtsRtToLLVM
 LoweringContractCleanup
 GuidRangCallOpt
 RuntimeCallOpt
@@ -258,7 +258,7 @@ VerifyLowered
 - `late-concurrency-cleanup` depends on `post-db-refinement`.
 - `epochs` depends on `post-db-refinement`.
 - `pre-lowering` depends on `epochs` and `late-concurrency-cleanup`.
-- `arts-to-llvm` depends on `pre-lowering`.
+- `arts-rt-to-llvm` depends on `pre-lowering`.
 
 ## Ownership Notes
 
@@ -271,6 +271,6 @@ VerifyLowered
   rewrites before ARTS.
 - `arts` owns DB/EDT/epoch orchestration and analysis-backed refinement
   (source: `lib/carts/dialect/arts/`).
-- `arts-rt` lowering belongs in `pre-lowering` and `arts-to-llvm`, after the
+- `arts-rt` lowering belongs in `pre-lowering` and `arts-rt-to-llvm`, after the
   compiler has already chosen the DB and task shape (source:
   `lib/carts/dialect/arts-rt/`).

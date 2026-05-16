@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --arts-config %arts_config --start-from arts-to-llvm --pipeline arts-to-llvm | %FileCheck %s
+// RUN: %carts-compile %s --arts-config %arts_config --start-from arts-rt-to-llvm --pipeline arts-rt-to-llvm | %FileCheck %s
 
 // Multi-dimensional DB allocation lowering linearizes ranked handle users.
 // The helper must route those load/store rewrites through PatternRewriter so

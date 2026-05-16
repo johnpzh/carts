@@ -37,7 +37,7 @@ dialect/                     MLIR dialects (one subdirectory per CARTS dialect)
     IR/                      arts_rt dialect (RtDialect.cpp, RtOps.cpp)
     Conversion/
       ArtsToRt/              DB/EDT/epoch lowering (ARTS → ARTS-RT/runtime shape)
-      ArtsToLLVM/            Runtime ABI codegen and residual ARTS lowering
+      ArtsRtToLLVM/            Runtime ABI codegen and residual ARTS lowering
       RtToLLVM/              arts_rt → LLVM patterns
     Transforms/              DataPtrHoisting, RuntimeCallOpt, ScalarReplacement,
                              LoopVectorizationHints, AliasScopeGen

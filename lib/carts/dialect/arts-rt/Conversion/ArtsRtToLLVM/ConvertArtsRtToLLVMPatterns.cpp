@@ -1,14 +1,14 @@
 ///==========================================================================///
-/// File: ConvertArtsToLLVMPatterns.cpp
+/// File: ConvertArtsRtToLLVMPatterns.cpp
 ///
 /// Residual ARTS/ARTS-RT-to-LLVM conversion patterns extracted from
-/// ConvertArtsToLLVM.cpp. Each pattern lowers runtime-shaped operations into
+/// ConvertArtsRtToLLVM.cpp. Each pattern lowers runtime-shaped operations into
 /// LLVM runtime calls via the ArtsCodegen infrastructure.
 ///==========================================================================///
 
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/ConvertArtsToLLVMInternal.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVMInternal.h"
 
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/utils/OperationAttributes.h"
@@ -32,34 +32,28 @@
 
 #include "carts/utils/Debug.h"
 #include "llvm/ADT/Statistic.h"
-ARTS_DEBUG_SETUP(convert_arts_to_llvm);
+ARTS_DEBUG_SETUP(convert_arts_rt_to_llvm);
 
-static llvm::Statistic numEdtOpsConverted{
-    "convert_arts_to_llvm", "NumEdtOpsConverted",
-    "Number of EDT operations converted to LLVM runtime calls"};
 static llvm::Statistic numDbOpsConverted{
-    "convert_arts_to_llvm", "NumDbOpsConverted",
+    "convert_arts_rt_to_llvm", "NumDbOpsConverted",
     "Number of DataBlock operations converted to LLVM runtime calls"};
 static llvm::Statistic numEpochOpsConverted{
-    "convert_arts_to_llvm", "NumEpochOpsConverted",
+    "convert_arts_rt_to_llvm", "NumEpochOpsConverted",
     "Number of epoch operations converted to LLVM runtime calls"};
-static llvm::Statistic numDepOpsConverted{
-    "convert_arts_to_llvm", "NumDepOpsConverted",
-    "Number of dependency operations converted to LLVM runtime calls"};
 static llvm::Statistic numMiscOpsConverted{
-    "convert_arts_to_llvm", "NumMiscOpsConverted",
+    "convert_arts_rt_to_llvm", "NumMiscOpsConverted",
     "Number of miscellaneous ARTS operations converted"};
 
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
-using namespace mlir::carts::arts::convert_arts_to_llvm;
+using namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm;
 
 ///===----------------------------------------------------------------------===///
 /// Helper Functions
 ///===----------------------------------------------------------------------===///
 
-namespace mlir::carts::arts::convert_arts_to_llvm {
+namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm {
 
 SmallVector<Value, 4>
 materializeStaticDbOuterShape(Value handle, ArtsCodegen *AC, Location loc) {
@@ -243,7 +237,7 @@ Value buildArtsHintMemref(ArtsCodegen *AC, Value route, Value artsId,
                                                  hintAlloc);
 }
 
-} // namespace mlir::carts::arts::convert_arts_to_llvm
+} // namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm
 
 ///===----------------------------------------------------------------------===///
 /// Conversion Patterns
@@ -252,8 +246,8 @@ Value buildArtsHintMemref(ArtsCodegen *AC, Value route, Value artsId,
 /// Pattern to convert arts.runtime_query operations to LLVM runtime calls.
 /// Dispatches on the RuntimeQueryKind attribute to call the appropriate
 /// ARTS runtime function (getTotalWorkers, getTotalNodes, etc.).
-struct RuntimeQueryPattern : public ArtsToLLVMPattern<RuntimeQueryOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct RuntimeQueryPattern : public ArtsRtToLLVMPattern<RuntimeQueryOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(RuntimeQueryOp op,
                                 PatternRewriter &rewriter) const override {
@@ -285,8 +279,8 @@ struct RuntimeQueryPattern : public ArtsToLLVMPattern<RuntimeQueryOp> {
 ///===----------------------------------------------------------------------===///
 
 /// Pattern to convert arts.barrier operations
-struct BarrierPattern : public ArtsToLLVMPattern<BarrierOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct BarrierPattern : public ArtsRtToLLVMPattern<BarrierOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(BarrierOp op,
                                 PatternRewriter &rewriter) const override {
@@ -301,8 +295,8 @@ struct BarrierPattern : public ArtsToLLVMPattern<BarrierOp> {
 };
 
 /// Pattern to convert arts.get_edt_epoch_guid operations
-struct GetEdtEpochGuidPattern : public ArtsToLLVMPattern<GetEdtEpochGuidOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct GetEdtEpochGuidPattern : public ArtsRtToLLVMPattern<GetEdtEpochGuidOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(GetEdtEpochGuidOp op,
                                 PatternRewriter &rewriter) const override {
@@ -317,8 +311,8 @@ struct GetEdtEpochGuidPattern : public ArtsToLLVMPattern<GetEdtEpochGuidOp> {
 
 /// Pattern to convert arts.create_epoch operations
 /// Pattern to convert arts.atomic_add operations
-struct AtomicAddPattern : public ArtsToLLVMPattern<AtomicAddOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct AtomicAddPattern : public ArtsRtToLLVMPattern<AtomicAddOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(AtomicAddOp op,
                                 PatternRewriter &rewriter) const override {
@@ -406,8 +400,8 @@ struct BuiltinObjectSizePattern : public OpRewritePattern<func::CallOp> {
 /// DB Patterns
 ///===----------------------------------------------------------------------===///
 /// Pattern to convert arts.db_alloc operations
-struct DbAllocPattern : public ArtsToLLVMPattern<DbAllocOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct DbAllocPattern : public ArtsRtToLLVMPattern<DbAllocOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(DbAllocOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1047,7 +1041,7 @@ private:
     Value totalElems = AC->computeTotalElements(sizes, loc);
     /// Keep DB creation always linearized here. The dedicated GuidRangCallOpt
     /// pass handles reserve->reserve_range promotion centrally after
-    /// ARTS-to-LLVM conversion.
+    /// ARTS-RT-to-LLVM conversion.
     auto lowerBound = AC->createIndexConstant(0, loc);
     auto step = AC->createIndexConstant(1, loc);
     auto linearLoop = AC->create<scf::ForOp>(loc, lowerBound, totalElems, step);
@@ -1173,8 +1167,8 @@ private:
 /// region. Single-worker and already-outlined functions can leave db_ref
 /// operations behind, where they must be lowered before their DbAcquireOp
 /// source is rewritten to raw dependency storage.
-struct DbRefPattern : public ArtsToLLVMPattern<DbRefOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct DbRefPattern : public ArtsRtToLLVMPattern<DbRefOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(DbRefOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1257,8 +1251,8 @@ struct DbRefPattern : public ArtsToLLVMPattern<DbRefOp> {
 };
 
 /// Pattern to convert arts.db_acquire operations
-struct DbAcquirePattern : public ArtsToLLVMPattern<DbAcquireOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct DbAcquirePattern : public ArtsRtToLLVMPattern<DbAcquireOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(DbAcquireOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1340,8 +1334,8 @@ struct DbAcquirePattern : public ArtsToLLVMPattern<DbAcquireOp> {
 };
 
 /// Pattern to convert arts.db_release operations
-struct DbReleasePattern : public ArtsToLLVMPattern<DbReleaseOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct DbReleasePattern : public ArtsRtToLLVMPattern<DbReleaseOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(DbReleaseOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1402,8 +1396,8 @@ struct DbReleasePattern : public ArtsToLLVMPattern<DbReleaseOp> {
 };
 
 /// Pattern to convert arts.db_free operations
-struct DbFreePattern : public ArtsToLLVMPattern<DbFreeOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct DbFreePattern : public ArtsRtToLLVMPattern<DbFreeOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(DbFreeOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1475,8 +1469,8 @@ struct DbFreePattern : public ArtsToLLVMPattern<DbFreeOp> {
 };
 
 /// Pattern to convert arts.db_num_elements operations
-struct DbNumElementsPattern : public ArtsToLLVMPattern<DbNumElementsOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct DbNumElementsPattern : public ArtsRtToLLVMPattern<DbNumElementsOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(DbNumElementsOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1527,8 +1521,8 @@ struct DbNumElementsPattern : public ArtsToLLVMPattern<DbNumElementsOp> {
 };
 
 /// Pattern to convert arts.alloc operations (ARTS memory allocation)
-struct AllocPattern : public ArtsToLLVMPattern<AllocOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct AllocPattern : public ArtsRtToLLVMPattern<AllocOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(AllocOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1547,8 +1541,8 @@ struct AllocPattern : public ArtsToLLVMPattern<AllocOp> {
 ///===----------------------------------------------------------------------===///
 
 /// Pattern to convert arts.yield operations (terminator)
-struct YieldPattern : public ArtsToLLVMPattern<YieldOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct YieldPattern : public ArtsRtToLLVMPattern<YieldOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(YieldOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1562,8 +1556,8 @@ struct YieldPattern : public ArtsToLLVMPattern<YieldOp> {
 };
 
 /// Pattern to convert arts.undef to polygeist.undef
-struct UndefPattern : public ArtsToLLVMPattern<UndefOp> {
-  using ArtsToLLVMPattern::ArtsToLLVMPattern;
+struct UndefPattern : public ArtsRtToLLVMPattern<UndefOp> {
+  using ArtsRtToLLVMPattern::ArtsRtToLLVMPattern;
 
   LogicalResult matchAndRewrite(UndefOp op,
                                 PatternRewriter &rewriter) const override {
@@ -1583,7 +1577,7 @@ struct UndefPattern : public ArtsToLLVMPattern<UndefOp> {
 /// Pattern Population
 ///===----------------------------------------------------------------------===///
 
-namespace mlir::carts::arts::convert_arts_to_llvm {
+namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm {
 
 void populateRuntimePatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
   MLIRContext *context = patterns.getContext();
@@ -1615,4 +1609,4 @@ void populateOtherPatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
   patterns.add<YieldPattern, UndefPattern>(context, AC);
 }
 
-} // namespace mlir::carts::arts::convert_arts_to_llvm
+} // namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm

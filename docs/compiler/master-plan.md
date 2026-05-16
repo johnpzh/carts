@@ -74,7 +74,7 @@ The live core stage tokens (from `tools/compile/Compile.cpp`) are:
 ```text
 sde-input-normalization, initial-cleanup, sde-planning, sde-to-codir,
 codir-to-arts, edt-transforms, create-dbs, db-opt, post-db-refinement,
-late-concurrency-cleanup, epochs, pre-lowering, arts-to-llvm
+late-concurrency-cleanup, epochs, pre-lowering, arts-rt-to-llvm
 ```
 
 Plus the `post-o3-opt` and `llvm-ir-emission` epilogues. The `sde-to-codir`
@@ -176,9 +176,9 @@ Important current facts:
   dialect; lowering-contract markers are tracked via `arts.lowering_contract`
   (`LoweringContractOp`).
 - ARTS-RT owns the runtime ABI lowering sources. `DbLowering`,
-  `EdtLowering`, `EpochLowering`, and `ConvertArtsToLLVM` are built from
-  `lib/carts/dialect/arts-rt/Conversion/`; the staged pipeline token remains
-  `arts-to-llvm` until the driver manifest is renamed.
+  `EdtLowering`, `EpochLowering`, and `ConvertArtsRtToLLVM` are built from
+  `lib/carts/dialect/arts-rt/Conversion/`; the staged pipeline token is
+  `arts-rt-to-llvm` and no legacy stage alias is accepted.
 - The latest maintained large/64 sweep (2026-05-16) configured 23 benchmark
   entries and passed all 69 median-run executions checksum-clean:
   `.carts/outputs/benchmarks-m6-final-current-20260516/20260516_054254`.
@@ -644,7 +644,7 @@ entry per iteration:
    - `codir-to-arts` → CODIR/ARTS boundary
    - `edt-transforms`, `create-dbs`, `db-opt`, `post-db-refinement`,
      `late-concurrency-cleanup`, `epochs` → ARTS
-   - `pre-lowering`, `arts-to-llvm`, `post-o3-opt`, `llvm-ir-emission` →
+   - `pre-lowering`, `arts-rt-to-llvm`, `post-o3-opt`, `llvm-ir-emission` →
      ARTS-RT
 
    Per-dialect ownership for performance decisions:

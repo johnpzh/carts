@@ -44,7 +44,7 @@ shared utilities across 13 files. See `/refactor-utils` for the full catalog.
 - Core transforms: `lib/carts/dialect/arts/Transforms/`
 - ArtsToRt conversion: `lib/carts/dialect/arts/Conversion/ArtsToRt/`
 - SDE transforms: `lib/carts/dialect/sde/Transforms/`
-- LLVM conversion: `lib/carts/dialect/arts/Conversion/ArtsToLLVM/`
+- LLVM conversion: `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/`
 - Analysis: `lib/carts/dialect/arts/Analysis/`
 - Shared transforms: `lib/carts/dialect/arts/Transforms/` (db/, dep/, edt/, loop/, kernel/)
 - Pipeline setup: `tools/compile/Compile.cpp`

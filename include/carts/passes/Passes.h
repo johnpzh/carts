@@ -67,7 +67,6 @@ std::unique_ptr<Pass> createVerifyEdtCreatedPass();
 std::unique_ptr<Pass> createVerifyEpochCreatedPass();
 std::unique_ptr<Pass> createVerifyArtsObjectsOnlyPass();
 std::unique_ptr<Pass> createVerifyPreLoweredPass();
-std::unique_ptr<Pass> createVerifyLoweredPass();
 std::unique_ptr<Pass> createVerifyEdtLoweredPass();
 std::unique_ptr<Pass> createVerifyDbLoweredPass();
 std::unique_ptr<Pass> createVerifyEpochLoweredPass();

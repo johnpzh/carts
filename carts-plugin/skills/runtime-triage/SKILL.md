@@ -66,7 +66,7 @@ dekk carts build --arts --counters 3
 ## Distributed-Specific Checks
 
 - Verify whether the DB is marked `distributed`
-- Check route selection and owner assumptions in `lib/carts/dialect/arts/Conversion/ArtsToLLVM/ConvertArtsToLLVM.cpp`
+- Check route selection and owner assumptions in `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVM.cpp`
 - Check distributed init / worker-local creation in `lib/carts/codegen/Codegen.cpp`
 - Compare single-node vs distributed runs before assuming a general runtime bug
 
@@ -75,7 +75,7 @@ dekk carts build --arts --counters 3
 - `docs/heuristics/distribution.md`
 - `docs/heuristics/partitioning.md`
 - `AGENTS.md` section: Distributed Runtime Debug
-- `lib/carts/dialect/arts/Conversion/ArtsToLLVM/ConvertArtsToLLVM.cpp`
+- `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVM.cpp`
 - `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
 - `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLowering.cpp`

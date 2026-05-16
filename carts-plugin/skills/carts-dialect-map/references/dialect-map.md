@@ -65,7 +65,7 @@ Important areas:
 
 - `Analysis/db`, `Analysis/edt`, `Analysis/loop`, `Analysis/heuristics`.
 - `Transforms/db`, `Transforms/edt`, `Transforms/epoch`, `Transforms/loop`.
-- `Conversion/ArtsToRt`, `Conversion/ArtsToLLVM`.
+- `Conversion/ArtsToRt`, `Conversion/ArtsRtToLLVM`.
 - `Utils/` - DbUtils, EdtUtils, IdRegistry, LocationMetadata,
   LoweringContractUtils, PartitionPredicates, BlockedAccessUtils,
   ARTSCostModel, RuntimeConfig.

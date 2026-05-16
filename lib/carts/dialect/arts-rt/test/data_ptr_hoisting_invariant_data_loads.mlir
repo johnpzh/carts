@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --arts-config %arts_config --start-from arts-to-llvm --pipeline arts-to-llvm | %FileCheck %s
+// RUN: %carts-compile %s --arts-config %arts_config --start-from arts-rt-to-llvm --pipeline arts-rt-to-llvm | %FileCheck %s
 
 // CHECK-LABEL: func.func private @__arts_edt_hoist_invariant_data_load
 // CHECK: scf.for %[[I:.+]] =

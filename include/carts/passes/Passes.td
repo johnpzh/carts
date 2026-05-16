@@ -291,12 +291,6 @@ def VerifyPreLowered : Pass<"verify-pre-lowered", "mlir::ModuleOp"> {
   let constructor = "mlir::carts::arts::createVerifyPreLoweredPass()";
 }
 
-def VerifyLowered : Pass<"verify-lowered", "mlir::ModuleOp"> {
-  let summary = "Verify no high-level ARTS ops survive past arts-to-llvm";
-  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
-  let constructor = "mlir::carts::arts::createVerifyLoweredPass()";
-}
-
 def VerifyEdtLowered : Pass<"verify-edt-lowered", "mlir::ModuleOp"> {
   let summary = "Verify all EDTs have been lowered";
   let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];

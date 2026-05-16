@@ -23,10 +23,10 @@
 
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
 
-namespace mlir::carts::arts {
+namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_SCALARREPLACEMENT
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::arts_rt
 
 #include "carts/utils/Debug.h"
 #include "carts/dialect/arts-rt/Utils/LoopInvarianceUtils.h"
@@ -406,7 +406,7 @@ static LogicalResult transformReduction(ReductionPattern &pattern,
 }
 
 struct ScalarReplacementPass
-    : public arts::impl::ScalarReplacementBase<ScalarReplacementPass> {
+    : public arts_rt::impl::ScalarReplacementBase<ScalarReplacementPass> {
   void runOnOperation() override {
     ModuleOp module = getOperation();
     ARTS_INFO_HEADER(ScalarReplacementPass);
@@ -458,11 +458,11 @@ struct ScalarReplacementPass
 /// Pass creation and registration
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace carts::arts {
+namespace carts::arts_rt {
 
 std::unique_ptr<Pass> createScalarReplacementPass() {
   return std::make_unique<ScalarReplacementPass>();
 }
 
-} // namespace carts::arts
+} // namespace carts::arts_rt
 } // namespace mlir

@@ -1,9 +1,9 @@
-add_subdirectory(ArtsToLLVM)
+add_subdirectory(ArtsRtToLLVM)
 add_subdirectory(ArtsToRt)
 add_subdirectory(RtToLLVM)
 
 set(CARTS_RT_TO_LLVM_SOURCE_FILES
-  ${CARTS_ARTS_RT_ARTS_TO_LLVM_SOURCE_FILES}
+  ${CARTS_ARTS_RT_ARTS_RT_TO_LLVM_SOURCE_FILES}
   ${CARTS_ARTS_RT_ARTS_TO_RT_SOURCE_FILES}
   ${CARTS_ARTS_RT_RT_TO_LLVM_SOURCE_FILES}
 )

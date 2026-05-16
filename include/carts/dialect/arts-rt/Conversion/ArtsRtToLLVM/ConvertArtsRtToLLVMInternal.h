@@ -1,34 +1,36 @@
 ///==========================================================================///
-/// File: ConvertArtsToLLVMInternal.h
+/// File: ConvertArtsRtToLLVMInternal.h
 ///
-/// Local implementation contract for ConvertArtsToLLVM. This header is
-/// intentionally private to the arts-to-llvm implementation split and
+/// Local implementation contract for ConvertArtsRtToLLVM. This header is
+/// intentionally private to the arts-rt-to-llvm implementation split and
 /// should not be used as shared compiler infrastructure.
 ///==========================================================================///
 
-#ifndef CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSTOLLVM_INTERNAL_H
-#define CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSTOLLVM_INTERNAL_H
+#ifndef CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_INTERNAL_H
+#define CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_INTERNAL_H
 
 #include "carts/Dialect.h"
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "mlir/Conversion/LLVMCommon/StructBuilder.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/PatternMatch.h"
 #include "polygeist/Ops.h"
 
-namespace mlir::carts::arts::convert_arts_to_llvm {
+namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm {
+
+using ::mlir::carts::arts::ArtsCodegen;
 
 ///===----------------------------------------------------------------------===///
-/// ArtsToLLVMPattern base class
+/// ArtsRtToLLVMPattern base class
 ///===----------------------------------------------------------------------===///
 
 template <typename OpType>
-class ArtsToLLVMPattern : public OpRewritePattern<OpType> {
+class ArtsRtToLLVMPattern : public OpRewritePattern<OpType> {
 protected:
   ArtsCodegen *AC;
 
 public:
-  ArtsToLLVMPattern(MLIRContext *context, ArtsCodegen *ac)
+  ArtsRtToLLVMPattern(MLIRContext *context, ArtsCodegen *ac)
       : OpRewritePattern<OpType>(context), AC(ac) {}
 };
 
@@ -90,6 +92,6 @@ void populateRtToLLVMPatterns(RewritePatternSet &patterns, ArtsCodegen *AC);
 void populateDbPatterns(RewritePatternSet &patterns, ArtsCodegen *AC);
 void populateOtherPatterns(RewritePatternSet &patterns, ArtsCodegen *AC);
 
-} // namespace mlir::carts::arts::convert_arts_to_llvm
+} // namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm
 
-#endif // CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSTOLLVM_INTERNAL_H
+#endif // CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_INTERNAL_H

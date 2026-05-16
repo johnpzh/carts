@@ -1379,10 +1379,10 @@ def _compile_all_pipelines(
           5_rt/                              # arts_rt dialect + lowering
             stages/
               NN_pre-lowering.mlir
-              NN_arts-to-llvm.mlir
+              NN_arts-rt-to-llvm.mlir
             passes/
               NN_pre-lowering/               # rt-lowering passes onward
-              NN_arts-to-llvm/
+              NN_arts-rt-to-llvm/
           6_llvm/
             <stem>.ll                        # final LLVM IR (--emit-llvm)
           boundaries/                        # dialect-conversion slices

@@ -37,10 +37,10 @@
 
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
 
-namespace mlir::carts::arts {
+namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_ALIASSCOPEGEN
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::arts_rt
 
 #include "carts/utils/Debug.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -116,7 +116,7 @@ struct DepIndexInfo {
 static DepIndexInfo extractDepIndexInfo(LLVM::LoadOp loadOp) {
   DepIndexInfo info;
 
-  /// Prefer LLVM GEP pattern after Arts->LLVM lowering:
+  /// Prefer LLVM GEP pattern after ARTS-RT-to-LLVM lowering:
   ///   %depEntry = llvm.getelementptr %depv[%idx]
   ///   %ptrField = llvm.getelementptr %depEntry[0, 2]
   ///   %ptr = llvm.load %ptrField : !llvm.ptr
@@ -384,7 +384,7 @@ static int processMemoryAccesses(LLVM::LLVMFuncOp funcOp,
 }
 
 struct AliasScopeGenPass
-    : public arts::impl::AliasScopeGenBase<AliasScopeGenPass> {
+    : public arts_rt::impl::AliasScopeGenBase<AliasScopeGenPass> {
 
   void runOnOperation() override {
     ModuleOp module = getOperation();
@@ -464,11 +464,11 @@ struct AliasScopeGenPass
 /// Pass creation and registration
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace carts::arts {
+namespace carts::arts_rt {
 
 std::unique_ptr<Pass> createAliasScopeGenPass() {
   return std::make_unique<AliasScopeGenPass>();
 }
 
-} // namespace carts::arts
+} // namespace carts::arts_rt
 } // namespace mlir

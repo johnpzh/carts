@@ -5,8 +5,8 @@
 /// ARTS-RT lowering.
 ///==========================================================================///
 
-#ifndef CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSTOLLVM_TYPES_H
-#define CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSTOLLVM_TYPES_H
+#ifndef CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_TYPES_H
+#define CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_TYPES_H
 
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/StringRef.h"
@@ -30,19 +30,19 @@ namespace types {
 #define ARTS_RTL_FUNCTIONS
 enum class RuntimeFunction {
 #define ARTS_RTL(Enum, ...) Enum,
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Kinds.def"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def"
 };
 #undef ARTS_RTL_FUNCTIONS
 
 #define ARTS_RTL(Enum, ...)                                                    \
   constexpr auto Enum = arts::types::RuntimeFunction::Enum;
 #define ARTS_RTL_FUNCTIONS
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Kinds.def"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def"
 #undef ARTS_RTL_FUNCTIONS
 
 /// Include ARTS runtime constants
 #define ARTS_CONSTANTS
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Kinds.def"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def"
 #undef ARTS_CONSTANTS
 
 /// Return the canonical symbol name for an ARTS runtime function.
@@ -52,7 +52,7 @@ inline llvm::StringRef runtimeFunctionName(RuntimeFunction fn) {
 #define ARTS_RTL(Enum, Str, ...)                                               \
   case RuntimeFunction::Enum:                                                  \
     return Str;
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Kinds.def"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def"
 #undef ARTS_RTL
 #undef ARTS_RTL_FUNCTIONS
   }
@@ -65,7 +65,7 @@ runtimeFunctionFromName(llvm::StringRef name) {
   return llvm::StringSwitch<std::optional<RuntimeFunction>>(name)
 #define ARTS_RTL_FUNCTIONS
 #define ARTS_RTL(Enum, Str, ...) .Case(Str, RuntimeFunction::Enum)
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Kinds.def"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def"
 #undef ARTS_RTL
 #undef ARTS_RTL_FUNCTIONS
       .Default(std::nullopt);
@@ -112,4 +112,4 @@ template <> struct DenseMapInfo<mlir::carts::arts::types::RuntimeFunction> {
 
 } // namespace llvm
 
-#endif // CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSTOLLVM_TYPES_H
+#endif // CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_TYPES_H

@@ -59,7 +59,7 @@ halo/window contract is wrong; otherwise Core DB refinement should validate the
 
 **Root cause:** `DbAllocOp` + `DbAcquireOp` do not carry explicit node-locality or slice-coherence markers.
 
-**Fix usually belongs in:** `ConvertArtsToLLVM` codegen — when lowering a distributed acquire, ensure the same logical DB across all nodes maps to coherent remote-slice handles.
+**Fix usually belongs in:** `ConvertArtsRtToLLVM` codegen — when lowering a distributed acquire, ensure the same logical DB across all nodes maps to coherent remote-slice handles.
 
 ### 5. Init-per-node ordering
 
@@ -77,7 +77,7 @@ halo/window contract is wrong; otherwise Core DB refinement should validate the
 
 **Symptom:** segfault or bus error on the remote worker; or opaque data corruption from pointer reinterpretation.
 
-**Root cause:** `ConvertArtsToLLVM` / late lowering does not add serialization or marshalling for distributed handles.
+**Root cause:** `ConvertArtsRtToLLVM` / late lowering does not add serialization or marshalling for distributed handles.
 
 **Fix usually belongs in:** codegen — wrap distributed DB pointers in serializable handles, or reconstruct the handle from `(GUID, partition metadata)` on the receiver.
 

@@ -1,7 +1,7 @@
 ///==========================================================================///
 /// File: RuntimeCallOpt.cpp
 ///
-/// Post-ARTS-to-LLVM optimization for selected pure runtime query calls.
+/// Post-ARTS-RT-to-LLVM optimization for selected pure runtime query calls.
 ///
 /// Scope is intentionally conservative:
 /// - optimize only known topology/identity queries with no operands
@@ -14,11 +14,11 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_RUNTIMECALLOPT
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Types.h"
+} // namespace mlir::carts::arts_rt
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Types.h"
 #include "carts/passes/Passes.h"
 #include "carts/utils/Debug.h"
 #include "carts/dialect/arts-rt/Utils/LoopInvarianceUtils.h"
@@ -47,7 +47,7 @@ getOptimizableRuntimeFunction(func::CallOp call) {
 }
 
 struct RuntimeCallOptPass
-    : public arts::impl::RuntimeCallOptBase<RuntimeCallOptPass> {
+    : public arts_rt::impl::RuntimeCallOptBase<RuntimeCallOptPass> {
   void runOnOperation() override {
     ModuleOp module = getOperation();
     int hoisted = 0;
@@ -123,11 +123,11 @@ struct RuntimeCallOptPass
 } // namespace
 
 namespace mlir {
-namespace carts::arts {
+namespace carts::arts_rt {
 
 std::unique_ptr<Pass> createRuntimeCallOptPass() {
   return std::make_unique<RuntimeCallOptPass>();
 }
 
-} // namespace carts::arts
+} // namespace carts::arts_rt
 } // namespace mlir

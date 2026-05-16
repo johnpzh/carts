@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --arts-config %arts_config --start-from pre-lowering --pipeline arts-to-llvm | %FileCheck %s
+// RUN: %carts-compile %s --arts-config %arts_config --start-from pre-lowering --pipeline arts-rt-to-llvm | %FileCheck %s
 
 // A single-element acquire with an explicit DB index still records a direct
 // dependency on that indexed source DB, not on slot zero.

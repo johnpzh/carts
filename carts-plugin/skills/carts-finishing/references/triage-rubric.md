@@ -24,7 +24,7 @@ When an error surfaces at stage N, check the listed prior stages first.
 | Stage 8 (DbPartitioning) | Stack overflow / infinite recursion in `copyArtsMetadataAttrs` | DbPartitioning metadata copy, rewriter loops | Add depth guard at `PartitioningHeuristics.cpp` near line 706 (Phase 2 work). |
 | Stage 8 (DbPartitioning) | Wrong answer; `fine_grained` silently downgraded to `coarse`, indices dropped | DbPartitioning memref-of-memref handling | Single-element wrapper DB instead of N-element data. The fix is upstream in CreateDbs (Phase 3), NOT in the partition heuristic. |
 | `post-db-refinement` | Stencil halo bounds wrong | SDE access-window plan, DB refinement contract rewrite | Confirm SDE stamped the right halo/window, then check whether DB refinement rewrote it. |
-| `pre-lowering` / `arts-to-llvm` | `arts.db_alloc` / `arts.edt` / `arts.epoch` survived to LLVM | DbLowering, EdtLowering, EpochLowering | A lowering was skipped. Check the owning lowering and any contract-validity gate that excluded this op. |
+| `pre-lowering` / `arts-rt-to-llvm` | `arts.db_alloc` / `arts.edt` / `arts.epoch` survived to LLVM | DbLowering, EdtLowering, EpochLowering | A lowering was skipped. Check the owning lowering and any contract-validity gate that excluded this op. |
 | `pre-lowering` | `arts.db_acquire` references GUID that does not exist | DB refinement (GUID lost), CODIR-to-ARTS materialization for codelet deps, EpochLowering (CPS carry corruption) | Trace the GUID source. Did an intermediate pass erase it? |
 | Stage 14 (EpochLowering) | CPS chain: wrong iteration counter or outer epoch GUID | `EpochOpt` CPS-8 carry re-analysis, `EpochLowering` propagation | Check `CPSParamPerm` and `CPSIterCounterParamIdx` post-EpochOpt. |
 | Stage 14 | `CPS advance: rebuilt continuation pack with N schema holes` | `EpochOpt` carry analysis, intermediate EDT fusion, `EdtLowering` pack ordering | Carry arity changed between EpochOpt and EpochLowering. Zero-filled slots carry garbage. |
@@ -60,7 +60,7 @@ Use to locate where to grep when triaging.
 - Stages 9–10 (DB opt, post-distribution cleanup): `lib/carts/dialect/arts/Transforms/db/`, `core/Transforms/edt/`
 - CODIR-to-ARTS materialization: `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - SDE distribution/reduction planning: `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`, `lib/carts/dialect/sde/Transforms/effect/scheduling/ReductionStrategy.cpp`
-- Stage 13 (ConvertArtsToLLVM): `lib/carts/dialect/arts/Conversion/ArtsToLLVM/`
+- Stage 13 (ConvertArtsRtToLLVM): `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/`
 - Stage 14 (EpochLowering): `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EpochLowering.cpp`
 - Stage 15 (EdtLowering): `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLowering.cpp`
 - Stage 16 (RtToLLVM): `lib/carts/dialect/arts-rt/Conversion/RtToLLVM/RtToLLVMPatterns.cpp`

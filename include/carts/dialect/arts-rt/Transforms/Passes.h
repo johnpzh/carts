@@ -25,6 +25,10 @@ namespace mlir::carts::arts {
 class AnalysisManager;
 class RuntimeConfig;
 
+} // namespace mlir::carts::arts
+
+namespace mlir::carts::arts_rt {
+
 #define GEN_PASS_DECL
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 
@@ -33,14 +37,14 @@ std::unique_ptr<::mlir::Pass> createDbLoweringPass(uint64_t idStride = 1000);
 /// Lower outlined ARTS EDT objects into ARTS-RT launch/dependency ops.
 std::unique_ptr<::mlir::Pass> createEdtLoweringPass(uint64_t idStride = 1000);
 std::unique_ptr<::mlir::Pass>
-createEdtLoweringPass(AnalysisManager *AM, uint64_t idStride = 1000);
+createEdtLoweringPass(arts::AnalysisManager *AM, uint64_t idStride = 1000);
 /// Lower ARTS epochs into ARTS-RT epoch ops.
 std::unique_ptr<::mlir::Pass> createEpochLoweringPass();
 /// Lower runtime-shaped ARTS/ARTS-RT ops to LLVM dialect runtime calls.
-std::unique_ptr<::mlir::Pass> createConvertArtsToLLVMPass();
+std::unique_ptr<::mlir::Pass> createConvertArtsRtToLLVMPass();
 std::unique_ptr<::mlir::Pass>
-createConvertArtsToLLVMPass(bool debug, bool distributedInitPerWorker,
-                            const RuntimeConfig *machine);
+createConvertArtsRtToLLVMPass(bool debug, bool distributedInitPerWorker,
+                              const arts::RuntimeConfig *machine);
 /// Hoist dependency/data pointer loads after runtime ABI lowering.
 std::unique_ptr<::mlir::Pass> createDataPtrHoistingPass();
 /// Rewrite scalar GUID reservation loops to range reservation calls.
@@ -53,7 +57,9 @@ std::unique_ptr<::mlir::Pass> createAliasScopeGenPass();
 std::unique_ptr<::mlir::Pass> createLoopVectorizationHintsPass();
 /// Transform memory-based reductions to register-based iter_args.
 std::unique_ptr<::mlir::Pass> createScalarReplacementPass();
+/// Verify no ARTS/ARTS-RT ops survive after runtime-to-LLVM lowering.
+std::unique_ptr<::mlir::Pass> createVerifyLoweredPass();
 
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::arts_rt
 
 #endif // ARTS_DIALECT_RT_TRANSFORMS_PASSES_H

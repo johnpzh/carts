@@ -19,13 +19,13 @@
 ///==========================================================================///
 
 #include "carts/Dialect.h"
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/DbLayoutStrategy.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_DBLOWERING
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::arts_rt
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/utils/Debug.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
@@ -149,7 +149,7 @@ static void normalizeBlockHaloAcquireSlice(ArtsCodegen *AC, DbAcquireOp acquire,
 }
 
 struct DbLoweringPass
-    : public mlir::carts::arts::impl::DbLoweringBase<DbLoweringPass> {
+    : public mlir::carts::arts_rt::impl::DbLoweringBase<DbLoweringPass> {
   DbLoweringPass(uint64_t idStride = IdRegistry::DefaultStride)
       : idStride(idStride) {}
   void runOnOperation() override;
@@ -239,7 +239,7 @@ void DbLoweringPass::convertDbAllocOps() {
         continue;
       newOp->setAttr(attr.getName(), attr.getValue());
     }
-    /// Preserve non-arts distributed ownership marker so ConvertArtsToLLVM can
+    /// Preserve non-arts distributed ownership marker so ConvertArtsRtToLLVM can
     /// route datablock reservation by node.
     if (hasDistributedDbAllocation(oldOp.getOperation()))
       setDistributedDbAllocation(newOp.getOperation(), /*enabled=*/true);
@@ -564,7 +564,7 @@ Value DbLoweringPass::getLLVMPtr(Value base, ValueRange opIndices,
 /// Pass creation
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace carts::arts {
+namespace carts::arts_rt {
 std::unique_ptr<Pass> createDbLoweringPass() {
   return std::make_unique<DbLoweringPass>();
 }
@@ -572,5 +572,5 @@ std::unique_ptr<Pass> createDbLoweringPass() {
 std::unique_ptr<Pass> createDbLoweringPass(uint64_t idStride) {
   return std::make_unique<DbLoweringPass>(idStride);
 }
-} // namespace carts::arts
+} // namespace carts::arts_rt
 } // namespace mlir

@@ -55,7 +55,7 @@ carts mlir-translate --mlir-to-llvmir simple-final.mlir > simple-arts.ll
 
 **Troubleshooting LLVM Generation:**
 - Analyze error messages carefully
-- Check ARTS-to-LLVM conversion passes
+- Check ARTS-RT-to-LLVM conversion passes
 - Verify MLIR structure before conversion
 
 ### 4. Final Compilation
@@ -73,7 +73,7 @@ Ensure `arts.cfg` configuration exists, then run:
 **Runtime Issue Resolution:**
 - **Segmentation Faults**: Examine the generated `.ll` code for incorrect ARTS function calls
 - **Unknown ARTS Functions**: Check `external/arts` source files for correct function signatures
-- **Code Generation Issues**: Return to ARTS-to-LLVM conversion passes and re-run with fixes
+- **Code Generation Issues**: Return to ARTS-RT-to-LLVM conversion passes and re-run with fixes
 
 ## Debugging Workflow Summary
 1. **Isolate**: Use `carts compile` with `--pipeline=<step>` to identify which pipeline step fails

@@ -2,7 +2,7 @@
 /// File: Codegen.cpp
 ///==========================================================================///
 
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 
 /// Other dialects
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -125,7 +125,7 @@ func::FuncOp ArtsCodegen::getOrCreateRuntimeFunction(RuntimeFunction FnID) {
     break;                                                                     \
   }
   switch (FnID) {
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Kinds.def"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def"
   }
 #undef ARTS_RTL_FUNCTIONS
 #undef ARTS_RTL
@@ -218,7 +218,7 @@ void ArtsCodegen::applyRuntimeFunctionAttributes(func::FuncOp funcOp,
   /// Define attribute sets
 #define ARTS_ATTRS_SET(VarName, AttrList)                                      \
   SmallVector<StringRef> VarName = AttrList;
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Kinds.def"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def"
 
   /// Add attributes to the function declaration
   switch (fnID) {
@@ -242,7 +242,7 @@ void ArtsCodegen::applyRuntimeFunctionAttributes(func::FuncOp funcOp,
 #define ARTS_RTL_FUNCTIONS
 #define ARTS_RTL(Enum, Name, ReturnType, ...) /// No-op, we only want attributes
 #define ParamAttrs(...) SmallVector<SmallVector<StringRef>>({__VA_ARGS__})
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Kinds.def"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def"
 #undef ParamAttrs
 #undef ARTS_RTL
 #undef ARTS_RTL_FUNCTIONS
@@ -267,7 +267,7 @@ void ArtsCodegen::initializeTypes() {
 #define ARTS_STRUCT_TYPE(VarName, StructName, Packed, ...)                     \
   VarName = LLVM::LLVMStructType::getLiteral(context, {__VA_ARGS__}, Packed);  \
   VarName##Ptr = MemRefType::get({ShapedType::kDynamic}, VarName);
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/Kinds.def"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def"
 
   auto edtAbiInputs = SmallVector<Type>{Int32, llvmPtr, Int32, llvmPtr};
   EdtFn = FunctionType::get(context, edtAbiInputs, {});

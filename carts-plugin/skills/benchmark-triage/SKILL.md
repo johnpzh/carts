@@ -48,7 +48,7 @@ Only use stage names from `dekk carts pipeline --json`.
    - ARTS-only regression from a pipeline stage
    - Benchmark-side UB or invalid verification
    - Runtime/distributed lowering issue
-5. Read stage dumps in order: `sde-planning` -> `sde-to-codir` -> `codir-to-arts` -> `edt-transforms` -> `create-dbs` -> `db-opt` -> `post-db-refinement` -> `late-concurrency-cleanup` -> `epochs` -> `pre-lowering` -> `arts-to-llvm`
+5. Read stage dumps in order: `sde-planning` -> `sde-to-codir` -> `codir-to-arts` -> `edt-transforms` -> `create-dbs` -> `db-opt` -> `post-db-refinement` -> `late-concurrency-cleanup` -> `epochs` -> `pre-lowering` -> `arts-rt-to-llvm`
 
 If the regression is multi-node specific or depends on `--distributed-db`, switch to `carts-distributed-triage`.
 

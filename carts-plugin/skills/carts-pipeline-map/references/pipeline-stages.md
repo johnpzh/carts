@@ -24,7 +24,7 @@ pass names matter.
 10. `late-concurrency-cleanup`
 11. `epochs`
 12. `pre-lowering`
-13. `arts-to-llvm`
+13. `arts-rt-to-llvm`
 
 `--pipeline` also accepts the sentinel `complete`. `--start-from` accepts core
 stages only.

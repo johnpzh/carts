@@ -37,6 +37,6 @@ samples/           End-to-end C/C++ demo programs (moved from tests/examples/)
 | 10 late-concurrency-cleanup             | `lib/carts/dialect/arts/test/`      |
 | 11 epochs                               | `lib/carts/dialect/arts/test/`      |
 | 12 pre-lowering                         | `lib/carts/dialect/arts/test/`      |
-| 13 arts-to-llvm                         | `lib/carts/dialect/arts-rt/test/`        |
+| 13 arts-rt-to-llvm                      | `lib/carts/dialect/arts-rt/test/`        |
 | Verification passes (VerifyLowered etc) | `tests/verify/`                    |
 | CLI flag/option validation              | `tests/cli/`                       |

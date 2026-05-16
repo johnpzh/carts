@@ -107,7 +107,7 @@ return name == "llvm.mlir.undef" || name == "polygeist.undef" || name == "arts.u
 | `dialect/sde/Transforms/` | 15 | 3.9% |
 | `dialect/core/Conversion/ArtsToRt/` | 13 | 3.3% |
 | `dialect/core/Conversion/OmpToArts/` | 7 | 1.8% |
-| `dialect/core/Conversion/ArtsToLLVM/` | 5 | 1.3% |
+| `dialect/core/Conversion/ArtsRtToLLVM/` | 5 | 1.3% |
 | `dialect/rt/Transforms/` | 2 | 0.5% |
 | **Total** | **389** | **100%** |
 

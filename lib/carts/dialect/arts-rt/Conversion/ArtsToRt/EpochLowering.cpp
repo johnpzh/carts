@@ -14,11 +14,11 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_EPOCHLOWERING
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/CodegenSupport.h"
+} // namespace mlir::carts::arts_rt
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/passes/Passes.h"
 #include "carts/utils/OperationAttributes.h"
@@ -55,7 +55,7 @@ using namespace mlir::carts::arts_rt;
 /// Epoch Lowering Pass Implementation
 ///===----------------------------------------------------------------------===///
 struct EpochLoweringPass
-    : public arts::impl::EpochLoweringBase<EpochLoweringPass> {
+    : public arts_rt::impl::EpochLoweringBase<EpochLoweringPass> {
   explicit EpochLoweringPass(bool debug = false) : debugMode(debug) {}
 
   void runOnOperation() override;
@@ -203,11 +203,11 @@ void EpochLoweringPass::runOnOperation() {
 ///===----------------------------------------------------------------------===///
 
 namespace mlir {
-namespace carts::arts {
+namespace carts::arts_rt {
 
 std::unique_ptr<Pass> createEpochLoweringPass() {
   return std::make_unique<EpochLoweringPass>();
 }
 
-} // namespace carts::arts
+} // namespace carts::arts_rt
 } // namespace mlir

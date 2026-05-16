@@ -1,5 +1,5 @@
 ///==========================================================================///
-/// File: ConvertArtsToLLVM.cpp
+/// File: ConvertArtsRtToLLVM.cpp
 ///
 /// This file implements the ARTS-RT-owned pass that lowers runtime-shaped
 /// ARTS/ARTS-RT operations into LLVM dialect runtime calls.
@@ -16,15 +16,15 @@
 ///     call @arts_wait_on_handle(...)
 ///==========================================================================///
 
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/ConvertArtsToLLVMInternal.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVMInternal.h"
 
 #include "carts/Dialect.h"
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
-namespace mlir::carts::arts {
-#define GEN_PASS_DEF_CONVERTARTSTOLLVM
+namespace mlir::carts::arts_rt {
+#define GEN_PASS_DEF_CONVERTARTSRTTOLLVM
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::arts_rt
 #include "carts/dialect/arts/Utils/RuntimeConfig.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
@@ -32,25 +32,25 @@ namespace mlir::carts::arts {
 #include <memory>
 
 #include "carts/utils/Debug.h"
-ARTS_DEBUG_SETUP(convert_arts_to_llvm);
+ARTS_DEBUG_SETUP(convert_arts_rt_to_llvm);
 
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
 
-using namespace mlir::carts::arts::convert_arts_to_llvm;
+namespace arts_rt_to_llvm = mlir::carts::arts_rt::convert_arts_rt_to_llvm;
 
 ///===----------------------------------------------------------------------===///
 /// Pass Implementation
 ///===----------------------------------------------------------------------===///
 namespace {
-struct ConvertArtsToLLVMPass
-    : public mlir::carts::arts::impl::ConvertArtsToLLVMBase<
-          ConvertArtsToLLVMPass> {
+struct ConvertArtsRtToLLVMPass
+    : public mlir::carts::arts_rt::impl::ConvertArtsRtToLLVMBase<
+          ConvertArtsRtToLLVMPass> {
 
-  explicit ConvertArtsToLLVMPass(bool debug = false,
-                                 bool distributedInitPerWorker = false,
-                                 const RuntimeConfig *machine = nullptr)
+  explicit ConvertArtsRtToLLVMPass(bool debug = false,
+                                   bool distributedInitPerWorker = false,
+                                   const RuntimeConfig *machine = nullptr)
       : debugMode(debug), distributedInitPerWorker(distributedInitPerWorker),
         machine(machine) {}
 
@@ -68,11 +68,11 @@ private:
 /// Core Pass Implementation
 ///===----------------------------------------------------------------------===///
 
-void ConvertArtsToLLVMPass::runOnOperation() {
+void ConvertArtsRtToLLVMPass::runOnOperation() {
   ModuleOp module = getOperation();
   MLIRContext *context = &getContext();
 
-  ARTS_INFO_HEADER(ConvertArtsToLLVMPass);
+  ARTS_INFO_HEADER(ConvertArtsRtToLLVMPass);
   ARTS_DEBUG_REGION(module.dump(););
 
   //// Initialize codegen infrastructure
@@ -91,10 +91,10 @@ void ConvertArtsToLLVMPass::runOnOperation() {
   {
     ARTS_INFO("Running runtime patterns");
     RewritePatternSet runtimePatterns(context);
-    convert_arts_to_llvm::populateRuntimePatterns(runtimePatterns, AC);
+    arts_rt_to_llvm::populateRuntimePatterns(runtimePatterns, AC);
     if (failed(applyPatternsGreedily(module, std::move(runtimePatterns),
                                      config))) {
-      ARTS_ERROR("Failed to apply runtime ARTS to LLVM conversion patterns");
+      ARTS_ERROR("Failed to apply runtime-to-LLVM conversion patterns");
       return signalPassFailure();
     }
   }
@@ -103,9 +103,9 @@ void ConvertArtsToLLVMPass::runOnOperation() {
   {
     ARTS_INFO("Running arts_rt to LLVM patterns");
     RewritePatternSet rtPatterns(context);
-    convert_arts_to_llvm::populateRtToLLVMPatterns(rtPatterns, AC);
+    arts_rt_to_llvm::populateRtToLLVMPatterns(rtPatterns, AC);
     if (failed(applyPatternsGreedily(module, std::move(rtPatterns), config))) {
-      ARTS_ERROR("Failed to apply arts_rt to LLVM conversion patterns");
+      ARTS_ERROR("Failed to apply arts_rt-to-LLVM conversion patterns");
       return signalPassFailure();
     }
   }
@@ -114,7 +114,7 @@ void ConvertArtsToLLVMPass::runOnOperation() {
   {
     ARTS_INFO("Running db patterns");
     RewritePatternSet dbPatterns(context);
-    convert_arts_to_llvm::populateDbPatterns(dbPatterns, AC);
+    arts_rt_to_llvm::populateDbPatterns(dbPatterns, AC);
     if (failed(applyPatternsGreedily(module, std::move(dbPatterns), config))) {
       ARTS_ERROR("Failed to apply DbAcquire/DbRelease conversion patterns");
       return signalPassFailure();
@@ -125,7 +125,7 @@ void ConvertArtsToLLVMPass::runOnOperation() {
   {
     ARTS_INFO("Running other patterns");
     RewritePatternSet otherPatterns(context);
-    convert_arts_to_llvm::populateOtherPatterns(otherPatterns, AC);
+    arts_rt_to_llvm::populateOtherPatterns(otherPatterns, AC);
     if (failed(
             applyPatternsGreedily(module, std::move(otherPatterns), config))) {
       ARTS_ERROR("Failed to apply other conversion patterns");
@@ -138,7 +138,7 @@ void ConvertArtsToLLVMPass::runOnOperation() {
   {
     ARTS_INFO("Running arts_rt cleanup patterns");
     RewritePatternSet cleanupPatterns(context);
-    convert_arts_to_llvm::populateRtToLLVMPatterns(cleanupPatterns, AC);
+    arts_rt_to_llvm::populateRtToLLVMPatterns(cleanupPatterns, AC);
     if (failed(applyPatternsGreedily(module, std::move(cleanupPatterns),
                                      config))) {
       ARTS_ERROR("Failed to apply arts_rt cleanup patterns");
@@ -151,7 +151,7 @@ void ConvertArtsToLLVMPass::runOnOperation() {
   //// Cleanup
   AC = nullptr;
 
-  ARTS_INFO_FOOTER(ConvertArtsToLLVMPass);
+  ARTS_INFO_FOOTER(ConvertArtsRtToLLVMPass);
   ARTS_DEBUG_REGION(module.dump(););
 }
 
@@ -159,16 +159,16 @@ void ConvertArtsToLLVMPass::runOnOperation() {
 /// Pass Functions
 ///===----------------------------------------------------------------------===///
 namespace mlir {
-namespace carts::arts {
-std::unique_ptr<Pass> createConvertArtsToLLVMPass() {
-  return std::make_unique<ConvertArtsToLLVMPass>();
+namespace carts::arts_rt {
+std::unique_ptr<Pass> createConvertArtsRtToLLVMPass() {
+  return std::make_unique<ConvertArtsRtToLLVMPass>();
 }
 
 std::unique_ptr<Pass>
-createConvertArtsToLLVMPass(bool debug, bool distributedInitPerWorker,
-                            const RuntimeConfig *machine) {
-  return std::make_unique<ConvertArtsToLLVMPass>(
+createConvertArtsRtToLLVMPass(bool debug, bool distributedInitPerWorker,
+                              const RuntimeConfig *machine) {
+  return std::make_unique<ConvertArtsRtToLLVMPass>(
       debug, distributedInitPerWorker, machine);
 }
-} // namespace carts::arts
+} // namespace carts::arts_rt
 } // namespace mlir

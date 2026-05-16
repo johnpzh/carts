@@ -8,7 +8,7 @@
 
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLoweringInternal.h"
 
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"

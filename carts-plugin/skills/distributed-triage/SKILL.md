@@ -63,7 +63,7 @@ dekk carts benchmarks run polybench/2mm \
 - `lib/carts/dialect/arts/Transforms/db/DbDistributedOwnership.cpp`
 - `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
 - `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
-- `lib/carts/dialect/arts/Conversion/ArtsToLLVM/ConvertArtsToLLVM.cpp`
+- `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVM.cpp`
 - `lib/carts/codegen/Codegen.cpp`
 
 ## Validation

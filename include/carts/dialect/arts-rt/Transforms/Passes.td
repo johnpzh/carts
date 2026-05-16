@@ -19,17 +19,17 @@ def DbLowering : Pass<"db-lowering", "mlir::ModuleOp"> {
     "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
     "::mlir::carts::arts::ArtsDialect", "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::carts::arts::createDbLoweringPass()";
+  let constructor = "mlir::carts::arts_rt::createDbLoweringPass()";
 }
 
-def ConvertArtsToLLVM : Pass<"convert-arts-to-llvm", "mlir::ModuleOp"> {
+def ConvertArtsRtToLLVM : Pass<"convert-arts-rt-to-llvm", "mlir::ModuleOp"> {
   let summary = "Lower runtime-shaped ARTS/ARTS-RT IR to LLVM dialect calls";
   let dependentDialects = [
     "::mlir::memref::MemRefDialect", "::mlir::LLVM::LLVMDialect", "::mlir::func::FuncDialect",
     "::mlir::carts::arts::ArtsDialect", "::mlir::carts::arts_rt::ArtsRtDialect",
     "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::carts::arts::createConvertArtsToLLVMPass()";
+  let constructor = "mlir::carts::arts_rt::createConvertArtsRtToLLVMPass()";
   let options = [
     Option<"debug", "debug", "bool", /*default=*/"false", "Enable debug mode.">,
   ];
@@ -77,14 +77,14 @@ def DataPtrHoisting
     "::mlir::carts::arts::ArtsDialect", "::mlir::LLVM::LLVMDialect",
     "::mlir::scf::SCFDialect"
   ];
-  let constructor = "mlir::carts::arts::createDataPtrHoistingPass()";
+  let constructor = "mlir::carts::arts_rt::createDataPtrHoistingPass()";
 }
 
 def GuidRangCallOpt
     : Pass<"arts-guid-range-call-opt", "mlir::ModuleOp"> {
   let summary = "Rewrite per-iteration GUID reserve calls into GUID-range calls";
   let description = [{
-    Runs after ARTS-to-LLVM lowering and rewrites canonical loops of the form:
+    Runs after ARTS-RT-to-LLVM lowering and rewrites canonical loops of the form:
 
       scf.for %i = 0 to N step 1 {
         %g = call @arts_guid_reserve(...)
@@ -111,14 +111,14 @@ def GuidRangCallOpt
     "::mlir::func::FuncDialect", "::mlir::arith::ArithDialect",
     "::mlir::scf::SCFDialect", "::mlir::LLVM::LLVMDialect"
   ];
-  let constructor = "mlir::carts::arts::createGuidRangCallOptPass()";
+  let constructor = "mlir::carts::arts_rt::createGuidRangCallOptPass()";
 }
 
 def RuntimeCallOpt
     : Pass<"arts-runtime-call-opt", "mlir::ModuleOp"> {
   let summary = "Hoist and deduplicate selected pure ARTS runtime calls";
   let description = [{
-    Runs after ARTS-to-LLVM lowering and optimizes only a conservative set of
+    Runs after ARTS-RT-to-LLVM lowering and optimizes only a conservative set of
     runtime topology/identity queries that are safe to treat as loop-invariant
     within a function:
 
@@ -138,7 +138,7 @@ def RuntimeCallOpt
   let dependentDialects = [
     "::mlir::func::FuncDialect", "::mlir::scf::SCFDialect"
   ];
-  let constructor = "mlir::carts::arts::createRuntimeCallOptPass()";
+  let constructor = "mlir::carts::arts_rt::createRuntimeCallOptPass()";
 }
 
 def EdtLowering : Pass<"edt-lowering", "mlir::ModuleOp"> {
@@ -148,7 +148,7 @@ def EdtLowering : Pass<"edt-lowering", "mlir::ModuleOp"> {
     "::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect",
     "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::carts::arts::createEdtLoweringPass()";
+  let constructor = "mlir::carts::arts_rt::createEdtLoweringPass()";
 }
 
 def EpochLowering : Pass<"epoch-lowering", "mlir::ModuleOp"> {
@@ -158,13 +158,13 @@ def EpochLowering : Pass<"epoch-lowering", "mlir::ModuleOp"> {
     "::mlir::func::FuncDialect", "::mlir::carts::arts::ArtsDialect",
     "::mlir::arith::ArithDialect", "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::carts::arts::createEpochLoweringPass()";
+  let constructor = "mlir::carts::arts_rt::createEpochLoweringPass()";
 }
 
 def AliasScopeGen : Pass<"arts-alias-scope-gen", "mlir::ModuleOp"> {
   let summary = "Generate LLVM alias scope metadata for ARTS data pointers";
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-  let constructor = "mlir::carts::arts::createAliasScopeGenPass()";
+  let constructor = "mlir::carts::arts_rt::createAliasScopeGenPass()";
 }
 
 def LoopVectorizationHints
@@ -176,7 +176,7 @@ def LoopVectorizationHints
     translates to !llvm.loop metadata during LLVM IR emission.
   }];
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
-  let constructor = "mlir::carts::arts::createLoopVectorizationHintsPass()";
+  let constructor = "mlir::carts::arts_rt::createLoopVectorizationHintsPass()";
 }
 
 def ScalarReplacement
@@ -190,7 +190,16 @@ def ScalarReplacement
     "::mlir::scf::SCFDialect", "::mlir::memref::MemRefDialect", "::mlir::arith::ArithDialect",
     "::mlir::polygeist::PolygeistDialect"
   ];
-  let constructor = "mlir::carts::arts::createScalarReplacementPass()";
+  let constructor = "mlir::carts::arts_rt::createScalarReplacementPass()";
+}
+
+def VerifyLowered : Pass<"verify-lowered", "mlir::ModuleOp"> {
+  let summary = "Verify no ARTS or ARTS-RT ops survive after runtime lowering";
+  let dependentDialects = [
+    "::mlir::carts::arts::ArtsDialect",
+    "::mlir::carts::arts_rt::ArtsRtDialect"
+  ];
+  let constructor = "mlir::carts::arts_rt::createVerifyLoweredPass()";
 }
 
 #endif // ARTS_DIALECT_RT_TRANSFORMS_PASSES

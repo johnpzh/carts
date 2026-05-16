@@ -38,8 +38,8 @@ C/OMP source
   → [Stage 6-11] ARTS transforms (arts.edt, arts.db_*, arts.epoch, scf.for)
   → [Stage 12]   ARTS → ARTS-RT lowering in pre-lowering
                  (EdtLowering.cpp, EpochLowering.cpp, DbLowering.cpp)
-  → [Stage 13]   ARTS-RT → LLVM lowering in arts-to-llvm
-                 (ConvertArtsToLLVM + rt-specific RuntimeCallOpt etc.)
+  → [Stage 13]   ARTS-RT → LLVM lowering in arts-rt-to-llvm
+                 (ConvertArtsRtToLLVM + rt-specific RuntimeCallOpt etc.)
 ```
 
 ## Verification Barriers
@@ -51,7 +51,7 @@ C/OMP source
 | VerifyArtsObjectsOnly | 5 (codir-to-arts) | No transient semantic carrier survives into ARTS refinement |
 | VerifyEdtCreated | 5 (codir-to-arts) | EDTs created from CODIR codelets |
 | VerifyPreLowered | 12 (pre-lowering) | No arts.edt/epoch/db_* survive |
-| VerifyLowered | 13 (arts-to-llvm) | No ARTS/ARTS-RT ops survive |
+| VerifyLowered | 13 (arts-rt-to-llvm) | No ARTS/ARTS-RT ops survive |
 
 ## Op Lifecycle Quick Reference
 
@@ -68,10 +68,10 @@ C/OMP source
 ### RT Ops
 | Op | Created | Lowered | Stages Active |
 |----|---------|---------|---------------|
-| `arts_rt.edt_create` | pre-lowering (12) | arts-to-llvm (13) | 12-13 |
-| `arts_rt.create_epoch` | pre-lowering (12) | arts-to-llvm (13) | 12-13 |
-| `arts_rt.db_create` | pre-lowering (12) | arts-to-llvm (13) | 12-13 |
-| `arts_rt.rec_dep` | pre-lowering (12) | arts-to-llvm (13) | 12-13 |
+| `arts_rt.edt_create` | pre-lowering (12) | arts-rt-to-llvm (13) | 12-13 |
+| `arts_rt.create_epoch` | pre-lowering (12) | arts-rt-to-llvm (13) | 12-13 |
+| `arts_rt.db_create` | pre-lowering (12) | arts-rt-to-llvm (13) | 12-13 |
+| `arts_rt.rec_dep` | pre-lowering (12) | arts-rt-to-llvm (13) | 12-13 |
 
 ### SDE Ops
 SDE planning ops are created in `sde-planning`; codelet ops are consumed by
@@ -122,7 +122,7 @@ include/carts/dialect/codir/IR/CodirOps.td   # CODIR op definitions
 lib/carts/dialect/codir/Transforms/          # SDE → CODIR → ARTS boundary
 lib/carts/dialect/arts/Conversion/ArtsToRt/   # ARTS → ARTS-RT
 lib/carts/dialect/arts-rt/Conversion/RtToLLVM/     # ARTS-RT → LLVM
-lib/carts/dialect/arts/Conversion/ArtsToLLVM/ # ARTS → LLVM cleanup/remaining
+lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ # ARTS-RT → LLVM cleanup/remaining
 ```
 
 ## Instructions

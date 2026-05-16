@@ -26,14 +26,14 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
-namespace mlir::carts::arts {
+namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_EDTLOWERING
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::arts_rt
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Analysis/db/OwnershipProof.h"
-#include "carts/dialect/arts-rt/Conversion/ArtsToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLoweringInternal.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/passes/Passes.h"
@@ -221,12 +221,12 @@ static bool canUseUnorderedLocalWrite(DbAcquireOp acquire, EdtOp edtOp,
 ///===----------------------------------------------------------------------===///
 /// EDT Lowering Pass Implementation
 ///===----------------------------------------------------------------------===///
-struct EdtLoweringPass : public arts::impl::EdtLoweringBase<EdtLoweringPass> {
+struct EdtLoweringPass : public arts_rt::impl::EdtLoweringBase<EdtLoweringPass> {
   explicit EdtLoweringPass(mlir::carts::arts::AnalysisManager *AM = nullptr,
                            uint64_t idStride = IdRegistry::DefaultStride)
       : idStride(idStride), AM(AM) {}
   EdtLoweringPass(const EdtLoweringPass &other)
-      : arts::impl::EdtLoweringBase<EdtLoweringPass>(other),
+      : arts_rt::impl::EdtLoweringBase<EdtLoweringPass>(other),
         idStride(other.idStride), functionCounter(other.functionCounter),
         module(other.module), AM(other.AM), AC(other.AC),
         idRegistry(other.idRegistry) {}
@@ -1214,10 +1214,10 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
     /// Explicit element slices already encode the producer/consumer contract.
     /// When upstream rewrites localize the consumer to a compact halo view,
     /// forcing "preserve shape" here would discard the byte slice later in
-    /// ConvertArtsToLLVM and hand the task a whole DB block instead.
+    /// ConvertArtsRtToLLVM and hand the task a whole DB block instead.
     ///
     /// Keep preserve-shape as a late-lowering inference only, for cases where
-    /// ConvertArtsToLLVM derives a face slice after consumer indexing has
+    /// ConvertArtsRtToLLVM derives a face slice after consumer indexing has
     /// already been fixed to full-block coordinates.
     if (depFlagBits != 0)
       hasDepFlags = true;
@@ -2029,16 +2029,16 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
 ///===----------------------------------------------------------------------===///
 
 namespace mlir {
-namespace carts::arts {
+namespace carts::arts_rt {
 
 std::unique_ptr<Pass> createEdtLoweringPass(uint64_t idStride) {
   return std::make_unique<EdtLoweringPass>(nullptr, idStride);
 }
 
-std::unique_ptr<Pass> createEdtLoweringPass(AnalysisManager *AM,
+std::unique_ptr<Pass> createEdtLoweringPass(arts::AnalysisManager *AM,
                                             uint64_t idStride) {
   return std::make_unique<EdtLoweringPass>(AM, idStride);
 }
 
-} // namespace carts::arts
+} // namespace carts::arts_rt
 } // namespace mlir
