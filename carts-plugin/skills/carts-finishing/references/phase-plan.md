@@ -65,7 +65,7 @@ Phases are ordered to minimize attribution noise:
 
 1. Edit `lib/carts/dialect/arts/Transforms/db/CreateDbs.cpp` `createDbAcquire()` to recognize heap-allocated arrays (`int *A = malloc(N*sizeof(int))` → `memref<?xmemref<?xT>>`) and produce N-element DBs of T instead of 1-element DBs holding a pointer.
 
-2. Edit `lib/carts/dialect/arts/Transforms/RaiseMemRefDimensionality.cpp` to handle `memref<?xmemref<?>>` as a first-class heap-array pattern (covers the 3 samples that fail at stage 4 before reaching CreateDbs: dotproduct, parallel_for/stencil, stencil).
+2. Edit `lib/carts/dialect/sde/Conversion/PolygeistToSde/MemrefNormalization.cpp` to handle `memref<?xmemref<?>>` as a first-class heap-array pattern before ARTS sees it.
 
 3. **Critical (anti-pattern 1):** the fix is in shape normalization. Do NOT touch `DbPartitioning::downgrade_to_coarse` or any partition-mode-selection heuristic. That layer is responding correctly to the wrong input shape; fixing it there would silently mask the issue.
 
@@ -148,17 +148,12 @@ Phases are ordered to minimize attribution noise:
 
 **Sub-steps (cheapest to most invasive):**
 
-1. **2h** — Move `RaiseMemRefDimensionality` to `core/Conversion/PolygeistToArts/` (cross-dialect conversion currently in `core/Transforms/`).
+1. **2h** — Confirm `SdeMemrefNormalization` handles heap-array patterns before `CreateDbs`; `CreateDbs` should stay a guarded coarse raw bridge.
 
 2. **1h** — Verify `ScalarReplacement` lives in `rt/Transforms/` (the audit reports it as already moved; confirm and remove any stale references in `core/`).
 
-3. **4h** — Wire or delete the SDE limbo passes:
-   - `sde/Transforms/effect/distribution/BarrierElimination.cpp`
-   - `sde/Transforms/dep/tensor/Interchange.cpp`
-   - `sde/Transforms/state/codelet/{ConvertToCodelet,ScalarForwarding,TensorCleanup,TokenModeRefinement}.cpp`
-   - `sde/Transforms/state/raising/LowerToMemref.cpp`
-
-   For each: if it is phase 7/9/10 of `docs/plan.md`, wire it into `Compile.cpp`. Otherwise delete and update `docs/plan.md`.
+3. **4h** — Keep active SDE passes wired in `Compile.cpp`; obsolete
+   state/codelet and tensor raising/lowering sources have been removed.
 
 4. **6h** — Add SDE-contract early-exit guards to the 4 ARTS PatternPipeline passes (StencilTilingND, MatmulReduction, LoopReordering, DepTransforms) so they defer when SDE has stamped a contract. Per `docs/plan.md` Phase 3A–3D.
 

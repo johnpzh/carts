@@ -1,10 +1,10 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 \
-// RUN:   | awk '/IR Dump After BarrierElimination/,/IR Dump After LowerToMemref/' \
+// RUN:   | awk '/IR Dump After BarrierElimination/,/IR Dump After VerifySdeCpsPlan/' \
 // RUN:   | %FileCheck %s --check-prefix=SDE
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 
 // Verify mixed barrier elimination with three loops under the
-// carrier-authoritative model.
+// memref-native SDE planning model.
 // Barrier 1: A writes B, B reads C — disjoint → ELIMINATED.
 // Barrier 2: B writes D, C reads D — overlap → PRESERVED.
 

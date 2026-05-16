@@ -19,8 +19,8 @@ When an error surfaces at stage N, check the listed prior stages first.
 | Surface | Symptom text | Likely originating stages | First thing to check |
 |---|---|---|---|
 | Stage 5 (codir-to-arts) | `SDE operation ... survived past SDE lowering` | `ConvertOpenMPToSde`, `sde-planning`, `ConvertSdeToCodir` | Which SDE op did not become a CODIR codelet or explicit CODIR boundary object? |
-| Stage 3 | `cannot trace memref operand to its underlying allocation` | `RaiseMemrefToTensor`, `CreateDbs`, `RaiseMemRefDimensionality` | Memref-of-memref reaching CreateDbs from a heap allocation. |
-| Stage 5 (CreateDbs) | `un-normalizable nested memref pattern (element type is memref)` | `RaiseMemRefDimensionality`, `ConvertOpenMPToSde` | Polygeist producing `memref<?xmemref<?xT>>` from `int *A = malloc(N)`. Fix upstream. |
+| Stage 3 | `cannot trace memref operand to its underlying allocation` | `SdeMemrefNormalization`, `SdeHandleDeps`, `CreateDbs` | Memref-of-memref reaching CreateDbs from a heap allocation. |
+| Stage 5 (CreateDbs) | `un-normalizable nested memref pattern (element type is memref)` | `SdeMemrefNormalization`, `ConvertOpenMPToSde` | Polygeist producing `memref<?xmemref<?xT>>` from `int *A = malloc(N)`. Fix upstream. |
 | Stage 8 (DbPartitioning) | Stack overflow / infinite recursion in `copyArtsMetadataAttrs` | DbPartitioning metadata copy, rewriter loops | Add depth guard at `PartitioningHeuristics.cpp` near line 706 (Phase 2 work). |
 | Stage 8 (DbPartitioning) | Wrong answer; `fine_grained` silently downgraded to `coarse`, indices dropped | DbPartitioning memref-of-memref handling | Single-element wrapper DB instead of N-element data. The fix is upstream in CreateDbs (Phase 3), NOT in the partition heuristic. |
 | `post-db-refinement` | Stencil halo bounds wrong | SDE access-window plan, DB refinement contract rewrite | Confirm SDE stamped the right halo/window, then check whether DB refinement rewrote it. |
@@ -55,7 +55,7 @@ Use to locate where to grep when triaging.
 - Stages 1–3 (frontend normalization + SDE planning): `lib/carts/dialect/sde/Transforms/` + `sde/Conversion/OmpToSde/`
 - Stage 4 (`sde-to-codir`): `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
 - Stage 5 (`codir-to-arts`): `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
-- Stages 6–8 (EDT cleanup, CreateDbs, DB opt): `lib/carts/dialect/arts/Transforms/edt/`, `core/Transforms/db/CreateDbs.cpp`, `core/Transforms/RaiseMemRefDimensionality.cpp`
+- Stages 6–8 (EDT cleanup, CreateDbs, DB opt): `lib/carts/dialect/arts/Transforms/edt/`, `lib/carts/dialect/arts/Transforms/db/CreateDbs.cpp`
 - Stage 8 (DbPartitioning): `lib/carts/dialect/arts/Transforms/db/DbPartitioning.cpp`, `core/Analysis/heuristics/PartitioningHeuristics.cpp`
 - Stages 9–10 (DB opt, post-distribution cleanup): `lib/carts/dialect/arts/Transforms/db/`, `core/Transforms/edt/`
 - CODIR-to-ARTS materialization: `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
@@ -74,7 +74,7 @@ These are real cases where fixes landed in the wrong layer and caused regression
 
 17 samples failed on `memref<?xmemref<?xi32>>` (heap-allocated arrays). The error surfaced in `DbPartitioning::downgrade_to_coarse`. The temptation: patch the partition heuristic.
 
-**The actual fix is upstream in shape normalization** (`CreateDbs` or `RaiseMemRefDimensionality`). Patching the partition heuristic would silently mask the wrapper-of-pointer shape and produce coarse-grained partitions for what should be fine-grained, dropping `partition_indices[%i]` and serializing tasks.
+**The actual fix is upstream in SDE shape normalization** (`SdeMemrefNormalization` or `ConvertOpenMPToSde`). Patching the partition heuristic would silently mask the wrapper-of-pointer shape and produce coarse-grained partitions for what should be fine-grained, dropping `partition_indices[%i]` and serializing tasks.
 
 **Lesson:** when the error surface is in a heuristic but the input shape is wrong, the fix belongs in shape normalization, not in the heuristic gating logic.
 

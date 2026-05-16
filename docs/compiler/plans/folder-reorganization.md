@@ -156,17 +156,13 @@ Status: the CODIR include/lib skeleton already exists at
 `convert-sde-to-codir`, `verify-codir`, and `convert-codir-to-arts` registered
 and wired into the default pipeline.
 
-Move the codelet-specific SDE code into the new CODIR folder before broad SDE
-renaming:
+The old codelet-specific SDE lowering path has been retired instead of moved.
+CODIR owns current codelet isolation through `convert-sde-to-codir`, and the
+remaining SDE state pass, `ScalarForwarding`, lives directly under
+`Transforms/state/`.
 
-- `state/codelet/CodeletUtils.*`
-- `state/codelet/ConvertToCodelet.cpp`
-- `state/codelet/ScalarForwarding.cpp` if it remains codelet-bound
-- `state/codelet/TokenModeRefinement.cpp`
-- codelet tests under `lib/carts/dialect/sde/test/codelet`
-
-Do not move tensor cleanup as-is. Convert it to memref/CODIR cleanup or delete
-it with tensor-carrier removal.
+Do not reintroduce tensor cleanup as-is. Any future cleanup belongs to the
+memref/CODIR path that owns the current codelet representation.
 
 Exit gate:
 

@@ -10,9 +10,9 @@ dekk carts pipeline --json
 Use the JSON manifest when exact pass labels, dependency edges, or bracketed
 pass names matter.
 
-## Core Stage Order
+## Canonical Stage Order
 
-1. `raise-memref-dimensionality`
+1. `sde-input-normalization`
 2. `initial-cleanup`
 3. `sde-planning`
 4. `sde-to-codir`
@@ -26,8 +26,8 @@ pass names matter.
 12. `pre-lowering`
 13. `arts-rt-to-llvm`
 
-`--pipeline` also accepts the sentinel `complete`. `--start-from` accepts core
-stages only.
+`--pipeline` also accepts the sentinel `complete`. `--start-from` accepts
+canonical stages only.
 
 ## Conditional Epilogues
 
@@ -39,7 +39,8 @@ you are specifically fixing outdated docs.
 
 ## High-Value Drift Checks
 
-- `raise-memref-dimensionality` includes `ScalarForwarding`.
+- `sde-input-normalization` includes `ScalarForwarding`,
+  `SdeMemrefNormalization`, and `SdeHandleDeps`.
 - `sde-planning` owns OpenMP-to-SDE conversion, pattern/distribution/reduction
   planning, iteration-space decomposition, and MU materialization intent.
 - `sde-to-codir` owns codelet isolation, explicit deps/params, token-local

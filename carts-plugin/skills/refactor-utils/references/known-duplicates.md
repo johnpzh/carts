@@ -59,11 +59,6 @@ const llvm::StringLiteral kStripMiningGeneratedAttr =
 ```
 **Fix**: Add `StripMiningGenerated` to `AttrNames::Operation` in `OperationAttributes.h`
 
-### `RaiseToLinalg.cpp:240-295`
-- Line 240-241: `"parallel"`, `"reduction"` in `computeIteratorTypes()`
-- Line 275, 285-287, 293, 295: `"stencil"`, `"elementwise"`, `"matmul"`, `"reduction"` in `classifyPattern()`
-**Fix**: Use linalg iterator type constants or add a typed SDE-owned pattern helper.
-
 ### `EdtLowering.cpp:123-125`
 ```cpp
 return name == "llvm.mlir.undef" || name == "polygeist.undef" || name == "arts.undef";
@@ -79,13 +74,13 @@ return name == "llvm.mlir.undef" || name == "polygeist.undef" || name == "arts.u
 | Function | Source | Target | LOC | Risk |
 |----------|--------|--------|-----|------|
 | `getLoadInfo/getStoreInfo/getStoredValue` | ScalarReplacement.cpp | DbUtils.h | 30 | VeryLow |
-| `getForwardedMemrefAliasSource/Result` | RaiseMemRefDimensionality.cpp | Utils.h | 35 | Low |
+| `getForwardedMemrefAliasSource/Result` | MemrefNormalization.cpp | Utils.h | 35 | Low |
 | `hoistInvariantOpsInLoop` | Hoisting.cpp | LoopInvarianceUtils.h | 36 | Medium |
 | `buildLoopInvariantI1Not/And` | DataPtrHoistingSupport.cpp | Utils.h | 15 | VeryLow |
 | `isUnitStrideLoop` | PerfectNestLinearizationPattern.cpp | LoopUtils.h | 5 | VeryLow |
 | `ensureBlock` | ConvertOpenMPToSde.cpp | Utils.h | 5 | VeryLow |
 | `isUndefLikeOp` | EdtLowering.cpp | Utils.h | 6 | VeryLow |
-| `tryGetAffineExpr` | RaiseToLinalg.cpp | new AffineUtils.h | 52 | Low |
+| `tryGetAffineExpr` | StructuredOpAnalysis.cpp | new AffineUtils.h | 52 | Low |
 | `isAccumulationOp` | ScalarReplacement.cpp | Utils.h | 4 | VeryLow |
 | `indicesEqual` | ScalarReplacement.cpp | Utils.h | 8 | VeryLow |
 | `isZeroIndexConstant/isMinusOneConstant` | DataPtrHoistingSupport.cpp | ValueAnalysis.h | 8 | VeryLow |

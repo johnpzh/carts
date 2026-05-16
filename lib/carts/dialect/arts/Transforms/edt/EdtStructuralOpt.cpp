@@ -96,13 +96,6 @@ unsigned sinkExternalAllocasInEdt(EdtOp edt) {
   unsigned sunkAllocas = 0;
   for (const auto &entry : usesByAlloca) {
     auto allocaOp = cast<memref::AllocaOp>(entry.first);
-    // Honor the RaiseMemrefToTensor marker: allocas tagged as "arts.preserve"
-    // are used to bridge raised tensor DBs back to the user-visible memref so
-    // post-region readers observe the updated values. Sinking them into the
-    // EDT would orphan those stores and the external alloca would still carry
-    // its initial (zero) contents at the post-region readers. Skip the sink.
-    if (allocaOp->hasAttr(AttrNames::Operation::Preserve))
-      continue;
     bool hasStoreInEdt = false;
     for (Operation *user : entry.second) {
       if (auto store = dyn_cast<memref::StoreOp>(user)) {

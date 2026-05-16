@@ -205,8 +205,8 @@ void SdeHandleDepsPass::runOnOperation() {
         continue;
 
       Value depValue =
-          materializeDependView(builder, task.getLoc(), depInfo->source,
-                                depInfo->indices, depInfo->sizes);
+          sde::materializeDependView(builder, task.getLoc(), depInfo->source,
+                                     depInfo->indices, depInfo->sizes);
 
       task.getDependVarsMutable()[i].set(depValue);
       ARTS_DEBUG("  Normalized OMP task dep "

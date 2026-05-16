@@ -155,7 +155,6 @@ These functions already exist in shared locations — NEVER add local copies:
 
 Known violations to fix:
 - `BlockLoopStripMiningSupport.cpp:18` — `"arts.block_loop_strip_mining.generated"`
-- `RaiseToLinalg.cpp:240-295` — hardcoded `"parallel"`, `"reduction"`, etc.
 - `EdtLowering.cpp:123` — hardcoded op names `"llvm.mlir.undef"` etc.
 
 ## Instructions

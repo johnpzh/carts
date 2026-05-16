@@ -171,13 +171,12 @@ Important current facts:
   when generic tile owner/shape storage metadata is present (or the codelet has
   no DB dependencies). Planned-but-unmaterialized user DBs stay local instead
   of creating remote coarse DB traffic.
-- The tensor raising/lowering passes (`RaiseMemrefToTensor`, `RaiseToTensor`,
-  `LowerToMemref`) are no longer in any live pass list, but the source still
-  lives under `lib/carts/dialect/sde/Transforms/state/raising/`. M3
-  source-level removal is still pending. The M3 target is memref-native MU
-  tokens and codelet deps. (Note: `SdeInputNormalization` in the
-  `sde-input-normalization` stage is a separate pass that is part of the
-  live pipeline and is not slated for removal.)
+- The obsolete tensor raising/lowering source path has been removed. M3 now
+  depends on the memref-native MU/token and CODIR dependency path; no live pass
+  list contains `RaiseMemrefToTensor`, `RaiseToTensor`, `LowerToMemref`, or
+  tensor-only cleanup. (Note: `SdeInputNormalization` in the
+  `sde-input-normalization` stage is a separate pass that is part of the live
+  pipeline and is not slated for removal.)
 - The ARTS lowering target ops are `arts.db_alloc`, `arts.db_acquire`, and
   `arts.edt`. The removed `arts.db_control` op does not exist in the current
   dialect; lowering-contract markers are tracked via `arts.lowering_contract`
@@ -436,7 +435,8 @@ Tasks:
   task deps, reductions, and intermediates.
 - Rewrite codelet loads/stores to token-local memref coordinates for ND,
   strided, and halo windows.
-- Remove tensor raising/lowering once memref coverage is complete.
+- Keep tensor raising/lowering removed; supported cases must stay on the
+  memref-native MU/token and CODIR dependency path.
 
 Exit gate:
 
@@ -887,8 +887,8 @@ pick the next concrete slice; use the Milestones to confirm exit gates.
   Remaining: general dynamic task slice bounds, mixed-window direct root
   accesses with non-exact indices, halo, strided/windowed views with non-unit
   access maps, and broader `sde.mu_dep` canonicalization.
-- [ ] (M3) Remove `RaiseMemrefToTensor`, `RaiseToTensor`, `LowerToMemref`
-  source files after equivalent memref tests pass.
+- [x] (M3) Remove `RaiseMemrefToTensor`, `RaiseToTensor`, `LowerToMemref`,
+  and tensor-only cleanup source files from the live tree.
 
 ### E. ARTS And ARTS-RT Cleanup
 

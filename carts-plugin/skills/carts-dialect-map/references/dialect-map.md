@@ -8,9 +8,8 @@ Paths:
 - `lib/carts/dialect/sde/`
 - tests: `lib/carts/dialect/sde/test/`
 
-Purpose: runtime-agnostic semantic decomposition for OpenMP regions, state,
-tensor/memref transitions, reductions, scheduling plans, codelets, and
-distribution decisions.
+Purpose: runtime-agnostic semantic decomposition for OpenMP regions, memref
+state normalization, reductions, scheduling plans, and distribution decisions.
 
 Limits: SDE should not encode ARTS runtime call shape or LLVM-facing ABI
 details. It should preserve high-level semantics so later dialects do not need
@@ -18,7 +17,8 @@ to rediscover OpenMP intent.
 
 Important transform areas:
 
-- `state/` - representation changes, raising/lowering, token mode.
+- `state/` - representation changes, PatternAnalysis, MU materialization,
+  scalar forwarding.
 - `dep/` - structural and dependency transforms.
 - `effect/` - scheduling, distribution, fusion/vectorization decisions.
 - `Verify/` - SDE boundary contracts.

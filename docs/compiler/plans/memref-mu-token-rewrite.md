@@ -28,10 +28,6 @@ Relevant current areas:
 - `DistributionPlanning`
 - `MemoryUnitMaterialization`
 - `SdeMemrefNormalization`
-- `RaiseMemrefToTensor`
-- `RaiseToTensor`
-- `LowerToMemref`
-- `TensorCleanup`
 - current `convert-sde-to-codir` and `convert-codir-to-arts` token/codelet
   handling
 - current `codir-codelet-opt` cleanup after token-local rewrites
@@ -129,8 +125,11 @@ Exit gate:
 
 ### Phase 5: Tensor Path Removal
 
-- Remove `RaiseMemrefToTensor`, `RaiseToTensor`, `LowerToMemref`, and
-  tensor-only cleanup after memref coverage exists.
+Status: source removal is complete. The live compiler no longer builds or keeps
+the obsolete tensor raising/lowering and tensor-only cleanup passes.
+
+- Keep `RaiseMemrefToTensor`, `RaiseToTensor`, `LowerToMemref`, and
+  tensor-only cleanup out of the tree.
 - Remove tests that only protect the tensor-carrier path, unless converted into
   memref/CODIR tests.
 

@@ -27,7 +27,7 @@ Every codelet and EDT has a complete creation-time interface:
 Relevant current files and areas:
 
 - `include/carts/dialect/sde/IR/SdeOps.td`
-- `lib/carts/dialect/sde/Transforms/state/codelet/`
+- `lib/carts/dialect/sde/Transforms/state/`
 - `lib/carts/dialect/codir/Conversion/SdeToCodir/SdeToCodir.cpp`
 - `lib/carts/dialect/codir/Transforms/VerifyCodir.cpp`
 - `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`

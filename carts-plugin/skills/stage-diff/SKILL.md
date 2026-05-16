@@ -46,7 +46,7 @@ for f in /tmp/stages/*.mlir; do
 done
 ```
 
-## 13 Core Pipeline Stages (Canonical Order)
+## 13 Canonical Pipeline Stages
 
 Canonical source: `tools/compile/Compile.cpp` (`getStageRegistry()` + pass arrays).
 Additional epilogue stages (`post-o3-opt`, `llvm-ir-emission`) run
@@ -54,7 +54,7 @@ conditionally when requested.
 
 | # | Stage | Primary Question |
 |---|-------|-----------------|
-| 1 | raise-memref-dimensionality | Are memrefs normalized? |
+| 1 | sde-input-normalization | Are Polygeist shapes and OpenMP deps normalized for SDE? |
 | 2 | initial-cleanup | Is dead code removed? |
 | 3 | sde-planning | Did OMP become the right SDE plan? |
 | 4 | sde-to-codir | Are SDE codelets isolated with explicit CODIR deps/params? |

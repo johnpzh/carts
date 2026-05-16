@@ -52,7 +52,7 @@ using namespace mlir::omp;
 namespace mlir::carts::sde {
 #define GEN_PASS_DEF_SDEMEMREFNORMALIZATION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
-} // namespace mlir::carts::arts
+} // namespace mlir::carts::sde
 
 ARTS_DEBUG_SETUP(memref_normalization);
 
@@ -1813,8 +1813,9 @@ LogicalResult SdeMemrefNormalizationPass::transformPattern(AllocPattern &pattern
   for (auto &dep : pattern.dependencies) {
     builder.setInsertionPoint(dep.taskOp);
 
-    Value depValue = materializeDependView(builder, dep.taskOp.getLoc(),
-                                           ndAlloc, dep.indices, dep.sizes);
+    Value depValue =
+        sde::materializeDependView(builder, dep.taskOp.getLoc(), ndAlloc,
+                                   dep.indices, dep.sizes);
 
     /// Update the task's depend_vars
     dep.taskOp.getDependVarsMutable()[dep.depVarIndex].set(depValue);
@@ -2048,8 +2049,8 @@ SdeMemrefNormalizationPass::transformSimpleWrapper(AllocPattern &pattern,
     builder.setInsertionPoint(dep.taskOp);
 
     Value depValue =
-        materializeDependView(builder, dep.taskOp.getLoc(), actualAlloc,
-                              dep.indices, dep.sizes);
+        sde::materializeDependView(builder, dep.taskOp.getLoc(), actualAlloc,
+                                   dep.indices, dep.sizes);
 
     dep.taskOp.getDependVarsMutable()[dep.depVarIndex].set(depValue);
 

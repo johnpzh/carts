@@ -132,9 +132,6 @@ constexpr llvm::StringLiteral RepeatedWaveGroup = "repeated_wave_group";
 constexpr llvm::StringLiteral StripMiningGenerated =
     "arts.block_loop_strip_mining.generated";
 
-/// Marks allocas that bridge raised tensor DBs back to user-visible memrefs.
-constexpr llvm::StringLiteral Preserve = "arts.preserve";
-
 /// RT-facing loop execution hints copied onto outlined EDT functions. These
 /// live on func/LLVM function ops, so they cannot be ODS accessors on CARTS
 /// ops; all in-dialect producers/consumers use generated accessors instead.
