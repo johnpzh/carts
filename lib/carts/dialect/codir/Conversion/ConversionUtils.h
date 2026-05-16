@@ -228,7 +228,7 @@ convertAsyncStrategy(sde::SdeAsyncStrategy strategy) {
   case sde::SdeAsyncStrategy::blocking:
     return codir::CodirAsyncStrategy::blocking;
   case sde::SdeAsyncStrategy::advance_edt:
-    return codir::CodirAsyncStrategy::advance_edt;
+    return codir::CodirAsyncStrategy::advance_stage;
   case sde::SdeAsyncStrategy::cps_chain:
     return codir::CodirAsyncStrategy::cps_chain;
   }
@@ -240,7 +240,7 @@ convertAsyncStrategy(codir::CodirAsyncStrategy strategy) {
   switch (strategy) {
   case codir::CodirAsyncStrategy::blocking:
     return arts::ArtsPlanAsyncStrategy::blocking;
-  case codir::CodirAsyncStrategy::advance_edt:
+  case codir::CodirAsyncStrategy::advance_stage:
   case codir::CodirAsyncStrategy::cps_chain:
     return arts::ArtsPlanAsyncStrategy::advance_edt;
   }

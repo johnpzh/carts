@@ -82,7 +82,7 @@ def CodirAsyncStrategy
     : CartsCodir_I32Enum<"CodirAsyncStrategy",
                          "CODIR async task-shape strategy", [
       I32EnumAttrCase<"blocking", 0, "blocking">,
-      I32EnumAttrCase<"advance_edt", 1, "advance_edt">,
+      I32EnumAttrCase<"advance_stage", 1, "advance_stage">,
       I32EnumAttrCase<"cps_chain", 2, "cps_chain">
     ]>;
 def AsyncStrategyAttr
