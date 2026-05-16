@@ -10,29 +10,23 @@
 #ifndef ARTS_UTILS_LOOPUTILS_H
 #define ARTS_UTILS_LOOPUTILS_H
 
-#include "carts/Dialect.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/OpenMP/OpenMPDialect.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Interfaces/LoopLikeInterface.h"
 #include <optional>
 
 namespace mlir {
 namespace carts::arts {
 
+class EdtOp;
 class LoopNode;
 
 /// Check whether a scf::ForOp is a "worker loop" (i.e., contains at least one
 /// arts.edt operation anywhere in its body).
 /// Used by epoch-level passes to identify task-spawning loops.
-inline bool isWorkerLoop(scf::ForOp loop) {
-  bool hasEdt = false;
-  loop.walk([&](arts::EdtOp) {
-    hasEdt = true;
-    return WalkResult::interrupt();
-  });
-  return hasEdt;
-}
+bool isWorkerLoop(scf::ForOp loop);
 
 /// Check whether a scf::ForOp is the innermost loop (contains no nested
 /// scf::ForOp operations). Used by strip-mining and other loop transforms
@@ -62,11 +56,29 @@ inline bool haveCompatibleBounds(scf::ForOp a, scf::ForOp b) {
 Value getLoopInductionVar(Operation *op);
 
 /// Check whether a value is a loop induction variable (i.e., a BlockArgument
-/// whose parent operation is a loop construct).
+/// listed as an induction variable by its parent loop construct).
 inline bool isLoopInductionVar(Value value) {
-  if (auto arg = dyn_cast<BlockArgument>(value)) {
-    Operation *parent = arg.getOwner()->getParentOp();
-    return parent && isa<LoopLikeOpInterface>(parent);
+  auto arg = dyn_cast_or_null<BlockArgument>(value);
+  if (!arg)
+    return false;
+
+  Operation *parent = arg.getOwner()->getParentOp();
+  if (!parent)
+    return false;
+
+  if (auto loopNest = dyn_cast<omp::LoopNestOp>(parent)) {
+    for (BlockArgument iv : loopNest.getIVs())
+      if (iv == arg)
+        return true;
+    return false;
+  }
+
+  if (auto loopLike = dyn_cast<LoopLikeOpInterface>(parent)) {
+    if (auto ivs = loopLike.getLoopInductionVars()) {
+      for (Value iv : *ivs)
+        if (iv == value)
+          return true;
+    }
   }
   return false;
 }
@@ -76,8 +88,8 @@ inline bool isLoopInductionVar(Value value) {
 /// from less-than / greater-than comparisons.
 void collectWhileBounds(Value cond, Value iterArg, SmallVector<Value> &bounds);
 
-/// Compute the loop nesting depth of an operation by counting how many enclosing
-/// loop operations surround it.
+/// Compute the loop nesting depth of an operation by counting how many
+/// enclosing loop operations surround it.
 unsigned getLoopDepth(Operation *op);
 
 /// Returns true if the EDT's body contains any loop operations

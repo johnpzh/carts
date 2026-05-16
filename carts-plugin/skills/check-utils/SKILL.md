@@ -1,197 +1,137 @@
 ---
 name: carts-check-utils
-description: Use before adding helper or utility functions to pass files, when writing static helpers, when deciding Utils/Support placement, or when reviewing PRs for duplicated functions or pass-local utility sprawl.
+description: Use before adding helper or utility functions to CARTS pass files, when writing static helpers, when deciding loop/value/SDE/CODIR/ARTS/ARTS-RT utility placement, or when reviewing duplicated helpers and utility sprawl.
 user-invocable: true
 allowed-tools: Read, Grep, Glob, Bash, Agent
 argument-hint: <function-name-or-description>
 parameters:
   - name: function_name
     type: str
-    gather: "Name or short description of the function you want to add (e.g., 'isOneLikeValue', 'check if value is constant zero', 'hoist loop invariant op')"
+    gather: "Name or short description of the helper you want to add (for example: 'is loop IV', 'fold constant index', 'hoist loop invariant op')"
 ---
 
 # CARTS Utility Ownership Check
 
 ## Purpose
 
-**MANDATORY pre-flight check** before adding any new static helper or utility
-function to a pass file. This skill searches the shared utility surface,
-selects the narrowest owning dialect utility home, and prevents duplicating
-existing functionality.
+Run this skill before adding any new static helper, utility file, or `*Utils`
+surface. It prevents pass-local helper sprawl by finding existing helpers,
+choosing one canonical owner, and documenting why the helper belongs there.
 
-## The Problem
+## Hard Rule
 
-The CARTS codebase has 250+ shared utility functions across 13 utility files.
-Historical audit found:
-- **Exact duplicate functions** across pass files (e.g., `isOneLikeValue` in
-  2 locations, `hasWorkAfterInParentBlock` in 2, `isUndefLikeOp` in 3)
-- **60+ static helpers** in pass files that belong in shared utilities
-- **180+ static functions** in pass files, many reimplementing existing utils
+Do not create a new utility file until all of these are true:
+
+- no existing helper covers the behavior;
+- the helper is needed by more than one pass or expresses a dialect invariant;
+- the proposed file has one clear semantic category, not a grab bag;
+- the owning dialect or shared layer is explicit in the patch summary;
+- the declaration, implementation, users, and focused verification land
+  together.
+
+One semantic category gets one canonical home. Do not create `LoopIVUtils`,
+`IndexUtils`, `ValueHelpers`, or pass-local copies when `LoopUtils`,
+`LoopInvarianceUtils`, `ValueAnalysis`, or `Utils` already own the category.
 
 ## Pass-Local Helper Rule
 
-A helper may stay `static` in a pass file only when all are true:
+A helper may stay `static` in a pass file only when every item is true:
 
-- It is used by exactly one pass implementation.
-- It does not express a dialect invariant.
-- It does not duplicate an existing helper by name or behavior.
-- It is not needed by a verifier, analysis, conversion, or sibling pass.
-- Extracting it would make the code harder to read.
+- it is used by exactly one pass implementation;
+- it does not express a dialect invariant;
+- it does not duplicate an existing helper by name or behavior;
+- it is not needed by a verifier, analysis, conversion, or sibling pass;
+- extracting it would make the code harder to read.
 
 If any item is false, move it to the owning dialect `Utils/`, an owning
-analysis API, or a pass-area support file. Do not create a new "Utils" helper
-inside a pass just because it is convenient during the first implementation.
+analysis API, a current shared `include/carts/utils` helper, or a pass-area
+support file.
 
-## Target Dialect Utility Homes
+## Placement Matrix
 
-New utility surfaces should follow the target layout:
+Use the narrowest correct home:
 
-| Helper kind | Preferred home |
+| Helper kind | Canonical home |
 |-------------|----------------|
-| SDE source semantics, memref access maps, SDE patterns, MU/CU/SU planning | `include/carts/dialect/sde/Utils` + `lib/carts/dialect/sde/Utils` |
-| CODIR codelet isolation, dep/param ABI, token-local views | `include/carts/dialect/codir/Utils` + `lib/carts/dialect/codir/Utils` |
-| ARTS DB/EDT/epoch object mechanics, dependency slots, placement/resource helpers | `include/carts/dialect/arts/Utils` + `lib/carts/dialect/arts/Utils` |
-| ARTS-RT runtime ABI packing, depv layout, runtime-call/pointer helpers | `include/carts/dialect/arts-rt/Utils` + `lib/carts/dialect/arts-rt/Utils` |
-| Cross-dialect compiler helpers with no dialect semantics | `include/carts/support` + `lib/carts/support` |
-| Current-tree compatibility helpers | nearest existing `include/carts/utils`, `lib/carts/utils`, or pass-area `*Support` file |
+| Value constants, folding, provenance, same-value checks | `include/carts/utils/ValueAnalysis.h` |
+| Index builders, dominance-aware replacement, pure-op predicates, block ordering | `include/carts/utils/Utils.h` |
+| Loop shape, loop IVs, nearest enclosing loops, trip counts, loop depth | `include/carts/utils/LoopUtils.h` |
+| Loop invariance, hoist legality, dominance for hoisting | `include/carts/utils/LoopInvarianceUtils.h` |
+| Deferred op removal | `include/carts/utils/RemovalUtils.h` |
+| Source locations, runtime config, instrumentation | existing `include/carts/utils/*` owner |
+| SDE source semantics, memref roots/access maps, PatternAnalysis facts, MU/CU/SU planning | `include/carts/dialect/sde/Analysis` or `include/carts/dialect/sde/Utils` |
+| CODIR codelet isolation, dep/param ABI, token-local views | `include/carts/dialect/codir/Utils` or a boundary-specific conversion helper |
+| ARTS DB/EDT/epoch objects, dependency slots, placement, distributed ownership | `include/carts/dialect/arts/Utils` or `include/carts/dialect/arts/Analysis` |
+| ARTS-RT runtime ABI packing, depv layout, runtime calls, pointer lowering | `include/carts/dialect/arts-rt/Utils` |
+| Shared compiler helper with no dialect semantics | current `include/carts/utils`; create `carts/support` only as a planned repo-wide migration |
 
-If a target `Utils/` folder exists only as a skeleton, do not wire it into
-CMake for an empty helper. Add the real utility in the same patch that first
-uses it, with focused tests for the owning pass.
+Loop IV helpers are not a new category. Generic IV recognition belongs in
+`LoopUtils`. SDE-specific structured-access IV interpretation belongs in SDE
+Analysis/Utils. ARTS graph loop state belongs in ARTS Analysis; do not move it
+into generic loop helpers.
 
-## Shared Utility Locations (Search These FIRST)
+## Shared Utility Catalog
 
-### Core Utilities (`include/carts/utils/` + `lib/carts/utils/`)
-
-| File | Category | Key Functions |
-|------|----------|---------------|
-| `Utils.h` | General | `createZeroIndex`, `createOneIndex`, `createConstantIndex`, `dominatesOrInAncestor`, `replaceUses`, `isSideEffectFreeArithmeticLikeOp`, `combineAccessModes`, `isArtsRuntimeQuery`, `getElementTypeByteSize` |
-| `LoopUtils.h` | Loops | `isWorkerLoop`, `isInnermostLoop`, `isLoopInductionVar`, `haveCompatibleBounds`, `findNearestLoop`, `getStaticTripCount`, `getLoopDepth`, `containsLoop` |
-| `LoopInvarianceUtils.h` | Invariance | `isLoopInvariant`, `isSafeToHoistDivRem`, `isDefinedOutside`, `allOperandsDefinedOutside`, `allOperandsDominate` |
-| `RemovalUtils.h` | Op Removal | `markForRemoval`, `removeAllMarked`, `replaceWithUndef` |
-| `LocationMetadata.h` | Source Locations | `fromLocation`, `getBasename` |
-| `RuntimeConfig.h` | Runtime Config | `getRuntimeWorkersPerNode`, `getRuntimeTotalWorkers`, `getNodeCount` |
-| `OperationAttributes.h` | Attr Names | `AttrNames::Operation::*` — ALL attribute string constants |
-| `StencilAttributes.h` | Stencil Attrs | `AttrNames::Operation::Stencil::*` + getter/setter helpers |
-| `ValueAnalysis.h` | Value | `isZeroConstant`, `isOneConstant`, `tryFoldConstantIndex`, `isDerivedFromPtr`, `getUnderlyingValue` |
-
-### ARTS Utilities (`include/carts/dialect/arts/Utils/` + `lib/carts/dialect/arts/Utils/`)
-
-| File | Category | Key Functions |
-|------|----------|---------------|
-| `DbUtils.h` | DataBlock | `traceToDbAlloc`, `getUnderlyingDb`, `getSizesFromDb`, `getAccessedMemref`, `getMemoryAccessInfo`, `getMemoryAccessIndices`, `isWriterMode`, `collectReachableMemoryOps` |
-| `EdtUtils.h` | EDT | `EdtEnvManager`, `isInsideEpoch`, `getSingleTopLevelFor`, `classifyEdtArgAccesses`, `collectEdtPackedValues`, `spliceBodyBeforeTerminator` |
-| `BlockedAccessUtils.h` | Block Patterns | `matchLoopInvariantAddend`, `extractLocalFromBlockBase`, `isKnownNonNegative`, `isAlignedToBlock`, `loopWindowFitsSingleBlock` |
-| `LoweringContractUtils.h` | Contracts | `getLoweringContract`, `resolveEffectiveContract`, `upsertLoweringContract`, `mergeLoweringContractInfo` |
-| `PartitionPredicates.h` | Partition | `usesBlockLayout`, `supportsHaloExtension`, `usesElementLayout` |
-
-### ARTS-RT Utilities (`include/carts/dialect/arts-rt/Utils/` + `lib/carts/dialect/arts-rt/Utils/`)
-
-| File | Category | Key Functions |
-|------|----------|---------------|
-| `IdRegistry.h` | Runtime IDs | `get`, `getOrCreate` |
-
-### Analysis Utilities (`include/carts/dialect/arts/Analysis/`)
-
-| File | Category | Key Functions |
-|------|----------|---------------|
-| `LoopNode.h` | Loop Tree | Loop nesting analysis, IV extraction |
-| `DbPatternMatchers.h` | DB Patterns | Stencil/matmul/symmetric pattern detection |
-
-### Pass Support Files (public namespaces)
-
-| File | Category |
-|------|----------|
-| `BlockLoopStripMiningSupport.cpp` | Strip-mining predicates |
-| `DbPartitioningSupport.cpp` | Partition planning predicates |
-| `DataPtrHoistingSupport.cpp` | Pointer hoisting patterns |
-| `EpochOptSupport.cpp` | CPS chain predicates |
-
-### Target Skeletons
-
-Also search target locations when working in the new layout:
-
-- `include/carts/dialect/*/Utils`
-- `lib/carts/dialect/*/Utils`
-- `include/carts/support`
-- `lib/carts/support`
+Read `references/utility-catalog.md` when the helper touches values, loops,
+DB/EDT mechanics, runtime ABI, or known duplicate categories. It is the quick
+search map for the current utility surface.
 
 ## Search Strategy
 
-When checking for an existing function, search by **behavior** not just name:
+Search by behavior, not only by name:
 
-1. **Exact name match**: `Grep` for the function name across `include/carts/` and `lib/carts/utils/`
-2. **Semantic match**: Search for keywords describing what the function does:
-   - "is zero" / "isZero" / "zero constant" for zero-checking
-   - "hoist" / "invariant" / "loop invariant" for hoisting helpers
-   - "memref" / "access" / "load" / "store" for memory access helpers
-   - "trace" / "underlying" / "alloc" for provenance tracking
-3. **Pattern match**: Check if the function's logic is a special case of an existing utility
-4. **Support file check**: Look in `*Support.cpp` files for the relevant pass area
+1. Exact name across `include/carts` and `lib/carts`.
+2. Semantic keywords:
+   - zero/one/constant/fold/same value/provenance;
+   - loop IV/trip count/nearest loop/innermost/depth;
+   - invariant/hoist/dominance/div/rem safety;
+   - memref/access/load/store/root/slice;
+   - DB/acquire/alloc/partition/ownership;
+   - EDT/epoch/dependency slot/placement;
+   - runtime ABI/deps/packing/pointer/call.
+3. Existing shared utilities:
+   - `include/carts/utils` and `lib/carts/utils`;
+   - `include/carts/dialect/*/Utils` and `lib/carts/dialect/*/Utils`;
+   - owning `Analysis/` APIs.
+4. Pass-area support files such as `*Support.cpp`, `*Internal.h`, and
+   boundary-specific conversion helpers.
+5. Duplicate behavior in pass files, including lambdas and anonymous namespace
+   helpers.
 
-## Known Duplicates (DO NOT RE-ADD)
+## Required Answer
 
-These functions already exist in shared locations — NEVER add local copies:
+Every utility placement decision must state exactly one of:
 
-| Function | Canonical Location |
-|----------|--------------------|
-| `isOneLikeValue` / `isOneLike` | `ValueAnalysis::isOneConstant` + pattern in `DbAnalysis::hasSingleSize` |
-| `hasWorkAfterInParentBlock` | Duplicated 2x — needs extraction to `Utils.h` |
-| `isPureOp` | Duplicated 2x — use `isSideEffectFreeArithmeticLikeOp` from `Utils.h` |
-| `sortStoresInProgramOrder` | Duplicated 2x — needs extraction to `Utils.h` |
-| `findHoistTarget` | Duplicated 2x — needs consolidation in `LoopInvarianceUtils.h` |
-| `getMemoryAccessInfo` | `DbUtils::getMemoryAccessInfo` is canonical |
-| `createZeroIndex` / `createOneIndex` | `Utils.h` — NEVER redefine |
-| `isLoopInvariant` | `LoopInvarianceUtils.h` — NEVER redefine |
-| `getStaticTripCount` | `LoopUtils.h` — NEVER redefine |
-| `isUndefLikeOp` | Duplicated 3x (`EdtLowering.cpp`, `EdtUtils.cpp`, `EpochOptCpsChain.cpp`) — extract to `Utils.h` |
+- `Use existing helper at <path> because <reason>.`
+- `Extract to <path> because <owning semantic category>.`
+- `Keep pass-local because all pass-local rule items are true.`
 
-## Hardcoded String Rules
+If extraction is chosen, the patch must include the declaration, definition,
+call-site update, old helper removal, and focused verification. If a helper uses
+CARTS attributes, add or use `AttrNames::` constants instead of hardcoded
+strings.
 
-**NEVER** hardcode attribute name strings. Always use:
-- `AttrNames::Operation::*` from `OperationAttributes.h`
-- `AttrNames::Operation::Stencil::*` from `StencilAttributes.h`
-- For new attributes, ADD them to these files first
+## Existing Helpers To Reuse
 
-Known violations to fix:
-- `BlockLoopStripMiningSupport.cpp:18` — `"arts.block_loop_strip_mining.generated"`
-- `EdtLowering.cpp:123` — hardcoded op names `"llvm.mlir.undef"` etc.
+Do not re-add these local copies:
 
-## Instructions
+| Need | Existing helper |
+|------|-----------------|
+| zero/one/constant checks | `ValueAnalysis::{isZeroConstant,isOneConstant,tryFoldConstantIndex}` |
+| structurally one-like value | `ValueAnalysis::isOneLikeValue` |
+| same-value or range equivalence | `ValueAnalysis::{sameValue,areValuesEquivalent,areValueRangesEquivalent}` |
+| create zero/one/arbitrary index | `createZeroIndex`, `createOneIndex`, `createConstantIndex` |
+| loop IV, trip count, nearest loop, loop depth | `LoopUtils.h` |
+| loop-invariant hoisting target | `LoopInvarianceUtils.h` |
+| pure op, store ordering, trailing block work | `Utils.h` |
+| undef-like op detection | `isUndefLikeOp` in `Utils.h` |
+| DB provenance/access info | `DbUtils.h` |
+| EDT environment/captures | `EdtUtils.h` |
+| lowering contracts | `LoweringContractUtils.h` |
+| runtime IDs/calls/DB ABI | ARTS-RT `Utils/` |
 
-When asked to check if a utility function already exists:
+## Attribute Strings
 
-1. **Parse the request** — understand what the function does, not just its name
-2. **Search shared utilities** — run parallel Grep searches across:
-   - `include/carts/dialect/*/Utils` and `lib/carts/dialect/*/Utils`
-   - `include/carts/support` and `lib/carts/support` if present
-   - `include/carts/utils/` (headers)
-   - `lib/carts/utils/` (implementations)
-   - `include/carts/dialect/arts/Analysis/` (analysis headers)
-   - `lib/carts/dialect/arts/Analysis/` (analysis implementations)
-3. **Search pass support files** — check `*Support.cpp` and `*Support.h` files
-4. **Search for duplicates** — look for the function name in all of `lib/carts/`
-5. **Report findings**:
-   - If found: show the canonical location, signature, and how to use it
-   - If similar: show the closest match and explain the difference
-   - If not found: confirm whether it is truly pass-local. If not, suggest the
-     best location:
-     - Generic value/type helpers → common CARTS support or current `Utils.h`
-     - DB-specific → `DbUtils.h`
-     - EDT-specific → `EdtUtils.h`
-     - Loop-specific → `LoopUtils.h`
-     - Loop invariance → `LoopInvarianceUtils.h`
-     - Block access patterns → `BlockedAccessUtils.h`
-     - Pattern classification → `StencilAttributes.h` / `PartitionPredicates.h`
-     - SDE-only semantic/access planning → SDE `Utils/`
-     - CODIR codelet/token-local ABI → CODIR `Utils/`
-     - ARTS DB/EDT/epoch mechanics → ARTS `Utils/`
-     - ARTS-RT runtime ABI mechanics → ARTS-RT `Utils/`
-     - Pass-specific but shared within pass area → `*Support.cpp`
-     - Truly pass-specific → keep as static in the pass file
-6. **Require a placement decision** — state one of:
-   - "Use existing helper at `<path>`."
-   - "Extract to `<dialect>/Utils` because `<reason>`."
-   - "Keep pass-local because all pass-local rule items are true."
-7. **Check attribute strings** — if the function uses attribute names, verify it
-   uses `AttrNames::` constants, not hardcoded strings
+Never hardcode project attribute strings in new helpers. Use
+`AttrNames::Operation::*`, `AttrNames::Operation::Stencil::*`, or the owning
+dialect's attribute helpers. Add a constant first when no constant exists.

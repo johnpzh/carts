@@ -1,109 +1,51 @@
-# Known Duplicate & Misplaced Functions
+# Known Utility Cleanup Backlog
 
-Last updated: 2026-04-10 (audit rev 2)
+Last updated: 2026-05-16.
 
-## Tier 1: Exact Duplicates
+This file is a triage aid, not a mandate to extract everything. Run
+`carts-check-utils` first; extract only when the helper has a second consumer or
+expresses a dialect invariant.
 
-### `isOneLikeValue` / `isOneLike`
-- **Location 1**: `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLowering.cpp:128` (static)
-- **Location 2**: `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp:1534` (lambda in `hasSingleSize`)
-- **Implementation**: Checks `ValueAnalysis::isOneConstant()`, then pattern-matches `add(1, sub(x,x))` and `add(1, sub(min(a,b), a))`
-- **Both are 100% identical** except parameter naming
-- **Target**: `ValueAnalysis::isOneLikeValue()` in `include/carts/utils/ValueAnalysis.h`
+## Already Consolidated
 
-### `hasWorkAfterInParentBlock`
-- **Location 1**: `lib/carts/dialect/arts/Conversion/OmpToArts/ConvertOpenMPToArts.cpp:86`
-- **Location 2**: `lib/carts/dialect/sde/Transforms/ConvertOpenMPToSde.cpp:79`
-- **Implementation**: Walks remaining ops in parent block checking for non-terminator work
-- **Target**: `Utils.h`
+These helpers have canonical homes. Do not reintroduce local copies.
 
-### `isPureOp`
-- **Location 1**: `lib/carts/dialect/arts/Transforms/kernel/StencilTilingNDPattern.cpp:80`
-- **Location 2**: `lib/carts/dialect/arts/Transforms/PatternDiscovery.cpp:152`
-- **Implementation**: Checks isa<> for memory ops, calls MemoryEffectOpInterface
-- **Related**: `isSideEffectFreeArithmeticLikeOp()` in `Utils.h` (similar but narrower)
-- **Target**: `Utils.h` as `isPureOp()` (broader than existing)
+| Need | Canonical helper |
+|------|------------------|
+| one-like expression recognition | `ValueAnalysis::isOneLikeValue` |
+| trailing work in parent block | `hasWorkAfterInParentBlock` in `Utils.h` |
+| broad pure-op predicate | `isPureOp` in `Utils.h` |
+| store program order | `sortStoresInProgramOrder` in `Utils.h` |
+| loop hoist target | `findHoistTarget` in `LoopInvarianceUtils.h` |
+| DB memory access info | `DbUtils::getMemoryAccessInfo` |
+| undef-like op recognition | `isUndefLikeOp` in `Utils.h` |
+| strip-mining generated attribute | `AttrNames::Operation::StripMiningGenerated` |
 
-### `sortStoresInProgramOrder`
-- **Location 1**: `lib/carts/dialect/arts/Transforms/EdtStructuralOpt.cpp`
-- **Location 2**: `lib/carts/dialect/arts/Transforms/EdtAllocaSinking.cpp`
-- **Implementation**: Sorts memref::StoreOps by block position
-- **Target**: `Utils.h`
+## Watch List
 
-### `findHoistTarget`
-- **Location 1**: `lib/carts/dialect/arts-rt/Transforms/RuntimeCallOpt.cpp:48` (for func::CallOp)
-- **Location 2**: `lib/carts/dialect/arts-rt/Transforms/DataPtrHoistingSupport.cpp:1376` (for Operation*)
-- **Implementation**: Finds highest enclosing loop where all operands are loop-invariant
-- **Note**: Different signatures but same algorithm
-- **Target**: `LoopInvarianceUtils.h` (template or overloads)
+These are still pass-local or pass-area helpers. They should stay where they are
+unless a second real consumer appears.
 
-### `getMemoryAccessInfo`
-- **Location 1**: `lib/carts/dialect/arts-rt/Transforms/DataPtrHoistingSupport.cpp:604`
-- **Location 2**: `lib/carts/dialect/arts/Utils/DbUtils.cpp:855` (CANONICAL)
-- **Action**: Replace DataPtrHoistingSupport's version with `DbUtils::getMemoryAccessInfo()`
+| Helper | Current home | Placement note |
+|--------|--------------|----------------|
+| `getLoadInfo`, `getStoreInfo`, `getStoredValue`, `isAccumulationOp` | `lib/carts/dialect/arts-rt/Transforms/ScalarReplacement.cpp` | ARTS-RT scalar replacement internals. Extract to ARTS-RT Utils only with another lowering/optimization consumer. |
+| `buildLoopInvariantI1Not` | `DataPtrHoistingInternal.h` / `DataPtrHoistingSupport.cpp` | ARTS-RT data-pointer hoisting support, not generic loop invariance. |
+| `hoistInvariantOpsInLoop` | `lib/carts/dialect/arts/Transforms/db/Hoisting.cpp` | ARTS DB hoisting policy; keep pass-local until another ARTS transform needs identical behavior. |
+| `getForwardedMemrefAliasSource`, `getForwardedMemrefAliasResult` | `lib/carts/dialect/sde/Conversion/PolygeistToSde/MemrefNormalization.cpp` | SDE conversion-specific alias cleanup. Extract to SDE Analysis/Utils only with a second SDE consumer. |
+| `tryGetAffineExpr` | `lib/carts/dialect/sde/Analysis/StructuredOpAnalysis.cpp` | SDE structured analysis internals; keep in analysis until exported API is needed. |
+| `ensureBlock` | `include/carts/dialect/sde/Transforms/Passes.h` | SDE region-construction convenience used across SDE passes. If it grows, move to SDE Utils. |
+| `analyzeLegacyLoop` | ARTS block-loop strip-mining support | Coupled to block-loop strip-mining internals; not a generic loop helper. |
 
-### `isUndefLikeOp` / undef string check **(NEW — found 2026-04-10 rev 2)**
-- **Location 1**: `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLowering.cpp:120` (static `isUndefLikeOp`)
-- **Location 2**: `lib/carts/dialect/arts/Utils/EdtUtils.cpp:258` (inline check `== "llvm.mlir.undef"`)
-- **Location 3**: `lib/carts/dialect/arts/Transforms/EpochOptCpsChain.cpp:450` (inline check `== "llvm.mlir.undef"`)
-- **Implementation**: All check if an op is an undef-like value (llvm.mlir.undef, polygeist.undef, arts.undef)
-- **Note**: EdtLowering's version is broadest (checks 3 names), other 2 only check llvm.mlir.undef
-- **Target**: `Utils.h` as `isUndefLikeOp()` (consolidate all 3 name checks)
+## Current Static-Helper Risk
 
-## Tier 2: Hardcoded Attribute Strings
+A broad `rg` still finds many static helpers across SDE, ARTS, and ARTS-RT.
+That is expected while pass internals remain private. The cleanup target is not
+"zero static helpers"; it is "zero duplicated helpers or misplaced dialect
+facts."
 
-### `BlockLoopStripMiningSupport.cpp:18-19`
-```cpp
-const llvm::StringLiteral kStripMiningGeneratedAttr =
-    "arts.block_loop_strip_mining.generated";
-```
-**Fix**: Add `StripMiningGenerated` to `AttrNames::Operation` in `OperationAttributes.h`
+High-value future audits:
 
-### `EdtLowering.cpp:123-125`
-```cpp
-return name == "llvm.mlir.undef" || name == "polygeist.undef" || name == "arts.undef";
-```
-**Fix**: Use `isa<LLVM::UndefOp>()` check or centralize names
-
-### `MetadataAttacher.cpp:62,97` + `MetadataRegistry.cpp:303` + `MetadataManager.cpp:18`
-- Uses `ArtsMetadata::IdAttrName` = `"arts.id"` instead of `AttrNames::Operation::ArtsId`
-**Fix**: Replace `ArtsMetadata::IdAttrName` with `AttrNames::Operation::ArtsId`
-
-## Tier 3: High-Value Extractions (Not Duplicated, But Misplaced)
-
-| Function | Source | Target | LOC | Risk |
-|----------|--------|--------|-----|------|
-| `getLoadInfo/getStoreInfo/getStoredValue` | ScalarReplacement.cpp | DbUtils.h | 30 | VeryLow |
-| `getForwardedMemrefAliasSource/Result` | MemrefNormalization.cpp | Utils.h | 35 | Low |
-| `hoistInvariantOpsInLoop` | Hoisting.cpp | LoopInvarianceUtils.h | 36 | Medium |
-| `buildLoopInvariantI1Not/And` | DataPtrHoistingSupport.cpp | Utils.h | 15 | VeryLow |
-| `isUnitStrideLoop` | PerfectNestLinearizationPattern.cpp | LoopUtils.h | 5 | VeryLow |
-| `ensureBlock` | ConvertOpenMPToSde.cpp | Utils.h | 5 | VeryLow |
-| `isUndefLikeOp` | EdtLowering.cpp | Utils.h | 6 | VeryLow |
-| `tryGetAffineExpr` | StructuredOpAnalysis.cpp | new AffineUtils.h | 52 | Low |
-| `isAccumulationOp` | ScalarReplacement.cpp | Utils.h | 4 | VeryLow |
-| `indicesEqual` | ScalarReplacement.cpp | Utils.h | 8 | VeryLow |
-| `isZeroIndexConstant/isMinusOneConstant` | DataPtrHoistingSupport.cpp | ValueAnalysis.h | 8 | VeryLow |
-| `getConstInt` | SdeIterationSpaceDecomposition.cpp | **DONE** → delegates to `ValueAnalysis::getConstantIndexStripped` | 10 | VeryLow |
-| `getOrCreateZero` | MatmulReductionPattern.cpp:81 | Utils.h | 2 | VeryLow |
-| `isZeroIndexList` | DbScratchElimination.cpp:66 | Utils.h or ValueAnalysis.h | 5 | VeryLow |
-| `regionHasNoWork` | JacobiAlternatingBuffersPattern.cpp:340 | Utils.h | ~8 | VeryLow |
-| `isLoopInvariantForRepeat` | EpochOptStructural.cpp:173 | LoopInvarianceUtils.h | ~10 | Low |
-| `getConstIndex` | BlockLoopStripMiningSupport.cpp:37 | **DONE** → delegates to `ValueAnalysis::getConstantIndexStripped` | 9 | VeryLow |
-| `tryFoldKnownRuntimeShape` | BlockLoopStripMiningSupport.cpp:48 | **DONE** → RuntimeQueryOp merged into `tryFoldConstantIndex`, -110 LOC | 110 | Medium |
-| `analyzeLegacyLoop` | BlockLoopStripMiningSupport.cpp:896 | **STAYS** — coupled to ~15 pass-private helpers, not general analysis | 80 | Medium |
-
-## Statistics (rev 2 audit)
-
-| Directory | Static Functions | % of Codebase |
-|-----------|-----------------|---------------|
-| `dialect/core/Transforms/` | 230 | 59.1% |
-| `transforms/` (all subdirs) | 114 | 29.3% |
-| `dialect/sde/Transforms/` | 15 | 3.9% |
-| `dialect/core/Conversion/ArtsToRt/` | 13 | 3.3% |
-| `dialect/core/Conversion/OmpToArts/` | 7 | 1.8% |
-| `dialect/core/Conversion/ArtsRtToLLVM/` | 5 | 1.3% |
-| `dialect/rt/Transforms/` | 2 | 0.5% |
-| **Total** | **389** | **100%** |
-
-**Summary**: 9 exact duplicates (Tier 1), 4+ hardcoded string violations (Tier 2), 18+ extractable helpers (Tier 3).
+- SDE memref/access helpers in `PolygeistToSde` and `StructuredOpAnalysis`.
+- ARTS-RT pointer/packing helpers in lowering and data-pointer hoisting.
+- ARTS DB loop/window helpers that may belong in ARTS Analysis instead of pass
+  support files.

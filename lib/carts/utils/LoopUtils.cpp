@@ -29,12 +29,28 @@ Value getLoopInductionVar(Operation *op) {
   if (auto scfFor = dyn_cast<scf::ForOp>(op))
     return scfFor.getInductionVar();
 
+  if (auto loopNest = dyn_cast<omp::LoopNestOp>(op)) {
+    auto ivs = loopNest.getIVs();
+    if (ivs.empty())
+      return Value();
+    return ivs.front();
+  }
+
   if (auto loopLike = dyn_cast<LoopLikeOpInterface>(op)) {
     if (auto ivs = loopLike.getLoopInductionVars(); ivs && !ivs->empty())
       return ivs->front();
   }
 
   return Value();
+}
+
+bool isWorkerLoop(scf::ForOp loop) {
+  bool hasEdt = false;
+  loop.walk([&](arts::EdtOp) {
+    hasEdt = true;
+    return WalkResult::interrupt();
+  });
+  return hasEdt;
 }
 
 bool isProvablyZeroLoopLowerBound(Value lb) {

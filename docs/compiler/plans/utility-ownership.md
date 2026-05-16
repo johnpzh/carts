@@ -31,8 +31,8 @@ Use the narrowest correct home:
 | Codelet capture checks, dep/param ABI helpers, token-local view helpers | `carts/dialect/codir/Utils` |
 | DB/EDT/epoch object helpers, dependency slots, ARTS placement/resource helpers | `carts/dialect/arts/Utils` |
 | Runtime ABI packing, depv layout, runtime-call/pointer helpers | `carts/dialect/arts-rt/Utils` |
-| Cross-dialect CARTS compiler helpers with no dialect semantics | `carts/support` |
-| Compatibility-only helpers for the current tree | Current `include/carts/utils` or nearest existing support file until moved |
+| Cross-dialect CARTS compiler helpers with no dialect semantics | current `include/carts/utils` / `lib/carts/utils` |
+| Future shared support layer | `carts/support`, only as a planned repo-wide migration |
 
 ## Pass-Local Helper Rule
 
@@ -81,16 +81,20 @@ When moving a helper out of a pass:
   `sde.*`, `codir.*`, `arts.*`, or `arts_rt.*`. Folder names use the hyphenated
   form (`arts-rt`); MLIR textual dialect names use the underscore form
   (`arts_rt`).
-- [ ] Attribute name constants belong in the owning dialect's
-  `Utils/AttrNames.h`.
+- [ ] Today, project attribute name constants live in
+  `include/carts/utils/OperationAttributes.h` and
+  `include/carts/utils/StencilAttributes.h`. Do not create a new attr-name file
+  without a dedicated migration plan.
 
 ## Migration Phases
 
 ### Phase 1: Skill And Docs
 
-Status: complete for the current guidance surface.
+Status: refreshed on 2026-05-16 for the current guidance surface.
 
-- [x] Harden `check-utils` so it triggers before pass-local helper work.
+- [x] Harden `check-utils` so it triggers before pass-local helper work and
+  explicitly routes loop IV, loop invariance, value, DB/EDT, and runtime ABI
+  helpers to their canonical homes.
 - [x] Link this plan from the master plan and plan index.
 - [x] Add `Utils/` to the target folder plan.
 - [x] Regenerate agent resources with `dekk carts skills generate`.

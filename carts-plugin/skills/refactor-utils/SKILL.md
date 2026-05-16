@@ -5,17 +5,19 @@ description: Use when auditing code quality, consolidating duplicate helpers, ex
 
 # CARTS Utility Refactoring
 
-Use this skill for focused utility extraction. Use `carts-simplify` first when
-the broader question is whether a patch is too complex.
+Use this skill for focused utility extraction after `carts-check-utils` has
+chosen the canonical owner. Use `carts-simplify` first when the broader
+question is whether a patch is too complex.
 
 Read `references/known-duplicates.md` only when the task needs the historical
 duplicate-helper backlog.
 
 ## Workflow
 
-1. Confirm the helper is not already covered by `carts-check-utils`.
-2. Choose the narrowest correct home:
-   - pass-local for logic used by one transform only;
+1. Run or consult `carts-check-utils` and record one placement decision:
+   use existing helper, extract to a named owner, or keep pass-local.
+2. Choose the narrowest correct home from that decision:
+   - pass-local for logic used by one transform only and not a dialect fact;
    - dialect utility when it expresses a dialect invariant;
    - `include/carts/utils/` and `lib/carts/utils/` for broadly shared behavior;
    - analysis APIs when the logic belongs to DB/EDT/loop/cache/metadata state.
@@ -27,6 +29,9 @@ duplicate-helper backlog.
 ## Guardrails
 
 - Do not extract helpers that are intentionally pass-specific.
+- Do not create a new `*Utils` file when an existing semantic owner such as
+  `LoopUtils`, `LoopInvarianceUtils`, `ValueAnalysis`, `DbUtils`, or `EdtUtils`
+  already fits.
 - Do not add new hardcoded project attribute strings; use centralized constants.
 - Do not use a later cleanup pass to make malformed IR correct.
 - Keep unrelated refactors out of the patch.
