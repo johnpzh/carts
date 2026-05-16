@@ -29,7 +29,7 @@ namespace mlir::carts::arts_rt {
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/utils/Debug.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
-#include "carts/dialect/arts/Utils/IdRegistry.h"
+#include "carts/dialect/arts-rt/Utils/IdRegistry.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"

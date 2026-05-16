@@ -201,16 +201,17 @@ Utilities are reclassified by the earliest owning layer:
 
 - CARTS-shared (used by 2+ dialects or project-wide): `lib/carts/utils/` —
   Debug, LoopUtils, OperationAttributes, PassInstrumentation, RemovalUtils,
-  StencilAttributes, Utils, ValueAnalysis, benchmarks, testing.
+  StencilAttributes, Utils, ValueAnalysis, LocationMetadata,
+  LoopInvarianceUtils, RuntimeConfig, benchmarks, testing.
 - SDE-only: `lib/carts/dialect/sde/Utils/` — SDECostModel, plus the existing
   pass-area `Analysis/` headers (AffineAccessUtils, SdeAnalysisUtils,
   StructuredOpAnalysis) which intentionally stay under Analysis/ since they
   back the SDE structured-op analysis.
 - CODIR-only: `lib/carts/dialect/codir/Utils/` — CodeletABIUtils.
-- ARTS-only: `lib/carts/dialect/arts/Utils/` — DbUtils, EdtUtils, IdRegistry,
-  LocationMetadata, LoweringContractUtils, PartitionPredicates,
-  BlockedAccessUtils, MetadataEnums, ARTSCostModel, RuntimeConfig.
-- ARTS-RT-only: `lib/carts/dialect/arts-rt/Utils/` — LoopInvarianceUtils.
+- ARTS-only: `lib/carts/dialect/arts/Utils/` — DbUtils, EdtUtils,
+  LoweringContractUtils, PartitionPredicates, BlockedAccessUtils,
+  MetadataEnums, ARTSCostModel.
+- ARTS-RT-only: `lib/carts/dialect/arts-rt/Utils/` — IdRegistry.
 
 ## CMake Strategy
 

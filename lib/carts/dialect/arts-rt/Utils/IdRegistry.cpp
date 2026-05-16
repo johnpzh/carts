@@ -3,9 +3,9 @@
 ///
 /// Implementation of unified ID registry.
 ///==========================================================================///
-#include "carts/dialect/arts/Utils/IdRegistry.h"
+#include "carts/dialect/arts-rt/Utils/IdRegistry.h"
 #include "carts/utils/Debug.h"
-#include "carts/dialect/arts/Utils/LocationMetadata.h"
+#include "carts/utils/LocationMetadata.h"
 
 #include "mlir/IR/Builders.h"
 

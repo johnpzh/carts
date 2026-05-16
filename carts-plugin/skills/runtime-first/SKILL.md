@@ -108,8 +108,8 @@ These are NON-NEGOTIABLE constraints from the ARTS distributed runtime:
 | `external/arts/examples/cpu/cps_chain.c` | CPS chain pattern |
 | `external/arts/examples/cpu/stencil1d.c` | Stencil with halo exchange |
 | `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVM.cpp` | How compiler emits runtime calls |
-| `lib/carts/dialect/arts/Conversion/ArtsToRt/EdtLowering.cpp` | EDT outlining and param packing |
-| `lib/carts/dialect/arts/Conversion/ArtsToRt/EpochLowering.cpp` | Epoch/CPS lowering |
+| `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLowering.cpp` | EDT outlining and param packing |
+| `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EpochLowering.cpp` | Epoch/CPS lowering |
 
 ## Anti-Patterns (What NOT to Do)
 

@@ -1,11 +1,10 @@
 ///==========================================================================///
 /// File: IdRegistry.h
 ///
-/// Unified ID registry that manages all arts_id assignment and location
-/// mapping.
+/// Deterministic arts_id assignment for runtime-lowering operations.
 ///==========================================================================///
-#ifndef ARTS_UTILS_METADATA_IDREGISTRY_H
-#define ARTS_UTILS_METADATA_IDREGISTRY_H
+#ifndef CARTS_DIALECT_ARTS_RT_UTILS_IDREGISTRY_H
+#define CARTS_DIALECT_ARTS_RT_UTILS_IDREGISTRY_H
 
 #include "carts/utils/OperationAttributes.h"
 #include "mlir/IR/Operation.h"
@@ -18,8 +17,8 @@
 namespace mlir {
 namespace carts::arts {
 
-/// Unified ID registry for deterministic arts_id assignment.
-/// This class is the SINGLE source of truth for:
+/// Runtime-lowering ID registry for deterministic arts_id assignment.
+/// This class tracks:
 /// - Location -> ID mapping
 /// - ID collision tracking
 /// - Sequential ID assignment
@@ -55,4 +54,4 @@ private:
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // ARTS_UTILS_METADATA_IDREGISTRY_H
+#endif // CARTS_DIALECT_ARTS_RT_UTILS_IDREGISTRY_H

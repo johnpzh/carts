@@ -66,23 +66,35 @@ uses it, with focused tests for the owning pass.
 | File | Category | Key Functions |
 |------|----------|---------------|
 | `Utils.h` | General | `createZeroIndex`, `createOneIndex`, `createConstantIndex`, `dominatesOrInAncestor`, `replaceUses`, `isSideEffectFreeArithmeticLikeOp`, `combineAccessModes`, `isArtsRuntimeQuery`, `getElementTypeByteSize` |
-| `DbUtils.h` | DataBlock | `traceToDbAlloc`, `getUnderlyingDb`, `getSizesFromDb`, `getAccessedMemref`, `getMemoryAccessInfo`, `getMemoryAccessIndices`, `isWriterMode`, `collectReachableMemoryOps` |
-| `EdtUtils.h` | EDT | `EdtEnvManager`, `isInsideEpoch`, `getSingleTopLevelFor`, `classifyEdtArgAccesses`, `collectEdtPackedValues`, `spliceBodyBeforeTerminator`, `fuseConsecutivePairs` |
 | `LoopUtils.h` | Loops | `isWorkerLoop`, `isInnermostLoop`, `isLoopInductionVar`, `haveCompatibleBounds`, `findNearestLoop`, `getStaticTripCount`, `getLoopDepth`, `containsLoop` |
 | `LoopInvarianceUtils.h` | Invariance | `isLoopInvariant`, `isSafeToHoistDivRem`, `isDefinedOutside`, `allOperandsDefinedOutside`, `allOperandsDominate` |
-| `BlockedAccessUtils.h` | Block Patterns | `matchLoopInvariantAddend`, `extractLocalFromBlockBase`, `isKnownNonNegative`, `isAlignedToBlock`, `loopWindowFitsSingleBlock` |
 | `RemovalUtils.h` | Op Removal | `markForRemoval`, `removeAllMarked`, `replaceWithUndef` |
-| `LoweringContractUtils.h` | Contracts | `getLoweringContract`, `resolveEffectiveContract`, `upsertLoweringContract`, `mergeLoweringContractInfo` |
-| `PartitionPredicates.h` | Partition | `usesBlockLayout`, `supportsHaloExtension`, `usesElementLayout` |
-| `PatternSemantics.h` | Patterns | `isStencilFamily`, `isUniformFamily`, `requiresHaloExchange`, `inferDistributionPattern` |
+| `LocationMetadata.h` | Source Locations | `fromLocation`, `getBasename` |
+| `RuntimeConfig.h` | Runtime Config | `getRuntimeWorkersPerNode`, `getRuntimeTotalWorkers`, `getNodeCount` |
 | `OperationAttributes.h` | Attr Names | `AttrNames::Operation::*` — ALL attribute string constants |
 | `StencilAttributes.h` | Stencil Attrs | `AttrNames::Operation::Stencil::*` + getter/setter helpers |
+| `ValueAnalysis.h` | Value | `isZeroConstant`, `isOneConstant`, `tryFoldConstantIndex`, `isDerivedFromPtr`, `getUnderlyingValue` |
+
+### ARTS Utilities (`include/carts/dialect/arts/Utils/` + `lib/carts/dialect/arts/Utils/`)
+
+| File | Category | Key Functions |
+|------|----------|---------------|
+| `DbUtils.h` | DataBlock | `traceToDbAlloc`, `getUnderlyingDb`, `getSizesFromDb`, `getAccessedMemref`, `getMemoryAccessInfo`, `getMemoryAccessIndices`, `isWriterMode`, `collectReachableMemoryOps` |
+| `EdtUtils.h` | EDT | `EdtEnvManager`, `isInsideEpoch`, `getSingleTopLevelFor`, `classifyEdtArgAccesses`, `collectEdtPackedValues`, `spliceBodyBeforeTerminator` |
+| `BlockedAccessUtils.h` | Block Patterns | `matchLoopInvariantAddend`, `extractLocalFromBlockBase`, `isKnownNonNegative`, `isAlignedToBlock`, `loopWindowFitsSingleBlock` |
+| `LoweringContractUtils.h` | Contracts | `getLoweringContract`, `resolveEffectiveContract`, `upsertLoweringContract`, `mergeLoweringContractInfo` |
+| `PartitionPredicates.h` | Partition | `usesBlockLayout`, `supportsHaloExtension`, `usesElementLayout` |
+
+### ARTS-RT Utilities (`include/carts/dialect/arts-rt/Utils/` + `lib/carts/dialect/arts-rt/Utils/`)
+
+| File | Category | Key Functions |
+|------|----------|---------------|
+| `IdRegistry.h` | Runtime IDs | `get`, `getOrCreate` |
 
 ### Analysis Utilities (`include/carts/dialect/arts/Analysis/`)
 
 | File | Category | Key Functions |
 |------|----------|---------------|
-| `ValueAnalysis.h` | Value | `isZeroConstant`, `isOneConstant`, `tryFoldConstantIndex`, `isDerivedFromPtr`, `getUnderlyingValue` |
 | `LoopNode.h` | Loop Tree | Loop nesting analysis, IV extraction |
 | `DbPatternMatchers.h` | DB Patterns | Stencil/matmul/symmetric pattern detection |
 
@@ -171,7 +183,7 @@ When asked to check if a utility function already exists:
      - Loop-specific → `LoopUtils.h`
      - Loop invariance → `LoopInvarianceUtils.h`
      - Block access patterns → `BlockedAccessUtils.h`
-     - Pattern classification → `PatternSemantics.h`
+     - Pattern classification → `StencilAttributes.h` / `PartitionPredicates.h`
      - SDE-only semantic/access planning → SDE `Utils/`
      - CODIR codelet/token-local ABI → CODIR `Utils/`
      - ARTS DB/EDT/epoch mechanics → ARTS `Utils/`

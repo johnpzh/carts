@@ -14,7 +14,7 @@
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
 #include "carts/dialect/arts/Analysis/loop/LoopNode.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
-#include "carts/dialect/arts/Utils/LocationMetadata.h"
+#include "carts/utils/LocationMetadata.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
 #include "llvm/ADT/DenseSet.h"

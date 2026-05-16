@@ -33,7 +33,7 @@ Relevant current files and areas:
 - `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLowering.cpp` (current
   source-tree path; target lives under the renamed `arts` dialect tree)
-- `include/carts/utils/EdtUtils.h`
+- `include/carts/dialect/arts/Utils/EdtUtils.h`
 - `lib/carts/dialect/arts/Transforms/verify/VerifyEdtCreated.cpp` (current
   source-tree path; target lives under the renamed `arts` dialect tree)
 

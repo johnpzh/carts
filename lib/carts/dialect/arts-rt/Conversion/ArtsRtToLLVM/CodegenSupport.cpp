@@ -34,7 +34,7 @@
 #include "carts/Dialect.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
-#include "carts/dialect/arts/Utils/RuntimeConfig.h"
+#include "carts/utils/RuntimeConfig.h"
 /// Debug
 
 #include "llvm/ADT/APFloat.h"

@@ -6,8 +6,8 @@
 /// locations.
 ///==========================================================================///
 
-#ifndef ARTS_UTILS_LOCATIONMETADATA_H
-#define ARTS_UTILS_LOCATIONMETADATA_H
+#ifndef CARTS_UTILS_LOCATIONMETADATA_H
+#define CARTS_UTILS_LOCATIONMETADATA_H
 
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/StringRef.h"
@@ -58,4 +58,4 @@ private:
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // ARTS_UTILS_LOCATIONMETADATA_H
+#endif // CARTS_UTILS_LOCATIONMETADATA_H

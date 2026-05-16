@@ -12,7 +12,7 @@
 #include "carts/Dialect.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts/Utils/BlockedAccessUtils.h"
-#include "carts/dialect/arts-rt/Utils/LoopInvarianceUtils.h"
+#include "carts/utils/LoopInvarianceUtils.h"
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"

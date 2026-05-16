@@ -35,7 +35,7 @@ namespace mlir::carts::arts_rt {
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
 #include "carts/passes/Passes.h"
-#include "carts/dialect/arts-rt/Utils/LoopInvarianceUtils.h"
+#include "carts/utils/LoopInvarianceUtils.h"
 #include "carts/utils/LoopUtils.h"
 
 #include "carts/utils/Debug.h"

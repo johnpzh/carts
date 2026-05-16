@@ -8,7 +8,7 @@
 #include "carts/dialect/arts/Analysis/heuristics/DbHeuristics.h"
 #include "carts/Dialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
-#include "carts/dialect/arts/Utils/LocationMetadata.h"
+#include "carts/utils/LocationMetadata.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/IR/BuiltinAttributes.h"

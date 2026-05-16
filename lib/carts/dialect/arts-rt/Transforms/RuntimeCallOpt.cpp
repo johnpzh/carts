@@ -21,7 +21,7 @@ namespace mlir::carts::arts_rt {
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Types.h"
 #include "carts/passes/Passes.h"
 #include "carts/utils/Debug.h"
-#include "carts/dialect/arts-rt/Utils/LoopInvarianceUtils.h"
+#include "carts/utils/LoopInvarianceUtils.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dominance.h"

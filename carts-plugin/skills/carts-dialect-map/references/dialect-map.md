@@ -66,9 +66,8 @@ Important areas:
 - `Analysis/db`, `Analysis/edt`, `Analysis/loop`, `Analysis/heuristics`.
 - `Transforms/db`, `Transforms/edt`, `Transforms/epoch`, `Transforms/loop`.
 - `Conversion/ArtsToRt`, `Conversion/ArtsRtToLLVM`.
-- `Utils/` - DbUtils, EdtUtils, IdRegistry, LocationMetadata,
-  LoweringContractUtils, PartitionPredicates, BlockedAccessUtils,
-  ARTSCostModel, RuntimeConfig.
+- `Utils/` - DbUtils, EdtUtils, LoweringContractUtils,
+  PartitionPredicates, BlockedAccessUtils, ARTSCostModel.
 
 Use `AnalysisManager` accessors for DB/EDT/loop analyses. Do not reach into
 graphs directly from passes.

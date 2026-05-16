@@ -36,8 +36,8 @@ Quick-reference for searching existing utilities before adding new ones.
 | Get element byte size | `getElementTypeByteSize()` | `Utils.h` |
 | Check block layout | `usesBlockLayout()` | `PartitionPredicates.h` |
 | Supports halo? | `supportsHaloExtension()` | `PartitionPredicates.h` |
-| Is stencil family? | `PatternSemantics::isStencilFamily()` | `PatternSemantics.h` |
-| Requires halo exchange? | `PatternSemantics::requiresHaloExchange()` | `PatternSemantics.h` |
+| Is stencil family? | `isStencilFamilyDepPattern()` | `StencilAttributes.h` |
+| Requires halo exchange? | `supportsHaloExtension()` | `PartitionPredicates.h` |
 | Get lowering contract | `getLoweringContract()` | `LoweringContractUtils.h` |
 | Resolve effective contract | `resolveEffectiveContract()` | `LoweringContractUtils.h` |
 | Mark op for deferred removal | `RemovalUtils::markForRemoval()` | `RemovalUtils.h` |
@@ -76,16 +76,18 @@ AttrNames::Operation::Stencil::FootprintMaxOffsets   // "arts.stencil.footprint_
 
 ```
 include/carts/utils/Utils.h
-include/carts/utils/DbUtils.h
-include/carts/utils/EdtUtils.h
 include/carts/utils/LoopUtils.h
 include/carts/utils/LoopInvarianceUtils.h
-include/carts/utils/BlockedAccessUtils.h
-include/carts/utils/LoweringContractUtils.h
 include/carts/utils/RemovalUtils.h
-include/carts/utils/PatternSemantics.h
-include/carts/utils/PartitionPredicates.h
+include/carts/utils/LocationMetadata.h
+include/carts/utils/RuntimeConfig.h
 include/carts/utils/OperationAttributes.h
 include/carts/utils/StencilAttributes.h
 include/carts/utils/ValueAnalysis.h
+include/carts/dialect/arts/Utils/DbUtils.h
+include/carts/dialect/arts/Utils/EdtUtils.h
+include/carts/dialect/arts/Utils/BlockedAccessUtils.h
+include/carts/dialect/arts/Utils/LoweringContractUtils.h
+include/carts/dialect/arts/Utils/PartitionPredicates.h
+include/carts/dialect/arts-rt/Utils/IdRegistry.h
 ```

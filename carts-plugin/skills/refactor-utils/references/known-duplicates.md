@@ -5,7 +5,7 @@ Last updated: 2026-04-10 (audit rev 2)
 ## Tier 1: Exact Duplicates
 
 ### `isOneLikeValue` / `isOneLike`
-- **Location 1**: `lib/carts/dialect/arts/Conversion/ArtsToRt/EdtLowering.cpp:128` (static)
+- **Location 1**: `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLowering.cpp:128` (static)
 - **Location 2**: `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp:1534` (lambda in `hasSingleSize`)
 - **Implementation**: Checks `ValueAnalysis::isOneConstant()`, then pattern-matches `add(1, sub(x,x))` and `add(1, sub(min(a,b), a))`
 - **Both are 100% identical** except parameter naming
@@ -39,12 +39,12 @@ Last updated: 2026-04-10 (audit rev 2)
 
 ### `getMemoryAccessInfo`
 - **Location 1**: `lib/carts/dialect/arts-rt/Transforms/DataPtrHoistingSupport.cpp:604`
-- **Location 2**: `lib/carts/utils/DbUtils.cpp:855` (CANONICAL)
+- **Location 2**: `lib/carts/dialect/arts/Utils/DbUtils.cpp:855` (CANONICAL)
 - **Action**: Replace DataPtrHoistingSupport's version with `DbUtils::getMemoryAccessInfo()`
 
 ### `isUndefLikeOp` / undef string check **(NEW — found 2026-04-10 rev 2)**
-- **Location 1**: `lib/carts/dialect/arts/Conversion/ArtsToRt/EdtLowering.cpp:120` (static `isUndefLikeOp`)
-- **Location 2**: `lib/carts/utils/EdtUtils.cpp:258` (inline check `== "llvm.mlir.undef"`)
+- **Location 1**: `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLowering.cpp:120` (static `isUndefLikeOp`)
+- **Location 2**: `lib/carts/dialect/arts/Utils/EdtUtils.cpp:258` (inline check `== "llvm.mlir.undef"`)
 - **Location 3**: `lib/carts/dialect/arts/Transforms/EpochOptCpsChain.cpp:450` (inline check `== "llvm.mlir.undef"`)
 - **Implementation**: All check if an op is an undef-like value (llvm.mlir.undef, polygeist.undef, arts.undef)
 - **Note**: EdtLowering's version is broadest (checks 3 names), other 2 only check llvm.mlir.undef
@@ -62,7 +62,7 @@ const llvm::StringLiteral kStripMiningGeneratedAttr =
 ### `RaiseToLinalg.cpp:240-295`
 - Line 240-241: `"parallel"`, `"reduction"` in `computeIteratorTypes()`
 - Line 275, 285-287, 293, 295: `"stencil"`, `"elementwise"`, `"matmul"`, `"reduction"` in `classifyPattern()`
-**Fix**: Use linalg iterator type constants or define as `PatternSemantics` enum
+**Fix**: Use linalg iterator type constants or add a typed SDE-owned pattern helper.
 
 ### `EdtLowering.cpp:123-125`
 ```cpp

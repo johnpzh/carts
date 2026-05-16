@@ -6,8 +6,8 @@
 /// and ScalarReplacement.cpp.
 ///==========================================================================///
 
-#ifndef ARTS_UTILS_LOOPINVARIANCEUTILS_H
-#define ARTS_UTILS_LOOPINVARIANCEUTILS_H
+#ifndef CARTS_UTILS_LOOPINVARIANCEUTILS_H
+#define CARTS_UTILS_LOOPINVARIANCEUTILS_H
 
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Dominance.h"
@@ -51,4 +51,4 @@ scf::ForOp findHoistTarget(Operation *op, Operation *addrOp,
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // ARTS_UTILS_LOOPINVARIANCEUTILS_H
+#endif // CARTS_UTILS_LOOPINVARIANCEUTILS_H

@@ -5,7 +5,6 @@ cd "$(git rev-parse --show-toplevel)"
 
 git grep -n \
   -e 'LoweringContractInfo' \
-  -e 'PatternSemantics' \
   -e 'PatternContract' \
   -e 'distribution_' \
   -e 'PartitionStrategy' \

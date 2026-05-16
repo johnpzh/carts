@@ -125,12 +125,13 @@ ownership:
   scoped to `lib/carts/dialect/codir/Conversion/SdeToCodir/TaskDepSliceUtils.*`
   because they are conversion logic, not CODIR dialect utilities.
 - [x] ARTS-only utilities moved to `include/carts/dialect/arts/Utils/`:
-  DbUtils, EdtUtils, IdRegistry, LocationMetadata, LoweringContractUtils,
-  PartitionPredicates, BlockedAccessUtils, MetadataEnums, ARTSCostModel (was
-  utils/costs/), RuntimeConfig (was utils/machine/). Legacy metadata attr-name
-  JSON plumbing has been removed.
+  DbUtils, EdtUtils, LoweringContractUtils, PartitionPredicates,
+  BlockedAccessUtils, MetadataEnums, ARTSCostModel (was utils/costs/).
+  Legacy metadata attr-name JSON plumbing has been removed.
 - [x] ARTS-RT-only utility moved to `include/carts/dialect/arts-rt/Utils/`:
-  LoopInvarianceUtils.
+  IdRegistry, which is only used by DB/EDT runtime-lowering ID materialization.
+- [x] Cross-layer utilities kept in `include/carts/utils/`: LocationMetadata,
+  LoopInvarianceUtils, RuntimeConfig.
 - [x] SDE-only utility moved to `include/carts/dialect/sde/Utils/`:
   SDECostModel.
 - [ ] Pass-local SDE memref/access helpers used by PatternAnalysis, tiling,
@@ -147,11 +148,13 @@ Exit gate:
 ### Phase 4: Cleanup — Done for the major blob
 
 - [x] Stale `include/carts/utils/{costs,machine}/` subdirs removed; ARTSCostModel
-  and RuntimeConfig now live in their owning dialect's Utils/.
+  lives in ARTS Utils, while RuntimeConfig now lives in CARTS-shared utils
+  because ARTS analysis, ARTS-RT lowering, and the compile driver all consume it.
 - [x] CARTS-shared `include/carts/utils/` is now scoped: Debug, LoopUtils,
   OperationAttributes, PassInstrumentation, RemovalUtils, StencilAttributes,
-  Utils, ValueAnalysis, plus benchmarks/ and testing/. Every entry is verifiably
-  used across 2+ subdialects or is project-wide infrastructure.
+  Utils, ValueAnalysis, LocationMetadata, LoopInvarianceUtils, RuntimeConfig,
+  plus benchmarks/ and testing/. Every entry is verifiably used across 2+
+  subdialects or is project-wide infrastructure.
 - [ ] Watch for new pass-local duplicates as compiler work continues.
 
 Exit gate:

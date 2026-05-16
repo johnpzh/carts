@@ -816,10 +816,12 @@ pick the next concrete slice; use the Milestones to confirm exit gates.
 - [x] (M1, M2) Move reusable helpers from passes into the earliest owning
   dialect's `Utils/` surface (`check-utils` skill). The cross-dialect blob
   formerly in `include/carts/utils/` is reclassified: ARTS-only headers
-  (DbUtils, EdtUtils, IdRegistry, LocationMetadata, LoweringContractUtils,
-  PartitionPredicates, BlockedAccessUtils, MetadataEnums, ARTSCostModel,
-  RuntimeConfig) moved to `carts/dialect/arts/Utils/`;
-  ARTS-RT-only LoopInvarianceUtils moved to `carts/dialect/arts-rt/Utils/`;
+  (DbUtils, EdtUtils, LoweringContractUtils, PartitionPredicates,
+  BlockedAccessUtils, MetadataEnums, ARTSCostModel) live in
+  `carts/dialect/arts/Utils/`; ARTS-RT ID materialization (`IdRegistry`) lives
+  in `carts/dialect/arts-rt/Utils/`; cross-layer helpers
+  (`LocationMetadata`, `LoopInvarianceUtils`, `RuntimeConfig`) live in
+  `carts/utils/`;
   SDE-only SDECostModel moved to `carts/dialect/sde/Utils/`. CODIR ABI
   predicates already lived in `carts/dialect/codir/Utils/`. Remaining:
   pass-local SDE memref/access helpers and ARTS-RT pointer/packing helpers

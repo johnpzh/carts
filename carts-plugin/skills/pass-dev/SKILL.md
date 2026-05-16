@@ -42,7 +42,7 @@ shared utilities across 13 files. See `/refactor-utils` for the full catalog.
 ## Key Source Locations
 
 - Core transforms: `lib/carts/dialect/arts/Transforms/`
-- ArtsToRt conversion: `lib/carts/dialect/arts/Conversion/ArtsToRt/`
+- ArtsToRt conversion: `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/`
 - SDE transforms: `lib/carts/dialect/sde/Transforms/`
 - LLVM conversion: `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/`
 - Analysis: `lib/carts/dialect/arts/Analysis/`
