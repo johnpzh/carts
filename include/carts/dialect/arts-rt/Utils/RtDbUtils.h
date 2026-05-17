@@ -10,18 +10,26 @@
 
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
+#include "mlir/IR/Value.h"
+#include "llvm/ADT/SmallVector.h"
 #include <optional>
 
 namespace mlir {
 namespace carts::arts_rt {
 
+/// Information extracted from a datablock operation for ARTS-RT lowering.
+struct DbLoweringInfo {
+  SmallVector<Value> sizes;
+  SmallVector<Value> offsets;
+  SmallVector<Value> indices;
+  bool isSingleElement = false;
+};
+
 class RtDbUtils {
 public:
-  static carts::arts::DbLoweringInfo
-  extractDbLoweringInfo(carts::arts::DbAcquireOp op);
-  static carts::arts::DbLoweringInfo extractDbLoweringInfo(DepDbAcquireOp op);
-  static carts::arts::DbLoweringInfo
-  extractDbLoweringInfo(carts::arts::DbAllocOp op);
+  static DbLoweringInfo extractDbLoweringInfo(carts::arts::DbAcquireOp op);
+  static DbLoweringInfo extractDbLoweringInfo(DepDbAcquireOp op);
+  static DbLoweringInfo extractDbLoweringInfo(carts::arts::DbAllocOp op);
 
   static Operation *getUnderlyingDb(Value value, unsigned depth = 0);
   static Operation *getUnderlyingDbAlloc(Value value);

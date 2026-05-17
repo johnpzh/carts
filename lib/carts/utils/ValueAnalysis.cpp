@@ -65,47 +65,6 @@ static std::optional<bool> proveValueNonZero(Value value) {
   return std::nullopt;
 }
 
-static std::optional<int64_t>
-proveConstantOffsetWithBounds(Value idx, Value loopIV, Value chunkOffset) {
-  idx = ValueAnalysis::stripNumericCasts(idx);
-  loopIV = ValueAnalysis::stripNumericCasts(loopIV);
-  chunkOffset = ValueAnalysis::stripNumericCasts(chunkOffset);
-
-  auto isIndexValue = [](Value v) { return v && v.getType().isIndex(); };
-  if (!isIndexValue(idx))
-    return std::nullopt;
-
-  SmallVector<Value, 3> operands;
-  operands.push_back(idx);
-
-  Builder builder(idx.getContext());
-  AffineExpr deltaExpr = builder.getAffineDimExpr(0);
-  unsigned dimCount = 1;
-
-  if (isIndexValue(loopIV)) {
-    deltaExpr = deltaExpr - builder.getAffineDimExpr(dimCount);
-    operands.push_back(loopIV);
-    ++dimCount;
-  }
-  if (isIndexValue(chunkOffset)) {
-    deltaExpr = deltaExpr - builder.getAffineDimExpr(dimCount);
-    operands.push_back(chunkOffset);
-    ++dimCount;
-  }
-
-  if (operands.size() == 1)
-    return std::nullopt;
-
-  if (auto delta = ValueBoundsConstraintSet::computeConstantBound(
-          presburger::BoundType::EQ,
-          ValueBoundsConstraintSet::Variable(
-              AffineMap::get(dimCount, 0, deltaExpr), operands));
-      succeeded(delta)) {
-    return *delta;
-  }
-  return std::nullopt;
-}
-
 ///===----------------------------------------------------------------------===///
 /// Value Cloning Utilities
 ///===----------------------------------------------------------------------===///
@@ -638,50 +597,6 @@ Value ValueAnalysis::stripClampOne(Value v) {
   return cur;
 }
 
-Value ValueAnalysis::stripSelectClamp(Value value, int maxDepth) {
-  if (!value || maxDepth <= 0)
-    return value;
-  value = stripNumericCasts(value);
-
-  auto selectOp = value.getDefiningOp<arith::SelectOp>();
-  if (!selectOp)
-    return value;
-
-  Value trueVal = stripNumericCasts(selectOp.getTrueValue());
-  Value falseVal = stripNumericCasts(selectOp.getFalseValue());
-
-  if (auto cmp = selectOp.getCondition().getDefiningOp<arith::CmpIOp>()) {
-    Value lhs = stripNumericCasts(cmp.getLhs());
-    Value rhs = stripNumericCasts(cmp.getRhs());
-    auto pred = cmp.getPredicate();
-
-    bool isClampCmp = pred == arith::CmpIPredicate::slt ||
-                      pred == arith::CmpIPredicate::ult ||
-                      pred == arith::CmpIPredicate::sgt ||
-                      pred == arith::CmpIPredicate::ugt;
-    if (isClampCmp) {
-      /// Match min/max clamp canonical form:
-      ///   cmp(lhs, rhs) + select(cond, rhs, lhs)
-      if (sameValue(trueVal, rhs) && sameValue(falseVal, lhs))
-        return stripSelectClamp(lhs, maxDepth - 1);
-      /// Also handle the mirrored operand form.
-      if (sameValue(trueVal, lhs) && sameValue(falseVal, rhs))
-        return stripSelectClamp(rhs, maxDepth - 1);
-    }
-  }
-
-  /// Fallback: select(const, x) / select(x, const) behaves like a guarded
-  /// clamp in many lowered index expressions; keep the non-constant side.
-  auto trueConst = getConstantValue(trueVal);
-  auto falseConst = getConstantValue(falseVal);
-  if (trueConst && !falseConst)
-    return stripSelectClamp(falseVal, maxDepth - 1);
-  if (falseConst && !trueConst)
-    return stripSelectClamp(trueVal, maxDepth - 1);
-
-  return value;
-}
-
 bool ValueAnalysis::areValuesEquivalent(Value a, Value b, int depth) {
   if (!a || !b)
     return false;
@@ -868,52 +783,6 @@ bool ValueAnalysis::dependsOn(Value value, Value base, int depth) {
   return false;
 }
 
-std::optional<int64_t> ValueAnalysis::getOffsetStride(Value idx, Value base,
-                                                      int depth) {
-  if (!idx || !base || depth > 8)
-    return std::nullopt;
-
-  idx = stripNumericCasts(idx);
-  base = stripNumericCasts(base);
-
-  if (idx == base)
-    return int64_t{1};
-
-  if (auto addOp = idx.getDefiningOp<arith::AddIOp>()) {
-    Value lhs = addOp.getLhs();
-    Value rhs = addOp.getRhs();
-    bool lhsDep = dependsOn(lhs, base, depth + 1);
-    bool rhsDep = dependsOn(rhs, base, depth + 1);
-    if (lhsDep && !rhsDep)
-      return getOffsetStride(lhs, base, depth + 1);
-    if (rhsDep && !lhsDep)
-      return getOffsetStride(rhs, base, depth + 1);
-    return std::nullopt;
-  }
-
-  if (auto subOp = idx.getDefiningOp<arith::SubIOp>()) {
-    Value lhs = subOp.getLhs();
-    Value rhs = subOp.getRhs();
-    bool lhsDep = dependsOn(lhs, base, depth + 1);
-    bool rhsDep = dependsOn(rhs, base, depth + 1);
-    if (lhsDep && !rhsDep)
-      return getOffsetStride(lhs, base, depth + 1);
-    return std::nullopt;
-  }
-
-  if (auto mulOp = idx.getDefiningOp<arith::MulIOp>()) {
-    Value lhs = mulOp.getLhs();
-    Value rhs = mulOp.getRhs();
-    int64_t constVal = 0;
-    if (getConstantIndex(lhs, constVal) && dependsOn(rhs, base, depth + 1))
-      return constVal;
-    if (getConstantIndex(rhs, constVal) && dependsOn(lhs, base, depth + 1))
-      return constVal;
-  }
-
-  return std::nullopt;
-}
-
 static bool isDerivedFromPtrImpl(Value value, Value source,
                                  SmallPtrSetImpl<Value> &visited,
                                  unsigned depth) {
@@ -962,78 +831,6 @@ static bool isDerivedFromPtrImpl(Value value, Value source,
 bool ValueAnalysis::isDerivedFromPtr(Value value, Value source) {
   SmallPtrSet<Value, 16> visited;
   return isDerivedFromPtrImpl(value, source, visited, 0);
-}
-
-/// Extract constant offset from an index expression relative to loopIV and
-/// chunkOffset. E.g. chunkOffset + loopIV + 5 yields offset = 5.
-std::optional<int64_t> ValueAnalysis::extractConstantOffset(Value idx,
-                                                            Value loopIV,
-                                                            Value chunkOffset) {
-  if (auto delta = proveConstantOffsetWithBounds(idx, loopIV, chunkOffset))
-    return delta;
-
-  int64_t accumulator = 0;
-  Value current = idx;
-
-  auto isBaseValue = [&](Value v) -> bool {
-    return v == loopIV || v == chunkOffset;
-  };
-
-  auto isBasePattern = [&](Value v) -> bool {
-    if (auto addOp = v.getDefiningOp<arith::AddIOp>()) {
-      Value lhs = addOp.getLhs();
-      Value rhs = addOp.getRhs();
-      return (lhs == loopIV && rhs == chunkOffset) ||
-             (lhs == chunkOffset && rhs == loopIV);
-    }
-    return false;
-  };
-
-  while (true) {
-    if (isBaseValue(current) || isBasePattern(current))
-      return accumulator;
-
-    if (auto addOp = current.getDefiningOp<arith::AddIOp>()) {
-      Value lhs = addOp.getLhs();
-      Value rhs = addOp.getRhs();
-
-      int64_t constVal;
-      if (getConstantIndex(rhs, constVal)) {
-        accumulator += constVal;
-        current = lhs;
-      } else if (getConstantIndex(lhs, constVal)) {
-        accumulator += constVal;
-        current = rhs;
-      } else {
-        bool lhsIsBase = isBaseValue(lhs) || isBasePattern(lhs);
-        bool rhsIsBase = isBaseValue(rhs) || isBasePattern(rhs);
-
-        if (lhsIsBase && rhsIsBase)
-          return accumulator;
-        if (lhsIsBase)
-          current = rhs;
-        else if (rhsIsBase)
-          current = lhs;
-        else
-          break;
-      }
-    } else if (auto subOp = current.getDefiningOp<arith::SubIOp>()) {
-      int64_t constVal;
-      if (getConstantIndex(subOp.getRhs(), constVal)) {
-        accumulator -= constVal;
-        current = subOp.getLhs();
-        continue;
-      }
-      break;
-    } else if (auto indexCast = current.getDefiningOp<arith::IndexCastOp>()) {
-      current = indexCast.getIn();
-      continue;
-    } else {
-      break;
-    }
-  }
-
-  return std::nullopt;
 }
 
 Value ValueAnalysis::stripConstantOffset(Value value, int64_t *outConst) {

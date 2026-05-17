@@ -145,26 +145,51 @@ static bool isDerivedFromRtPtrImpl(Value value, Value source,
 
 } // namespace
 
+namespace {
+
+static void finalizeSingleElementState(DbLoweringInfo &info) {
+  info.isSingleElement = false;
+  if (info.sizes.empty()) {
+    info.isSingleElement = true;
+    return;
+  }
+  if (info.sizes.size() == 1)
+    info.isSingleElement = ValueAnalysis::isOneConstant(info.sizes[0]);
+}
+
+} // namespace
+
 DbLoweringInfo RtDbUtils::extractDbLoweringInfo(DbAcquireOp op) {
-  return DbUtils::extractDbLoweringInfo(op);
+  DbLoweringInfo info;
+  if (!op) {
+    finalizeSingleElementState(info);
+    return info;
+  }
+  info.sizes = DbUtils::getDepSizesFromDb(op.getOperation());
+  info.offsets = DbUtils::getDepOffsetsFromDb(op.getOperation());
+  info.indices.assign(op.getIndices().begin(), op.getIndices().end());
+  finalizeSingleElementState(info);
+  return info;
 }
 
 DbLoweringInfo RtDbUtils::extractDbLoweringInfo(DbAllocOp op) {
-  return DbUtils::extractDbLoweringInfo(op);
+  DbLoweringInfo info;
+  if (op)
+    info.sizes.assign(op.getSizes().begin(), op.getSizes().end());
+  finalizeSingleElementState(info);
+  return info;
 }
 
 DbLoweringInfo RtDbUtils::extractDbLoweringInfo(DepDbAcquireOp op) {
   DbLoweringInfo info;
+  if (!op) {
+    finalizeSingleElementState(info);
+    return info;
+  }
   info.sizes.assign(op.getSizes().begin(), op.getSizes().end());
   info.offsets.assign(op.getOffsets().begin(), op.getOffsets().end());
   info.indices.assign(op.getIndices().begin(), op.getIndices().end());
-  info.isSingleElement = false;
-  if (info.sizes.empty()) {
-    info.isSingleElement = true;
-    return info;
-  }
-  if (info.sizes.size() == 1)
-    info.isSingleElement = ValueAnalysis::isOneConstant(info.sizes[0]);
+  finalizeSingleElementState(info);
   return info;
 }
 

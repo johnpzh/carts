@@ -109,8 +109,7 @@ extractRelativeOffsetRange(Value value, Value loopIV, Value blockBase,
   if (!value || !loopIV || !blockBase || depth > 8)
     return std::nullopt;
 
-  value =
-      ValueAnalysis::stripNumericCasts(ValueAnalysis::stripSelectClamp(value));
+  value = ValueAnalysis::stripNumericCasts(arts::stripSelectClamp(value));
   loopIV = ValueAnalysis::stripNumericCasts(loopIV);
   blockBase = ValueAnalysis::stripNumericCasts(blockBase);
 
@@ -203,8 +202,7 @@ static Value peelSelectorDividend(Value value, Value divisor,
   if (!value || !divisor || depth > 8)
     return Value();
 
-  value =
-      ValueAnalysis::stripNumericCasts(ValueAnalysis::stripSelectClamp(value));
+  value = ValueAnalysis::stripNumericCasts(arts::stripSelectClamp(value));
   divisor = ValueAnalysis::stripNumericCasts(divisor);
 
   auto divisorMatches = [&](Value candidate) {
@@ -441,7 +439,7 @@ arts::analyzeAccessBoundsFromIndices(ArrayRef<AccessIndexInfo> accesses,
     /// Try to extract constant offset from the selected index
     /// Handles patterns like: iv, iv+c, iv-c, blockBase+c, etc.
     auto constOffset =
-        ValueAnalysis::extractConstantOffset(idxForBounds, loopIV, blockBase);
+        arts::extractConstantOffset(idxForBounds, loopIV, blockBase);
     if (constOffset) {
       foundAny = true;
       bounds.minOffset = std::min(bounds.minOffset, *constOffset);

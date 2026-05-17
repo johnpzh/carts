@@ -85,10 +85,6 @@ public:
   /// Strip numeric casts and max(x, 1) clamping.
   static Value stripClampOne(Value v);
 
-  /// Strip select(cmp(...), x, y) min/max clamp patterns recursively.
-  /// Peels through up to `maxDepth` layers of select-based clamping.
-  static Value stripSelectClamp(Value value, int maxDepth = 8);
-
   /// Shallow structural equivalence for index expressions.
   static bool areValuesEquivalent(Value a, Value b, int depth = 0);
 
@@ -118,18 +114,9 @@ public:
   /// Check if value depends on base through arithmetic operations.
   static bool dependsOn(Value value, Value base, int depth = 0);
 
-  /// Detect constant stride for base within an index expression.
-  /// Returns 1 when idx==base, C when idx contains base*C, else nullopt.
-  static std::optional<int64_t> getOffsetStride(Value idx, Value base,
-                                                int depth = 0);
-
   /// Check if a pointer/memref value is derived from source through
   /// GEP, casts, SubView, and similar pointer-manipulating operations.
   static bool isDerivedFromPtr(Value value, Value source);
-
-  /// Extract constant offset from expression relative to loopIV + chunkOffset.
-  static std::optional<int64_t> extractConstantOffset(Value idx, Value loopIV,
-                                                      Value chunkOffset);
 
   /// Strip constant add/sub offsets, returning base and accumulated offset.
   static Value stripConstantOffset(Value value, int64_t *outConst = nullptr);

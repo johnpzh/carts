@@ -294,7 +294,7 @@ inline Value normalizeOwnedSliceExtent(Value value, unsigned depth = 0) {
 
   value = ValueAnalysis::stripNumericCasts(value);
   value = ValueAnalysis::stripClampOne(value);
-  value = ValueAnalysis::stripSelectClamp(value);
+  value = arts::stripSelectClamp(value);
   value = ValueAnalysis::stripClampOne(value);
 
   auto normalizeMin = [&](arith::MinUIOp minOp) -> Value {

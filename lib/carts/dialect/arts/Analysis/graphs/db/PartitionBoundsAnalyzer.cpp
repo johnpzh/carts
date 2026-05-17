@@ -18,8 +18,9 @@
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
+#include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
+#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/StencilAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -187,8 +188,8 @@ static Value normalizePartitionOffsetRoot(Value offset) {
 
   Value normalized = ValueAnalysis::stripNumericCasts(offset);
   normalized = ValueAnalysis::stripConstantOffset(normalized, nullptr);
-  normalized = ValueAnalysis::stripNumericCasts(
-      ValueAnalysis::stripSelectClamp(normalized));
+  normalized =
+      ValueAnalysis::stripNumericCasts(arts::stripSelectClamp(normalized));
   return normalized;
 }
 
@@ -210,8 +211,8 @@ getPartitionRelativeConstantOffset(Value idx, Value partitionOffset) {
       !ValueAnalysis::areValuesEquivalent(normalizedIdx, partitionOffset))
     return std::nullopt;
 
-  return ValueAnalysis::extractConstantOffset(normalizedIdx, partitionOffset,
-                                              normalizedOffset);
+  return arts::extractConstantOffset(normalizedIdx, partitionOffset,
+                                     normalizedOffset);
 }
 
 /// Collect the set of array dimensions that carry non-zero stencil offsets
@@ -606,8 +607,8 @@ std::optional<unsigned> PartitionBoundsAnalyzer::getPartitionOffsetDim(
       return false;
     if (getPartitionRelativeConstantOffset(candidate, offsetStripped))
       return true;
-    Value normalizedCandidate = ValueAnalysis::stripNumericCasts(
-        ValueAnalysis::stripSelectClamp(candidate));
+    Value normalizedCandidate =
+        ValueAnalysis::stripNumericCasts(arts::stripSelectClamp(candidate));
     Value normalized = ValueAnalysis::stripNumericCasts(normalizedOffset);
     if (ValueAnalysis::sameValue(normalizedCandidate, normalized) ||
         ValueAnalysis::areValuesEquivalent(normalizedCandidate, normalized))
@@ -677,8 +678,8 @@ std::optional<unsigned> PartitionBoundsAnalyzer::getPartitionOffsetDim(
             directDepends || matchesPartitionOffset(fullChain[i]);
         if (matchedOffset) {
           if (directDepends) {
-            if (auto stride = ValueAnalysis::getOffsetStride(fullChain[i],
-                                                             dependencyRoot)) {
+            if (auto stride =
+                    arts::getOffsetStride(fullChain[i], dependencyRoot)) {
               if (*stride != 1) {
                 ARTS_DEBUG("  partition offset has stride "
                            << *stride << "; disabling blocked partitioning");

@@ -9,7 +9,7 @@ disagree.
 | Category | Canonical owner | Examples |
 |----------|-----------------|----------|
 | Dialect-neutral value constants/folding | `include/carts/utils/ValueAnalysis.h` | `isZeroConstant`, `isOneConstant`, `tryFoldConstantIndex`, `sameValue`, `dependsOn`, `stripMemrefViewOps` |
-| ARTS DB/EDT/runtime-query value folding and provenance | `include/carts/dialect/arts/Utils/ValueAnalysisUtils.h` | `tryFoldConstantIndex`, `getUnderlyingValue`, `isDerivedFromPtr` |
+| ARTS DB/EDT/runtime-query value folding, provenance, and block-index analysis | `include/carts/dialect/arts/Utils/ValueAnalysisUtils.h` | `tryFoldConstantIndex`, `stripSelectClamp`, `getOffsetStride`, `extractConstantOffset`, `getUnderlyingValue`, `isDerivedFromPtr` |
 | ARTS-RT depv/DB pointer value folding and provenance | `include/carts/dialect/arts-rt/Utils/RtDbUtils.h` | `RtDbUtils::tryFoldConstantIndex`, `RtDbUtils::getUnderlyingValue`, `RtDbUtils::isDerivedFromPtr` |
 | Index builders/general pure-op predicates | `include/carts/utils/Utils.h` | `createConstantIndex`, `createZeroIndex`, `createOneIndex`, `isSideEffectFreeArithmeticLikeOp` |
 | Generic loop trip-count helpers | `include/carts/utils/LoopUtils.h` | `isInnermostLoop`, `getStaticTripCount` |
@@ -42,6 +42,9 @@ not loop-specific utilities.
 | Check if value is constant | `ValueAnalysis::tryFoldConstantIndex()` | `ValueAnalysis.h` |
 | Strip casts or view-like memref wrappers | `ValueAnalysis::{stripNumericCasts,stripMemrefViewOps}` | `ValueAnalysis.h` |
 | Compare values or value ranges | `ValueAnalysis::{sameValue,areValuesEquivalent,areValueRangesEquivalent}` | `ValueAnalysis.h` |
+| Strip ARTS block-index select clamps | `stripSelectClamp()` | `dialect/arts/Utils/ValueAnalysisUtils.h` |
+| Detect ARTS block-index stride | `getOffsetStride()` | `dialect/arts/Utils/ValueAnalysisUtils.h` |
+| Extract ARTS block-relative constant offset | `extractConstantOffset()` | `dialect/arts/Utils/ValueAnalysisUtils.h` |
 | Create zero/one index | `createZeroIndex()`, `createOneIndex()` | `Utils.h` |
 | Create arbitrary index constant | `createConstantIndex()` | `Utils.h` |
 | Check dominance with ancestor regions | keep pass-local unless a second owner appears | current ARTS strip-mining helper |

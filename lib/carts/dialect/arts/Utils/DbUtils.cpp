@@ -213,41 +213,6 @@ Value DbUtils::getAccessedMemref(Operation *memOp) {
 }
 
 ///===----------------------------------------------------------------------===///
-/// Datablock Lowering Info Extraction
-///===----------------------------------------------------------------------===///
-
-/// Shared implementation: dispatches on the concrete operation type.
-template <typename OpType>
-DbLoweringInfo DbUtils::extractDbLoweringInfo(OpType op) {
-  DbLoweringInfo info;
-
-  if (auto acqOp = dyn_cast<DbAcquireOp>(op.getOperation())) {
-    info.sizes = getDepSizesFromDb(acqOp.getOperation());
-    info.offsets = getDepOffsetsFromDb(acqOp.getOperation());
-    info.indices.assign(acqOp.getIndices().begin(), acqOp.getIndices().end());
-  } else {
-    info.sizes.assign(op.getSizes().begin(), op.getSizes().end());
-    info.offsets.clear();
-    info.indices.clear();
-  }
-
-  info.isSingleElement = false;
-  if (info.sizes.empty()) {
-    info.isSingleElement = true;
-    return info;
-  }
-  if (info.sizes.size() == 1) {
-    info.isSingleElement = ValueAnalysis::isOneConstant(info.sizes[0]);
-  }
-  return info;
-}
-
-/// Explicit template instantiations for the operation types used in lowering.
-template DbLoweringInfo
-DbUtils::extractDbLoweringInfo<DbAcquireOp>(DbAcquireOp op);
-template DbLoweringInfo DbUtils::extractDbLoweringInfo<DbAllocOp>(DbAllocOp op);
-
-///===----------------------------------------------------------------------===///
 /// Datablock Tracing Utilities
 ///===----------------------------------------------------------------------===///
 

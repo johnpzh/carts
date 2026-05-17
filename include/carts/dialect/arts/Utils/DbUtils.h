@@ -22,16 +22,6 @@
 namespace mlir {
 namespace carts::arts {
 
-/// Information extracted from a datablock operation for lowering.
-/// Consolidates sizes, offsets, indices, and single-element detection into
-/// a single struct returned by extractDbLoweringInfo().
-struct DbLoweringInfo {
-  SmallVector<Value> sizes;
-  SmallVector<Value> offsets;
-  SmallVector<Value> indices;
-  bool isSingleElement = false;
-};
-
 /// Computes the byte size of a DB element type. Memref element types require
 /// all static dimensions; dynamic shapes return 0.
 uint64_t getElementTypeByteSize(Type elementType);
@@ -77,17 +67,6 @@ public:
   /// Trace a GUID value through acquire chains to find the originating
   /// DbAllocOp. Returns nullptr if the GUID does not trace to an allocation.
   static DbAllocOp getAllocOpFromGuid(Value dbGuid);
-
-  ///===----------------------------------------------------------------------===////
-  /// Datablock Lowering Info Extraction
-  ///===----------------------------------------------------------------------===////
-
-  /// Extract lowering info (sizes, offsets, indices, isSingleElement) from
-  /// a datablock operation. Handles DbAcquireOp by extracting dependency
-  /// sizes/offsets/indices; for other ops (e.g. DbAllocOp) falls back to
-  /// op.getSizes() with empty offsets/indices.
-  template <typename OpType>
-  static DbLoweringInfo extractDbLoweringInfo(OpType op);
 
   ///===----------------------------------------------------------------------===////
   /// Datablock Size and Offset Extraction
