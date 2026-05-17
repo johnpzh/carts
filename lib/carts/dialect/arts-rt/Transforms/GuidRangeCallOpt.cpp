@@ -30,6 +30,7 @@
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Types.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
+#include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/dialect/arts-rt/Utils/RuntimeCallUtils.h"
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -84,9 +85,8 @@ struct GuidRangeCallOptPass
     int rewrittenStatic = 0;
     int rewrittenGuarded = 0;
     for (scf::ForOp loop : loops) {
-      auto lowerBound =
-          ValueAnalysis::tryFoldConstantIndex(loop.getLowerBound());
-      auto step = ValueAnalysis::tryFoldConstantIndex(loop.getStep());
+      auto lowerBound = RtDbUtils::tryFoldConstantIndex(loop.getLowerBound());
+      auto step = RtDbUtils::tryFoldConstantIndex(loop.getStep());
       if (!lowerBound || !step || *lowerBound != 0 || *step != 1)
         continue;
 
@@ -102,7 +102,7 @@ struct GuidRangeCallOptPass
 
       for (func::CallOp reserveCall : reserveCalls) {
         auto routeConst =
-            ValueAnalysis::tryFoldConstantIndex(reserveCall.getOperand(1));
+            RtDbUtils::tryFoldConstantIndex(reserveCall.getOperand(1));
         if (!routeConst || *routeConst != 0)
           continue;
 

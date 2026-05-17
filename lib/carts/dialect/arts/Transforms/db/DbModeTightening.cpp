@@ -33,6 +33,7 @@
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
 #include "carts/dialect/arts/Utils/BlockedAccessUtils.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
 #include "carts/utils/Debug.h"
 #include "carts/utils/LoopUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
@@ -75,7 +76,7 @@ static bool isIndexFullCoverage(Value idx, Value dimSize,
   if (!idx || !dimSize)
     return false;
 
-  auto dimConstOpt = ValueAnalysis::tryFoldConstantIndex(
+  auto dimConstOpt = arts::tryFoldConstantIndex(
       ValueAnalysis::stripNumericCasts(dimSize));
   if (dimConstOpt && *dimConstOpt == 1)
     return true;
@@ -83,7 +84,7 @@ static bool isIndexFullCoverage(Value idx, Value dimSize,
   idx = ValueAnalysis::stripNumericCasts(idx);
 
   /// Constant index only covers full range if size == 1.
-  auto idxConstOpt = ValueAnalysis::tryFoldConstantIndex(idx);
+  auto idxConstOpt = arts::tryFoldConstantIndex(idx);
   if (idxConstOpt)
     /// A constant index alone cannot cover a non-unit dimension.
     return false;

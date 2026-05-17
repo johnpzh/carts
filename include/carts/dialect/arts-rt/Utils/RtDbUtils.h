@@ -10,6 +10,7 @@
 
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
+#include <optional>
 
 namespace mlir {
 namespace carts::arts_rt {
@@ -25,6 +26,13 @@ public:
   static Operation *getUnderlyingDb(Value value, unsigned depth = 0);
   static Operation *getUnderlyingDbAlloc(Value value);
   static carts::arts::DbAllocOp getAllocOpFromGuid(Value dbGuid);
+  static Value getUnderlyingValue(Value value);
+  static Operation *getUnderlyingOperation(Value value);
+  static bool isDerivedFromPtr(Value value, Value source);
+
+  static std::optional<int64_t> tryFoldConstantIndex(Value value,
+                                                     unsigned depth = 0);
+  static std::optional<int64_t> getConstantIndexStripped(Value value);
 
   static SmallVector<Value> getSizesFromDb(Operation *dbOp);
   static SmallVector<Value> getSizesFromDb(Value dbPtr);

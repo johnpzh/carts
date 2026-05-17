@@ -45,6 +45,7 @@ namespace mlir::carts::arts_rt {
 #include "carts/utils/Debug.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
+#include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMInterfaces.h"
@@ -287,7 +288,7 @@ findCandidateDataPointers(Value addr,
   for (auto &info : dataPointers) {
     bool derived = false;
     for (Value ptr : info.ptrValues) {
-      if (ValueAnalysis::isDerivedFromPtr(addr, ptr)) {
+      if (RtDbUtils::isDerivedFromPtr(addr, ptr)) {
         derived = true;
         break;
       }

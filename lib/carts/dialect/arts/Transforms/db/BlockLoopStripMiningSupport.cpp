@@ -6,6 +6,7 @@
 
 #include "carts/dialect/arts/Transforms/BlockLoopStripMiningInternal.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
 #include "carts/utils/OperationAttributes.h"
 
 ARTS_DEBUG_SETUP(block_loop_strip_mining);
@@ -35,7 +36,7 @@ void clearGeneratedStripMiningMarks(func::FuncOp func) {
 static std::optional<int64_t> resolveBlockSizeHint(Value value) {
   if (!value)
     return std::nullopt;
-  if (auto folded = ValueAnalysis::getConstantIndexStripped(value))
+  if (auto folded = arts::getConstantIndexStripped(value))
     return folded;
   return DbUtils::extractBlockSizeFromHint(value);
 }
@@ -101,14 +102,14 @@ std::optional<NeighborhoodExprInfo> extractNeighborhoodExprInfo(Value value,
     Value lhs = ValueAnalysis::stripNumericCasts(add.getLhs());
     Value rhs = ValueAnalysis::stripNumericCasts(add.getRhs());
 
-    if (auto lhsConst = ValueAnalysis::tryFoldConstantIndex(lhs)) {
+    if (auto lhsConst = arts::tryFoldConstantIndex(lhs)) {
       auto info = extractNeighborhoodExprInfo(rhs, iv);
       if (!info)
         return std::nullopt;
       info->offsetConst += *lhsConst;
       return info;
     }
-    if (auto rhsConst = ValueAnalysis::tryFoldConstantIndex(rhs)) {
+    if (auto rhsConst = arts::tryFoldConstantIndex(rhs)) {
       auto info = extractNeighborhoodExprInfo(lhs, iv);
       if (!info)
         return std::nullopt;
@@ -135,7 +136,7 @@ std::optional<NeighborhoodExprInfo> extractNeighborhoodExprInfo(Value value,
     Value lhs = ValueAnalysis::stripNumericCasts(sub.getLhs());
     Value rhs = ValueAnalysis::stripNumericCasts(sub.getRhs());
 
-    if (auto rhsConst = ValueAnalysis::tryFoldConstantIndex(rhs)) {
+    if (auto rhsConst = arts::tryFoldConstantIndex(rhs)) {
       auto info = extractNeighborhoodExprInfo(lhs, iv);
       if (!info)
         return std::nullopt;
@@ -170,7 +171,7 @@ matchNeighborhoodPattern(Value lhs, Value rhs,
   if (ValueAnalysis::dependsOn(normalizedRhs, iv))
     return std::nullopt;
 
-  auto rhsConst = ValueAnalysis::tryFoldConstantIndex(normalizedRhs);
+  auto rhsConst = arts::tryFoldConstantIndex(normalizedRhs);
   if (rhsConst && *rhsConst <= 1)
     return std::nullopt;
   if (!rhsConst && !ValueAnalysis::isProvablyNonZero(normalizedRhs))
@@ -287,7 +288,7 @@ bool recordRemPattern(Value lhs, Value rhs, Value remResult, Value iv,
   Value normalizedRhs = ValueAnalysis::stripNumericCasts(rhs);
   if (ValueAnalysis::dependsOn(normalizedRhs, iv))
     return false;
-  auto rhsConst = ValueAnalysis::tryFoldConstantIndex(normalizedRhs);
+  auto rhsConst = arts::tryFoldConstantIndex(normalizedRhs);
   if (rhsConst && *rhsConst <= 1)
     return false;
   if (!info.blockSizeVal) {
@@ -345,7 +346,7 @@ bool isAlignedOffset(Value offset, Value blockSize,
     return true;
   Value off = ValueAnalysis::stripClampOne(offset);
   Value bs = ValueAnalysis::stripClampOne(blockSize);
-  if (auto offConst = ValueAnalysis::tryFoldConstantIndex(off)) {
+  if (auto offConst = arts::tryFoldConstantIndex(off)) {
     if (*offConst == 0)
       return true;
     if (blockSizeConst && *blockSizeConst > 0)
@@ -710,7 +711,7 @@ analyzeNeighborhoodLoop(scf::ForOp loop, DominanceInfo &domInfo) {
   Value iv = loop.getInductionVar();
   SmallVector<NeighborhoodLoopInfo, 4> candidates;
 
-  auto step = ValueAnalysis::getConstantIndexStripped(loop.getStep());
+  auto step = arts::getConstantIndexStripped(loop.getStep());
   if (!step || *step != 1) {
     ARTS_DEBUG("Neighborhood strip-mining skipped: non-unit step");
     return std::nullopt;
@@ -793,11 +794,11 @@ analyzeSingleDimBlockLoop(scf::ForOp loop, DominanceInfo &domInfo) {
   Value loopLowerBound = loop.getLowerBound();
 
   /// Require constant step = 1; allow dynamic upper bound.
-  auto step = ValueAnalysis::getConstantIndexStripped(loop.getStep());
+  auto step = arts::getConstantIndexStripped(loop.getStep());
   if (!step || *step != 1)
     return std::nullopt;
-  info.lowerBoundConst = ValueAnalysis::tryFoldConstantIndex(loopLowerBound);
-  auto ub = ValueAnalysis::getConstantIndexStripped(loop.getUpperBound());
+  info.lowerBoundConst = arts::tryFoldConstantIndex(loopLowerBound);
+  auto ub = arts::getConstantIndexStripped(loop.getUpperBound());
   if (ub && info.lowerBoundConst && *ub <= *info.lowerBoundConst)
     return std::nullopt;
 
@@ -819,7 +820,7 @@ analyzeSingleDimBlockLoop(scf::ForOp loop, DominanceInfo &domInfo) {
       Value rhs = ValueAnalysis::stripNumericCasts(div.getRhs());
       if (ValueAnalysis::dependsOn(rhs, iv))
         return;
-      auto rhsConst = ValueAnalysis::tryFoldConstantIndex(rhs);
+      auto rhsConst = arts::tryFoldConstantIndex(rhs);
       if (rhsConst && *rhsConst <= 1)
         return;
       if (!info.blockSizeVal) {
@@ -878,7 +879,7 @@ analyzeSingleDimBlockLoop(scf::ForOp loop, DominanceInfo &domInfo) {
       (*info.lowerBoundConst % *info.blockSizeConst) != 0)
     return std::nullopt;
   if (info.offsetVal) {
-    auto offsetConst = ValueAnalysis::tryFoldConstantIndex(info.offsetVal);
+    auto offsetConst = arts::tryFoldConstantIndex(info.offsetVal);
     if (info.lowerBoundConst && offsetConst && info.blockSizeConst) {
       int64_t effectiveLower = *info.lowerBoundConst + *offsetConst;
       if ((effectiveLower % *info.blockSizeConst) != 0)
@@ -947,7 +948,7 @@ bool stripMineNeighborhoodLoopImpl(scf::ForOp loop,
   Location loc = loop.getLoc();
   OpBuilder builder(loop);
 
-  auto step = ValueAnalysis::getConstantIndexStripped(loop.getStep());
+  auto step = arts::getConstantIndexStripped(loop.getStep());
   if (!step || *step != 1)
     return false;
 
@@ -1211,7 +1212,7 @@ bool stripMineSingleDimBlockLoop(scf::ForOp loop,
                                  const SingleDimBlockLoopInfo &info) {
   Location loc = loop.getLoc();
   OpBuilder builder(loop);
-  auto step = ValueAnalysis::getConstantIndexStripped(loop.getStep());
+  auto step = arts::getConstantIndexStripped(loop.getStep());
   if (!step || *step != 1)
     return false;
 
@@ -1241,7 +1242,7 @@ bool stripMineSingleDimBlockLoop(scf::ForOp loop,
   Value bsMinusOne = arith::SubIOp::create(builder, loc, bsVal, one);
   Value tripPlus = arith::AddIOp::create(builder, loc, tripCount, bsMinusOne);
   Value numBlocksVal = arith::DivUIOp::create(builder, loc, tripPlus, bsVal);
-  auto ub = ValueAnalysis::getConstantIndexStripped(loop.getUpperBound());
+  auto ub = arts::getConstantIndexStripped(loop.getUpperBound());
   if (info.blockSizeConst && info.lowerBoundConst && ub) {
     int64_t tripCountConst = *ub - *info.lowerBoundConst;
     if (tripCountConst <= *info.blockSizeConst)
@@ -1309,7 +1310,7 @@ bool stripMineSingleDimBlockLoop(scf::ForOp loop,
       offsetDiv =
           ValueAnalysis::ensureIndexType(info.offsetDivHint, builder, loc);
     } else if (auto offConst =
-                   ValueAnalysis::tryFoldConstantIndex(info.offsetVal)) {
+                   arts::tryFoldConstantIndex(info.offsetVal)) {
       if (info.blockSizeConst) {
         int64_t offDivConst = *offConst / *info.blockSizeConst;
         offsetDiv = ::mlir::carts::createConstantIndex(builder, loc, offDivConst);
@@ -1324,7 +1325,7 @@ bool stripMineSingleDimBlockLoop(scf::ForOp loop,
         arith::AddIOp::create(builder, loc, effectiveLowerDiv, offsetDiv);
   }
   auto effectiveLowerDivConst =
-      ValueAnalysis::tryFoldConstantIndex(effectiveLowerDiv);
+      arts::tryFoldConstantIndex(effectiveLowerDiv);
   if (!effectiveLowerDivConst || *effectiveLowerDivConst != 0)
     blockIdx = arith::AddIOp::create(builder, loc, blockIdx, effectiveLowerDiv);
   for (auto div : info.divOps)

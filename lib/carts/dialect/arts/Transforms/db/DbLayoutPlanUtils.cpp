@@ -4,6 +4,7 @@
 
 #include "carts/dialect/arts/Transforms/db/DbLayoutPlanUtils.h"
 
+#include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -93,7 +94,7 @@ mlir::carts::arts::resolvePhysicalDbLayoutPlan(ArrayAttr ownerDimsAttr,
     }
     if (!blockSize)
       return failure();
-    auto folded = ValueAnalysis::tryFoldConstantIndex(blockSize);
+    auto folded = arts::tryFoldConstantIndex(blockSize);
     if (folded && *folded <= 0)
       return failure();
     plan.blockSizes.push_back(blockSize);

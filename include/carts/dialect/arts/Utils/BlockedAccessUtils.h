@@ -10,6 +10,7 @@
 #define ARTS_UTILS_BLOCKEDACCESSUTILS_H
 
 #include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -21,7 +22,7 @@ namespace carts::arts {
 namespace detail {
 
 inline std::optional<bool> tryFoldBool(Value value) {
-  auto folded = ValueAnalysis::tryFoldConstantIndex(value);
+  auto folded = tryFoldConstantIndex(value);
   if (!folded)
     return std::nullopt;
   return *folded != 0;
@@ -93,7 +94,7 @@ inline bool matchesBasePlusBlockSpan(Value candidate, Value base,
   if (isAddOf(candidate, base, blockSize))
     return true;
 
-  auto blockSizeConst = ValueAnalysis::tryFoldConstantIndex(blockSize);
+  auto blockSizeConst = tryFoldConstantIndex(blockSize);
   if (!blockSizeConst)
     return false;
 
@@ -169,7 +170,7 @@ inline bool isKnownNonNegative(Value value, unsigned depth = 0) {
     return false;
   value = ValueAnalysis::stripNumericCasts(value);
 
-  if (auto folded = ValueAnalysis::tryFoldConstantIndex(value))
+  if (auto folded = tryFoldConstantIndex(value))
     return *folded >= 0;
 
   if (auto barg = dyn_cast<BlockArgument>(value)) {
@@ -193,9 +194,9 @@ inline bool isKnownNonNegative(Value value, unsigned depth = 0) {
   if (auto mulOp = value.getDefiningOp<arith::MulIOp>()) {
     Value lhs = ValueAnalysis::stripNumericCasts(mulOp.getLhs());
     Value rhs = ValueAnalysis::stripNumericCasts(mulOp.getRhs());
-    if (auto lhsConst = ValueAnalysis::tryFoldConstantIndex(lhs))
+    if (auto lhsConst = tryFoldConstantIndex(lhs))
       return *lhsConst >= 0 && isKnownNonNegative(rhs, depth + 1);
-    if (auto rhsConst = ValueAnalysis::tryFoldConstantIndex(rhs))
+    if (auto rhsConst = tryFoldConstantIndex(rhs))
       return *rhsConst >= 0 && isKnownNonNegative(lhs, depth + 1);
     return isKnownNonNegative(lhs, depth + 1) &&
            isKnownNonNegative(rhs, depth + 1);
@@ -246,7 +247,7 @@ inline bool isKnownNonPositive(Value value, unsigned depth = 0) {
     return false;
   value = ValueAnalysis::stripNumericCasts(value);
 
-  if (auto folded = ValueAnalysis::tryFoldConstantIndex(value))
+  if (auto folded = tryFoldConstantIndex(value))
     return *folded <= 0;
 
   if (auto subOp = value.getDefiningOp<arith::SubIOp>())
@@ -276,8 +277,8 @@ inline bool isValueBoundedByBlockSpan(Value value, Value blockSize,
   if (ValueAnalysis::sameValue(value, blockSize))
     return true;
 
-  auto valueConst = ValueAnalysis::tryFoldConstantIndex(value);
-  auto blockConst = ValueAnalysis::tryFoldConstantIndex(blockSize);
+  auto valueConst = tryFoldConstantIndex(value);
+  auto blockConst = tryFoldConstantIndex(blockSize);
   if (valueConst && blockConst)
     return *valueConst <= *blockConst;
 
@@ -315,8 +316,8 @@ inline bool isValueBoundedByBlockSpan(Value value, Value blockSize,
   if (auto mulOp = value.getDefiningOp<arith::MulIOp>()) {
     Value lhs = ValueAnalysis::stripClampOne(mulOp.getLhs());
     Value rhs = ValueAnalysis::stripClampOne(mulOp.getRhs());
-    auto lhsConst = ValueAnalysis::tryFoldConstantIndex(lhs);
-    auto rhsConst = ValueAnalysis::tryFoldConstantIndex(rhs);
+    auto lhsConst = tryFoldConstantIndex(lhs);
+    auto rhsConst = tryFoldConstantIndex(rhs);
     if (ValueAnalysis::sameValue(lhs, blockSize) && rhsConst)
       return *rhsConst >= 0 && *rhsConst <= 1;
     if (ValueAnalysis::sameValue(rhs, blockSize) && lhsConst)

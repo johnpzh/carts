@@ -5,6 +5,7 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -299,7 +300,7 @@ Operation *DbUtils::getUnderlyingDb(Value v, unsigned depth) {
   if (Operation *rootAlloc = resolveRootAllocFromAttr(v))
     return rootAlloc;
 
-  if (Operation *root = ValueAnalysis::getUnderlyingOperation(v))
+  if (Operation *root = arts::getUnderlyingOperation(v))
     if (isa<DbAcquireOp, DbAllocOp>(root))
       return root;
 
@@ -813,13 +814,13 @@ std::optional<int64_t> arts::DbUtils::extractBlockSizeFromHint(Value sizeHint,
     return std::nullopt;
 
   /// Case 1: Direct constant.
-  if (auto folded = ValueAnalysis::tryFoldConstantIndex(sizeHint))
+  if (auto folded = arts::tryFoldConstantIndex(sizeHint))
     return folded;
 
   /// Case 2/3: minui/minsi pattern — return the larger constant (nominal size).
   auto handleMinOp = [&](Value lhs, Value rhs) -> std::optional<int64_t> {
-    auto lhsFolded = ValueAnalysis::tryFoldConstantIndex(lhs);
-    auto rhsFolded = ValueAnalysis::tryFoldConstantIndex(rhs);
+    auto lhsFolded = arts::tryFoldConstantIndex(lhs);
+    auto rhsFolded = arts::tryFoldConstantIndex(rhs);
 
     if (lhsFolded && rhsFolded)
       return std::max(*lhsFolded, *rhsFolded);
@@ -851,8 +852,8 @@ std::optional<int64_t> arts::DbUtils::extractBlockSizeFromHint(Value sizeHint,
   /// Case 4: addi pattern — stencil halo; extract baseBlockSize from
   /// addi(baseBlockSize, haloAdjustment) when halo is a small constant.
   if (auto addOp = sizeHint.getDefiningOp<arith::AddIOp>()) {
-    auto lhsFolded = ValueAnalysis::tryFoldConstantIndex(addOp.getLhs());
-    auto rhsFolded = ValueAnalysis::tryFoldConstantIndex(addOp.getRhs());
+    auto lhsFolded = arts::tryFoldConstantIndex(addOp.getLhs());
+    auto rhsFolded = arts::tryFoldConstantIndex(addOp.getRhs());
 
     /// If one operand is a small constant (halo), recurse on the other.
     if (rhsFolded && std::abs(*rhsFolded) <= 16) {
@@ -877,7 +878,7 @@ std::optional<int64_t> arts::DbUtils::extractBlockSizeFromHint(Value sizeHint,
   /// block span by subtracting a small halo width from an expanded slice.
   /// Keep extracting the nominal block size from the minuend.
   if (auto subOp = sizeHint.getDefiningOp<arith::SubIOp>()) {
-    auto rhsFolded = ValueAnalysis::tryFoldConstantIndex(subOp.getRhs());
+    auto rhsFolded = arts::tryFoldConstantIndex(subOp.getRhs());
     if (rhsFolded && std::abs(*rhsFolded) <= 16)
       return DbUtils::extractBlockSizeFromHint(subOp.getLhs(), depth + 1);
   }
@@ -885,8 +886,8 @@ std::optional<int64_t> arts::DbUtils::extractBlockSizeFromHint(Value sizeHint,
   /// Case 5: maxui pattern — clamp minimum; return larger constant as upper
   /// bound.
   if (auto maxOp = sizeHint.getDefiningOp<arith::MaxUIOp>()) {
-    auto lhsFolded = ValueAnalysis::tryFoldConstantIndex(maxOp.getLhs());
-    auto rhsFolded = ValueAnalysis::tryFoldConstantIndex(maxOp.getRhs());
+    auto lhsFolded = arts::tryFoldConstantIndex(maxOp.getLhs());
+    auto rhsFolded = arts::tryFoldConstantIndex(maxOp.getRhs());
 
     if (lhsFolded && rhsFolded)
       return std::max(*lhsFolded, *rhsFolded);

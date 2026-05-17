@@ -12,8 +12,9 @@
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
+#include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
+#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Analysis/DataFlow/DeadCodeAnalysis.h"
@@ -740,7 +741,7 @@ ArtsMode DbAnalysis::classifyMemrefUserAccessMode(Operation *op,
   auto safeGetMemrefUnderlying = [&](Value v) -> Operation * {
     if (!v || !isa<BaseMemRefType>(v.getType()))
       return nullptr;
-    return ValueAnalysis::getUnderlyingOperation(v);
+    return arts::getUnderlyingOperation(v);
   };
 
   if (auto load = dyn_cast<memref::LoadOp>(op)) {
@@ -945,8 +946,8 @@ bool DbAnalysis::isSameMemoryObject(Value lhsMemref, Value rhsMemref) {
   if (lhsRoot && rhsRoot)
     return lhsRoot == rhsRoot;
 
-  lhsRoot = ValueAnalysis::getUnderlyingOperation(lhsMemref);
-  rhsRoot = ValueAnalysis::getUnderlyingOperation(rhsMemref);
+  lhsRoot = arts::getUnderlyingOperation(lhsMemref);
+  rhsRoot = arts::getUnderlyingOperation(rhsMemref);
   if (lhsRoot && rhsRoot)
     return lhsRoot == rhsRoot;
 

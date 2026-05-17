@@ -1460,7 +1460,7 @@ struct DbFreePattern : public ArtsRtToLLVMPattern<DbFreeOp> {
       }
     }
 
-    Operation *rootOp = ValueAnalysis::getUnderlyingOperation(source);
+    Operation *rootOp = RtDbUtils::getUnderlyingOperation(source);
     if (!isa_and_nonnull<memref::GetGlobalOp>(rootOp))
       AC->create<memref::DeallocOp>(op.getLoc(), source);
     rewriter.eraseOp(op);

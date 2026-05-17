@@ -5,6 +5,7 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Transforms/DataPtrHoistingInternal.h"
+#include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 
 #include "carts/utils/Debug.h"
 ARTS_DEBUG_SETUP(data_ptr_hoisting);
@@ -68,8 +69,8 @@ bool matchGreaterThanConstIcmp(Value cond, Value value, int64_t threshold) {
 
   Value lhs = ValueAnalysis::stripNumericCasts(cmp.getLhs());
   Value rhs = ValueAnalysis::stripNumericCasts(cmp.getRhs());
-  auto rhsConst = ValueAnalysis::tryFoldConstantIndex(rhs);
-  auto lhsConst = ValueAnalysis::tryFoldConstantIndex(lhs);
+  auto rhsConst = RtDbUtils::tryFoldConstantIndex(rhs);
+  auto lhsConst = RtDbUtils::tryFoldConstantIndex(lhs);
   Value normalizedValue = ValueAnalysis::stripNumericCasts(value);
 
   switch (cmp.getPredicate()) {
@@ -100,7 +101,7 @@ bool matchGreaterThanConstIcmp(Value cond, Value value, int64_t threshold) {
 
 bool hasDominatingBlockSizeGuard(scf::ForOp loop, Value blockSize,
                                  int64_t threshold) {
-  if (auto blockSizeConst = ValueAnalysis::tryFoldConstantIndex(
+  if (auto blockSizeConst = RtDbUtils::tryFoldConstantIndex(
           ValueAnalysis::stripNumericCasts(blockSize)))
     return *blockSizeConst > threshold;
 
@@ -122,11 +123,11 @@ bool hasDominatingBlockSizeGuard(scf::ForOp loop, Value blockSize,
 }
 
 bool getSingleHopOffsetThreshold(scf::ForOp loop, int64_t &threshold) {
-  auto lb = ValueAnalysis::tryFoldConstantIndex(
+  auto lb = RtDbUtils::tryFoldConstantIndex(
       ValueAnalysis::stripNumericCasts(loop.getLowerBound()));
-  auto ub = ValueAnalysis::tryFoldConstantIndex(
+  auto ub = RtDbUtils::tryFoldConstantIndex(
       ValueAnalysis::stripNumericCasts(loop.getUpperBound()));
-  auto step = ValueAnalysis::tryFoldConstantIndex(
+  auto step = RtDbUtils::tryFoldConstantIndex(
       ValueAnalysis::stripNumericCasts(loop.getStep()));
   if (!lb || !ub || !step || *step != 1 || *ub <= *lb)
     return false;
@@ -1196,7 +1197,7 @@ bool versionLoopWindowAccesses(scf::ForOp loop, int &rewrittenAccesses) {
   if (!loop || loop.getNumResults() != 0 || !isInnermostLoop(loop))
     return false;
 
-  auto stepConst = ValueAnalysis::tryFoldConstantIndex(loop.getStep());
+  auto stepConst = RtDbUtils::tryFoldConstantIndex(loop.getStep());
   if (!stepConst || *stepConst != 1) {
     ARTS_DEBUG("versionLoopWindowAccesses: skip loop "
                << loop << " due to non-unit step");

@@ -6,6 +6,7 @@
 
 #include "carts/dialect/arts/Analysis/AccessPatternAnalysis.h"
 #include "carts/Dialect.h"
+#include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -51,9 +52,9 @@ static std::optional<RelativeOffsetRange> getSmallLoopOffsetRange(Value value) {
 
   auto buildRange = [&](Value lbVal, Value ubVal,
                         Value stepVal) -> std::optional<RelativeOffsetRange> {
-    auto lb = ValueAnalysis::tryFoldConstantIndex(lbVal);
-    auto ub = ValueAnalysis::tryFoldConstantIndex(ubVal);
-    auto step = ValueAnalysis::tryFoldConstantIndex(stepVal);
+    auto lb = arts::tryFoldConstantIndex(lbVal);
+    auto ub = arts::tryFoldConstantIndex(ubVal);
+    auto step = arts::tryFoldConstantIndex(stepVal);
     if (!lb || !ub || !step || *step == 0)
       return std::nullopt;
 
@@ -118,7 +119,7 @@ extractRelativeOffsetRange(Value value, Value loopIV, Value blockBase,
       matchesBasePattern(value, loopIV, blockBase))
     return RelativeOffsetRange{0, 0, /*hasBase=*/true};
 
-  if (auto constant = ValueAnalysis::tryFoldConstantIndex(value))
+  if (auto constant = arts::tryFoldConstantIndex(value))
     return RelativeOffsetRange{*constant, *constant, /*hasBase=*/false};
 
   if (auto loopRange = getSmallLoopOffsetRange(value))
@@ -159,8 +160,8 @@ extractRelativeOffsetRange(Value value, Value loopIV, Value blockBase,
   }
 
   if (auto mul = value.getDefiningOp<arith::MulIOp>()) {
-    auto lhsConst = ValueAnalysis::tryFoldConstantIndex(mul.getLhs());
-    auto rhsConst = ValueAnalysis::tryFoldConstantIndex(mul.getRhs());
+    auto lhsConst = arts::tryFoldConstantIndex(mul.getLhs());
+    auto rhsConst = arts::tryFoldConstantIndex(mul.getRhs());
     if (lhsConst) {
       auto rhs = extractRelativeOffsetRange(mul.getRhs(), loopIV, blockBase,
                                             depth + 1);

@@ -43,6 +43,7 @@
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Transforms/db/DbLayoutPlanUtils.h"
 #include "carts/dialect/arts/Utils/RuntimeOpUtils.h"
+#include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_CREATEDBS
 #include "carts/dialect/arts/Utils/DbUtils.h"
@@ -327,8 +328,7 @@ void CreateDbsPass::reconcileExternalDepAccessModes() {
     SetVector<Value> &externalDeps = edtEntry.second;
 
     for (Value externalDep : externalDeps) {
-      Operation *underlyingOp =
-          ValueAnalysis::getUnderlyingOperation(externalDep);
+      Operation *underlyingOp = arts::getUnderlyingOperation(externalDep);
       if (!underlyingOp)
         continue;
       if (isa<DbAllocOp>(underlyingOp))
@@ -459,8 +459,7 @@ Operation *CreateDbsPass::findPhysicalLayoutPlanSource(Operation *alloc) {
         return WalkResult::advance();
       if (!access->isWrite())
         return WalkResult::advance();
-      Operation *underlying =
-          ValueAnalysis::getUnderlyingOperation(access->memref);
+      Operation *underlying = arts::getUnderlyingOperation(access->memref);
       if (underlying == alloc) {
         found = true;
         return WalkResult::interrupt();
@@ -539,12 +538,10 @@ void CreateDbsPass::collectMemrefs() {
           continue;
 
         /// Get the underlying value of the memory reference
-        Operation *underlyingOp =
-            ValueAnalysis::getUnderlyingOperation(operand);
+        Operation *underlyingOp = arts::getUnderlyingOperation(operand);
         if (!underlyingOp) {
           if (auto load = operand.getDefiningOp<memref::LoadOp>())
-            underlyingOp =
-                ValueAnalysis::getUnderlyingOperation(load.getMemref());
+            underlyingOp = arts::getUnderlyingOperation(load.getMemref());
         }
         if (!underlyingOp) {
           op->emitError("cannot trace memref operand to its underlying "
@@ -893,11 +890,10 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
   /// For each external value, create acquire and release operations
   for (Value externalDep : externalDeps) {
     /// Locate the underlying operation
-    Operation *underlyingOp =
-        ValueAnalysis::getUnderlyingOperation(externalDep);
+    Operation *underlyingOp = arts::getUnderlyingOperation(externalDep);
     if (!underlyingOp)
       if (auto load = externalDep.getDefiningOp<memref::LoadOp>())
-        underlyingOp = ValueAnalysis::getUnderlyingOperation(load.getMemref());
+        underlyingOp = arts::getUnderlyingOperation(load.getMemref());
     if (!underlyingOp) {
       if (auto *defOp = externalDep.getDefiningOp())
         defOp->emitError(

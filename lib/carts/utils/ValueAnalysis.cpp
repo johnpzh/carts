@@ -5,9 +5,6 @@
 ///==========================================================================///
 
 #include "carts/utils/ValueAnalysis.h"
-#include "carts/Dialect.h"
-#include "carts/dialect/arts-rt/IR/RtDialect.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -143,8 +140,16 @@ static std::optional<int64_t> tryFoldTypeSizeBytes(polygeist::TypeSizeOp tsOp) {
   return std::nullopt;
 }
 
+using ExtraIndexFolder =
+    llvm::function_ref<std::optional<int64_t>(Value, unsigned)>;
+
+static std::optional<int64_t>
+tryFoldConstantIndexWithImpl(Value v, unsigned depth,
+                             ExtraIndexFolder extraFolder);
+
 static std::optional<int64_t> tryFoldScalarMemrefLoad(memref::LoadOp load,
-                                                      unsigned depth) {
+                                                      unsigned depth,
+                                                      ExtraIndexFolder folder) {
   if (!load || !load.getIndices().empty() || depth > 32)
     return std::nullopt;
 
@@ -166,16 +171,17 @@ static std::optional<int64_t> tryFoldScalarMemrefLoad(memref::LoadOp load,
     if (storedMemref != memref)
       continue;
 
-    return ValueAnalysis::tryFoldConstantIndex(store.getValue(), depth + 1);
+    return tryFoldConstantIndexWithImpl(store.getValue(), depth + 1, folder);
   }
 
   return std::nullopt;
 }
 
 static std::optional<int64_t> tryFoldCmpResult(arith::CmpIOp cmp,
-                                               unsigned depth) {
-  auto lhs = ValueAnalysis::tryFoldConstantIndex(cmp.getLhs(), depth + 1);
-  auto rhs = ValueAnalysis::tryFoldConstantIndex(cmp.getRhs(), depth + 1);
+                                               unsigned depth,
+                                               ExtraIndexFolder folder) {
+  auto lhs = tryFoldConstantIndexWithImpl(cmp.getLhs(), depth + 1, folder);
+  auto rhs = tryFoldConstantIndexWithImpl(cmp.getRhs(), depth + 1, folder);
 
   auto evalCmp = [&](int64_t lhsVal, int64_t rhsVal) -> int64_t {
     switch (cmp.getPredicate()) {
@@ -225,7 +231,7 @@ static std::optional<int64_t> tryFoldCmpResult(arith::CmpIOp cmp,
     }
   }
 
-  if (auto rhsConst = ValueAnalysis::tryFoldConstantIndex(rhsValue, depth + 1);
+  if (auto rhsConst = tryFoldConstantIndexWithImpl(rhsValue, depth + 1, folder);
       rhsConst && *rhsConst == 0) {
     switch (cmp.getPredicate()) {
     case arith::CmpIPredicate::ult:
@@ -237,7 +243,7 @@ static std::optional<int64_t> tryFoldCmpResult(arith::CmpIOp cmp,
     }
   }
 
-  if (auto lhsConst = ValueAnalysis::tryFoldConstantIndex(lhsValue, depth + 1);
+  if (auto lhsConst = tryFoldConstantIndexWithImpl(lhsValue, depth + 1, folder);
       lhsConst && *lhsConst == 0) {
     switch (cmp.getPredicate()) {
     case arith::CmpIPredicate::ugt:
@@ -363,7 +369,7 @@ bool ValueAnalysis::getConstantIndex(Value v, int64_t &out) {
 
 std::optional<int64_t> ValueAnalysis::getConstantValue(Value v) {
   int64_t val;
-  if (getConstantIndex(v, val))
+  if (ValueAnalysis::getConstantIndex(v, val))
     return val;
   return std::nullopt;
 }
@@ -383,8 +389,9 @@ std::optional<int64_t> ValueAnalysis::getConstantIndex(OpFoldResult ofr) {
   return std::nullopt;
 }
 
-std::optional<int64_t> ValueAnalysis::tryFoldConstantIndex(Value v,
-                                                           unsigned depth) {
+static std::optional<int64_t>
+tryFoldConstantIndexWithImpl(Value v, unsigned depth,
+                             ExtraIndexFolder extraFolder) {
   /// Work-distribution and DB-shape calculations routinely build longer
   /// arithmetic chains (nested min/max/div/add trees) before canonicalization.
   /// Keep this bounded, but allow enough depth to recover compile-time
@@ -393,73 +400,70 @@ std::optional<int64_t> ValueAnalysis::tryFoldConstantIndex(Value v,
     return std::nullopt;
 
   int64_t val;
-  if (getConstantIndex(v, val))
+  if (ValueAnalysis::getConstantIndex(v, val))
     return val;
+
+  if (auto folded = extraFolder(v, depth))
+    return folded;
 
   if (auto typeSizeOp = v.getDefiningOp<polygeist::TypeSizeOp>())
     return tryFoldTypeSizeBytes(typeSizeOp);
 
   if (auto load = v.getDefiningOp<memref::LoadOp>())
-    if (auto folded = tryFoldScalarMemrefLoad(load, depth + 1))
+    if (auto folded = tryFoldScalarMemrefLoad(load, depth + 1, extraFolder))
       return folded;
 
-  if (auto query = v.getDefiningOp<arts::RuntimeQueryOp>()) {
-    ModuleOp module = query->getParentOfType<ModuleOp>();
-    if (!module)
-      return std::nullopt;
-    switch (query.getKind()) {
-    case arts::RuntimeQueryKind::totalWorkers:
-      return arts::getRuntimeTotalWorkers(module);
-    case arts::RuntimeQueryKind::totalNodes:
-      return arts::getRuntimeTotalNodes(module);
-    default:
-      return std::nullopt;
-    }
-  }
-
   if (auto cast = v.getDefiningOp<arith::IndexCastOp>()) {
-    return tryFoldConstantIndex(cast.getIn(), depth + 1);
+    return tryFoldConstantIndexWithImpl(cast.getIn(), depth + 1, extraFolder);
   }
   if (auto cast = v.getDefiningOp<arith::IndexCastUIOp>()) {
-    return tryFoldConstantIndex(cast.getIn(), depth + 1);
+    return tryFoldConstantIndexWithImpl(cast.getIn(), depth + 1, extraFolder);
   }
   if (auto ext = v.getDefiningOp<arith::ExtSIOp>()) {
-    return tryFoldConstantIndex(ext.getIn(), depth + 1);
+    return tryFoldConstantIndexWithImpl(ext.getIn(), depth + 1, extraFolder);
   }
   if (auto ext = v.getDefiningOp<arith::ExtUIOp>()) {
-    return tryFoldConstantIndex(ext.getIn(), depth + 1);
+    return tryFoldConstantIndexWithImpl(ext.getIn(), depth + 1, extraFolder);
   }
   if (auto trunc = v.getDefiningOp<arith::TruncIOp>()) {
-    return tryFoldConstantIndex(trunc.getIn(), depth + 1);
+    return tryFoldConstantIndexWithImpl(trunc.getIn(), depth + 1, extraFolder);
   }
 
   if (auto add = v.getDefiningOp<arith::AddIOp>()) {
-    auto lhs = tryFoldConstantIndex(add.getLhs(), depth + 1);
-    auto rhs = tryFoldConstantIndex(add.getRhs(), depth + 1);
+    auto lhs = tryFoldConstantIndexWithImpl(add.getLhs(), depth + 1,
+                                            extraFolder);
+    auto rhs = tryFoldConstantIndexWithImpl(add.getRhs(), depth + 1,
+                                            extraFolder);
     if (lhs && rhs)
       return *lhs + *rhs;
     return std::nullopt;
   }
 
   if (auto sub = v.getDefiningOp<arith::SubIOp>()) {
-    auto lhs = tryFoldConstantIndex(sub.getLhs(), depth + 1);
-    auto rhs = tryFoldConstantIndex(sub.getRhs(), depth + 1);
+    auto lhs = tryFoldConstantIndexWithImpl(sub.getLhs(), depth + 1,
+                                            extraFolder);
+    auto rhs = tryFoldConstantIndexWithImpl(sub.getRhs(), depth + 1,
+                                            extraFolder);
     if (lhs && rhs)
       return *lhs - *rhs;
     return std::nullopt;
   }
 
   if (auto mul = v.getDefiningOp<arith::MulIOp>()) {
-    auto lhs = tryFoldConstantIndex(mul.getLhs(), depth + 1);
-    auto rhs = tryFoldConstantIndex(mul.getRhs(), depth + 1);
+    auto lhs = tryFoldConstantIndexWithImpl(mul.getLhs(), depth + 1,
+                                            extraFolder);
+    auto rhs = tryFoldConstantIndexWithImpl(mul.getRhs(), depth + 1,
+                                            extraFolder);
     if (lhs && rhs)
       return *lhs * *rhs;
     return std::nullopt;
   }
 
   if (auto div = v.getDefiningOp<arith::DivUIOp>()) {
-    auto lhs = tryFoldConstantIndex(div.getLhs(), depth + 1);
-    auto rhs = tryFoldConstantIndex(div.getRhs(), depth + 1);
+    auto lhs = tryFoldConstantIndexWithImpl(div.getLhs(), depth + 1,
+                                            extraFolder);
+    auto rhs = tryFoldConstantIndexWithImpl(div.getRhs(), depth + 1,
+                                            extraFolder);
     if (lhs && rhs && *rhs != 0) {
       uint64_t ulhs = static_cast<uint64_t>(*lhs);
       uint64_t urhs = static_cast<uint64_t>(*rhs);
@@ -469,16 +473,20 @@ std::optional<int64_t> ValueAnalysis::tryFoldConstantIndex(Value v,
   }
 
   if (auto div = v.getDefiningOp<arith::DivSIOp>()) {
-    auto lhs = tryFoldConstantIndex(div.getLhs(), depth + 1);
-    auto rhs = tryFoldConstantIndex(div.getRhs(), depth + 1);
+    auto lhs = tryFoldConstantIndexWithImpl(div.getLhs(), depth + 1,
+                                            extraFolder);
+    auto rhs = tryFoldConstantIndexWithImpl(div.getRhs(), depth + 1,
+                                            extraFolder);
     if (lhs && rhs && *rhs != 0)
       return *lhs / *rhs;
     return std::nullopt;
   }
 
   if (auto max = v.getDefiningOp<arith::MaxUIOp>()) {
-    auto lhs = tryFoldConstantIndex(max.getLhs(), depth + 1);
-    auto rhs = tryFoldConstantIndex(max.getRhs(), depth + 1);
+    auto lhs = tryFoldConstantIndexWithImpl(max.getLhs(), depth + 1,
+                                            extraFolder);
+    auto rhs = tryFoldConstantIndexWithImpl(max.getRhs(), depth + 1,
+                                            extraFolder);
     if (lhs && rhs)
       return std::max<uint64_t>(static_cast<uint64_t>(*lhs),
                                 static_cast<uint64_t>(*rhs));
@@ -486,8 +494,10 @@ std::optional<int64_t> ValueAnalysis::tryFoldConstantIndex(Value v,
   }
 
   if (auto min = v.getDefiningOp<arith::MinUIOp>()) {
-    auto lhs = tryFoldConstantIndex(min.getLhs(), depth + 1);
-    auto rhs = tryFoldConstantIndex(min.getRhs(), depth + 1);
+    auto lhs = tryFoldConstantIndexWithImpl(min.getLhs(), depth + 1,
+                                            extraFolder);
+    auto rhs = tryFoldConstantIndexWithImpl(min.getRhs(), depth + 1,
+                                            extraFolder);
     if (lhs && rhs)
       return std::min<uint64_t>(static_cast<uint64_t>(*lhs),
                                 static_cast<uint64_t>(*rhs));
@@ -495,23 +505,44 @@ std::optional<int64_t> ValueAnalysis::tryFoldConstantIndex(Value v,
   }
 
   if (auto cmp = v.getDefiningOp<arith::CmpIOp>())
-    return tryFoldCmpResult(cmp, depth + 1);
+    return tryFoldCmpResult(cmp, depth + 1, extraFolder);
 
   if (auto select = v.getDefiningOp<arith::SelectOp>()) {
-    auto cond = tryFoldConstantIndex(select.getCondition(), depth + 1);
+    auto cond = tryFoldConstantIndexWithImpl(select.getCondition(), depth + 1,
+                                             extraFolder);
     if (cond)
-      return tryFoldConstantIndex((*cond != 0) ? select.getTrueValue()
-                                               : select.getFalseValue(),
-                                  depth + 1);
+      return tryFoldConstantIndexWithImpl((*cond != 0)
+                                              ? select.getTrueValue()
+                                              : select.getFalseValue(),
+                                          depth + 1, extraFolder);
 
-    auto trueValue = tryFoldConstantIndex(select.getTrueValue(), depth + 1);
-    auto falseValue = tryFoldConstantIndex(select.getFalseValue(), depth + 1);
+    auto trueValue =
+        tryFoldConstantIndexWithImpl(select.getTrueValue(), depth + 1,
+                                     extraFolder);
+    auto falseValue =
+        tryFoldConstantIndexWithImpl(select.getFalseValue(), depth + 1,
+                                     extraFolder);
     if (trueValue && falseValue && *trueValue == *falseValue)
       return trueValue;
     return std::nullopt;
   }
 
   return std::nullopt;
+}
+
+std::optional<int64_t> ValueAnalysis::tryFoldConstantIndex(Value v,
+                                                           unsigned depth) {
+  auto noExtra = [](Value, unsigned) -> std::optional<int64_t> {
+    return std::nullopt;
+  };
+  return tryFoldConstantIndexWithImpl(v, depth, noExtra);
+}
+
+std::optional<int64_t> ValueAnalysis::tryFoldConstantIndexWith(
+    Value v,
+    llvm::function_ref<std::optional<int64_t>(Value, unsigned)> extraFolder,
+    unsigned depth) {
+  return tryFoldConstantIndexWithImpl(v, depth, extraFolder);
 }
 
 std::optional<int64_t> ValueAnalysis::getConstantIndexStripped(Value v) {
@@ -894,16 +925,7 @@ static bool isDerivedFromPtrImpl(Value value, Value source,
     return false;
 
   if (auto blockArg = dyn_cast<BlockArgument>(value)) {
-    Block *parentBlock = blockArg.getParentBlock();
-    if (parentBlock && parentBlock->getParentOp()) {
-      if (auto edt = dyn_cast<arts::EdtOp>(parentBlock->getParentOp())) {
-        unsigned argIndex = blockArg.getArgNumber();
-        ValueRange deps = edt.getDependencies();
-        if (argIndex < deps.size())
-          return isDerivedFromPtrImpl(deps[argIndex], source, visited,
-                                      depth + 1);
-      }
-    }
+    (void)blockArg;
     return false;
   }
 
@@ -915,10 +937,6 @@ static bool isDerivedFromPtrImpl(Value value, Value source,
     return isDerivedFromPtrImpl(v, source, visited, depth + 1);
   };
 
-  if (auto dbAcquire = dyn_cast<arts::DbAcquireOp>(defOp))
-    return trace(dbAcquire.getSourcePtr());
-  if (auto dbGep = dyn_cast<::mlir::carts::arts_rt::DbGepOp>(defOp))
-    return trace(dbGep.getBasePtr());
   if (auto gepOp = dyn_cast<LLVM::GEPOp>(defOp))
     return trace(gepOp.getBase());
   if (auto ptr2memref = dyn_cast<polygeist::Pointer2MemrefOp>(defOp))
@@ -1072,15 +1090,7 @@ static Value getUnderlyingValueImpl(Value v, SmallPtrSet<Value, 16> &visited,
     return nullptr;
 
   if (auto blockArg = dyn_cast<BlockArgument>(v)) {
-    Block *owner = blockArg.getOwner();
-    if (owner && owner->getParentOp()) {
-      if (auto edt = dyn_cast<arts::EdtOp>(owner->getParentOp())) {
-        unsigned argIndex = blockArg.getArgNumber();
-        ValueRange deps = edt.getDependencies();
-        if (argIndex < deps.size())
-          return getUnderlyingValueImpl(deps[argIndex], visited, depth + 1);
-      }
-    }
+    (void)blockArg;
     return v;
   }
 
@@ -1095,8 +1105,7 @@ static Value getUnderlyingValueImpl(Value v, SmallPtrSet<Value, 16> &visited,
     return nullptr;
 
   /// Terminal allocations
-  if (isa<arts::DbAllocOp, memref::AllocOp, memref::AllocaOp,
-          memref::GetGlobalOp>(op))
+  if (isa<memref::AllocOp, memref::AllocaOp, memref::GetGlobalOp>(op))
     return v;
 
   /// Helper to recurse through a single source operand
@@ -1104,12 +1113,6 @@ static Value getUnderlyingValueImpl(Value v, SmallPtrSet<Value, 16> &visited,
     return getUnderlyingValueImpl(source, visited, depth + 1);
   };
 
-  if (auto dbAcquire = dyn_cast<arts::DbAcquireOp>(op))
-    return trace(dbAcquire.getSourcePtr());
-  if (auto dbGep = dyn_cast<::mlir::carts::arts_rt::DbGepOp>(op))
-    return trace(dbGep.getBasePtr());
-  if (auto dbRef = dyn_cast<arts::DbRefOp>(op))
-    return trace(dbRef.getSource());
   if (auto subview = dyn_cast<memref::SubViewOp>(op))
     return trace(subview.getSource());
   if (auto castOp = dyn_cast<memref::CastOp>(op))

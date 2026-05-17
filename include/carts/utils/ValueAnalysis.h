@@ -43,9 +43,18 @@ public:
   /// Extract a constant integer/index from a value or integer attribute.
   static std::optional<int64_t> getConstantIndex(OpFoldResult ofr);
 
-  /// Recursively fold constant index expressions through basic arith ops.
+  /// Recursively fold constant index expressions through dialect-neutral
+  /// constants, casts, scalar loads, and basic arith ops.
   static std::optional<int64_t> tryFoldConstantIndex(Value v,
                                                      unsigned depth = 0);
+
+  /// Recursively fold constant index expressions with a dialect-owned
+  /// extension hook. The hook may fold dialect-specific values, while this
+  /// utility remains responsible for generic arithmetic recursion.
+  static std::optional<int64_t> tryFoldConstantIndexWith(
+      Value v,
+      llvm::function_ref<std::optional<int64_t>(Value, unsigned)> extraFolder,
+      unsigned depth = 0);
 
   static std::optional<int64_t> getConstantIndexStripped(Value v);
 
@@ -130,16 +139,17 @@ public:
   ///===----------------------------------------------------------------------===////
 
   /// Strip through memref view-like wrapper ops (CastOp, SubViewOp,
-  /// ReinterpretCastOp) without crossing DB or EDT boundaries.
-  /// Unlike getUnderlyingValue, this does NOT trace through DbAcquireOp,
-  /// DbRefOp, DbGepOp, EdtOp block args, LLVM::GEPOp, or polygeist ops.
+  /// ReinterpretCastOp) without crossing dialect-owned ownership boundaries
+  /// or lower-level pointer wrappers.
   static Value stripMemrefViewOps(Value value);
 
   ///===----------------------------------------------------------------------===////
   /// Underlying Value Tracing
   ///===----------------------------------------------------------------------===////
 
-  /// Trace to root allocation through casts, acquires, GEPs, etc.
+  /// Trace to a dialect-neutral root through casts, memref views, LLVM GEPs,
+  /// and Polygeist pointer wrappers. Dialect-specific ownership boundaries
+  /// such as ARTS DB/EDT values are handled by the owning dialect utilities.
   static Value getUnderlyingValue(Value v);
 
   /// Like getUnderlyingValue but returns the defining operation.
