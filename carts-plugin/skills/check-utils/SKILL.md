@@ -142,5 +142,6 @@ Do not re-add these local copies:
 ## Attribute Strings
 
 Never hardcode project attribute strings in new helpers. Use
-`AttrNames::Operation::*`, `AttrNames::Operation::Stencil::*`, or the owning
-dialect's attribute helpers. Add a constant first when no constant exists.
+`AttrNames::Operation::*`, generated ODS accessors such as
+`op.getStencilMinOffsetsAttrName()`, or the owning dialect's attribute helpers.
+Add a constant or ODS attribute first when no centralized name exists.

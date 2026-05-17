@@ -11,7 +11,7 @@
 #include "SdeToCodir/TaskDepSliceUtils.h"
 #include "carts/dialect/codir/Utils/CodeletABIUtils.h"
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
-#include "carts/utils/StencilAttributes.h"
+#include "carts/utils/ArrayAttrUtils.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"

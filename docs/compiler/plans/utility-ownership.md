@@ -82,9 +82,9 @@ When moving a helper out of a pass:
   form (`arts-rt`); MLIR textual dialect names use the underscore form
   (`arts_rt`).
 - [ ] Today, project attribute name constants live in
-  `include/carts/utils/OperationAttributes.h` and
-  `include/carts/utils/StencilAttributes.h`. Do not create a new attr-name file
-  without a dedicated migration plan.
+  `include/carts/utils/OperationAttributes.h` or in generated ODS accessors on
+  the owning op, such as `getStencilMinOffsetsAttrName()`. Do not create a new
+  attr-name file without a dedicated migration plan.
 
 ## Migration Phases
 
@@ -155,9 +155,10 @@ Exit gate:
 
 - [x] Stale `include/carts/utils/{costs,machine}/` subdirs removed; ARTSCostModel
   and RuntimeConfig live in ARTS Utils.
-- [x] CARTS-shared `include/carts/utils/` is now scoped: Debug, LoopUtils,
-  OperationAttributes, PassInstrumentation, RemovalUtils, StencilAttributes,
-  Utils, ValueAnalysis, plus benchmarks/ and testing/. Every entry is
+- [x] CARTS-shared `include/carts/utils/` is now scoped: ArrayAttrUtils, Debug,
+  LoopUtils, OperationAttributes, PassInstrumentation, RemovalUtils,
+  StencilAttributes, Utils, ValueAnalysis, plus benchmarks/ and testing/. Every
+  entry is
   verifiably used across 2+ subdialects or is project-wide infrastructure, or
   remains listed for a follow-up split.
 - [ ] Watch for new pass-local duplicates as compiler work continues.

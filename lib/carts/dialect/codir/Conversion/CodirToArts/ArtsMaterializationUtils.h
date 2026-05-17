@@ -13,7 +13,6 @@
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/RuntimeOpUtils.h"
 #include "carts/utils/OperationAttributes.h"
-#include "carts/utils/StencilAttributes.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "polygeist/Ops.h"
@@ -272,25 +271,15 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
   if (auto haloShape = codelet.getHaloShapeAttr())
     arts::setPlanHaloShapeAttr(taskOp, haloShape);
   if (auto minOffsets = codelet.getAccessMinOffsetsAttr())
-    task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::
-                      FootprintMinOffsets,
-                  minOffsets);
+    task->setAttr(task.getStencilMinOffsetsAttrName(), minOffsets);
   if (auto maxOffsets = codelet.getAccessMaxOffsetsAttr())
-    task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::
-                      FootprintMaxOffsets,
-                  maxOffsets);
+    task->setAttr(task.getStencilMaxOffsetsAttrName(), maxOffsets);
   if (auto ownerDims = codelet.getPlanOwnerDimsAttr())
-    task->setAttr(
-        ::mlir::carts::StencilAttrNames::Operation::Stencil::OwnerDims,
-        ownerDims);
+    task->setAttr(task.getStencilOwnerDimsAttrName(), ownerDims);
   if (auto spatialDims = codelet.getSpatialDimsAttr())
-    task->setAttr(
-        ::mlir::carts::StencilAttrNames::Operation::Stencil::SpatialDims,
-        spatialDims);
+    task->setAttr(task.getStencilSpatialDimsAttrName(), spatialDims);
   if (auto writeFootprint = codelet.getWriteFootprintAttr())
-    task->setAttr(
-        ::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint,
-        writeFootprint);
+    task->setAttr(task.getStencilWriteFootprintAttrName(), writeFootprint);
   if (codelet.getInPlaceSafeAttr())
     task.setInPlaceSafeAttr(UnitAttr::get(ctx));
   if (codelet.getInPlaceSharedStateAttr())
@@ -303,8 +292,7 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
         pattern.getValue() == codir::CodirPattern::jacobi_alternating_buffers) {
       if (codelet.getAccessMinOffsetsAttr() &&
           codelet.getAccessMaxOffsetsAttr())
-        task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::
-                          SupportedBlockHalo,
+        task->setAttr(task.getStencilSupportedBlockHaloAttrName(),
                       UnitAttr::get(ctx));
     }
   }

@@ -30,7 +30,8 @@ AM->getDbAnalysis().getDbAcquireNode(acquire)  // Node lookup
 
 **Attribute names** — NEVER hardcode strings. Use centralized names from:
 - `include/carts/utils/OperationAttributes.h` (`AttrNames::Operation`)
-- `include/carts/utils/StencilAttributes.h` (`AttrNames::Operation::Stencil`)
+- generated ODS accessors such as `op.getStencilMinOffsetsAttrName()`
+- `include/carts/utils/StencilAttributes.h` for ARTS stencil contract helpers
 
 **Naming** — DB passes: `Db` prefix. EDT passes: `Edt` prefix. LLVM style: 2-space indent, CamelCase types, camelCase variables.
 

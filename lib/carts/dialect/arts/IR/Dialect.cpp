@@ -433,6 +433,8 @@ void EpochOp::build(OpBuilder &builder, OperationState &state) {
 void EpochOp::build(OpBuilder &builder, OperationState &state, Type epochGuid) {
   build(builder, state, epochGuid, ArtsDepPatternAttr{},
         EdtDistributionKindAttr{}, EdtDistributionPatternAttr{}, IntegerAttr{},
+        IntegerAttr{}, ArrayAttr{}, ArrayAttr{}, ArrayAttr{}, ArrayAttr{},
+        ArrayAttr{}, ArrayAttr{}, UnitAttr{},
         ArrayAttr{}, ArrayAttr{}, ArrayAttr{}, ArrayAttr{},
         ArtsPlanIterationTopologyAttr{}, ArtsPlanRepetitionStructureAttr{},
         ArtsPlanAsyncStrategyAttr{}, IntegerAttr{}, IntegerAttr{},

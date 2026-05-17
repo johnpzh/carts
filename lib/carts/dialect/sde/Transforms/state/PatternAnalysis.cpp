@@ -7,7 +7,7 @@
 #include "carts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
-#include "carts/utils/StencilAttributes.h"
+#include "carts/utils/ArrayAttrUtils.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/IRMapping.h"
 

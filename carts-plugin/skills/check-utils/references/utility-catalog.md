@@ -103,13 +103,15 @@ Always use centralized constants:
 AttrNames::Operation::ArtsId
 AttrNames::Operation::DepPattern
 AttrNames::Operation::PartitionMode
-AttrNames::Operation::Stencil::StencilCenterOffset
-AttrNames::Operation::Stencil::FootprintMinOffsets
-AttrNames::Operation::Stencil::FootprintMaxOffsets
+op.getStencilCenterOffsetAttrName()
+op.getStencilMinOffsetsAttrName()
+op.getStencilMaxOffsetsAttrName()
 ```
 
-See `include/carts/utils/OperationAttributes.h` and
-`include/carts/utils/StencilAttributes.h` for the full list.
+See `include/carts/utils/OperationAttributes.h` for ARTS string constants,
+`include/carts/utils/StencilAttributes.h` for ARTS stencil contract helpers,
+and `include/carts/utils/ArrayAttrUtils.h` for dialect-neutral i64 array
+attribute builders/readers.
 
 ## File Paths
 
@@ -117,6 +119,7 @@ See `include/carts/utils/OperationAttributes.h` and
 include/carts/utils/Utils.h
 include/carts/utils/LoopUtils.h
 include/carts/utils/RemovalUtils.h
+include/carts/utils/ArrayAttrUtils.h
 include/carts/utils/OperationAttributes.h
 include/carts/utils/StencilAttributes.h
 include/carts/utils/ValueAnalysis.h
