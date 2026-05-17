@@ -4,6 +4,7 @@
 /// Materializes SDE planning intent as isolated CODIR codelets.
 ///==========================================================================///
 #include "../ConversionUtils.h"
+#include "carts/dialect/codir/Conversion/Passes.h"
 namespace mlir::carts::codir {
 #define GEN_PASS_DEF_CONVERTSDETOCODIR
 #include "carts/dialect/codir/Conversion/Passes.h.inc"

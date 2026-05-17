@@ -5,6 +5,7 @@
 ///==========================================================================///
 #include "ArtsMaterializationUtils.h"
 #include "carts/dialect/arts/Utils/LaunchPolicyUtils.h"
+#include "carts/dialect/codir/Conversion/Passes.h"
 namespace mlir::carts::codir {
 #define GEN_PASS_DEF_CONVERTCODIRTOARTS
 #include "carts/dialect/codir/Conversion/Passes.h.inc"
