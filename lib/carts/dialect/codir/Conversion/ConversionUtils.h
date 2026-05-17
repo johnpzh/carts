@@ -7,13 +7,14 @@
 ///==========================================================================///
 #ifndef CARTS_DIALECT_CODIR_CONVERSION_CONVERSIONUTILS_H
 #define CARTS_DIALECT_CODIR_CONVERSION_CONVERSIONUTILS_H
-#include "carts/dialect/codir/Conversion/Passes.h"
-#include "carts/dialect/codir/Utils/CodeletABIUtils.h"
+#include "SdeToCodir/SdeToCodirMetadataUtils.h"
 #include "SdeToCodir/TaskDepSliceUtils.h"
 #include "carts/Dialect.h"
-#include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/dialect/arts/Transforms/db/DbLayoutPlanUtils.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/codir/Conversion/Passes.h"
+#include "carts/dialect/codir/Utils/CodeletABIUtils.h"
+#include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/StencilAttributes.h"
 #include "carts/utils/Utils.h"
@@ -25,8 +26,8 @@
 #include "polygeist/Ops.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include <functional>
 using namespace mlir;
 using namespace mlir::carts::arts;
@@ -35,21 +36,13 @@ using namespace mlir::carts::codir;
 
 namespace {
 
-static inline codir::CodirAccessMode
-convertAccessMode(sde::SdeAccessMode mode) {
-  switch (mode) {
-  case sde::SdeAccessMode::read:
-    return codir::CodirAccessMode::read;
-  case sde::SdeAccessMode::write:
-    return codir::CodirAccessMode::write;
-  case sde::SdeAccessMode::readwrite:
-    return codir::CodirAccessMode::readwrite;
-  }
-  return codir::CodirAccessMode::readwrite;
-}
+using ::mlir::carts::codir::sde_to_codir::CodirCodeletMetadata;
+using ::mlir::carts::codir::sde_to_codir::convertAccessMode;
+using ::mlir::carts::codir::sde_to_codir::getCodirMetadataFromSchedulingUnit;
+using ::mlir::carts::codir::sde_to_codir::getCodirMetadataFromTask;
 
-static inline codir::CodirAccessMode mergeAccessMode(codir::CodirAccessMode lhs,
-                                               codir::CodirAccessMode rhs) {
+static inline codir::CodirAccessMode
+mergeAccessMode(codir::CodirAccessMode lhs, codir::CodirAccessMode rhs) {
   if (lhs == rhs)
     return lhs;
   return codir::CodirAccessMode::readwrite;
@@ -88,32 +81,8 @@ static inline arts::ArtsBarrierReasonAttr
 convertBarrierReasonAttr(MLIRContext *ctx, sde::SdeBarrierReasonAttr attr) {
   if (!attr)
     return {};
-  return arts::ArtsBarrierReasonAttr::get(ctx,
-                                          convertBarrierReason(attr.getValue()));
-}
-
-static inline codir::CodirPattern convertPattern(sde::SdePattern pattern) {
-  switch (pattern) {
-  case sde::SdePattern::uniform:
-    return codir::CodirPattern::uniform;
-  case sde::SdePattern::stencil_tiling_nd:
-    return codir::CodirPattern::stencil_tiling_nd;
-  case sde::SdePattern::cross_dim_stencil_3d:
-    return codir::CodirPattern::cross_dim_stencil_3d;
-  case sde::SdePattern::higher_order_stencil:
-    return codir::CodirPattern::higher_order_stencil;
-  case sde::SdePattern::wavefront_2d:
-    return codir::CodirPattern::wavefront_2d;
-  case sde::SdePattern::jacobi_alternating_buffers:
-    return codir::CodirPattern::jacobi_alternating_buffers;
-  case sde::SdePattern::matmul:
-    return codir::CodirPattern::matmul;
-  case sde::SdePattern::elementwise_pipeline:
-    return codir::CodirPattern::elementwise_pipeline;
-  case sde::SdePattern::reduction:
-    return codir::CodirPattern::reduction;
-  }
-  return codir::CodirPattern::uniform;
+  return arts::ArtsBarrierReasonAttr::get(
+      ctx, convertBarrierReason(attr.getValue()));
 }
 
 static inline arts::ArtsDepPattern convertPattern(codir::CodirPattern pattern) {
@@ -140,19 +109,6 @@ static inline arts::ArtsDepPattern convertPattern(codir::CodirPattern pattern) {
   return arts::ArtsDepPattern::unknown;
 }
 
-static inline codir::CodirDistributionKind
-convertDistributionKind(sde::SdeDistributionKind kind) {
-  switch (kind) {
-  case sde::SdeDistributionKind::owner_compute:
-    return codir::CodirDistributionKind::owner_compute;
-  case sde::SdeDistributionKind::blocked:
-    return codir::CodirDistributionKind::blocked;
-  case sde::SdeDistributionKind::cyclic:
-    return codir::CodirDistributionKind::cyclic;
-  }
-  return codir::CodirDistributionKind::owner_compute;
-}
-
 static inline arts::EdtDistributionKind
 convertDistributionKind(codir::CodirDistributionKind kind) {
   switch (kind) {
@@ -164,19 +120,6 @@ convertDistributionKind(codir::CodirDistributionKind kind) {
     return arts::EdtDistributionKind::block_cyclic;
   }
   return arts::EdtDistributionKind::block;
-}
-
-static inline codir::CodirIterationTopology
-convertIterationTopology(sde::SdeIterationTopology topology) {
-  switch (topology) {
-  case sde::SdeIterationTopology::owner_strip:
-    return codir::CodirIterationTopology::owner_strip;
-  case sde::SdeIterationTopology::owner_tile:
-    return codir::CodirIterationTopology::owner_tile;
-  case sde::SdeIterationTopology::owner_tile_2d:
-    return codir::CodirIterationTopology::owner_tile_2d;
-  }
-  return codir::CodirIterationTopology::owner_strip;
 }
 
 static inline arts::ArtsPlanIterationTopology
@@ -192,21 +135,6 @@ convertIterationTopology(codir::CodirIterationTopology topology) {
   return arts::ArtsPlanIterationTopology::owner_strip;
 }
 
-static inline codir::CodirRepetitionStructure
-convertRepetitionStructure(sde::SdeRepetitionStructure structure) {
-  switch (structure) {
-  case sde::SdeRepetitionStructure::none:
-    return codir::CodirRepetitionStructure::none;
-  case sde::SdeRepetitionStructure::pair_step:
-    return codir::CodirRepetitionStructure::pair_step;
-  case sde::SdeRepetitionStructure::k_step:
-    return codir::CodirRepetitionStructure::k_step;
-  case sde::SdeRepetitionStructure::full_timestep:
-    return codir::CodirRepetitionStructure::full_timestep;
-  }
-  return codir::CodirRepetitionStructure::none;
-}
-
 static inline arts::ArtsPlanRepetitionStructure
 convertRepetitionStructure(codir::CodirRepetitionStructure structure) {
   switch (structure) {
@@ -220,19 +148,6 @@ convertRepetitionStructure(codir::CodirRepetitionStructure structure) {
     return arts::ArtsPlanRepetitionStructure::full_timestep;
   }
   return arts::ArtsPlanRepetitionStructure::none;
-}
-
-static inline codir::CodirAsyncStrategy
-convertAsyncStrategy(sde::SdeAsyncStrategy strategy) {
-  switch (strategy) {
-  case sde::SdeAsyncStrategy::blocking:
-    return codir::CodirAsyncStrategy::blocking;
-  case sde::SdeAsyncStrategy::advance_stage:
-    return codir::CodirAsyncStrategy::advance_stage;
-  case sde::SdeAsyncStrategy::cps_chain:
-    return codir::CodirAsyncStrategy::cps_chain;
-  }
-  return codir::CodirAsyncStrategy::blocking;
 }
 
 static inline arts::ArtsPlanAsyncStrategy
@@ -267,79 +182,6 @@ getDistributionPattern(codir::CodirPattern pattern) {
   return arts::EdtDistributionPattern::unknown;
 }
 
-struct CodirCodeletMetadata {
-  codir::CodirPatternAttr pattern;
-  codir::CodirDistributionKindAttr distributionKind;
-  codir::CodirIterationTopologyAttr iterationTopology;
-  codir::CodirRepetitionStructureAttr repetitionStructure;
-  codir::CodirAsyncStrategyAttr asyncStrategy;
-  ArrayAttr planOwnerDims;
-  ArrayAttr tileOwnerDims;
-  ArrayAttr tileShape;
-  ArrayAttr logicalWorkerSlice;
-  ArrayAttr haloShape;
-  ArrayAttr accessMinOffsets;
-  ArrayAttr accessMaxOffsets;
-  ArrayAttr spatialDims;
-  ArrayAttr writeFootprint;
-  UnitAttr inPlaceSafe;
-  UnitAttr inPlaceSharedState;
-};
-
-static inline CodirCodeletMetadata
-getCodirMetadataFromTask(sde::SdeCuTaskOp task) {
-  CodirCodeletMetadata metadata;
-  if (!task)
-    return metadata;
-  MLIRContext *ctx = task.getContext();
-  if (auto pattern = task.getPatternAttr())
-    metadata.pattern =
-        codir::CodirPatternAttr::get(ctx, convertPattern(pattern.getValue()));
-  return metadata;
-}
-
-static inline CodirCodeletMetadata
-getCodirMetadataFromSchedulingUnit(sde::SdeSuIterateOp source) {
-  CodirCodeletMetadata metadata;
-  if (!source)
-    return metadata;
-  MLIRContext *ctx = source.getContext();
-  if (auto pattern = source.getPatternAttr())
-    metadata.pattern =
-        codir::CodirPatternAttr::get(ctx, convertPattern(pattern.getValue()));
-  if (auto kind = source.getDistributionKindAttr())
-    metadata.distributionKind = codir::CodirDistributionKindAttr::get(
-        ctx, convertDistributionKind(kind.getValue()));
-  else if (auto parentDistribute =
-               source->getParentOfType<sde::SdeSuDistributeOp>())
-    metadata.distributionKind = codir::CodirDistributionKindAttr::get(
-        ctx, convertDistributionKind(parentDistribute.getKind()));
-  if (auto topology = source.getIterationTopologyAttr())
-    metadata.iterationTopology = codir::CodirIterationTopologyAttr::get(
-        ctx, convertIterationTopology(topology.getValue()));
-  if (auto repetition = source.getRepetitionStructureAttr())
-    metadata.repetitionStructure = codir::CodirRepetitionStructureAttr::get(
-        ctx, convertRepetitionStructure(repetition.getValue()));
-  if (auto async = source.getAsyncStrategyAttr())
-    metadata.asyncStrategy =
-        codir::CodirAsyncStrategyAttr::get(
-            ctx, convertAsyncStrategy(async.getValue()));
-  metadata.planOwnerDims = source.getOwnerDimsAttr();
-  metadata.tileOwnerDims = source.getPhysicalOwnerDimsAttr();
-  metadata.tileShape = source.getPhysicalBlockShapeAttr();
-  metadata.logicalWorkerSlice = source.getLogicalWorkerSliceAttr();
-  metadata.haloShape = source.getPhysicalHaloShapeAttr();
-  metadata.accessMinOffsets = source.getAccessMinOffsetsAttr();
-  metadata.accessMaxOffsets = source.getAccessMaxOffsetsAttr();
-  metadata.spatialDims = source.getSpatialDimsAttr();
-  metadata.writeFootprint = source.getWriteFootprintAttr();
-  if (source.getInPlaceSafeAttr())
-    metadata.inPlaceSafe = UnitAttr::get(ctx);
-  if (source.getInPlaceSharedStateAttr())
-    metadata.inPlaceSharedState = UnitAttr::get(ctx);
-  return metadata;
-}
-
 static inline codir::CodeletOp
 createCodirCodelet(OpBuilder &builder, Location loc, ArrayAttr depModes,
                    ValueRange deps, ValueRange params,
@@ -347,14 +189,14 @@ createCodirCodelet(OpBuilder &builder, Location loc, ArrayAttr depModes,
                    UnitAttr taskDepend = {}, UnitAttr orderedTaskDepend = {},
                    UnitAttr completionBarrier = {}) {
   return codir::CodeletOp::create(
-      builder, loc, depModes, taskDepend, orderedTaskDepend,
-      completionBarrier, metadata.pattern, metadata.distributionKind,
-      metadata.iterationTopology, metadata.repetitionStructure,
-      metadata.asyncStrategy, metadata.planOwnerDims, metadata.tileOwnerDims,
-      metadata.tileShape, metadata.logicalWorkerSlice,
-      metadata.haloShape, metadata.accessMinOffsets,
-      metadata.accessMaxOffsets, metadata.spatialDims, metadata.writeFootprint,
-      metadata.inPlaceSafe, metadata.inPlaceSharedState, deps, params);
+      builder, loc, depModes, taskDepend, orderedTaskDepend, completionBarrier,
+      metadata.pattern, metadata.distributionKind, metadata.iterationTopology,
+      metadata.repetitionStructure, metadata.asyncStrategy,
+      metadata.planOwnerDims, metadata.tileOwnerDims, metadata.tileShape,
+      metadata.logicalWorkerSlice, metadata.haloShape,
+      metadata.accessMinOffsets, metadata.accessMaxOffsets,
+      metadata.spatialDims, metadata.writeFootprint, metadata.inPlaceSafe,
+      metadata.inPlaceSharedState, deps, params);
 }
 
 static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
@@ -365,7 +207,8 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
   if (auto pattern = codelet.getPatternAttr()) {
     arts::ArtsDepPattern depPattern = convertPattern(pattern.getValue());
     if (depPattern != arts::ArtsDepPattern::unknown) {
-      task->setAttr("depPattern", arts::ArtsDepPatternAttr::get(ctx, depPattern));
+      task->setAttr("depPattern",
+                    arts::ArtsDepPatternAttr::get(ctx, depPattern));
       task->setAttr("distribution_pattern",
                     arts::EdtDistributionPatternAttr::get(
                         ctx, getDistributionPattern(pattern.getValue())));
@@ -408,19 +251,25 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
   if (auto haloShape = codelet.getHaloShapeAttr())
     task->setAttr("planHaloShape", haloShape);
   if (auto minOffsets = codelet.getAccessMinOffsetsAttr())
-    task->setAttr(
-        ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMinOffsets, minOffsets);
+    task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::
+                      FootprintMinOffsets,
+                  minOffsets);
   if (auto maxOffsets = codelet.getAccessMaxOffsetsAttr())
-    task->setAttr(
-        ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMaxOffsets, maxOffsets);
+    task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::
+                      FootprintMaxOffsets,
+                  maxOffsets);
   if (auto ownerDims = codelet.getPlanOwnerDimsAttr())
-    task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::OwnerDims, ownerDims);
+    task->setAttr(
+        ::mlir::carts::StencilAttrNames::Operation::Stencil::OwnerDims,
+        ownerDims);
   if (auto spatialDims = codelet.getSpatialDimsAttr())
-    task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::SpatialDims,
-                  spatialDims);
+    task->setAttr(
+        ::mlir::carts::StencilAttrNames::Operation::Stencil::SpatialDims,
+        spatialDims);
   if (auto writeFootprint = codelet.getWriteFootprintAttr())
-    task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint,
-                  writeFootprint);
+    task->setAttr(
+        ::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint,
+        writeFootprint);
   if (codelet.getInPlaceSafeAttr())
     task->setAttr("inPlaceSafe", UnitAttr::get(ctx));
   if (codelet.getInPlaceSharedStateAttr())
@@ -430,19 +279,18 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
         pattern.getValue() == codir::CodirPattern::cross_dim_stencil_3d ||
         pattern.getValue() == codir::CodirPattern::higher_order_stencil ||
         pattern.getValue() == codir::CodirPattern::wavefront_2d ||
-        pattern.getValue() ==
-            codir::CodirPattern::jacobi_alternating_buffers) {
-      if (codelet.getAccessMinOffsetsAttr() && codelet.getAccessMaxOffsetsAttr())
-        task->setAttr(
-            ::mlir::carts::StencilAttrNames::Operation::Stencil::SupportedBlockHalo,
-            UnitAttr::get(ctx));
+        pattern.getValue() == codir::CodirPattern::jacobi_alternating_buffers) {
+      if (codelet.getAccessMinOffsetsAttr() &&
+          codelet.getAccessMaxOffsetsAttr())
+        task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::
+                          SupportedBlockHalo,
+                      UnitAttr::get(ctx));
     }
   }
 }
 
-
 static inline Value materializeIndexFoldResult(OpBuilder &builder, Location loc,
-                                        OpFoldResult value) {
+                                               OpFoldResult value) {
   if (auto attr = dyn_cast<Attribute>(value)) {
     auto intAttr = cast<IntegerAttr>(attr);
     return createConstantIndex(builder, loc, intAttr.getInt());
@@ -465,8 +313,9 @@ static inline std::optional<int64_t> getConstantIndexValue(Value value) {
   return constant.getSExtValue();
 }
 
-static inline bool isKnownZeroIndex(
-    Value value, const DenseMap<Value, Value> &sourceByBlockArgument) {
+static inline bool
+isKnownZeroIndex(Value value,
+                 const DenseMap<Value, Value> &sourceByBlockArgument) {
   if (std::optional<int64_t> constant = getConstantIndexValue(value))
     return *constant == 0;
 
@@ -479,8 +328,8 @@ static inline bool isKnownZeroIndex(
   return false;
 }
 
-static inline OpFoldResult getStaticOrDynamicIndex(OpBuilder &builder, Value value,
-                                            bool preferStatic) {
+static inline OpFoldResult
+getStaticOrDynamicIndex(OpBuilder &builder, Value value, bool preferStatic) {
   if (preferStatic) {
     if (std::optional<int64_t> constant = getConstantIndexValue(value))
       return builder.getIndexAttr(*constant);
@@ -498,9 +347,9 @@ materializeIndexFoldResults(OpBuilder &builder, Location loc,
   return result;
 }
 
-static inline OpFoldResult remapIndexFoldResult(OpBuilder &builder, Location loc,
-                                         OpFoldResult value,
-                                         const DenseMap<Value, Value> &mapping) {
+static inline OpFoldResult
+remapIndexFoldResult(OpBuilder &builder, Location loc, OpFoldResult value,
+                     const DenseMap<Value, Value> &mapping) {
   if (auto attr = dyn_cast<Attribute>(value))
     return attr;
   Value oldValue = cast<Value>(value);
@@ -549,8 +398,8 @@ buildElementSizes(OpBuilder &builder, Location loc, MemRefType memrefType,
       elementSizes.push_back(dynamicSizes[dynamicIdx++]);
       continue;
     }
-    elementSizes.push_back(createConstantIndex(builder, loc,
-                                               memrefType.getDimSize(dim)));
+    elementSizes.push_back(
+        createConstantIndex(builder, loc, memrefType.getDimSize(dim)));
   }
   if (dynamicIdx != dynamicSizes.size())
     return failure();
@@ -563,7 +412,7 @@ static inline MemRefType getElementMemRefType(Type elementType, unsigned rank) {
 }
 
 static inline Value materializeInnerPayload(OpBuilder &builder, Location loc,
-                                     Value sourcePtr) {
+                                            Value sourcePtr) {
   Value zero = createZeroIndex(builder, loc);
   return arts::DbRefOp::create(builder, loc, sourcePtr,
                                SmallVector<Value>{zero});
@@ -574,9 +423,9 @@ static inline bool isReductionCodelet(codir::CodeletOp codelet) {
   return pattern && pattern.getValue() == codir::CodirPattern::reduction;
 }
 
-static inline bool isAtomicAddAddressable(
-    Value memref, ValueRange indices,
-    const DenseMap<Value, Value> &sourceByBlockArgument) {
+static inline bool
+isAtomicAddAddressable(Value memref, ValueRange indices,
+                       const DenseMap<Value, Value> &sourceByBlockArgument) {
   auto memrefType = dyn_cast<MemRefType>(memref.getType());
   if (!memrefType)
     return false;
@@ -590,7 +439,8 @@ static inline bool isAtomicAddAddressable(
 static inline bool sameMemrefAccess(Value lhsMemref, ValueRange lhsIndices,
                                     Value rhsMemref, ValueRange rhsIndices) {
   return lhsMemref == rhsMemref &&
-         ::mlir::carts::ValueAnalysis::areValueRangesIdentical(lhsIndices, rhsIndices);
+         ::mlir::carts::ValueAnalysis::areValueRangesIdentical(lhsIndices,
+                                                               rhsIndices);
 }
 
 static inline unsigned lowerIntegerAddReductionsToAtomics(
@@ -702,12 +552,13 @@ static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
   if (!loop || loop.getInductionVar() != index)
     return false;
 
-  return ::mlir::carts::ValueAnalysis::dependsOn(loop.getLowerBound(), ownerIv) ||
+  return ::mlir::carts::ValueAnalysis::dependsOn(loop.getLowerBound(),
+                                                 ownerIv) ||
          ::mlir::carts::ValueAnalysis::dependsOn(loop.getUpperBound(), ownerIv);
 }
 
 static inline bool allRootAccessesUseOwnerFirstDim(sde::SdeSuIterateOp source,
-                                            Value root) {
+                                                   Value root) {
   if (!source || !root || source.getBody().empty())
     return false;
 
@@ -752,7 +603,7 @@ static inline bool allRootAccessesUseOwnerFirstDim(sde::SdeSuIterateOp source,
 }
 
 static inline bool hasSamePhysicalLayoutPlan(sde::SdeSuIterateOp lhs,
-                                      sde::SdeSuIterateOp rhs) {
+                                             sde::SdeSuIterateOp rhs) {
   if (!lhs || !rhs)
     return false;
   return lhs.getPhysicalOwnerDimsAttr() == rhs.getPhysicalOwnerDimsAttr() &&
@@ -763,7 +614,7 @@ static inline bool hasSamePhysicalLayoutPlan(sde::SdeSuIterateOp lhs,
 }
 
 static inline bool canAccessRootWithPlan(sde::SdeSuIterateOp source, Value root,
-                                  sde::SdeSuIterateOp selected) {
+                                         sde::SdeSuIterateOp selected) {
   if (!source || !root || !selected)
     return false;
   if (!hasSdePhysicalOwnerSlicePlan(source) ||
@@ -833,7 +684,8 @@ selectMuAllocWritePlan(sde::SdeMuAllocOp op) {
 
   sde::SdeSuIterateOp selected;
   WalkResult result = module.walk([&](memref::StoreOp store) {
-    if (::mlir::carts::ValueAnalysis::stripMemrefViewOps(store.getMemref()) != root)
+    if (::mlir::carts::ValueAnalysis::stripMemrefViewOps(store.getMemref()) !=
+        root)
       return WalkResult::advance();
 
     sde::SdeSuIterateOp source = getEnclosingSuIterate(store);
@@ -865,7 +717,8 @@ selectMuAllocWritePlan(sde::SdeMuAllocOp op) {
     auto access = arts::DbUtils::getMemoryAccessInfo(nested);
     if (!access)
       return WalkResult::advance();
-    if (::mlir::carts::ValueAnalysis::stripMemrefViewOps(access->memref) != root)
+    if (::mlir::carts::ValueAnalysis::stripMemrefViewOps(access->memref) !=
+        root)
       return WalkResult::advance();
 
     sde::SdeSuIterateOp source = getEnclosingSuIterate(nested);
@@ -885,8 +738,8 @@ selectMuAllocWritePlan(sde::SdeMuAllocOp op) {
   return selected;
 }
 
-static inline bool isSdeMuAllocMaterializedWithPlan(Value dep,
-                                                    sde::SdeSuIterateOp source) {
+static inline bool
+isSdeMuAllocMaterializedWithPlan(Value dep, sde::SdeSuIterateOp source) {
   Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(dep);
   auto muAlloc = root ? root.getDefiningOp<sde::SdeMuAllocOp>() : nullptr;
   if (!muAlloc)
@@ -913,9 +766,10 @@ createDbBackedMemref(OpBuilder &builder, Location loc, MemRefType memrefType,
   arts::PartitionMode partitionMode = arts::PartitionMode::coarse;
   if (planSource) {
     FailureOr<arts::DbPhysicalLayoutPlan> physicalPlan =
-        arts::resolvePhysicalDbLayoutPlan(planSource.getPhysicalOwnerDimsAttr(),
-                                          planSource.getPhysicalBlockShapeAttr(),
-                                          dbElementSizes, builder, loc);
+        arts::resolvePhysicalDbLayoutPlan(
+            planSource.getPhysicalOwnerDimsAttr(),
+            planSource.getPhysicalBlockShapeAttr(), dbElementSizes, builder,
+            loc);
     if (failed(physicalPlan))
       return failure();
     sizes.assign(physicalPlan->outerSizes.begin(),
@@ -1040,14 +894,11 @@ static inline LogicalResult lowerMuAlloc(sde::SdeMuAllocOp op) {
   return success();
 }
 
-static inline void buildCodirSubviewMixedOperands(MemRefType resultType,
-                                           ValueRange offsetValues,
-                                           ValueRange sizeValues,
-                                           OpBuilder &builder,
-                                           Location loc,
-                                           SmallVectorImpl<OpFoldResult> &offsets,
-                                           SmallVectorImpl<OpFoldResult> &sizes,
-                                           SmallVectorImpl<OpFoldResult> &strides) {
+static inline void buildCodirSubviewMixedOperands(
+    MemRefType resultType, ValueRange offsetValues, ValueRange sizeValues,
+    OpBuilder &builder, Location loc, SmallVectorImpl<OpFoldResult> &offsets,
+    SmallVectorImpl<OpFoldResult> &sizes,
+    SmallVectorImpl<OpFoldResult> &strides) {
   offsets.clear();
   offsets.reserve(offsetValues.size());
   sizes.clear();
@@ -1063,8 +914,8 @@ static inline void buildCodirSubviewMixedOperands(MemRefType resultType,
       resultLayoutKnown && !ShapedType::isDynamic(resultOffset);
 
   for (Value offset : offsetValues)
-    offsets.push_back(getStaticOrDynamicIndex(builder, offset,
-                                             preferStaticOffsets));
+    offsets.push_back(
+        getStaticOrDynamicIndex(builder, offset, preferStaticOffsets));
 
   for (auto [idx, size] : llvm::enumerate(sizeValues)) {
     bool preferStaticSize =
@@ -1075,9 +926,9 @@ static inline void buildCodirSubviewMixedOperands(MemRefType resultType,
 
   Value one = createOneIndex(builder, loc);
   for (size_t idx = 0, end = offsetValues.size(); idx < end; ++idx) {
-    bool preferStaticStride =
-        !resultLayoutKnown || idx >= resultStrides.size() ||
-        !ShapedType::isDynamic(resultStrides[idx]);
+    bool preferStaticStride = !resultLayoutKnown ||
+                              idx >= resultStrides.size() ||
+                              !ShapedType::isDynamic(resultStrides[idx]);
     strides.push_back(preferStaticStride ? OpFoldResult(builder.getIndexAttr(1))
                                          : OpFoldResult(one));
   }
@@ -1090,12 +941,13 @@ struct SlicedTokenLocalIndexRewrite {
 };
 
 static inline bool containsValue(ValueRange values, Value value) {
-  return llvm::any_of(values, [&](Value existing) { return existing == value; });
+  return llvm::any_of(values,
+                      [&](Value existing) { return existing == value; });
 }
 
-static inline void appendSlicedTokenOffsetParams(
-    ArrayRef<SlicedTokenLocalIndexRewrite> rewrites,
-    SmallVectorImpl<Value> &params) {
+static inline void
+appendSlicedTokenOffsetParams(ArrayRef<SlicedTokenLocalIndexRewrite> rewrites,
+                              SmallVectorImpl<Value> &params) {
   for (const SlicedTokenLocalIndexRewrite &rewrite : rewrites) {
     for (Value offset : rewrite.sourceOffsets) {
       if (!offset || getConstantIndexValue(offset))
@@ -1106,8 +958,9 @@ static inline void appendSlicedTokenOffsetParams(
   }
 }
 
-static inline void appendDynamicIndexFoldResultParams(ArrayRef<OpFoldResult> values,
-                                               SmallVectorImpl<Value> &params) {
+static inline void
+appendDynamicIndexFoldResultParams(ArrayRef<OpFoldResult> values,
+                                   SmallVectorImpl<Value> &params) {
   for (OpFoldResult valueOrAttr : values) {
     auto value = dyn_cast<Value>(valueOrAttr);
     if (!value || !isCodirScalarParamType(value.getType()) ||
@@ -1117,8 +970,9 @@ static inline void appendDynamicIndexFoldResultParams(ArrayRef<OpFoldResult> val
   }
 }
 
-static inline void appendDynamicCodirDepSliceParams(ArrayRef<Value> deps,
-                                             SmallVectorImpl<Value> &params) {
+static inline void
+appendDynamicCodirDepSliceParams(ArrayRef<Value> deps,
+                                 SmallVectorImpl<Value> &params) {
   for (Value dep : deps) {
     Operation *def = dep ? dep.getDefiningOp() : nullptr;
     if (auto subview = dyn_cast_or_null<memref::SubViewOp>(def)) {
@@ -1143,7 +997,7 @@ static inline void appendDynamicCodirDepSliceParams(ArrayRef<Value> deps,
 }
 
 static inline Value getCodeletParamBlockArgument(codir::CodeletOp codelet,
-                                          Value param) {
+                                                 Value param) {
   if (!param || codelet.getBody().empty())
     return {};
 
@@ -1158,8 +1012,8 @@ static inline Value getCodeletParamBlockArgument(codir::CodeletOp codelet,
   return {};
 }
 
-static inline FailureOr<Value> materializeCodeletOffset(codir::CodeletOp codelet,
-                                                 Value sourceOffset) {
+static inline FailureOr<Value>
+materializeCodeletOffset(codir::CodeletOp codelet, Value sourceOffset) {
   if (!sourceOffset)
     return failure();
 
@@ -1175,8 +1029,9 @@ static inline FailureOr<Value> materializeCodeletOffset(codir::CodeletOp codelet
   return failure();
 }
 
-static inline bool isCodeletParamDerivedIndex(Value index, codir::CodeletOp codelet,
-                                       ValueRange ignoredParams) {
+static inline bool isCodeletParamDerivedIndex(Value index,
+                                              codir::CodeletOp codelet,
+                                              ValueRange ignoredParams) {
   if (!index || !isa<IndexType>(index.getType()) || codelet.getBody().empty())
     return false;
 
@@ -1196,8 +1051,8 @@ static inline bool isCodeletParamDerivedIndex(Value index, codir::CodeletOp code
     auto indexArg = dyn_cast<BlockArgument>(index);
     if (!indexArg)
       continue;
-    auto loop = dyn_cast_or_null<scf::ForOp>(
-        indexArg.getOwner()->getParentOp());
+    auto loop =
+        dyn_cast_or_null<scf::ForOp>(indexArg.getOwner()->getParentOp());
     if (!loop || loop.getInductionVar() != index)
       continue;
     if (::mlir::carts::ValueAnalysis::dependsOn(loop.getLowerBound(), arg) ||
@@ -1239,9 +1094,9 @@ rewriteTokenLocalAccesses(codir::CodeletOp codelet,
     return offsets;
   };
 
-  auto rewriteIndexValue =
-      [&](Operation *op, Value index, Value sourceOffset, Value offset,
-          ValueRange ignoredParams) -> FailureOr<Value> {
+  auto rewriteIndexValue = [&](Operation *op, Value index, Value sourceOffset,
+                               Value offset,
+                               ValueRange ignoredParams) -> FailureOr<Value> {
     if (std::optional<int64_t> constant = getConstantIndexValue(sourceOffset);
         constant && *constant == 0)
       return index;
@@ -1291,9 +1146,8 @@ rewriteTokenLocalAccesses(codir::CodeletOp codelet,
       for (auto [indexOperand, sourceOffset, offset] :
            llvm::zip(indices, rewrite.sourceOffsets, *offsets)) {
         Value index = indexOperand.get();
-        FailureOr<Value> rewritten =
-            rewriteIndexValue(op, index, sourceOffset, offset,
-                              rewrite.sourceSizes);
+        FailureOr<Value> rewritten = rewriteIndexValue(
+            op, index, sourceOffset, offset, rewrite.sourceSizes);
         if (failed(rewritten))
           return failure();
         rewrittenIndices.push_back(*rewritten);
@@ -1326,9 +1180,8 @@ rewriteTokenLocalAccesses(codir::CodeletOp codelet,
       SmallVector<OpFoldResult> rewrittenOffsets;
       rewrittenOffsets.reserve(subview.getMixedOffsets().size());
       bool changed = false;
-      for (auto [mixedOffset, sourceOffset, offset] :
-           llvm::zip(subview.getMixedOffsets(), rewrite.sourceOffsets,
-                     *offsets)) {
+      for (auto [mixedOffset, sourceOffset, offset] : llvm::zip(
+               subview.getMixedOffsets(), rewrite.sourceOffsets, *offsets)) {
         if (auto attr = dyn_cast<Attribute>(mixedOffset)) {
           auto integerAttr = dyn_cast<IntegerAttr>(attr);
           std::optional<int64_t> sourceConstant =
@@ -1346,8 +1199,8 @@ rewriteTokenLocalAccesses(codir::CodeletOp codelet,
 
         Value offsetValue = cast<Value>(mixedOffset);
         FailureOr<Value> rewritten =
-            rewriteIndexValue(subview.getOperation(), offsetValue,
-                              sourceOffset, offset, rewrite.sourceSizes);
+            rewriteIndexValue(subview.getOperation(), offsetValue, sourceOffset,
+                              offset, rewrite.sourceSizes);
         if (failed(rewritten))
           return failure();
         changed |= *rewritten != offsetValue;
@@ -1389,10 +1242,9 @@ rewriteTokenLocalAccesses(codir::CodeletOp codelet,
                   "CODIR codelet";
 
       Value index = subindex.getIndex();
-      FailureOr<Value> rewritten =
-          rewriteIndexValue(subindex.getOperation(), index,
-                            rewrite.sourceOffsets.front(), offsets->front(),
-                            rewrite.sourceSizes);
+      FailureOr<Value> rewritten = rewriteIndexValue(
+          subindex.getOperation(), index, rewrite.sourceOffsets.front(),
+          offsets->front(), rewrite.sourceSizes);
       if (failed(rewritten))
         return failure();
       if (*rewritten == index)
@@ -1400,8 +1252,8 @@ rewriteTokenLocalAccesses(codir::CodeletOp codelet,
 
       OpBuilder builder(subindex);
       auto replacement = polygeist::SubIndexOp::create(
-          builder, subindex.getLoc(), subindex.getType(),
-          subindex.getSource(), *rewritten);
+          builder, subindex.getLoc(), subindex.getType(), subindex.getSource(),
+          *rewritten);
       subindex.getResult().replaceAllUsesWith(replacement.getResult());
       subindex.erase();
       return success();
@@ -1422,8 +1274,8 @@ rewriteTokenLocalAccesses(codir::CodeletOp codelet,
 
   WalkResult result = body.walk([&](Operation *op) {
     if (auto load = dyn_cast<memref::LoadOp>(op))
-      return failed(rewriteIndices(op, load.getMemref(),
-                                   load.getIndicesMutable()))
+      return failed(
+                 rewriteIndices(op, load.getMemref(), load.getIndicesMutable()))
                  ? WalkResult::interrupt()
                  : WalkResult::advance();
     if (auto store = dyn_cast<memref::StoreOp>(op))
@@ -1461,8 +1313,9 @@ static inline bool isCodirViewDep(Value value) {
   return isa_and_nonnull<memref::SubViewOp, polygeist::SubIndexOp>(def);
 }
 
-static inline bool hasConservativeReadWriteConflict(ArrayRef<Value> deps,
-                                             ArrayRef<codir::CodirAccessMode> modes) {
+static inline bool
+hasConservativeReadWriteConflict(ArrayRef<Value> deps,
+                                 ArrayRef<codir::CodirAccessMode> modes) {
   if (deps.size() != modes.size())
     return true;
 
@@ -1484,7 +1337,6 @@ static inline bool hasConservativeReadWriteConflict(ArrayRef<Value> deps,
   return false;
 }
 
-
 static inline arts::DbAllocOp findBackingDbAlloc(Value storage) {
   Value root = stripCodirViewOps(storage);
   Operation *def = root ? root.getDefiningOp() : nullptr;
@@ -1498,8 +1350,8 @@ static inline arts::DbAllocOp findBackingDbAlloc(Value storage) {
   return nullptr;
 }
 
-static inline LogicalResult materializeRawCodirDependency(Value dep,
-                                                   codir::CodeletOp planSource) {
+static inline LogicalResult
+materializeRawCodirDependency(Value dep, codir::CodeletOp planSource) {
   if (findBackingDbAlloc(dep))
     return success();
 
@@ -1556,8 +1408,8 @@ static inline LogicalResult materializeRawCodirDependency(Value dep,
           SmallVector<Value>{createOneIndex(builder, root.getLoc())},
           std::move(elementSizes), arts::PartitionMode::coarse);
       createdDbAlloc = dbAlloc;
-      replacement = materializeInnerPayload(builder, root.getLoc(),
-                                            dbAlloc.getPtr());
+      replacement =
+          materializeInnerPayload(builder, root.getLoc(), dbAlloc.getPtr());
     }
 
     root.replaceUsesWithIf(replacement, [&](OpOperand &use) {
@@ -1576,7 +1428,8 @@ static inline LogicalResult materializeRawCodirDependency(Value dep,
                                           alloc.getDynamicSizes(), replacement,
                                           planSource)
                    : createDbBackedMemref(builder, alloc.getLoc(), memrefType,
-                                          alloc.getDynamicSizes(), replacement)))
+                                          alloc.getDynamicSizes(),
+                                          replacement)))
       return failure();
   } else if (auto alloca = dyn_cast<memref::AllocaOp>(def)) {
     if (failed(hasCodirTileOwnerSlicePlan(planSource)
@@ -1618,7 +1471,7 @@ struct CodirDepSlice {
 };
 
 static inline CodirDepSlice getCodirDepSlice(Value dep, OpBuilder &builder,
-                                      Location loc) {
+                                             Location loc) {
   CodirDepSlice slice;
   auto subview = dep.getDefiningOp<memref::SubViewOp>();
   if (subview) {
@@ -1663,23 +1516,20 @@ static inline CodirDepSlice getCodirDepSlice(Value dep, OpBuilder &builder,
       }
       slice.mixedSizes.push_back(dynamicSizes[dynamicSizeIdx++]);
     } else {
-      slice.mixedSizes.push_back(builder.getIndexAttr(resultType.getDimSize(dim)));
+      slice.mixedSizes.push_back(
+          builder.getIndexAttr(resultType.getDimSize(dim)));
     }
     slice.mixedStrides.push_back(builder.getIndexAttr(1));
   }
-  slice.offsets =
-      materializeIndexFoldResults(builder, loc, slice.mixedOffsets);
+  slice.offsets = materializeIndexFoldResults(builder, loc, slice.mixedOffsets);
   slice.sizes = materializeIndexFoldResults(builder, loc, slice.mixedSizes);
   return slice;
 }
 
-static inline LogicalResult materializeCodirDeps(sde::SdeCuCodeletOp sdeCodelet,
-                                          OpBuilder &builder,
-                                          SmallVectorImpl<Value> &deps,
-                                          SmallVectorImpl<Attribute> &modes,
-                                          SmallVectorImpl<
-                                              SlicedTokenLocalIndexRewrite>
-                                              &localIndexRewrites) {
+static inline LogicalResult materializeCodirDeps(
+    sde::SdeCuCodeletOp sdeCodelet, OpBuilder &builder,
+    SmallVectorImpl<Value> &deps, SmallVectorImpl<Attribute> &modes,
+    SmallVectorImpl<SlicedTokenLocalIndexRewrite> &localIndexRewrites) {
   deps.clear();
   deps.reserve(sdeCodelet.getTokens().size());
   modes.clear();
@@ -1720,8 +1570,8 @@ static inline LogicalResult materializeCodirDeps(sde::SdeCuCodeletOp sdeCodelet,
                                    tokenOp.getSizes(), builder,
                                    tokenOp.getLoc(), offsets, sizes, strides);
     auto subview = memref::SubViewOp::create(
-        builder, tokenOp.getLoc(), tokenType.getSliceType(), tokenOp.getSource(),
-        offsets, sizes, strides);
+        builder, tokenOp.getLoc(), tokenType.getSliceType(),
+        tokenOp.getSource(), offsets, sizes, strides);
     deps.push_back(subview.getResult());
     modes.push_back(codir::CodirAccessModeAttr::get(
         builder.getContext(), convertAccessMode(tokenOp.getMode())));
@@ -1730,13 +1580,12 @@ static inline LogicalResult materializeCodirDeps(sde::SdeCuCodeletOp sdeCodelet,
         tokenOp.getOffsets().size() ==
             static_cast<size_t>(sliceType.getRank()) &&
         tokenOp.getSizes().size() == static_cast<size_t>(sliceType.getRank()))
-      localIndexRewrites.push_back({static_cast<unsigned>(index),
-                                    SmallVector<Value>(
-                                        tokenOp.getOffsets().begin(),
-                                        tokenOp.getOffsets().end()),
-                                    SmallVector<Value>(
-                                        tokenOp.getSizes().begin(),
-                                        tokenOp.getSizes().end())});
+      localIndexRewrites.push_back(
+          {static_cast<unsigned>(index),
+           SmallVector<Value>(tokenOp.getOffsets().begin(),
+                              tokenOp.getOffsets().end()),
+           SmallVector<Value>(tokenOp.getSizes().begin(),
+                              tokenOp.getSizes().end())});
   }
 
   return success();
@@ -1764,7 +1613,7 @@ static inline bool isDefinedInside(Value value, Region &region) {
 }
 
 static inline LogicalResult addTaskDep(Value dep, codir::CodirAccessMode mode,
-                                CodirTaskPlan &plan) {
+                                       CodirTaskPlan &plan) {
   if (!isCodirDependencyType(dep.getType()))
     return failure();
 
@@ -1852,7 +1701,8 @@ static inline bool hasOnlyScalarLoadsInTask(Value memref, Region &taskRegion) {
   return true;
 }
 
-static inline LogicalResult addScalarMemrefParam(Value memref, CodirTaskPlan &plan) {
+static inline LogicalResult addScalarMemrefParam(Value memref,
+                                                 CodirTaskPlan &plan) {
   if (!isScalarMemrefCaptureType(memref.getType()))
     return failure();
   if (!plan.scalarMemrefParamIndex
@@ -1864,7 +1714,7 @@ static inline LogicalResult addScalarMemrefParam(Value memref, CodirTaskPlan &pl
 }
 
 static inline bool hasOnlyLocalizableMemrefUsesInTask(Value memref,
-                                               Region &taskRegion) {
+                                                      Region &taskRegion) {
   bool sawAccess = false;
   for (Operation *user : memref.getUsers()) {
     if (!taskRegion.isAncestor(user->getParentRegion()))
@@ -1907,7 +1757,7 @@ static inline bool hasOnlyLocalizableMemrefUsesInTask(Value memref,
 }
 
 static inline FailureOr<Value> materializeTaskDepView(sde::SdeMuDepOp muDep,
-                                               OpBuilder &builder) {
+                                                      OpBuilder &builder) {
   auto sourceType = dyn_cast<MemRefType>(muDep.getSource().getType());
   if (!sourceType || !hasCompleteMuDepSlice(muDep))
     return failure();
@@ -1932,7 +1782,7 @@ static inline FailureOr<Value> materializeTaskDepView(sde::SdeMuDepOp muDep,
 }
 
 static inline bool canCloneTaskCapture(Value value, Region &taskRegion,
-                                llvm::DenseSet<Value> &visited) {
+                                       llvm::DenseSet<Value> &visited) {
   if (!value || isDefinedInside(value, taskRegion))
     return true;
 
@@ -1953,8 +1803,9 @@ static inline bool canCloneTaskCapture(Value value, Region &taskRegion) {
   return canCloneTaskCapture(value, taskRegion, visited);
 }
 
-static inline void collectTaskCaptureClone(Value value, Region &taskRegion,
-                                    llvm::SetVector<Value> &cloneCaptures) {
+static inline void
+collectTaskCaptureClone(Value value, Region &taskRegion,
+                        llvm::SetVector<Value> &cloneCaptures) {
   if (!value || isDefinedInside(value, taskRegion))
     return;
 
@@ -1968,8 +1819,8 @@ static inline void collectTaskCaptureClone(Value value, Region &taskRegion,
 }
 
 static inline LogicalResult buildCodirTaskPlan(sde::SdeCuTaskOp task,
-                                        OpBuilder &builder,
-                                        CodirTaskPlan &plan) {
+                                               OpBuilder &builder,
+                                               CodirTaskPlan &plan) {
   DenseMap<Value, unsigned> depSourceCounts;
   DenseMap<Value, sde::SdeMuDepOp> depSourceRepresentative;
   DenseMap<Value, SmallVector<sde::SdeMuDepOp>> depSourceOps;
@@ -2014,18 +1865,15 @@ static inline LogicalResult buildCodirTaskPlan(sde::SdeCuTaskOp task,
     bool sourceHasMixedSlices =
         depSourcesWithMixedSlices.contains(muDep.getSource());
     bool duplicateSourceHasSameSlice =
-        depSourceCounts.lookup(muDep.getSource()) > 1 &&
-        !sourceHasMixedSlices;
+        depSourceCounts.lookup(muDep.getSource()) > 1 && !sourceHasMixedSlices;
     bool hasStaticLocalizableSlice =
         hasCodirTaskDepSliceBoundsSupport(muDep) &&
         hasOnlyLocalizableMemrefUsesInTask(muDep.getSource(), task.getBody());
     bool hasExactDynamicSubviewProof =
-        hasCompleteMuDepSlice(muDep) &&
-        !hasOnlyStaticMuDepSliceBounds(muDep) &&
+        hasCompleteMuDepSlice(muDep) && !hasOnlyStaticMuDepSliceBounds(muDep) &&
         hasExactSubviewAccessProofInTask(muDep, task.getBody());
     bool hasExactDynamicRootAccessProof =
-        hasCompleteMuDepSlice(muDep) &&
-        !hasOnlyStaticMuDepSliceBounds(muDep) &&
+        hasCompleteMuDepSlice(muDep) && !hasOnlyStaticMuDepSliceBounds(muDep) &&
         hasExactRootAccessProofInTask(muDep, task.getBody());
     bool hasPartitionedAccessProof =
         depSourceHasPartitionedAccessProof.lookup(muDep.getSource());
@@ -2132,8 +1980,8 @@ static inline LogicalResult buildCodirTaskPlan(sde::SdeCuTaskOp task,
             return WalkResult::interrupt();
           continue;
         }
-        if (failed(addTaskDep(operand, codir::CodirAccessMode::readwrite,
-                              plan)))
+        if (failed(
+                addTaskDep(operand, codir::CodirAccessMode::readwrite, plan)))
           return WalkResult::interrupt();
         continue;
       }
@@ -2235,7 +2083,8 @@ static inline LogicalResult convertCuTaskToCodir(sde::SdeCuTaskOp task) {
   OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPointToStart(body);
   std::function<LogicalResult(Value)> cloneCapture = [&](Value value) {
-    if (!value || mapper.contains(value) || isDefinedInside(value, task.getBody()))
+    if (!value || mapper.contains(value) ||
+        isDefinedInside(value, task.getBody()))
       return success();
 
     Operation *def = value.getDefiningOp();
@@ -2287,7 +2136,8 @@ static inline LogicalResult convertCuTaskToCodir(sde::SdeCuTaskOp task) {
         subview && plan.exactSubviewDepIndex.contains(subview.getResult()))
       continue;
     if (auto subindex = dyn_cast<polygeist::SubIndexOp>(&nested)) {
-      auto exactSubindex = plan.exactSubindexDepIndex.find(subindex.getResult());
+      auto exactSubindex =
+          plan.exactSubindexDepIndex.find(subindex.getResult());
       if (exactSubindex != plan.exactSubindexDepIndex.end()) {
         Value depArg = body->getArgument(exactSubindex->second);
         Value zero = createZeroIndex(builder, subindex.getLoc());
@@ -2306,8 +2156,9 @@ static inline LogicalResult convertCuTaskToCodir(sde::SdeCuTaskOp task) {
       auto exactAccess = plan.exactRootAccessDepIndex.find(&nested);
       if (exactAccess != plan.exactRootAccessDepIndex.end()) {
         Value depArg = body->getArgument(exactAccess->second);
-        auto localLoad = memref::LoadOp::create(
-            builder, load.getLoc(), depArg, materializeZeroIndicesForDep(depArg));
+        auto localLoad =
+            memref::LoadOp::create(builder, load.getLoc(), depArg,
+                                   materializeZeroIndicesForDep(depArg));
         mapper.map(load.getResult(), localLoad.getResult());
         continue;
       }
@@ -2459,8 +2310,7 @@ getOwnerStripDispatchExtent(sde::SdeSuIterateOp source, ArrayAttr extents) {
           ::mlir::carts::readI64ArrayAttr(source.getPhysicalOwnerDimsAttr())) {
     if (physicalOwnerDims->size() == 1 && (*physicalOwnerDims)[0] >= 0) {
       unsigned physicalDim = static_cast<unsigned>((*physicalOwnerDims)[0]);
-      if (std::optional<int64_t> extent =
-              getPositiveI64(extents, physicalDim))
+      if (std::optional<int64_t> extent = getPositiveI64(extents, physicalDim))
         return extent;
     }
   }
@@ -2475,7 +2325,7 @@ getOwnerStripDispatchExtent(sde::SdeSuIterateOp source, ArrayAttr extents) {
 }
 
 static inline Value buildSuDispatchStep(sde::SdeSuIterateOp source,
-                                 OpBuilder &builder) {
+                                        OpBuilder &builder) {
   Value step = source.getSteps().front();
   if (hasOwnerStripTopology(source)) {
     if (std::optional<int64_t> block = getOwnerStripDispatchExtent(
@@ -2531,7 +2381,7 @@ struct SuCodeletPlan {
 };
 
 static inline LogicalResult addSuDep(Value dep, codir::CodirAccessMode mode,
-                              SuCodeletPlan &plan) {
+                                     SuCodeletPlan &plan) {
   CodirTaskPlan taskPlan;
   taskPlan.deps = plan.deps;
   taskPlan.depModes = plan.depModes;
@@ -2641,14 +2491,15 @@ static inline LogicalResult cloneSuLocalAllocaCaptures(SuCodeletPlan &plan,
   return success();
 }
 
-static inline bool isSuBodyBlockArgument(Value value, sde::SdeSuIterateOp source) {
+static inline bool isSuBodyBlockArgument(Value value,
+                                         sde::SdeSuIterateOp source) {
   auto arg = dyn_cast<BlockArgument>(value);
   return arg && arg.getOwner() == &source.getBody().front();
 }
 
 static inline LogicalResult collectSuOperand(Value operand, Operation *owner,
-                                      sde::SdeSuIterateOp source,
-                                      SuCodeletPlan &plan) {
+                                             sde::SdeSuIterateOp source,
+                                             SuCodeletPlan &plan) {
   if (!operand || isDefinedInside(operand, source.getBody()) ||
       isSuBodyBlockArgument(operand, source))
     return success();
@@ -2680,8 +2531,8 @@ static inline LogicalResult collectSuOperand(Value operand, Operation *owner,
 }
 
 static inline LogicalResult buildSuCodeletPlan(sde::SdeSuIterateOp source,
-                                        Value dispatchStep,
-                                        SuCodeletPlan &plan) {
+                                               Value dispatchStep,
+                                               SuCodeletPlan &plan) {
   if (source.getBody().empty())
     return source.emitOpError() << "expects body before CODIR conversion";
   if (!source.getResults().empty())
@@ -2720,9 +2571,9 @@ static inline LogicalResult buildSuCodeletPlan(sde::SdeSuIterateOp source,
 }
 
 static inline void appendSuOwnerSliceLocalRewrites(sde::SdeSuIterateOp source,
-                                            Value dispatchBase,
-                                            OpBuilder &builder,
-                                            SuCodeletPlan &plan) {
+                                                   Value dispatchBase,
+                                                   OpBuilder &builder,
+                                                   SuCodeletPlan &plan) {
   if (!hasSdePhysicalOwnerSlicePlan(source))
     return;
 
@@ -2755,9 +2606,9 @@ static inline Value lookupMappedParam(Value value, IRMapping &mapper) {
   return value;
 }
 
-static inline void mapSuEquivalentConstantIndexParams(sde::SdeSuIterateOp source,
-                                                      SuCodeletPlan &plan,
-                                                      IRMapping &mapper) {
+static inline void
+mapSuEquivalentConstantIndexParams(sde::SdeSuIterateOp source,
+                                   SuCodeletPlan &plan, IRMapping &mapper) {
   SmallVector<std::pair<int64_t, Value>> foldedParams;
   for (Value param : plan.params) {
     Operation *def = param.getDefiningOp();
@@ -2777,7 +2628,8 @@ static inline void mapSuEquivalentConstantIndexParams(sde::SdeSuIterateOp source
     return;
 
   source.getBody().walk([&](Operation *op) {
-    if (!op || op->getNumRegions() != 0 || !isSideEffectFreeArithmeticLikeOp(op))
+    if (!op || op->getNumRegions() != 0 ||
+        !isSideEffectFreeArithmeticLikeOp(op))
       return;
     for (Value result : op->getResults()) {
       if (mapper.contains(result) || !result.getType().isIndex())
@@ -2786,9 +2638,8 @@ static inline void mapSuEquivalentConstantIndexParams(sde::SdeSuIterateOp source
           ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(result);
       if (!folded)
         continue;
-      auto it = llvm::find_if(foldedParams, [&](auto entry) {
-        return entry.first == *folded;
-      });
+      auto it = llvm::find_if(
+          foldedParams, [&](auto entry) { return entry.first == *folded; });
       if (it != foldedParams.end())
         mapper.map(result, it->second);
     }
@@ -2803,9 +2654,9 @@ static inline bool areAllResultsMapped(Operation &op, IRMapping &mapper) {
 }
 
 static inline LogicalResult cloneSuBodyFromDim(sde::SdeSuIterateOp source,
-                                        unsigned dim, IRMapping &mapper,
-                                        OpBuilder &builder,
-                                        Block *computeBlock) {
+                                               unsigned dim, IRMapping &mapper,
+                                               OpBuilder &builder,
+                                               Block *computeBlock) {
   if (dim >= source.getLowerBounds().size()) {
     for (Operation &nested : computeBlock->without_terminator()) {
       if (areAllResultsMapped(nested, mapper))
@@ -2934,8 +2785,8 @@ convertSuOwnerTile2dToCodir(sde::SdeSuIterateOp source) {
   if (!computeBlock)
     return source.emitOpError()
            << "expects a computable body before CODIR conversion";
-  if (failed(cloneSuBodyFromDim(source, /*dim=*/2, mapper, builder,
-                                computeBlock)))
+  if (failed(
+          cloneSuBodyFromDim(source, /*dim=*/2, mapper, builder, computeBlock)))
     return failure();
 
   builder.setInsertionPointToEnd(body);
@@ -2948,7 +2799,8 @@ convertSuOwnerTile2dToCodir(sde::SdeSuIterateOp source) {
   return success();
 }
 
-static inline LogicalResult convertSuIterateToCodir(sde::SdeSuIterateOp source) {
+static inline LogicalResult
+convertSuIterateToCodir(sde::SdeSuIterateOp source) {
   if (hasSuOwnerTile2dDispatchPlan(source))
     return convertSuOwnerTile2dToCodir(source);
 
@@ -3025,8 +2877,8 @@ static inline LogicalResult convertSuIterateToCodir(sde::SdeSuIterateOp source) 
   if (!computeBlock)
     return source.emitOpError()
            << "expects a computable body before CODIR conversion";
-  if (failed(cloneSuBodyFromDim(source, /*dim=*/1, mapper, builder,
-                                computeBlock)))
+  if (failed(
+          cloneSuBodyFromDim(source, /*dim=*/1, mapper, builder, computeBlock)))
     return failure();
 
   builder.setInsertionPointToEnd(body);
@@ -3066,8 +2918,8 @@ static inline LogicalResult lowerSdeControlBarrier(sde::SdeSuBarrierOp op) {
   return success();
 }
 
-static inline LogicalResult eraseConsumedSdeControlToken(
-    sde::SdeControlTokenOp op) {
+static inline LogicalResult
+eraseConsumedSdeControlToken(sde::SdeControlTokenOp op) {
   if (!op.getToken().use_empty())
     return op.emitOpError()
            << "survived CODIR-to-ARTS materialization with live users; "
@@ -3117,8 +2969,7 @@ static inline void replaceSdeYieldWithCodirYield(codir::CodeletOp codelet) {
     return;
 
   OpBuilder builder(sdeYield);
-  codir::YieldOp::create(builder, sdeYield.getLoc(),
-                                sdeYield.getValues());
+  codir::YieldOp::create(builder, sdeYield.getLoc(), sdeYield.getValues());
   sdeYield.erase();
 }
 
