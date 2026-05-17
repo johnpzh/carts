@@ -7,7 +7,7 @@
 #ifndef CARTS_DIALECT_ARTS_UTILS_RUNTIMEOPUTILS_H
 #define CARTS_DIALECT_ARTS_UTILS_RUNTIMEOPUTILS_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/Builders.h"

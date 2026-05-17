@@ -5,7 +5,7 @@
 /// lowering.
 ///==========================================================================///
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #define GEN_PASS_DEF_VERIFYEDTLOWERED
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"

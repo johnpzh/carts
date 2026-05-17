@@ -7,7 +7,7 @@
 #ifndef CARTS_DIALECT_ARTS_UTILS_LAUNCHPOLICYUTILS_H
 #define CARTS_DIALECT_ARTS_UTILS_LAUNCHPOLICYUTILS_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/utils/OperationAttributes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"

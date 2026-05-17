@@ -7,7 +7,7 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_EDT_EDTNODE_H
 #define ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_EDT_EDTNODE_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/edt/EdtInfo.h"
 #include "carts/dialect/arts/Analysis/graphs/base/NodeBase.h"
 #include "llvm/ADT/ArrayRef.h"

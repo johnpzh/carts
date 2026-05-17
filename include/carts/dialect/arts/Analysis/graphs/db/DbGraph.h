@@ -8,7 +8,7 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_DB_DBGRAPH_H
 #define ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_DB_DBGRAPH_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/JSON.h"

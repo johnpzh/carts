@@ -5,7 +5,7 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/Analysis/db/OwnershipProof.h"
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"

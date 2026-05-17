@@ -20,7 +20,7 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
 /// Arts
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Transforms/edt/EdtPtrRematerialization.h"
 
 /// Others

@@ -7,7 +7,7 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_DB_DBDISTRIBUTEDELIGIBILITY_H
 #define ARTS_DIALECT_CORE_ANALYSIS_DB_DBDISTRIBUTEDELIGIBILITY_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include <optional>
 
 namespace mlir {

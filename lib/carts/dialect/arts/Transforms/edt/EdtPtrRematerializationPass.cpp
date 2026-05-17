@@ -21,7 +21,7 @@
 #include "mlir/Pass/Pass.h"
 
 /// Arts
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Transforms/edt/EdtPtrRematerialization.h"
 
 /// LLVM

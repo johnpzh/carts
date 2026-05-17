@@ -16,7 +16,7 @@
 /// Collects and logs statistics: total contracts, per-pattern counts, orphans.
 ///==========================================================================///
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #define GEN_PASS_DEF_CONTRACTVALIDATION
 #include "carts/dialect/arts/Analysis/db/OwnershipProof.h"
 #include "carts/passes/Passes.h"

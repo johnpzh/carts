@@ -7,7 +7,7 @@
 #ifndef CARTS_DIALECT_ARTS_UTILS_VALUEANALYSISUTILS_H
 #define CARTS_DIALECT_ARTS_UTILS_VALUEANALYSISUTILS_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "mlir/IR/Value.h"
 #include <optional>
 

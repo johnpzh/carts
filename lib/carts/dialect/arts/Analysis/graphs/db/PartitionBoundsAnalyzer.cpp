@@ -6,7 +6,7 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/Analysis/graphs/db/PartitionBoundsAnalyzer.h"
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/AccessPatternAnalysis.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"

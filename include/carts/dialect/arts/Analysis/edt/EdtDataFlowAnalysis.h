@@ -7,7 +7,7 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_EDT_EDTDATAFLOWANALYSIS_H
 #define ARTS_DIALECT_CORE_ANALYSIS_EDT_EDTDATAFLOWANALYSIS_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbGraph.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtEdge.h"

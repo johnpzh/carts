@@ -26,7 +26,7 @@
 #include "mlir/IR/Location.h"
 #include "mlir/Support/LLVM.h"
 /// Arts
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #define GEN_PASS_DEF_CREATEEPOCHS
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"

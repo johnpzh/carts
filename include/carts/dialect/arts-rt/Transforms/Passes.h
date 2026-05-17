@@ -11,7 +11,7 @@
 #ifndef ARTS_DIALECT_RT_TRANSFORMS_PASSES_H
 #define ARTS_DIALECT_RT_TRANSFORMS_PASSES_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"

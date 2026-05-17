@@ -42,7 +42,7 @@
 #include "polygeist/Ops.h"
 #include "polygeist/Passes/Passes.h"
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/sde/IR/SdeDialect.h"
@@ -416,7 +416,7 @@ static constexpr llvm::StringLiteral kTargetCodirToArtsStages[] = {
 static constexpr llvm::StringLiteral kTargetArtsStages[] = {
     "arts-object-refinement", "arts-epochs"};
 static constexpr llvm::StringLiteral kTargetArtsRtStages[] = {
-    "arts-to-arts-rt", "arts-rt-to-llvm"};
+    "pre-lowering", "arts-rt-to-llvm"};
 
 static const std::array<DialectGroupDescriptor, 6> kCurrentDialectGroups = {{
     {"frontend-normalization", "current",

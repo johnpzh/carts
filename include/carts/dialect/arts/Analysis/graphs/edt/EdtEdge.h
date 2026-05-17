@@ -7,7 +7,7 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_EDT_EDTEDGE_H
 #define ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_EDT_EDTEDGE_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/graphs/base/EdgeBase.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include <cstdint>

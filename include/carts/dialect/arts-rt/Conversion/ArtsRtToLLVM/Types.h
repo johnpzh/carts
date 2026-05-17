@@ -16,7 +16,7 @@
 #include <optional>
 #include <sys/types.h>
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 
 namespace mlir {
 namespace carts::arts_rt {

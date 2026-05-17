@@ -7,7 +7,7 @@
 #ifndef CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSTORT_DBLAYOUTSTRATEGY_H
 #define CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSTORT_DBLAYOUTSTRATEGY_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Value.h"
 #include "llvm/ADT/ArrayRef.h"

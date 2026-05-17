@@ -1,7 +1,7 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_HEURISTICS_EPOCHHEURISTICS_H
 #define ARTS_DIALECT_CORE_ANALYSIS_HEURISTICS_EPOCHHEURISTICS_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Operation.h"
 #include "llvm/ADT/DenseMap.h"

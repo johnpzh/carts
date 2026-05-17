@@ -1,7 +1,7 @@
 #ifndef CARTS_UTILS_OPERATIONATTRIBUTES_H
 #define CARTS_UTILS_OPERATIONATTRIBUTES_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/utils/StencilAttributes.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinOps.h"

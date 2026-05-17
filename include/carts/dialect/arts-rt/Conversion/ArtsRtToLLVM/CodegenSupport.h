@@ -8,7 +8,7 @@
 #ifndef CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_CODEGENSUPPORT_H
 #define CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_CODEGENSUPPORT_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Types.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"

@@ -12,7 +12,7 @@
 #ifndef CARTS_DIALECT_ARTS_UTILS_DBLAYOUTPLAN_H
 #define CARTS_DIALECT_ARTS_UTILS_DBLAYOUTPLAN_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"

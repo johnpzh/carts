@@ -24,7 +24,7 @@
 ///==========================================================================///
 
 #define GEN_PASS_DEF_DEADCODEELIMINATION
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
 #include "carts/utils/Debug.h"

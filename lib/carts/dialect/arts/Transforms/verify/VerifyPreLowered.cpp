@@ -9,7 +9,7 @@
 /// residual arts.edt/arts.epoch indicate a lowering boundary bug.
 ///==========================================================================///
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #define GEN_PASS_DEF_VERIFYPRELOWERED
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"

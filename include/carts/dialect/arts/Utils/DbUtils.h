@@ -9,7 +9,7 @@
 #ifndef CARTS_UTILS_DBUTILS_H
 #define CARTS_UTILS_DBUTILS_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Value.h"

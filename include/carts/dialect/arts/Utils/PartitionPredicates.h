@@ -8,7 +8,7 @@
 #ifndef ARTS_UTILS_PARTITIONPREDICATES_H
 #define ARTS_UTILS_PARTITIONPREDICATES_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 
 namespace mlir {
 namespace carts::arts {

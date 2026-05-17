@@ -22,7 +22,7 @@
 ///==========================================================================///
 
 #define GEN_PASS_DEF_HOISTING
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
 #include "mlir/Dialect/Arith/IR/Arith.h"

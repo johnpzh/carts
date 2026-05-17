@@ -18,7 +18,7 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_DB_OWNERSHIPPROOF_H
 #define ARTS_DIALECT_CORE_ANALYSIS_DB_OWNERSHIPPROOF_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "mlir/IR/Operation.h"
 
 namespace mlir {

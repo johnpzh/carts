@@ -9,7 +9,7 @@
 #ifndef ARTS_DIALECT_CORE_TRANSFORMS_EPOCHOPTINTERNAL_H
 #define ARTS_DIALECT_CORE_TRANSFORMS_EPOCHOPTINTERNAL_H
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Analysis/edt/EpochAnalysis.h"

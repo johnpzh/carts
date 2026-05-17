@@ -7,7 +7,7 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_EDT_EDTGRAPH_H
 #define ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_EDT_EDTGRAPH_H
 
-#include "carts/Dialect.h" // For EdtOp
+#include "carts/dialect/arts/IR/ArtsDialect.h" // For EdtOp
 #include "carts/dialect/arts/Analysis/graphs/base/EdgeBase.h"
 #include "carts/dialect/arts/Analysis/graphs/base/NodeBase.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbGraph.h"

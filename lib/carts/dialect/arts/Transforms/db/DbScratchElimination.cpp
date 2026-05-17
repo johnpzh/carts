@@ -6,7 +6,7 @@
 /// established stable acquire and dependency structure.
 ///==========================================================================///
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_DBSCRATCHELIMINATION

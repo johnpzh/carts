@@ -5,7 +5,7 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/Analysis/AccessPatternAnalysis.h"
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"

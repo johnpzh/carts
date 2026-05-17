@@ -6,7 +6,7 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/Analysis/graphs/db/MemoryAccessClassifier.h"
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/RuntimeOpUtils.h"

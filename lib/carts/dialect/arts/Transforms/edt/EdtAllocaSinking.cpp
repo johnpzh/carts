@@ -5,7 +5,7 @@
 /// captures a private copy instead of a shared pointer.
 ///==========================================================================///
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/passes/Passes.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/utils/Utils.h"

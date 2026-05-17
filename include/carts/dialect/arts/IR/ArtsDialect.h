@@ -1,10 +1,10 @@
 ///==========================================================================///
-/// File: Dialect.h
-/// Defines the Arts dialect and the operations within it.
+/// File: ArtsDialect.h
+/// Defines the ARTS dialect and the operations within it.
 ///==========================================================================///
 
-#ifndef CARTS_DIALECT_H
-#define CARTS_DIALECT_H
+#ifndef CARTS_DIALECT_ARTS_IR_ARTSDIALECT_H
+#define CARTS_DIALECT_ARTS_IR_ARTSDIALECT_H
 
 /// Dialects
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -23,14 +23,14 @@
 #include "llvm/ADT/DenseMapInfo.h"
 #include <optional>
 
-/// Arts Dialect
+/// ARTS Dialect
 #include "carts/dialect/arts/IR/OpsDialect.h.inc"
 
-/// Arts Dialect Types
+/// ARTS Dialect Types
 #define GET_TYPEDEF_CLASSES
 #include "carts/dialect/arts/IR/OpsTypes.h.inc"
 
-/// Arts Dialect Enums
+/// ARTS Dialect Enums
 #include "carts/dialect/arts/IR/OpsEnums.h.inc"
 
 namespace mlir {
@@ -64,12 +64,12 @@ struct PartitionInfo {
 } // namespace carts::arts
 } // namespace mlir
 
-/// Arts Dialect Attributes
+/// ARTS Dialect Attributes
 #define GET_ATTRDEF_CLASSES
 #include "carts/dialect/arts/IR/OpsAttributes.h.inc"
 
-/// Arts Dialect Operations
+/// ARTS Dialect Operations
 #define GET_OP_CLASSES
 #include "carts/dialect/arts/IR/Ops.h.inc"
 
-#endif // CARTS_DIALECT_H
+#endif // CARTS_DIALECT_ARTS_IR_ARTSDIALECT_H

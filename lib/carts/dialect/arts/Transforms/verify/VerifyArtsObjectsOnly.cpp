@@ -4,7 +4,7 @@
 /// Verification pass for the target CODIR-to-ARTS boundary contract.
 ///==========================================================================///
 
-#include "carts/Dialect.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/sde/IR/SdeDialect.h"
