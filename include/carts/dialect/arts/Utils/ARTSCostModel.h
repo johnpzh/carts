@@ -12,7 +12,7 @@
 #define ARTS_UTILS_COSTS_ARTSCOSTMODEL_H
 
 #include "carts/dialect/sde/Utils/SDECostModel.h"
-#include "carts/utils/RuntimeConfig.h"
+#include "carts/dialect/arts/Utils/RuntimeConfig.h"
 
 namespace mlir::carts::arts {
 

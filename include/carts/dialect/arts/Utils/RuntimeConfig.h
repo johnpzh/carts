@@ -1,15 +1,12 @@
 ///==========================================================================///
 /// File: RuntimeConfig.h
 ///
-/// This file defines the ARTS runtime configuration representation that reads
-/// configuration files and provides comprehensive information about
-/// machine capabilities, threading, networking, GPU support, and
-/// execution parameters.
+/// ARTS runtime configuration representation used by compiler scheduling,
+/// placement, and runtime-lowering decisions.
 ///==========================================================================///
 
 #pragma once
 
-#include <cassert>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -79,6 +76,7 @@ public:
     }
     return workers > 0 ? workers : 1;
   }
+
   /// Runtime total workers across cluster (nodes * workers-per-node).
   int getRuntimeTotalWorkers() const {
     int nodesCount = nodeCount > 0 ? nodeCount : 1;
@@ -94,14 +92,9 @@ public:
       return ExecutionMode::IntraNode;
     return ExecutionMode::SingleThreaded;
   }
+
   /// Should chunking be prioritized? (true for distributed execution)
   bool shouldPrioritizeChunking() const { return nodeCount > 1; }
-
-  /// Get machine description as a formatted string
-  std::string getMachineDescription() const;
-
-  /// Get configuration summary
-  std::string getConfigurationSummary() const;
 
   /// Configuration file status
   bool hasConfigFile() const { return configFileExists; }
@@ -118,7 +111,6 @@ public:
 
 private:
   static std::string trim(const std::string &s);
-  static bool startsWith(const std::string &s, const char *prefix);
   static std::vector<std::string> splitCSV(const std::string &s);
   static int parseInt(const std::string &value, int defaultValue = -1);
   static bool parseBool(const std::string &value, bool defaultValue = false);
@@ -135,17 +127,12 @@ private:
   int scheduler = 0;
   int gpu = 0;
   int gpuRouteTableSize = 12;
-  bool freeDbAfterGpuRun = false;
-  bool deleteZerosGpuGc = true;
-  bool runGpuGcIdle = true;
-  bool runGpuGcPreEdt = false;
   int gpuLocality = 0;
   int gpuFit = 0;
   int gpuLCSync = 0;
   bool gpuBufferOn = true;
   int gpuMaxMemory = -1;
   int gpuMaxEdts = -1;
-  bool gpuP2P = false;
 
   /// Network Configuration
   int outgoing = 0;
