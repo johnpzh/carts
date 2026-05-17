@@ -33,13 +33,14 @@ namespace mlir::carts::arts_rt {
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLoweringInternal.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
-#include "carts/passes/Passes.h"
+#include "carts/dialect/arts-rt/Utils/IdRegistry.h"
 #include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
-#include "carts/dialect/arts-rt/Utils/IdRegistry.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
+#include "carts/dialect/arts/Utils/RuntimeOpUtils.h"
+#include "carts/passes/Passes.h"
+#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/IR/Builders.h"
@@ -100,9 +101,8 @@ static bool hasSingleDbSlot(Operation *dbOp) {
   if (sizes.empty())
     return true;
 
-  return llvm::all_of(sizes, [](Value size) {
-    return ValueAnalysis::isOneLikeValue(size);
-  });
+  return llvm::all_of(
+      sizes, [](Value size) { return ValueAnalysis::isOneLikeValue(size); });
 }
 
 static bool getBoolAttr(Operation *op, llvm::StringLiteral name) {
@@ -217,11 +217,13 @@ static bool hasTrustedPartitionedWriteContract(DbAcquireOp acquire) {
     return false;
 
   Operation *contract = contractOp.getOperation();
-  return getBoolAttr(contract,
-                     ::mlir::carts::arts::AttrNames::Operation::Proof::OwnerDimReachability) &&
-         getBoolAttr(contract,
-                     ::mlir::carts::arts::AttrNames::Operation::Proof::PartitionAccessMapping) &&
-         getBoolAttr(contract, ::mlir::carts::arts::AttrNames::Operation::Proof::HaloLegality);
+  return getBoolAttr(contract, ::mlir::carts::arts::AttrNames::Operation::
+                                   Proof::OwnerDimReachability) &&
+         getBoolAttr(contract, ::mlir::carts::arts::AttrNames::Operation::
+                                   Proof::PartitionAccessMapping) &&
+         getBoolAttr(
+             contract,
+             ::mlir::carts::arts::AttrNames::Operation::Proof::HaloLegality);
 }
 
 static bool canUseUnorderedLocalWrite(DbAcquireOp acquire, EdtOp edtOp,
@@ -239,7 +241,8 @@ static bool canUseUnorderedLocalWrite(DbAcquireOp acquire, EdtOp edtOp,
 ///===----------------------------------------------------------------------===///
 /// EDT Lowering Pass Implementation
 ///===----------------------------------------------------------------------===///
-struct EdtLoweringPass : public arts_rt::impl::EdtLoweringBase<EdtLoweringPass> {
+struct EdtLoweringPass
+    : public arts_rt::impl::EdtLoweringBase<EdtLoweringPass> {
   explicit EdtLoweringPass(uint64_t idStride = IdRegistry::DefaultStride)
       : idStride(idStride) {}
   EdtLoweringPass(const EdtLoweringPass &other)
@@ -399,9 +402,9 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
     return edtOp.emitError("Failed to create outlined function");
 
   /// Pack parameters
-  FailureOr<Value> maybeParamPack = packParams(
-      loc, envManager, packTypes, &packedValues,
-      /*preserveUndefParams=*/true);
+  FailureOr<Value> maybeParamPack =
+      packParams(loc, envManager, packTypes, &packedValues,
+                 /*preserveUndefParams=*/true);
   if (failed(maybeParamPack))
     return failure();
   Value paramPack = *maybeParamPack;
@@ -493,19 +496,24 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
 
   setOutlinedFunc(outlineOp, outlinedFunc.getName());
 
-  if (edtOp->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch))
-    outlineOp->setAttr(::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch,
-                       AC->getBuilder().getUnitAttr());
+  if (edtOp->hasAttr(
+          ::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch))
+    outlineOp->setAttr(
+        ::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch,
+        AC->getBuilder().getUnitAttr());
 
   /// Preserve structured launch schemas on the lowered create op for consumers
   /// that need the explicit state/dependency ABI.
   if (auto stateSchema = edtOp->getAttrOfType<DenseI64ArrayAttr>(
           ::mlir::carts::arts::AttrNames::Operation::LaunchState::StateSchema))
-    outlineOp->setAttr(::mlir::carts::arts::AttrNames::Operation::LaunchState::StateSchema,
-                       stateSchema);
+    outlineOp->setAttr(
+        ::mlir::carts::arts::AttrNames::Operation::LaunchState::StateSchema,
+        stateSchema);
   if (auto depSchema = edtOp->getAttrOfType<DenseI64ArrayAttr>(
           ::mlir::carts::arts::AttrNames::Operation::LaunchState::DepSchema))
-    outlineOp->setAttr(::mlir::carts::arts::AttrNames::Operation::LaunchState::DepSchema, depSchema);
+    outlineOp->setAttr(
+        ::mlir::carts::arts::AttrNames::Operation::LaunchState::DepSchema,
+        depSchema);
   int64_t baseId = getArtsId(edtOp);
   if (!baseId)
     baseId = idRegistry.getOrCreate(edtOp.getOperation());
@@ -600,11 +608,9 @@ EdtLoweringPass::createOutlinedFunction(EdtOp edtOp,
 /// Creates a parameter pack containing scalar user parameters and metadata for
 /// datablock dependencies (indices, offsets, sizes).
 ///===----------------------------------------------------------------------===///
-FailureOr<Value>
-EdtLoweringPass::packParams(Location loc, EdtEnvManager &envManager,
-                            SmallVector<Type> &packTypes,
-                            SmallVectorImpl<Value> *packedValues,
-                            bool preserveUndefParams) {
+FailureOr<Value> EdtLoweringPass::packParams(
+    Location loc, EdtEnvManager &envManager, SmallVector<Type> &packTypes,
+    SmallVectorImpl<Value> *packedValues, bool preserveUndefParams) {
   const auto &parameters = envManager.getParameters();
   const auto &deps = envManager.getDependencies();
   const auto &dbHandles = envManager.getDbHandles();
@@ -614,7 +620,8 @@ EdtLoweringPass::packParams(Location loc, EdtEnvManager &envManager,
 
   auto appendPackValue = [&](Value value) -> LogicalResult {
     if (!value.getType().isIntOrIndexOrFloat())
-      return emitError(loc, "EDT parameter pack accepts only scalar values, got ")
+      return emitError(loc,
+                       "EDT parameter pack accepts only scalar values, got ")
              << value.getType();
     packTypes.push_back(value.getType());
     packValues.push_back(value);
@@ -741,11 +748,10 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
   Value paramv = args[1];
   Value depv = args[3];
   if (isa<LLVM::LLVMPointerType>(paramv.getType()))
-    paramv = AC->create<polygeist::Pointer2MemrefOp>(loc, AC->Int64Ptr,
-                                                     paramv);
+    paramv = AC->create<polygeist::Pointer2MemrefOp>(loc, AC->Int64Ptr, paramv);
   if (isa<LLVM::LLVMPointerType>(depv.getType()))
-    depv = AC->create<polygeist::Pointer2MemrefOp>(loc, AC->ArtsEdtDepPtr,
-                                                   depv);
+    depv =
+        AC->create<polygeist::Pointer2MemrefOp>(loc, AC->ArtsEdtDepPtr, depv);
 
   const auto &parameters = envManager.getParameters();
   ValueRange explicitParams = edtOp.getParams();
@@ -790,8 +796,7 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
     unsigned argIndex = originalDeps.size() + static_cast<unsigned>(index);
     if (argIndex >= edtBlock.getNumArguments())
       return edtOp.emitOpError()
-             << "explicit EDT param block argument #" << index
-             << " is missing";
+             << "explicit EDT param block argument #" << index << " is missing";
     mapValue(edtBlock.getArgument(argIndex), unpackedParams[index]);
   }
 
@@ -1141,11 +1146,10 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
     /// only used to narrow (not widen) the access when the arts mode is not
     /// already read.
     DbMode dbMode = RtDbUtils::convertArtsModeToDbMode(artsMode);
-    int32_t runtimeDbMode =
-        artsMode == ArtsMode::inout ? kArtsRuntimeDbModeRw
-                                    : static_cast<int32_t>(dbMode);
-    if (allocForHint && dbMode != DbMode::read &&
-        artsMode != ArtsMode::inout) {
+    int32_t runtimeDbMode = artsMode == ArtsMode::inout
+                                ? kArtsRuntimeDbModeRw
+                                : static_cast<int32_t>(dbMode);
+    if (allocForHint && dbMode != DbMode::read && artsMode != ArtsMode::inout) {
       DbMode allocMode = allocForHint.getDbMode();
       if (allocMode == DbMode::read || allocMode == DbMode::write)
         dbMode = allocMode;
@@ -1165,7 +1169,8 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
         dbMode == DbMode::read) {
       bool duplicateSafe =
           allocForHint.getDbMode() == DbMode::read ||
-          allocForHint->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit);
+          allocForHint->hasAttr(
+              ::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit);
       if (duplicateSafe) {
         depFlagBits |= kArtsDepFlagPreferDuplicate;
       }
@@ -1247,10 +1252,9 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
 /// provided IRMapping. The original EDT is erased after lowering, so moving
 /// avoids recursively cloning large nested control-flow regions.
 ///===----------------------------------------------------------------------===///
-void EdtLoweringPass::cloneAndRemapEdtBody(Block &sourceBlock,
-                                           OpBuilder &builder,
-                                           const DenseMap<Value, Value>
-                                               &moveValueMapping) {
+void EdtLoweringPass::cloneAndRemapEdtBody(
+    Block &sourceBlock, OpBuilder &builder,
+    const DenseMap<Value, Value> &moveValueMapping) {
   Block *destBlock = builder.getInsertionBlock();
   auto remapOperands = [&](Operation *op) {
     for (const auto &it : moveValueMapping) {
@@ -1366,8 +1370,8 @@ void EdtLoweringPass::transformDepUses(ArrayRef<Value> originalDeps, Value depv,
     Value baseOffset = computeBaseOffset(depIndex, loc);
     SmallVector<Value> depSizes =
         resolveParam(RtDbUtils::getDepSizesFromDb(originalDeps[depIndex]), loc);
-    SmallVector<Value> depOffsets =
-        resolveParam(RtDbUtils::getDepOffsetsFromDb(originalDeps[depIndex]), loc);
+    SmallVector<Value> depOffsets = resolveParam(
+        RtDbUtils::getDepOffsetsFromDb(originalDeps[depIndex]), loc);
     SmallVector<Value> depStrides = AC->computeStridesFromSizes(depSizes, loc);
 
     auto originalAcquire = originalDeps[depIndex].getDefiningOp<DbAcquireOp>();

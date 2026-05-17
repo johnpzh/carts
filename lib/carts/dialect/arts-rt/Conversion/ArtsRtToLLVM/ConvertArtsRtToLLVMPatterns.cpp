@@ -12,8 +12,9 @@
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
+#include "carts/dialect/arts/Utils/RuntimeOpUtils.h"
+#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/StencilAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -179,9 +180,8 @@ static SmallVector<Value> materializeDbRefElementSizes(DbRefOp op,
   DbAllocOp selectedAlloc = nullptr;
   if (auto *rawAlloc = RtDbUtils::getUnderlyingDbAlloc(op.getSource()))
     selectedAlloc = dyn_cast<DbAllocOp>(rawAlloc);
-  if (selectedAlloc &&
-      selectedAlloc.getElementSizes().size() !=
-          static_cast<size_t>(resultType.getRank()))
+  if (selectedAlloc && selectedAlloc.getElementSizes().size() !=
+                           static_cast<size_t>(resultType.getRank()))
     selectedAlloc = nullptr;
 
   if (!selectedAlloc) {
@@ -545,9 +545,8 @@ private:
                                    storeOp.getIndices().end());
         Value linearIndex =
             AC->computeLinearIndex(dbSizes, indices, storeOp.getLoc());
-        AC->create<memref::StoreOp>(storeOp.getLoc(),
-                                    storeOp.getValueToStore(), flatMemref,
-                                    ValueRange{linearIndex});
+        AC->create<memref::StoreOp>(storeOp.getLoc(), storeOp.getValueToStore(),
+                                    flatMemref, ValueRange{linearIndex});
         rewriter.eraseOp(storeOp);
       }
     }
@@ -988,8 +987,7 @@ private:
       std::optional<int64_t> *nextId, Location loc,
       bool distributedOwnership = false, bool createDb = true,
       DbMemoryPlacement memoryPlacement = DbMemoryPlacement::Default,
-      ArrayRef<Value> sizes = {},
-      ArrayRef<Value> indices = {},
+      ArrayRef<Value> sizes = {}, ArrayRef<Value> indices = {},
       std::optional<Value> linearIndexOverride = std::nullopt) const {
     Value linearIndex;
     if (linearIndexOverride.has_value()) {
@@ -1033,13 +1031,11 @@ private:
     }
   }
 
-  void createMultiDbs(Value dbMemref, Value guidMemref, ArrayRef<Value> sizes,
-                      Value route, Value elementSize,
-                      std::optional<int64_t> *nextId, Location loc,
-                      bool distributedOwnership = false,
-                      bool createDb = true,
-                      DbMemoryPlacement memoryPlacement =
-                          DbMemoryPlacement::Default) const {
+  void createMultiDbs(
+      Value dbMemref, Value guidMemref, ArrayRef<Value> sizes, Value route,
+      Value elementSize, std::optional<int64_t> *nextId, Location loc,
+      bool distributedOwnership = false, bool createDb = true,
+      DbMemoryPlacement memoryPlacement = DbMemoryPlacement::Default) const {
     Value totalElems = AC->computeTotalElements(sizes, loc);
     /// Keep DB creation always linearized here. The dedicated GuidRangeCallOpt
     /// pass handles reserve->reserve_range promotion centrally after
@@ -1051,7 +1047,8 @@ private:
     AC->setInsertionPointToStart(&loopBlock);
     Value linearIndex = linearLoop.getInductionVar();
     createSingleDb(dbMemref, guidMemref, route, elementSize, nextId, loc,
-                   distributedOwnership, createDb, memoryPlacement, /*sizes=*/{},
+                   distributedOwnership, createDb, memoryPlacement,
+                   /*sizes=*/{},
                    /*indices=*/{}, /*linearIndexOverride=*/linearIndex);
     AC->setInsertionPointAfter(linearLoop);
   }
@@ -1063,8 +1060,8 @@ private:
       return DbMemoryPlacement::Default;
 
     auto depPattern = getDepPattern(op.getOperation());
-    bool hasBlockPlan = static_cast<bool>(
-        getPlanPhysicalBlockShapeAttr(op.getOperation()));
+    bool hasBlockPlan =
+        static_cast<bool>(getPlanPhysicalBlockShapeAttr(op.getOperation()));
     if (auto contract = getLoweringContract(op.getPtr())) {
       if (!depPattern && contract->pattern.depPattern)
         depPattern = contract->pattern.depPattern;
@@ -1102,8 +1099,7 @@ private:
     std::optional<int64_t> runtimeDbCount = getStaticRuntimeDbCount(dbSizes);
     if (!runtimeDbCount || *runtimeDbCount <= 1)
       return false;
-    if (*payloadBytes >
-        std::numeric_limits<int64_t>::max() / *runtimeDbCount)
+    if (*payloadBytes > std::numeric_limits<int64_t>::max() / *runtimeDbCount)
       return true;
     return *payloadBytes * *runtimeDbCount >= kLargeUniformInterleaveBytes;
   }
@@ -1146,8 +1142,8 @@ private:
     return *staticBlockCount > 1;
   }
 
-  static std::optional<int64_t> getStaticRuntimeDbCount(
-      ArrayRef<Value> dbSizes) {
+  static std::optional<int64_t>
+  getStaticRuntimeDbCount(ArrayRef<Value> dbSizes) {
     int64_t staticBlockCount = 1;
     for (Value size : dbSizes) {
       std::optional<int64_t> constant = getConstantIntValue(size);
@@ -1197,7 +1193,8 @@ struct DbRefPattern : public ArtsRtToLLVMPattern<DbRefOp> {
       strides.push_back(AC->createIndexConstant(1, loc));
 
     Value slotPtr =
-        AC->create<DbGepOp>(loc, AC->llvmPtr, source, indices, strides).getPtr();
+        AC->create<DbGepOp>(loc, AC->llvmPtr, source, indices, strides)
+            .getPtr();
 
     Value payloadPtr = slotPtr;
     if (isPointerTableElement(sourceType.getElementType()))
@@ -1361,7 +1358,8 @@ struct DbReleasePattern : public ArtsRtToLLVMPattern<DbReleaseOp> {
       };
 
       if (auto storageTy = dyn_cast<MemRefType>(guidStorage.getType())) {
-        SmallVector<Value> releaseSizes = RtDbUtils::getSizesFromDb(underlyingDb);
+        SmallVector<Value> releaseSizes =
+            RtDbUtils::getSizesFromDb(underlyingDb);
         if (releaseSizes.empty()) {
           Value zero = AC->createIndexConstant(0, op.getLoc());
           emitRelease(AC->create<memref::LoadOp>(op.getLoc(), guidStorage,
@@ -1430,7 +1428,8 @@ struct DbFreePattern : public ArtsRtToLLVMPattern<DbFreeOp> {
       };
 
       if (auto storageTy = dyn_cast<MemRefType>(guidStorage.getType())) {
-        SmallVector<Value> destroySizes = RtDbUtils::getSizesFromDb(underlyingDb);
+        SmallVector<Value> destroySizes =
+            RtDbUtils::getSizesFromDb(underlyingDb);
         if (destroySizes.empty()) {
           Value zero = AC->createIndexConstant(0, op.getLoc());
           emitDestroy(AC->create<memref::LoadOp>(op.getLoc(), guidStorage,

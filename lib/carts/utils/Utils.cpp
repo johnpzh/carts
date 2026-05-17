@@ -4,10 +4,8 @@
 ///==========================================================================///
 #include "carts/utils/Utils.h"
 #include "carts/Dialect.h"
-#include "carts/dialect/arts-rt/Utils/RuntimeCallUtils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -235,35 +233,6 @@ bool containsOmpOp(Operation *op) {
 }
 
 namespace arts {
-namespace {
-
-constexpr int64_t kCurrentNodeRoute = -1;
-
-} // namespace
-
-Value createCurrentNodeRoute(OpBuilder &builder, Location loc) {
-  return arith::ConstantIntOp::create(builder, loc, kCurrentNodeRoute, 32);
-}
-
-bool isArtsRuntimeQuery(Value val) {
-  if (!val)
-    return false;
-
-  val = ValueAnalysis::stripNumericCasts(val);
-  Operation *defOp = val.getDefiningOp();
-  if (!defOp)
-    return false;
-
-  /// Check for ARTS dialect ops (before lowering to func::CallOp)
-  if (isa<RuntimeQueryOp>(defOp))
-    return true;
-
-  /// Check for func::CallOp after ARTS-RT-to-LLVM has emitted runtime calls.
-  if (auto callOp = dyn_cast<func::CallOp>(defOp))
-    return arts_rt::isRuntimeTopologyQueryCall(callOp);
-
-  return false;
-}
 
 ///===----------------------------------------------------------------------===///
 /// Type and Size Utilities
@@ -356,18 +325,6 @@ void replaceInRegion(Region &region, DenseMap<Value, Value> &rewireMap,
     replaceInRegion(region, rewire.first, rewire.second);
   if (clear)
     rewireMap.clear();
-}
-
-///===----------------------------------------------------------------------===///
-/// Undef-Like Operation Detection Utilities
-///===----------------------------------------------------------------------===///
-
-bool isUndefLikeOp(Operation *op) {
-  if (!op)
-    return false;
-  StringRef name = op->getName().getStringRef();
-  return name == "llvm.mlir.undef" || name == "polygeist.undef" ||
-         name == "arts.undef";
 }
 
 } // namespace arts

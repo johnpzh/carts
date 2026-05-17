@@ -20,6 +20,7 @@
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
+#include "carts/dialect/arts/Utils/RuntimeOpUtils.h"
 #include "carts/utils/StencilAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -178,9 +179,9 @@ void mlir::carts::arts::EdtOp::setDependencies(ValueRange newDeps) {
   operands.append(params.begin(), params.end());
   op->setOperands(operands);
   op->setAttr(EdtOp::getOperandSegmentSizesAttrName(op->getName()),
-              DenseI32ArrayAttr::get(
-                  getContext(), {1, static_cast<int32_t>(newDeps.size()),
-                                 static_cast<int32_t>(params.size())}));
+              DenseI32ArrayAttr::get(getContext(),
+                                     {1, static_cast<int32_t>(newDeps.size()),
+                                      static_cast<int32_t>(params.size())}));
 }
 
 void mlir::carts::arts::EdtOp::appendDependency(Value dep) {
@@ -213,8 +214,7 @@ LogicalResult EdtOp::verify() {
   for (auto [index, param] : llvm::enumerate(params)) {
     if (!param.getType().isIntOrIndexOrFloat())
       return emitOpError("param #")
-             << index
-             << " must be an integer, index, or float scalar, got "
+             << index << " must be an integer, index, or float scalar, got "
              << param.getType();
 
     unsigned argIndex = deps.size() + index;
@@ -244,8 +244,8 @@ LogicalResult EdtOp::verify() {
   auto isValueDefinedInsideBody = [&](Value value) {
     if (auto blockArg = dyn_cast<BlockArgument>(value)) {
       Region *parentRegion = blockArg.getOwner()->getParent();
-      return parentRegion && (parentRegion == &getBody() ||
-                              getBody().isAncestor(parentRegion));
+      return parentRegion &&
+             (parentRegion == &getBody() || getBody().isAncestor(parentRegion));
     }
     return isDefinedInsideBody(value.getDefiningOp());
   };
@@ -442,9 +442,9 @@ void EpochOp::build(OpBuilder &builder, OperationState &state, Type epochGuid) {
   build(builder, state, epochGuid, ArtsDepPatternAttr{},
         EdtDistributionKindAttr{}, EdtDistributionPatternAttr{}, IntegerAttr{},
         ArrayAttr{}, ArrayAttr{}, ArrayAttr{}, ArrayAttr{},
-        ArtsPlanIterationTopologyAttr{},
-        ArtsPlanRepetitionStructureAttr{}, ArtsPlanAsyncStrategyAttr{},
-        IntegerAttr{}, IntegerAttr{}, IntegerAttr{}, IntegerAttr{});
+        ArtsPlanIterationTopologyAttr{}, ArtsPlanRepetitionStructureAttr{},
+        ArtsPlanAsyncStrategyAttr{}, IntegerAttr{}, IntegerAttr{},
+        IntegerAttr{}, IntegerAttr{});
 }
 
 /// Helper to compute GUID type from sizes
@@ -475,10 +475,12 @@ static void buildDbAllocOpCommon(OpBuilder &builder, OperationState &state,
   Type guidType = computeGuidType(builder, info.sizes);
 
   if (info.sizes.empty())
-    info.sizes.push_back(::mlir::carts::createOneIndex(builder, state.location));
+    info.sizes.push_back(
+        ::mlir::carts::createOneIndex(builder, state.location));
 
   if (info.elementSizes.empty())
-    info.elementSizes.push_back(::mlir::carts::createOneIndex(builder, state.location));
+    info.elementSizes.push_back(
+        ::mlir::carts::createOneIndex(builder, state.location));
 
   Type ptrType;
   if (info.pointerType) {
@@ -600,7 +602,8 @@ void DbAcquireOp::setPreserveAccessMode(bool preserve) {
     setPreserveAccessModeAttr(PreserveAccessModeAttr::get(getContext()));
     return;
   }
-  (*this)->removeAttr(::mlir::carts::arts::AttrNames::Operation::PreserveAccessMode);
+  (*this)->removeAttr(
+      ::mlir::carts::arts::AttrNames::Operation::PreserveAccessMode);
 }
 
 void DbAcquireOp::setPreserveDepEdge(bool preserve) {
@@ -608,7 +611,8 @@ void DbAcquireOp::setPreserveDepEdge(bool preserve) {
     setPreserveDepEdgeAttr(PreserveDepEdgeAttr::get(getContext()));
     return;
   }
-  (*this)->removeAttr(::mlir::carts::arts::AttrNames::Operation::PreserveDepEdge);
+  (*this)->removeAttr(
+      ::mlir::carts::arts::AttrNames::Operation::PreserveDepEdge);
 }
 
 void DbAcquireOp::setExplicitDepContract(bool preserve) {
@@ -621,7 +625,8 @@ void DbAcquireOp::setDepPattern(ArtsDepPattern pattern) {
 }
 
 void DbAcquireOp::clearDepPattern() {
-  (*this)->removeAttr(::mlir::carts::arts::AttrNames::Operation::DepPatternAttr);
+  (*this)->removeAttr(
+      ::mlir::carts::arts::AttrNames::Operation::DepPatternAttr);
 }
 
 void DbAcquireOp::copyPartitionSegmentsFrom(DbAcquireOp source) {
@@ -645,8 +650,8 @@ static size_t getSegmentEntryCount(std::optional<ArrayRef<int32_t>> segments) {
   return segments->size();
 }
 
-static size_t getPartitionEntryModeCount(
-    std::optional<ArrayRef<int32_t>> modes) {
+static size_t
+getPartitionEntryModeCount(std::optional<ArrayRef<int32_t>> modes) {
   if (!modes || modes->empty())
     return 0;
   return modes->size();
@@ -658,14 +663,14 @@ bool DbAcquireOp::hasMultiplePartitionEntries() {
 
 size_t DbAcquireOp::getNumPartitionEntries() {
   size_t segmentedEntries = 0;
-  segmentedEntries =
-      std::max(segmentedEntries, getSegmentEntryCount(getPartitionIndicesSegments()));
-  segmentedEntries =
-      std::max(segmentedEntries, getSegmentEntryCount(getPartitionOffsetsSegments()));
-  segmentedEntries =
-      std::max(segmentedEntries, getSegmentEntryCount(getPartitionSizesSegments()));
-  segmentedEntries =
-      std::max(segmentedEntries, getPartitionEntryModeCount(getPartitionEntryModes()));
+  segmentedEntries = std::max(
+      segmentedEntries, getSegmentEntryCount(getPartitionIndicesSegments()));
+  segmentedEntries = std::max(
+      segmentedEntries, getSegmentEntryCount(getPartitionOffsetsSegments()));
+  segmentedEntries = std::max(
+      segmentedEntries, getSegmentEntryCount(getPartitionSizesSegments()));
+  segmentedEntries = std::max(
+      segmentedEntries, getPartitionEntryModeCount(getPartitionEntryModes()));
   if (segmentedEntries > 0)
     return segmentedEntries;
 
@@ -870,7 +875,8 @@ void DbAcquireOp::build(OpBuilder &builder, OperationState &state,
     if (offsets.empty()) {
       offsets.reserve(remainingRank);
       for (uint64_t d = 0; d < remainingRank; ++d)
-        offsets.push_back(::mlir::carts::createZeroIndex(builder, state.location));
+        offsets.push_back(
+            ::mlir::carts::createZeroIndex(builder, state.location));
     }
   }
 
@@ -898,7 +904,8 @@ void DbAcquireOp::build(
       sizes.push_back(::mlir::carts::createOneIndex(builder, state.location));
     if (offsets.empty()) {
       for (size_t i = 0; i < sizes.size(); ++i)
-        offsets.push_back(::mlir::carts::createZeroIndex(builder, state.location));
+        offsets.push_back(
+            ::mlir::carts::createZeroIndex(builder, state.location));
     }
   }
 
@@ -1184,9 +1191,9 @@ LogicalResult DbAcquireOp::verify() {
   }
 
   size_t numPartitionEntries = getNumPartitionEntries();
-  auto verifyPartitionSegments =
-      [&](std::optional<ArrayRef<int32_t>> segments, OperandRange operands,
-          StringRef name) -> LogicalResult {
+  auto verifyPartitionSegments = [&](std::optional<ArrayRef<int32_t>> segments,
+                                     OperandRange operands,
+                                     StringRef name) -> LogicalResult {
     if (!segments || segments->empty()) {
       if (numPartitionEntries > 1 && !operands.empty())
         return emitOpError()
@@ -1196,10 +1203,9 @@ LogicalResult DbAcquireOp::verify() {
     }
 
     if (segments->size() != numPartitionEntries)
-      return emitOpError()
-             << name << " entry count (" << segments->size()
-             << ") must match logical partition entry count ("
-             << numPartitionEntries << ")";
+      return emitOpError() << name << " entry count (" << segments->size()
+                           << ") must match logical partition entry count ("
+                           << numPartitionEntries << ")";
 
     int64_t segmentTotal = 0;
     for (int32_t segmentSize : *segments) {
@@ -1210,9 +1216,9 @@ LogicalResult DbAcquireOp::verify() {
     }
 
     if (segmentTotal != static_cast<int64_t>(operands.size()))
-      return emitOpError()
-             << name << " segment sum (" << segmentTotal
-             << ") must match operand count (" << operands.size() << ")";
+      return emitOpError() << name << " segment sum (" << segmentTotal
+                           << ") must match operand count (" << operands.size()
+                           << ")";
     return success();
   };
 
@@ -1229,10 +1235,9 @@ LogicalResult DbAcquireOp::verify() {
 
   if (auto modes = getPartitionEntryModes()) {
     if (modes->size() != numPartitionEntries)
-      return emitOpError()
-             << "partition_entry_modes count (" << modes->size()
-             << ") must match logical partition entry count ("
-             << numPartitionEntries << ")";
+      return emitOpError() << "partition_entry_modes count (" << modes->size()
+                           << ") must match logical partition entry count ("
+                           << numPartitionEntries << ")";
   }
 
   /// Skip validation for partition hints only mode (no indices or sizes)

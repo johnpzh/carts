@@ -12,8 +12,9 @@
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
+#include "carts/dialect/arts/Utils/RuntimeOpUtils.h"
+#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/StencilAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -257,12 +258,14 @@ private:
       return false;
 
     auto reference = site.representativeCreate();
-    if (!reference->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch) ||
+    if (!reference->hasAttr(
+            ::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch) ||
         !reference.getEpochGuid())
       return false;
 
     for (EdtCreateOp create : site.creates) {
-      if (!create->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch) ||
+      if (!create->hasAttr(
+              ::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch) ||
           !create.getEpochGuid())
         return false;
       if (create.getParamMemref() != reference.getParamMemref() ||
@@ -298,8 +301,8 @@ private:
 
   func::CallOp emitReadyLocalLaunch(EdtCreateOp op, Value depBuffer,
                                     Location loc) const {
-    auto funcNameAttr =
-        op->getAttrOfType<StringAttr>(::mlir::carts::arts::AttrNames::Operation::OutlinedFunc);
+    auto funcNameAttr = op->getAttrOfType<StringAttr>(
+        ::mlir::carts::arts::AttrNames::Operation::OutlinedFunc);
     if (!funcNameAttr)
       op.emitError("Missing outlined_func attribute for ready-local launch");
 
@@ -339,8 +342,8 @@ private:
     if (!route)
       route = createCurrentNodeRoute(AC->getBuilder(), loc);
 
-    auto createIdAttr =
-        op->getAttrOfType<IntegerAttr>(::mlir::carts::arts::AttrNames::Operation::ArtsCreateId);
+    auto createIdAttr = op->getAttrOfType<IntegerAttr>(
+        ::mlir::carts::arts::AttrNames::Operation::ArtsCreateId);
     Value artsIdVal;
     if (createIdAttr)
       artsIdVal = AC->create<arith::ConstantOp>(loc, AC->Int64, createIdAttr);
@@ -351,8 +354,8 @@ private:
     ArtsCodegen::RuntimeCallBuilder RCB(*AC, loc);
     func::CallOp launch =
         RCB.callOp(types::ARTSRTL_arts_edt_create_ready_local_with_epoch,
-                   {funcPtr, paramc, paramv, depc, depBuffer,
-                    op.getEpochGuid(), hintMemref});
+                   {funcPtr, paramc, paramv, depc, depBuffer, op.getEpochGuid(),
+                    hintMemref});
     freeReadyLocalDepBuffer(depBuffer, loc);
     return launch;
   }
@@ -1077,13 +1080,12 @@ private:
     if (!bounds.useDepv && depInfo.dbInfo.isSingleElement &&
         !depInfo.dbInfo.indices.empty()) {
       Value zero = AC->createIndexConstant(0, loc);
-      recordSingleDb(dbGuid, depInfo.guidStorage, edtGuid, sharedSlotAlloc,
-                     zero, depInfo.dbInfo.indices, bounds.allocSizes,
-                     accessMode, acquireMode, depFlags, boundsValid,
-                     depInfo.depStruct, depInfo.baseOffset, bounds.totalDBs,
-                     byteOffset, byteSize, depInfo.stencilCenterLinear,
-                     depInfo.stencilCenterCoords, &depInfo,
-                     readyLocalDepBuffer, loc);
+      recordSingleDb(
+          dbGuid, depInfo.guidStorage, edtGuid, sharedSlotAlloc, zero,
+          depInfo.dbInfo.indices, bounds.allocSizes, accessMode, acquireMode,
+          depFlags, boundsValid, depInfo.depStruct, depInfo.baseOffset,
+          bounds.totalDBs, byteOffset, byteSize, depInfo.stencilCenterLinear,
+          depInfo.stencilCenterCoords, &depInfo, readyLocalDepBuffer, loc);
       return;
     }
 
@@ -1643,8 +1645,9 @@ struct DbGepOpPattern : public ArtsRtToLLVMPattern<DbGepOp> {
     Value idx64 = AC->ensureI64(linearIdx, loc);
 
     /// Use typed GEP based on the element type; default to pointer elements.
-    /// memref element types model ARTS pointer tables at this stage, not in-line
-    /// memref descriptors, so address those slots as pointer-sized entries.
+    /// memref element types model ARTS pointer tables at this stage, not
+    /// in-line memref descriptors, so address those slots as pointer-sized
+    /// entries.
     Type elemTy = baseMT ? baseMT.getElementType() : AC->llvmPtr;
     if (isa<MemRefType>(elemTy))
       elemTy = AC->llvmPtr;
@@ -1663,7 +1666,8 @@ struct EdtCreatePattern : public ArtsRtToLLVMPattern<EdtCreateOp> {
 
   LogicalResult matchAndRewrite(EdtCreateOp op,
                                 PatternRewriter &rewriter) const override {
-    if (op->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch) &&
+    if (op->hasAttr(
+            ::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch) &&
         op.getEpochGuid()) {
       for (Operation *user : op.getGuid().getUsers())
         if (isa<RecordDepOp>(user))
@@ -1673,8 +1677,8 @@ struct EdtCreatePattern : public ArtsRtToLLVMPattern<EdtCreateOp> {
     ARTS_INFO("Lowering EdtCreate Op " << op);
     ArtsCodegen::RewriterGuard RG(*AC, rewriter);
     /// Get outlined function name
-    auto funcNameAttr =
-        op->getAttrOfType<StringAttr>(::mlir::carts::arts::AttrNames::Operation::OutlinedFunc);
+    auto funcNameAttr = op->getAttrOfType<StringAttr>(
+        ::mlir::carts::arts::AttrNames::Operation::OutlinedFunc);
     if (!funcNameAttr)
       return op.emitError("Missing outlined_func attribute");
 
@@ -1720,8 +1724,8 @@ struct EdtCreatePattern : public ArtsRtToLLVMPattern<EdtCreateOp> {
     if (!route)
       route = createCurrentNodeRoute(AC->getBuilder(), loc);
 
-    auto createIdAttr =
-        op->getAttrOfType<IntegerAttr>(::mlir::carts::arts::AttrNames::Operation::ArtsCreateId);
+    auto createIdAttr = op->getAttrOfType<IntegerAttr>(
+        ::mlir::carts::arts::AttrNames::Operation::ArtsCreateId);
     Value artsIdVal;
     if (createIdAttr)
       artsIdVal = AC->create<arith::ConstantOp>(loc, AC->Int64, createIdAttr);
@@ -1742,7 +1746,8 @@ struct EdtCreatePattern : public ArtsRtToLLVMPattern<EdtCreateOp> {
                           {funcPtr, paramc, paramv, depc, hintMemref});
     }
     if (createIdAttr)
-      callOp->setAttr(::mlir::carts::arts::AttrNames::Operation::ArtsCreateId, createIdAttr);
+      callOp->setAttr(::mlir::carts::arts::AttrNames::Operation::ArtsCreateId,
+                      createIdAttr);
     rewriter.replaceOp(op, callOp.getResult(0));
     ++numEdtOpsConverted;
     return success();

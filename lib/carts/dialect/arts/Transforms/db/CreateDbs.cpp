@@ -42,12 +42,13 @@
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Transforms/db/DbLayoutPlanUtils.h"
+#include "carts/dialect/arts/Utils/RuntimeOpUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_CREATEDBS
-#include "carts/passes/Passes.h"
-#include "carts/passes/Passes.h.inc"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
+#include "carts/passes/Passes.h"
+#include "carts/passes/Passes.h.inc"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/RemovalUtils.h"
 #include "carts/utils/Utils.h"
@@ -271,8 +272,7 @@ private:
   DbAllocType inferAllocType(Operation *alloc);
   void insertDbFreeForDbAlloc(DbAllocOp dbAlloc, Operation *alloc);
   void rewriteOpsToUseDbAcquire(EdtOp edt, SmallVector<Operation *> &operations,
-                                Operation *rawAlloc,
-                                Value localAcquireView);
+                                Operation *rawAlloc, Value localAcquireView);
   void rewriteUsesInParentEdt(MemrefInfo &memrefInfo);
   Operation *findPhysicalLayoutPlanSource(Operation *alloc);
   void rewriteUsesEverywhere(Operation *alloc, DbAllocOp dbAlloc);
@@ -618,9 +618,10 @@ void CreateDbsPass::createDbAllocOps() {
     /// the pipeline has a gap that will produce broken executables.
     if (auto memRefType = dyn_cast<MemRefType>(alloc->getResult(0).getType())) {
       if (isa<MemRefType>(memRefType.getElementType())) {
-        alloc->emitError("un-normalizable nested memref pattern (element type "
-                         "is memref); SdeMemrefNormalization should have raised "
-                         "this to an N-dimensional memref");
+        alloc->emitError(
+            "un-normalizable nested memref pattern (element type "
+            "is memref); SdeMemrefNormalization should have raised "
+            "this to an N-dimensional memref");
         signalPassFailure();
         return;
       }
@@ -688,10 +689,9 @@ void CreateDbsPass::createDbAllocOps() {
     /// materializes this sentinel into the runtime hint instead of pinning the
     /// allocation to rank 0.
     auto route = createCurrentNodeRoute(*builder, loc);
-    auto dbAllocOp = createOp<DbAllocOp>(
-        *builder,
-        loc, mode, route, allocType, dbMode, elementType, sizes, elementSizes,
-        PartitionMode::coarse);
+    auto dbAllocOp = createOp<DbAllocOp>(*builder, loc, mode, route, allocType,
+                                         dbMode, elementType, sizes,
+                                         elementSizes, PartitionMode::coarse);
     ++numDbAllocsCreated;
 
     projectSemanticContractToDbValue(alloc, dbAllocOp.getOperation(),
@@ -705,8 +705,7 @@ void CreateDbsPass::createDbAllocOps() {
 
     /// Record allocation strategy decision for diagnostics
     AM->getDbHeuristics().recordDecision(
-        "AllocationStrategy", true,
-        "Coarse raw-memref bridge allocation",
+        "AllocationStrategy", true, "Coarse raw-memref bridge allocation",
         alloc,
         {{"outerRank", static_cast<int64_t>(sizes.size())},
          {"innerRank", static_cast<int64_t>(elementSizes.size())}});
@@ -989,24 +988,24 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
     auto createAcquire = [&](Location acquireLoc) {
       Type ptrType = acqPtr ? acqPtr.getType() : Type();
       if (DbUtils::getUnderlyingDbAlloc(acqPtr)) {
-        return createOp<DbAcquireOp>(
-            *builder, acquireLoc, acquireMode, acqGuid, acqPtr,
-            PartitionMode::coarse,
-            /*indices=*/SmallVector<Value>{}, /*offsets=*/dbOffsets,
-            /*sizes=*/dbSizes,
-            /*partition_indices=*/SmallVector<Value>{},
-            /*partition_offsets=*/SmallVector<Value>{},
-            /*partition_sizes=*/SmallVector<Value>{});
+        return createOp<DbAcquireOp>(*builder, acquireLoc, acquireMode, acqGuid,
+                                     acqPtr, PartitionMode::coarse,
+                                     /*indices=*/SmallVector<Value>{},
+                                     /*offsets=*/dbOffsets,
+                                     /*sizes=*/dbSizes,
+                                     /*partition_indices=*/SmallVector<Value>{},
+                                     /*partition_offsets=*/SmallVector<Value>{},
+                                     /*partition_sizes=*/SmallVector<Value>{});
       }
 
-      return createOp<DbAcquireOp>(
-          *builder, acquireLoc, acquireMode, acqGuid, acqPtr, ptrType,
-          PartitionMode::coarse,
-          /*indices=*/SmallVector<Value>{}, /*offsets=*/dbOffsets,
-          /*sizes=*/dbSizes,
-          /*partition_indices=*/SmallVector<Value>{},
-          /*partition_offsets=*/SmallVector<Value>{},
-          /*partition_sizes=*/SmallVector<Value>{});
+      return createOp<DbAcquireOp>(*builder, acquireLoc, acquireMode, acqGuid,
+                                   acqPtr, ptrType, PartitionMode::coarse,
+                                   /*indices=*/SmallVector<Value>{},
+                                   /*offsets=*/dbOffsets,
+                                   /*sizes=*/dbSizes,
+                                   /*partition_indices=*/SmallVector<Value>{},
+                                   /*partition_offsets=*/SmallVector<Value>{},
+                                   /*partition_sizes=*/SmallVector<Value>{});
     };
 
     auto acquireOp = createAcquire(edt.getLoc());
@@ -1017,8 +1016,7 @@ void CreateDbsPass::createDbAcquireOps(EdtOp edt,
 
     ARTS_DEBUG(" - Created raw bridge acquire, mode="
                << acquireMode << ", partition="
-               << static_cast<int>(PartitionMode::coarse) << ": "
-               << acquireOp);
+               << static_cast<int>(PartitionMode::coarse) << ": " << acquireOp);
 
     Value localAcquireView = acquireOp.getPtr();
     auto sourceType = dyn_cast<MemRefType>(localAcquireView.getType());
@@ -1115,8 +1113,8 @@ void CreateDbsPass::rewriteUsesInParentEdt(MemrefInfo &memrefInfo) {
 
   Value rootValue = memrefInfo.alloc->getResult(0);
   for (Operation *user : users) {
-    if (failed(
-            rewriteCoarseRawAccess(user, rootValue, dbAlloc.getPtr(), *builder))) {
+    if (failed(rewriteCoarseRawAccess(user, rootValue, dbAlloc.getPtr(),
+                                      *builder))) {
       signalPassFailure();
       return;
     }
@@ -1128,8 +1126,7 @@ void CreateDbsPass::rewriteUsesInParentEdt(MemrefInfo &memrefInfo) {
 /// Rewrite uses of a DB allocation in the parent region.
 /// This is used when the allocation is not inside an EDT, but is still shared
 /// with EDTs and the host needs to see the updated data.
-void CreateDbsPass::rewriteUsesEverywhere(Operation *alloc,
-                                          DbAllocOp dbAlloc) {
+void CreateDbsPass::rewriteUsesEverywhere(Operation *alloc, DbAllocOp dbAlloc) {
   Value originalValue = alloc->getResult(0);
   if (!originalValue)
     return;
@@ -1275,8 +1272,8 @@ void CreateDbsPass::rewriteOpsToUseDbAcquire(
     Value rootValue = rawAlloc && rawAlloc->getNumResults() > 0
                           ? rawAlloc->getResult(0)
                           : Value();
-    if (failed(
-            rewriteCoarseRawAccess(op, rootValue, localAcquireView, *builder))) {
+    if (failed(rewriteCoarseRawAccess(op, rootValue, localAcquireView,
+                                      *builder))) {
       signalPassFailure();
       return;
     }
@@ -1288,7 +1285,8 @@ void CreateDbsPass::rewriteOpsToUseDbAcquire(
 ///===----------------------------------------------------------------------===///
 namespace mlir {
 namespace carts::arts {
-std::unique_ptr<Pass> createCreateDbsPass(mlir::carts::arts::AnalysisManager *AM) {
+std::unique_ptr<Pass>
+createCreateDbsPass(mlir::carts::arts::AnalysisManager *AM) {
   return std::make_unique<CreateDbsPass>(AM);
 }
 } // namespace carts::arts

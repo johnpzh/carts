@@ -62,21 +62,10 @@ MemRefType getElementMemRefType(Type elementType, ArrayRef<Value> elementSizes);
 /// Access Mode Utilities
 ArtsMode combineAccessModes(ArtsMode mode1, ArtsMode mode2);
 
-/// Create the ARTS runtime route sentinel for "run/create on the current node"
-/// when no explicit destination rank is requested.
-Value createCurrentNodeRoute(OpBuilder &builder, Location loc);
-
-/// ARTS Runtime Query Utilities
-bool isArtsRuntimeQuery(Value val);
-
 /// Region Replacement Utilities
 void replaceInRegion(Region &region, Value from, Value to);
 void replaceInRegion(Region &region, DenseMap<Value, Value> &rewireMap,
                      bool clear = true);
-
-/// Return true when `op` is an undef-like operation (llvm.mlir.undef,
-/// polygeist.undef, or arts.undef).
-bool isUndefLikeOp(Operation *op);
 
 } // namespace arts
 } // namespace carts
