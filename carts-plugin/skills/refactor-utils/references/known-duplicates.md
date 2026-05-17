@@ -13,10 +13,10 @@ These helpers have canonical homes. Do not reintroduce local copies.
 | Need | Canonical helper |
 |------|------------------|
 | one-like expression recognition | `ValueAnalysis::isOneLikeValue` |
-| trailing work in parent block | `hasWorkAfterInParentBlock` in `Utils.h` |
+| trailing work in parent block | pass-local `hasWorkAfterInParentBlock` in OpenMP-to-SDE conversion |
 | loop hoist target | `findHoistTarget` in ARTS `LoopInvarianceUtils.h` |
 | DB memory access info | `DbUtils::getMemoryAccessInfo` |
-| undef-like op recognition | `isUndefLikeOp` in `Utils.h` |
+| undef-like op recognition | `isUndefLikeOp` in ARTS `RuntimeOpUtils.h` |
 | strip-mining generated attribute | `AttrNames::Operation::StripMiningGenerated` |
 
 ## Watch List

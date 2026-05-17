@@ -12,16 +12,16 @@ disagree.
 | ARTS DB/EDT/runtime-query value folding and provenance | `include/carts/dialect/arts/Utils/ValueAnalysisUtils.h` | `tryFoldConstantIndex`, `getUnderlyingValue`, `isDerivedFromPtr` |
 | ARTS-RT depv/DB pointer value folding and provenance | `include/carts/dialect/arts-rt/Utils/RtDbUtils.h` | `RtDbUtils::tryFoldConstantIndex`, `RtDbUtils::getUnderlyingValue`, `RtDbUtils::isDerivedFromPtr` |
 | Index builders/general pure-op predicates | `include/carts/utils/Utils.h` | `createConstantIndex`, `createZeroIndex`, `createOneIndex`, `isSideEffectFreeArithmeticLikeOp` |
-| Loop shape and IV helpers | `include/carts/utils/LoopUtils.h` | `isLoopInductionVar`, `getStaticTripCount`, `findNearestLoop`, `getLoopDepth` |
+| Generic loop trip-count helpers | `include/carts/utils/LoopUtils.h` | `isInnermostLoop`, `getStaticTripCount` |
 | ARTS/ARTS-RT loop invariance and hoisting | `include/carts/dialect/arts/Utils/LoopInvarianceUtils.h` | `isLoopInvariant`, `findHoistTarget`, `allOperandsDominate`, `isSafeDivRemToHoist` |
-| Deferred removal | `include/carts/utils/RemovalUtils.h` | `markForRemoval`, `removeAllMarked`, `replaceWithUndef` |
+| Deferred removal | `include/carts/utils/RemovalUtils.h` | `markForRemoval`, `removeAllMarked` |
 | SDE access/planning facts | `include/carts/dialect/sde/Analysis` or `include/carts/dialect/sde/Utils` | `AffineAccessUtils`, `StructuredOpAnalysis`, `SDECostModel` |
 | CODIR codelet ABI | `include/carts/dialect/codir/Utils` | `CodeletABIUtils` |
 | CODIR boundary proof logic | boundary conversion helper | `SdeToCodir/TaskDepSliceUtils.*` |
 | SDE Polygeist input normalization helpers | `lib/carts/dialect/sde/Conversion/PolygeistToSde/PolygeistToSdeUtils.h` | `materializeDependView`, `clampDepIndices`, `isInsideOmpRegion`, `containsOmpOp` |
 | ARTS DB mechanics | `include/carts/dialect/arts/Utils/DbUtils.h` | `traceToDbAlloc`, `getUnderlyingDb`, `getMemoryAccessInfo`, `isWriterMode` |
 | ARTS EDT mechanics | `include/carts/dialect/arts/Utils/EdtUtils.h` | `EdtEnvManager`, `isInsideEpoch`, `classifyEdtArgAccesses` |
-| ARTS partition/block predicates, runtime topology, and source-location IDs | `include/carts/dialect/arts/Utils` | `BlockedAccessUtils`, `PartitionPredicates`, `LoweringContractUtils`, `RuntimeConfig`, `LocationMetadata` |
+| ARTS loop structure, partition/block predicates, runtime topology, and source-location IDs | `include/carts/dialect/arts/Utils` | `LoopStructureUtils`, `BlockedAccessUtils`, `PartitionPredicates`, `LoweringContractUtils`, `RuntimeConfig`, `LocationMetadata` |
 | ARTS graph/ownership analysis | `include/carts/dialect/arts/Analysis` | `DbGraph`, `EdtGraph`, `LoopNode`, `DbDistributedEligibility` |
 | ARTS-RT runtime ABI | `include/carts/dialect/arts-rt/Utils` | `IdRegistry`, `RuntimeCallUtils`, `RtDbUtils` |
 
@@ -56,9 +56,8 @@ not loop-specific utilities.
 | All operands dominate point? | `allOperandsDominate()` | `dialect/arts/Utils/LoopInvarianceUtils.h` |
 | Get static trip count | `getStaticTripCount()` | `LoopUtils.h` |
 | Is innermost loop? | `isInnermostLoop()` | `LoopUtils.h` |
-| Is loop IV? | `isLoopInductionVar()` | `LoopUtils.h` |
-| Get loop depth | `getLoopDepth()` | `LoopUtils.h` |
-| Find nearest enclosing loop | `findNearestLoop()` | `LoopUtils.h` |
+| Get ARTS loop depth | `getLoopDepth()` | `LoopStructureUtils.h` |
+| Collect while-loop bounds | `collectWhileBounds()` | `LoopStructureUtils.h` |
 | Trace value to DB alloc | `DbUtils::traceToDbAlloc()` | `DbUtils.h` |
 | Get underlying DB allocation | `DbUtils::getUnderlyingDb()` | `DbUtils.h` |
 | Extract DB memory access info | `DbUtils::getMemoryAccessInfo()` | `DbUtils.h` |
@@ -71,17 +70,20 @@ not loop-specific utilities.
 | Get element byte size | `getElementTypeByteSize()` | `DbUtils.h` |
 | Check block layout | `usesBlockLayout()` | `PartitionPredicates.h` |
 | Supports halo? | `supportsHaloExtension()` | `PartitionPredicates.h` |
-| Is stencil family? | `isStencilFamilyDepPattern()` | `StencilAttributes.h` |
+| Is stencil family? | `isStencilFamilyDepPattern()` | `OperationAttributes.h` |
 | Get lowering contract | `getLoweringContract()` | `LoweringContractUtils.h` |
-| Resolve effective contract | `resolveEffectiveContract()` | `LoweringContractUtils.h` |
 | Mark op for deferred removal | `RemovalUtils::markForRemoval()` | `RemovalUtils.h` |
 | Clamp SDE Polygeist dep indices | `sde::clampDepIndices()` | `PolygeistToSdeUtils.h` |
 | Check OMP nesting during SDE input preparation | `sde::{isInsideOmpRegion,containsOmpOp}` | `PolygeistToSdeUtils.h` |
 
-## Loop And IV Placement Rules
+## Loop Placement Rules
 
-- Generic loop IV, nearest-loop, trip-count, and loop-depth helpers live in
-  `LoopUtils.h`.
+- Generic shared loop utilities stay limited to neutral trip-count and
+  innermost-loop queries in `LoopUtils.h`.
+- Single-owner loop IV and nearest-loop helpers stay near their SDE consumers
+  unless a second real owner appears.
+- ARTS loop-depth and while-bound helpers used by DB/EDT analysis live in
+  `include/carts/dialect/arts/Utils/LoopStructureUtils.h`.
 - ARTS/ARTS-RT loop-invariant and hoisting-safety helpers live in
   `include/carts/dialect/arts/Utils/LoopInvarianceUtils.h`.
 - SDE structured-access interpretation, such as row-major scalarized access
@@ -127,6 +129,7 @@ include/carts/dialect/arts/Utils/BlockedAccessUtils.h
 include/carts/dialect/arts/Utils/LocationMetadata.h
 include/carts/dialect/arts/Utils/LoweringContractUtils.h
 include/carts/dialect/arts/Utils/LoopInvarianceUtils.h
+include/carts/dialect/arts/Utils/LoopStructureUtils.h
 include/carts/dialect/arts/Utils/PartitionPredicates.h
 include/carts/dialect/arts/Utils/RuntimeConfig.h
 include/carts/dialect/arts/Utils/ValueAnalysisUtils.h
