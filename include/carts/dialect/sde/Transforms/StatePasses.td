@@ -22,7 +22,7 @@ def ScalarForwarding : Pass<"scalar-forwarding", "mlir::ModuleOp"> {
   let constructor = "mlir::carts::sde::createScalarForwardingPass()";
 }
 
-def SdeDeadStateCleanup
+def SdeDeadStateCleanupPass
     : Pass<"sde-dead-state-cleanup", "mlir::ModuleOp"> {
   let summary = "Remove dead frontend helper IR before SDE planning";
   let description = [{
@@ -36,7 +36,6 @@ def SdeDeadStateCleanup
   let dependentDialects = ["::mlir::memref::MemRefDialect",
                            "::mlir::arith::ArithDialect",
                            "::mlir::func::FuncDialect"];
-  let constructor = "mlir::carts::sde::createSdeDeadStateCleanupPass()";
 }
 
 def MemoryUnitMaterialization

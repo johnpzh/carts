@@ -6,7 +6,7 @@
 
 #include "carts/dialect/sde/Transforms/Passes.h"
 namespace mlir::carts::sde {
-#define GEN_PASS_DEF_SDEDEADSTATECLEANUP
+#define GEN_PASS_DEF_SDEDEADSTATECLEANUPPASS
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::carts::sde
 
@@ -21,7 +21,8 @@ using namespace mlir::carts;
 namespace {
 
 struct SdeDeadStateCleanupPass
-    : public sde::impl::SdeDeadStateCleanupBase<SdeDeadStateCleanupPass> {
+    : public sde::impl::SdeDeadStateCleanupPassBase<
+          SdeDeadStateCleanupPass> {
   void runOnOperation() override {
     ModuleOp module = getOperation();
     unsigned totalRemoved = 0;
@@ -44,7 +45,3 @@ struct SdeDeadStateCleanupPass
 };
 
 } // namespace
-
-std::unique_ptr<Pass> mlir::carts::sde::createSdeDeadStateCleanupPass() {
-  return std::make_unique<SdeDeadStateCleanupPass>();
-}
