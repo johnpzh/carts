@@ -64,8 +64,6 @@ ArtsMode combineAccessModes(ArtsMode mode1, ArtsMode mode2);
 
 /// Region Replacement Utilities
 void replaceInRegion(Region &region, Value from, Value to);
-void replaceInRegion(Region &region, DenseMap<Value, Value> &rewireMap,
-                     bool clear = true);
 
 } // namespace arts
 } // namespace carts

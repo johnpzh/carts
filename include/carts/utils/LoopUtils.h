@@ -85,16 +85,6 @@ inline Operation *findNearestLoop(Operation *op) {
 std::optional<int64_t> getStaticTripCount(Operation *loopOp);
 
 } // namespace carts
-
-namespace carts::arts {
-
-class LoopNode;
-
-/// Return true when an ARTS loop-analysis node covers the full iteration range
-/// [0, dimSize) with unit step.
-bool isLoopFullRange(LoopNode *loop, Value dimSize);
-
-} // namespace carts::arts
 } // namespace mlir
 
 #endif // CARTS_UTILS_LOOPUTILS_H

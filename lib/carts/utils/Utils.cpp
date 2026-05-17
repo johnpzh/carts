@@ -318,15 +318,6 @@ void replaceInRegion(Region &region, Value from, Value to) {
   });
 }
 
-/// Replaces uses according to a mapping within a specific region.
-void replaceInRegion(Region &region, DenseMap<Value, Value> &rewireMap,
-                     bool clear) {
-  for (auto &rewire : rewireMap)
-    replaceInRegion(region, rewire.first, rewire.second);
-  if (clear)
-    rewireMap.clear();
-}
-
 } // namespace arts
 } // namespace carts
 } // namespace mlir

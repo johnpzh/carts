@@ -51,9 +51,6 @@ public:
   /// Get the number of operations marked for removal
   size_t size() const { return opsToRemove.size(); }
 
-  /// Check if any operations are marked for removal
-  bool empty() const { return opsToRemove.empty(); }
-
 private:
   /// Recursively remove an operation and its dependents
   /// @param op The operation to remove

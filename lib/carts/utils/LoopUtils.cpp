@@ -5,8 +5,6 @@
 ///==========================================================================///
 
 #include "carts/utils/LoopUtils.h"
-#include "carts/dialect/arts/Analysis/loop/LoopNode.h"
-#include "carts/dialect/arts/Utils/BlockedAccessUtils.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -138,63 +136,4 @@ std::optional<int64_t> getStaticTripCount(Operation *loopOp) {
 }
 
 } // namespace carts
-
-namespace carts::arts {
-
-static bool isProvablyZeroLoopLowerBound(Value lb) {
-  lb = ValueAnalysis::stripNumericCasts(lb);
-  if (ValueAnalysis::isZeroConstant(lb))
-    return true;
-
-  auto select = lb.getDefiningOp<arith::SelectOp>();
-  if (!select)
-    return false;
-
-  Value trueVal = ValueAnalysis::stripNumericCasts(select.getTrueValue());
-  Value falseVal = ValueAnalysis::stripNumericCasts(select.getFalseValue());
-  auto cmp = ValueAnalysis::stripNumericCasts(select.getCondition())
-                 .getDefiningOp<arith::CmpIOp>();
-  if (!cmp)
-    return false;
-
-  Value lhs = ValueAnalysis::stripNumericCasts(cmp.getLhs());
-  Value rhs = ValueAnalysis::stripNumericCasts(cmp.getRhs());
-  auto pred = cmp.getPredicate();
-
-  auto matchesZeroClamp = [&](Value zeroArm, Value otherArm) {
-    if (!ValueAnalysis::isZeroConstant(zeroArm) ||
-        !arts::isKnownNonPositive(otherArm))
-      return false;
-    return ((pred == arith::CmpIPredicate::slt ||
-             pred == arith::CmpIPredicate::ult) &&
-            ValueAnalysis::sameValue(lhs, otherArm) &&
-            ValueAnalysis::isZeroConstant(rhs)) ||
-           ((pred == arith::CmpIPredicate::sgt ||
-             pred == arith::CmpIPredicate::ugt) &&
-            ValueAnalysis::sameValue(rhs, otherArm) &&
-            ValueAnalysis::isZeroConstant(lhs));
-  };
-
-  return matchesZeroClamp(trueVal, falseVal) ||
-         matchesZeroClamp(falseVal, trueVal);
-}
-
-bool isLoopFullRange(LoopNode *loop, Value dimSize) {
-  if (!loop || !dimSize)
-    return false;
-
-  Value lb = loop->getLowerBound();
-  Value step = loop->getStep();
-  Value ub = loop->getUpperBound();
-  if (!lb || !step || !ub)
-    return false;
-
-  if (!isProvablyZeroLoopLowerBound(lb))
-    return false;
-  if (!ValueAnalysis::isOneConstant(ValueAnalysis::stripNumericCasts(step)))
-    return false;
-  return arts::areEquivalentOwnedSliceExtents(ub, dimSize);
-}
-
-} // namespace carts::arts
 } // namespace mlir
