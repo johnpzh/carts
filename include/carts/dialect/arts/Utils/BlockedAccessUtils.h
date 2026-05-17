@@ -70,49 +70,6 @@ inline Value canonicalizeStartBlock(Value startBlock, Value blockSize) {
   return sb;
 }
 
-inline bool isAddOf(Value value, Value lhsExpected, Value rhsExpected) {
-  value = ValueAnalysis::stripNumericCasts(value);
-  lhsExpected = ValueAnalysis::stripClampOne(lhsExpected);
-  rhsExpected = ValueAnalysis::stripClampOne(rhsExpected);
-  if (auto add = value.getDefiningOp<arith::AddIOp>()) {
-    Value lhs = ValueAnalysis::stripClampOne(add.getLhs());
-    Value rhs = ValueAnalysis::stripClampOne(add.getRhs());
-    return (ValueAnalysis::sameValue(lhs, lhsExpected) &&
-            ValueAnalysis::sameValue(rhs, rhsExpected)) ||
-           (ValueAnalysis::sameValue(lhs, rhsExpected) &&
-            ValueAnalysis::sameValue(rhs, lhsExpected));
-  }
-  return false;
-}
-
-inline bool matchesBasePlusBlockSpan(Value candidate, Value base,
-                                     Value blockSize) {
-  candidate = ValueAnalysis::stripNumericCasts(candidate);
-  base = ValueAnalysis::stripNumericCasts(base);
-  blockSize = ValueAnalysis::stripClampOne(blockSize);
-
-  if (isAddOf(candidate, base, blockSize))
-    return true;
-
-  auto blockSizeConst = tryFoldConstantIndex(blockSize);
-  if (!blockSizeConst)
-    return false;
-
-  int64_t candidateConst = 0;
-  int64_t baseConst = 0;
-  Value candidateBase =
-      ValueAnalysis::stripConstantOffset(candidate, &candidateConst);
-  Value normalizedBase = ValueAnalysis::stripConstantOffset(base, &baseConst);
-
-  candidateBase = ValueAnalysis::stripNumericCasts(candidateBase);
-  normalizedBase = ValueAnalysis::stripNumericCasts(normalizedBase);
-
-  if (!ValueAnalysis::sameValue(candidateBase, normalizedBase))
-    return false;
-
-  return (candidateConst - baseConst) == *blockSizeConst;
-}
-
 } // namespace detail
 
 /// Match `iv` or `iv + invariant_base` after stripping numeric casts.

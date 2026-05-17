@@ -29,10 +29,6 @@ getRuntimeTopologyQueryFunction(func::CallOp call) {
   return fn;
 }
 
-inline bool isRuntimeTopologyQueryCall(func::CallOp call) {
-  return getRuntimeTopologyQueryFunction(call).has_value();
-}
-
 } // namespace carts::arts_rt
 } // namespace mlir
 

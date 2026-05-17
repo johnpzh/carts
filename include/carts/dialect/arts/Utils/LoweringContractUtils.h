@@ -5,7 +5,6 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include <cstdint>
 #include <optional>
@@ -108,10 +107,6 @@ struct LoweringContractInfo {
   bool supportsBlockHalo() const;
   std::optional<EdtDistributionPattern> getEffectiveDistributionPattern() const;
   bool isWavefrontFamily() const;
-  bool allowsDbAlignedChunking() const;
-  bool shouldHonorLoopBlockHintForDbAlignment() const;
-  bool prefersWideTiling2DColumns() const;
-  bool shouldReuseEnclosingEpoch() const;
   bool prefersSemanticOwnerLayoutPreservation() const;
   bool isWavefrontStencilContract() const;
   bool prefersNDBlock(unsigned requiredRank = 2) const;
@@ -123,52 +118,18 @@ struct LoweringContractInfo {
 LoweringContractOp getLoweringContractOp(Value target);
 std::optional<LoweringContractInfo> getLoweringContract(Value target);
 std::optional<LoweringContractInfo> getSemanticContract(Operation *op);
-LoweringContractInfo resolveLoopDistributionContract(Operation *op);
 std::optional<LoweringContractInfo>
 getLoweringContract(Operation *op, OpBuilder &builder, Location loc);
 ContractChange mergeLoweringContractInfo(LoweringContractInfo &dest,
                                          const LoweringContractInfo &src);
 void normalizeLoweringContractInfo(LoweringContractInfo &info);
-std::optional<SmallVector<int64_t, 4>>
-projectOwnerIndexedStaticValues(ArrayRef<int64_t> values,
-                                ArrayRef<int64_t> sourceOwnerDims,
-                                ArrayRef<int64_t> targetOwnerDims);
-std::optional<unsigned>
-getContractOwnerPosition(const LoweringContractInfo &info,
-                         unsigned physicalDim);
 SmallVector<unsigned, 4>
 resolveContractOwnerDims(const LoweringContractInfo &info, unsigned rank);
-bool prefersContractNDBlock(const LoweringContractInfo &info,
-                            unsigned requiredRank = 2);
-
-/// Resolve the effective lowering contract for a value, combining
-/// any explicit LoweringContractOp annotations with semantic operation
-/// attributes. Returns nullopt if no contract information is available.
-std::optional<LoweringContractInfo> resolveEffectiveContract(Value target);
-std::optional<LoweringContractInfo> resolveEffectiveContract(Operation *op);
-
-/// Monotone ordered combine of two contracts. The dest contract is
-/// updated with information from src. Returns Changed if any field
-/// was modified.
-ContractChange combineContracts(LoweringContractInfo &dest,
-                                const LoweringContractInfo &src);
-
-/// Patch specific fields of a contract with deliberate overrides.
-/// Unlike combineContracts (which preserves existing values),
-/// this unconditionally writes the provided fields.
-void patchContract(LoweringContractInfo &contract,
-                   ArrayRef<int64_t> ownerDims = {},
-                   ArrayRef<int64_t> minOffsets = {},
-                   ArrayRef<int64_t> maxOffsets = {});
 
 /// Extract the halo window (min/max offsets) from a contract.
 /// Returns nullopt if the contract has no offset information.
 std::optional<std::pair<SmallVector<int64_t, 4>, SmallVector<int64_t, 4>>>
 projectHaloWindow(const LoweringContractInfo &contract);
-
-/// Check whether a contract has complete halo state (ownerDims +
-/// min/max offsets), meaning it doesn't need graph-backed fallbacks.
-bool hasCompleteHaloState(const LoweringContractInfo &contract);
 
 /// Resolve the effective lowering contract for an acquire operation,
 /// combining pointer contract + alloc contract + semantic annotations.
@@ -205,13 +166,8 @@ void eraseLoweringContracts(Value target);
 void transferOperationContract(Operation *source, Operation *target);
 void transferLoweringContract(Operation *source, Value target,
                               OpBuilder &builder, Location loc);
-void transferValueContract(Value source, Value target, OpBuilder &builder,
-                           Location loc);
 void moveValueContract(Value source, Value target, OpBuilder &builder,
                        Location loc);
-void transferContract(Operation *sourceOp, Operation *targetOp,
-                      Value sourceContractTarget, Value targetContractTarget,
-                      OpBuilder &builder, Location loc);
 
 } // namespace carts::arts
 } // namespace mlir

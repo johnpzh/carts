@@ -32,18 +32,14 @@ using namespace llvm;
 /// Common ARTS attributes
 constexpr StringLiteral ArtsId = "arts.id";
 constexpr StringLiteral ArtsCreateId = "arts.create_id";
-constexpr StringLiteral MetadataOriginId = "arts.metadata_origin_id";
-constexpr StringLiteral MetadataProvenance = "arts.metadata_provenance";
 constexpr StringLiteral OutlinedFunc = "outlined_func";
 constexpr StringLiteral Nowait = "nowait";
 constexpr StringLiteral PreserveAccessMode = "preserve_access_mode";
 constexpr StringLiteral PreserveDepEdge = "preserve_dep_edge";
-constexpr StringLiteral LocalityOnly = "arts.locality_only";
 constexpr StringLiteral ReadyLocalLaunch = "arts.ready_local_launch";
 
 /// Partition-related attributes (TableGen-generated names)
 constexpr StringLiteral PartitionMode = "partition_mode";
-constexpr StringLiteral AccessPattern = "access_pattern";
 constexpr StringLiteral Distributed = "distributed";
 constexpr StringLiteral DistributedRejectReason =
     "arts.distributed_reject_reason";
@@ -139,14 +135,6 @@ inline void copyCoreExecutionHintAttrsToRtFunction(EdtOp source,
     dest->setAttr(AttrNames::Operation::Rt::UnrollFactor, attr);
   if (auto attr = source.getInterleaveCountAttr())
     dest->setAttr(AttrNames::Operation::Rt::InterleaveCount, attr);
-}
-
-/// Check if an operation has a StringAttr with the given name whose value
-/// matches the expected string. Null-safe: returns false if op is null.
-inline bool hasStringAttrValue(Operation *op, StringRef attrName,
-                               StringRef expected) {
-  auto attr = op ? op->getAttrOfType<StringAttr>(attrName) : nullptr;
-  return attr && attr.getValue() == expected;
 }
 
 inline ArrayAttr getPlanOwnerDimsAttr(Operation *op) {
@@ -523,15 +511,6 @@ inline void setArtsId(Operation *op, int64_t id) {
   op->setAttr(AttrNames::Operation::ArtsId, IntegerAttr::get(type, id));
 }
 
-inline std::optional<int64_t> getArtsCreateId(Operation *op) {
-  if (!op)
-    return std::nullopt;
-  if (auto attr =
-          op->getAttrOfType<IntegerAttr>(AttrNames::Operation::ArtsCreateId))
-    return attr.getInt();
-  return std::nullopt;
-}
-
 inline void setArtsCreateId(Operation *op, int64_t id) {
   if (!op)
     return;
@@ -544,37 +523,6 @@ inline void setArtsCreateId(Operation *op, int64_t id) {
   op->setAttr(AttrNames::Operation::ArtsCreateId, IntegerAttr::get(type, id));
 }
 
-inline std::optional<int64_t> getMetadataOriginId(Operation *op) {
-  if (!op)
-    return std::nullopt;
-  if (auto attr = op->getAttrOfType<IntegerAttr>(
-          AttrNames::Operation::MetadataOriginId))
-    return attr.getInt();
-  return std::nullopt;
-}
-
-inline void setMetadataOriginId(Operation *op, int64_t id) {
-  if (!op)
-    return;
-  if (id <= 0) {
-    op->removeAttr(AttrNames::Operation::MetadataOriginId);
-    return;
-  }
-  auto *ctx = op->getContext();
-  auto type = IntegerType::get(ctx, 64);
-  op->setAttr(AttrNames::Operation::MetadataOriginId,
-              IntegerAttr::get(type, id));
-}
-
-inline std::optional<StringRef> getOutlinedFunc(Operation *op) {
-  if (!op)
-    return std::nullopt;
-  if (auto attr =
-          op->getAttrOfType<StringAttr>(AttrNames::Operation::OutlinedFunc))
-    return attr.getValue();
-  return std::nullopt;
-}
-
 inline void setOutlinedFunc(Operation *op, StringRef name) {
   if (!op)
     return;
@@ -584,10 +532,6 @@ inline void setOutlinedFunc(Operation *op, StringRef name) {
   }
   op->setAttr(AttrNames::Operation::OutlinedFunc,
               StringAttr::get(op->getContext(), name));
-}
-
-inline bool hasNowait(Operation *op) {
-  return op && op->hasAttr(AttrNames::Operation::Nowait);
 }
 
 inline void setNowait(Operation *op, bool enabled = true) {
@@ -609,29 +553,6 @@ inline std::optional<PartitionMode> getPartitionMode(Operation *op) {
   return std::nullopt;
 }
 
-inline void setPartitionMode(Operation *op, PartitionMode mode) {
-  if (!op)
-    return;
-  op->setAttr(AttrNames::Operation::PartitionMode,
-              PartitionModeAttr::get(op->getContext(), mode));
-}
-
-inline std::optional<DbAccessPattern> getDbAccessPattern(Operation *op) {
-  if (!op)
-    return std::nullopt;
-  if (auto attr = op->getAttrOfType<DbAccessPatternAttr>(
-          AttrNames::Operation::AccessPattern))
-    return attr.getValue();
-  return std::nullopt;
-}
-
-inline void setDbAccessPattern(Operation *op, DbAccessPattern pattern) {
-  if (!op)
-    return;
-  op->setAttr(AttrNames::Operation::AccessPattern,
-              DbAccessPatternAttr::get(op->getContext(), pattern));
-}
-
 inline bool hasDistributedDbAllocation(Operation *op) {
   if (!op)
     return false;
@@ -647,10 +568,6 @@ inline void setDistributedDbAllocation(Operation *op, bool enabled) {
     return;
   }
   op->removeAttr(AttrNames::Operation::Distributed);
-}
-
-inline bool isLocalityOnly(Operation *op) {
-  return op && op->hasAttr(AttrNames::Operation::LocalityOnly);
 }
 
 inline std::optional<EdtDistributionKind>
@@ -1009,12 +926,6 @@ inline void copyArtsMetadataAttrs(Operation *source, Operation *dest) {
   if (auto id =
           source->getAttrOfType<IntegerAttr>(AttrNames::Operation::ArtsId))
     dest->setAttr(AttrNames::Operation::ArtsId, id);
-  if (auto originId = source->getAttrOfType<IntegerAttr>(
-          AttrNames::Operation::MetadataOriginId))
-    dest->setAttr(AttrNames::Operation::MetadataOriginId, originId);
-  if (auto provenance = source->getAttrOfType<StringAttr>(
-          AttrNames::Operation::MetadataProvenance))
-    dest->setAttr(AttrNames::Operation::MetadataProvenance, provenance);
   if (auto mode = source->getAttrOfType<PartitionModeAttr>(
           AttrNames::Operation::PartitionMode))
     dest->setAttr(AttrNames::Operation::PartitionMode, mode);
@@ -1040,22 +951,6 @@ inline void copySemanticContractAttrs(Operation *source, Operation *dest) {
                   UnitAttr::get(dest->getContext()));
   else
     dest->removeAttr(AttrNames::Operation::Contract::NarrowableDep);
-}
-
-inline void inheritSemanticContractAttrs(Operation *source, Operation *dest) {
-  if (!source || !dest)
-    return;
-  inheritPatternAttrs(source, dest);
-  inheritStencilContractAttrs(source, dest);
-  if (!dest->hasAttr(AttrNames::Operation::Contract::ContractKindKey))
-    if (auto contractKind = source->getAttrOfType<IntegerAttr>(
-            AttrNames::Operation::Contract::ContractKindKey))
-      dest->setAttr(AttrNames::Operation::Contract::ContractKindKey,
-                    contractKind);
-  if (!dest->hasAttr(AttrNames::Operation::Contract::NarrowableDep) &&
-      source->hasAttr(AttrNames::Operation::Contract::NarrowableDep))
-    dest->setAttr(AttrNames::Operation::Contract::NarrowableDep,
-                  UnitAttr::get(dest->getContext()));
 }
 
 } // namespace carts::arts
