@@ -388,8 +388,8 @@ struct PatternAnalysisPass
                  *existingClassification !=
                      sde::SdeStructuredClassification::reduction &&
                  op.getReductionAccumulators().empty()) {
-        // Tensor strip-mining preserves the original contract even when the
-        // scalarized tiled body looks reduction-shaped after carrier removal.
+        // Loop strip-mining preserves the original contract even when the
+        // tiled body looks reduction-shaped after block-local rewriting.
         classification = *existingClassification;
       }
 

@@ -65,8 +65,8 @@ struct StructuredMemoryEffectSummary {
   }
 };
 
-/// SDE-owned proof that a scheduling unit writes an external tensor/memref
-/// through the owner induction variable. This is a semantic distribution fact;
+/// SDE-owned proof that a scheduling unit writes an external memref through the
+/// owner induction variable. This is a semantic distribution fact;
 /// later layers may materialize it as a physical storage layout.
 struct LoopIndexedOutputPlan {
   Value root;
