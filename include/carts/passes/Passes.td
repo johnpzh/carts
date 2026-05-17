@@ -10,18 +10,18 @@ include "mlir/Pass/PassBase.td"
 include "mlir/Rewrite/PassUtil.td"
 
 def DeadCodeElimination : Pass<"arts-dce", "mlir::ModuleOp"> {
-  let summary = "Remove dead loads, stores, allocas, and symbols";
+  let summary = "Remove dead ARTS objects and shared helper IR";
   let description = [{
-    Performs dead code elimination for memref operations:
-    - Removes loads whose results are unused
-    - Removes stores to allocas that are never loaded
-    - Removes allocas with no remaining uses
-    - Runs SymbolDCE for dead functions and globals
+    Performs dead code elimination for ARTS objects and shared helper IR:
+    - Removes raw-dead ARTS DB, EDT, acquire, release, and undef operations
+    - Runs shared dialect-neutral cleanup for dead memref helper IR
+    - Removes dead private symbols
 
-    This is particularly useful after OpenMP-to-SDE conversion where OMP
-    dependency proxy allocas become unused.
+    SDE input cleanup uses the SDE-owned `sde-dead-state-cleanup` pass instead
+    of invoking ARTS object cleanup before ARTS objects exist.
   }];
-  let dependentDialects = ["::mlir::memref::MemRefDialect"];
+  let dependentDialects = ["::mlir::memref::MemRefDialect",
+                           "::mlir::carts::arts::ArtsDialect"];
   let constructor = "mlir::carts::arts::createDCEPass()";
 }
 

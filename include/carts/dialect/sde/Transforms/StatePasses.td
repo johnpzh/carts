@@ -22,6 +22,23 @@ def ScalarForwarding : Pass<"scalar-forwarding", "mlir::ModuleOp"> {
   let constructor = "mlir::carts::sde::createScalarForwardingPass()";
 }
 
+def SdeDeadStateCleanup
+    : Pass<"sde-dead-state-cleanup", "mlir::ModuleOp"> {
+  let summary = "Remove dead frontend helper IR before SDE planning";
+  let description = [{
+    Removes dead dialect-neutral helper IR exposed by SDE input
+    normalization: unused memref loads, dead stack stores/allocas, no-op
+    load/store self writes, unused pure leaf operations, and private symbols.
+
+    This pass intentionally does not inspect ARTS DB, EDT, epoch, placement,
+    or runtime lowering objects.
+  }];
+  let dependentDialects = ["::mlir::memref::MemRefDialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::func::FuncDialect"];
+  let constructor = "mlir::carts::sde::createSdeDeadStateCleanupPass()";
+}
+
 def MemoryUnitMaterialization
     : Pass<"sde-memory-unit-materialization", "mlir::ModuleOp"> {
   let summary = "Materialize SDE shared memrefs as memory units";

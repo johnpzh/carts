@@ -257,7 +257,7 @@ static const std::array<llvm::StringLiteral, 10>
                                     "PolygeistCanonicalize",
                                     "SdeMemrefNormalization",
                                     "SdeHandleDeps",
-                                    "DeadCodeElimination",
+                                    "SdeDeadStateCleanup",
                                     "CSE"};
 static const std::array<llvm::StringLiteral, 3> kInitialCleanupPasses = {
     "LowerAffine(func)", "CSE(func)", "PolygeistCanonicalizeFor(func)"};
@@ -282,12 +282,12 @@ static const std::array<llvm::StringLiteral, 6> kCodirToArtsPasses = {
     "ConvertCodirToArts",
     "VerifySdeLowered",
     "VerifyArtsObjectsOnly",
-    "DeadCodeElimination",
+    "ArtsDeadCodeElimination",
     "CSE(arts.edt)",
     "VerifyEdtCreated"};
 static const std::array<llvm::StringLiteral, 5> kEdtTransformsPasses = {
     "EdtStructuralOpt(runAnalysis=false)",
-    "DeadCodeElimination",
+    "ArtsDeadCodeElimination",
     "SymbolDCE",
     "CSE(arts.edt)",
     "EdtPtrRematerialization"};
@@ -311,7 +311,7 @@ static const std::array<llvm::StringLiteral, 7> kLateConcurrencyCleanupPasses =
      "PolygeistCanonicalize",
      "CSE(arts.edt)",
      "EdtAllocaSinking",
-     "DeadCodeElimination",
+     "ArtsDeadCodeElimination",
      "Mem2Reg"};
 static const std::array<llvm::StringLiteral, 5> kEpochsPasses = {
     "PolygeistCanonicalize", "CreateEpochs",
@@ -673,7 +673,13 @@ void registerDialects(DialectRegistry &registry) {
                   arts_rt::ArtsRtDialect, sde::CartsSdeDialect,
                   codir::CartsCodirDialect>();
   registerAllPasses();
+  /// ARTS pass registration is intentionally selective: several ARTS passes
+  /// require the staged pipeline's AnalysisManager and cannot be constructed
+  /// through textual pass registration with default arguments.
+  registerDeadCodeElimination();
   registerVerifyArtsObjectsOnly();
+  registerArtsRtPasses();
+  sde::registerCartsSdePasses();
   codir::registerCartsCodirConversionPasses();
   codir::registerCartsCodirPasses();
   registerAllTranslations();
@@ -1141,7 +1147,7 @@ void buildSdeInputNormalizationPipeline(PassManager &pm) {
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
   pm.addPass(sde::createSdeMemrefNormalizationPass());
   pm.addPass(sde::createSdeHandleDepsPass());
-  pm.addPass(arts::createDCEPass());
+  pm.addPass(sde::createSdeDeadStateCleanupPass());
   pm.addPass(createCSEPass());
 }
 

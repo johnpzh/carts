@@ -27,7 +27,7 @@ namespace carts::arts {
 class AnalysisManager;
 class RuntimeConfig;
 
-/// Eliminate dead ARTS operations and dead helper IR.
+/// Eliminate dead ARTS operations and shared dead helper IR.
 std::unique_ptr<Pass> createDCEPass();
 
 /// EDT and loop-structure transformation passes.

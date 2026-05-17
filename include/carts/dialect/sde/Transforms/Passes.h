@@ -57,6 +57,7 @@ class SDECostModel;
 std::unique_ptr<Pass> createSdeInputInlinerPass();
 std::unique_ptr<Pass> createSdeMemrefNormalizationPass();
 std::unique_ptr<Pass> createSdeHandleDepsPass();
+std::unique_ptr<Pass> createSdeDeadStateCleanupPass();
 
 // --- State passes (IR cleanup before planning) ---
 std::unique_ptr<Pass> createScalarForwardingPass();

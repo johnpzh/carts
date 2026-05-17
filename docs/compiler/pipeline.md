@@ -71,7 +71,7 @@ ScalarForwarding
 PolygeistCanonicalize
 SdeMemrefNormalization
 SdeHandleDeps
-DeadCodeElimination
+SdeDeadStateCleanup
 CSE
 ```
 
@@ -123,7 +123,7 @@ no SDE operations survived the boundary.
 ConvertCodirToArts
 VerifySdeLowered
 VerifyArtsObjectsOnly
-DeadCodeElimination
+ArtsDeadCodeElimination
 CSE(arts.edt)
 VerifyEdtCreated
 ```
@@ -132,7 +132,7 @@ VerifyEdtCreated
 
 ```text
 EdtStructuralOpt(runAnalysis=false)
-DeadCodeElimination
+ArtsDeadCodeElimination
 SymbolDCE
 CSE(arts.edt)
 EdtPtrRematerialization
@@ -178,7 +178,7 @@ Hoisting
 PolygeistCanonicalize
 CSE(arts.edt)
 EdtAllocaSinking
-DeadCodeElimination
+ArtsDeadCodeElimination
 Mem2Reg
 ```
 
