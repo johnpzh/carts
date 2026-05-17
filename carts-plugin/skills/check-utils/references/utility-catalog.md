@@ -20,7 +20,7 @@ disagree.
 | CODIR boundary proof logic | boundary conversion helper | `SdeToCodir/TaskDepSliceUtils.*` |
 | ARTS DB mechanics | `include/carts/dialect/arts/Utils/DbUtils.h` | `traceToDbAlloc`, `getUnderlyingDb`, `getMemoryAccessInfo`, `isWriterMode` |
 | ARTS EDT mechanics | `include/carts/dialect/arts/Utils/EdtUtils.h` | `EdtEnvManager`, `isInsideEpoch`, `classifyEdtArgAccesses` |
-| ARTS partition/block predicates and runtime topology | `include/carts/dialect/arts/Utils` | `BlockedAccessUtils`, `PartitionPredicates`, `LoweringContractUtils`, `RuntimeConfig` |
+| ARTS partition/block predicates, runtime topology, and source-location IDs | `include/carts/dialect/arts/Utils` | `BlockedAccessUtils`, `PartitionPredicates`, `LoweringContractUtils`, `RuntimeConfig`, `LocationMetadata` |
 | ARTS graph/ownership analysis | `include/carts/dialect/arts/Analysis` | `DbGraph`, `EdtGraph`, `LoopNode`, `DbDistributedEligibility` |
 | ARTS-RT runtime ABI | `include/carts/dialect/arts-rt/Utils` | `IdRegistry`, `RuntimeCallUtils`, `RtDbUtils` |
 
@@ -111,7 +111,6 @@ See `include/carts/utils/OperationAttributes.h` and
 include/carts/utils/Utils.h
 include/carts/utils/LoopUtils.h
 include/carts/utils/RemovalUtils.h
-include/carts/utils/LocationMetadata.h
 include/carts/utils/OperationAttributes.h
 include/carts/utils/StencilAttributes.h
 include/carts/utils/ValueAnalysis.h
@@ -122,6 +121,7 @@ include/carts/dialect/codir/Utils/CodeletABIUtils.h
 include/carts/dialect/arts/Utils/DbUtils.h
 include/carts/dialect/arts/Utils/EdtUtils.h
 include/carts/dialect/arts/Utils/BlockedAccessUtils.h
+include/carts/dialect/arts/Utils/LocationMetadata.h
 include/carts/dialect/arts/Utils/LoweringContractUtils.h
 include/carts/dialect/arts/Utils/LoopInvarianceUtils.h
 include/carts/dialect/arts/Utils/PartitionPredicates.h

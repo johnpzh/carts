@@ -840,8 +840,7 @@ pick the next concrete slice; use the Milestones to confirm exit gates.
   (DbUtils, EdtUtils, LoweringContractUtils, PartitionPredicates,
   BlockedAccessUtils, MetadataEnums, ARTSCostModel, LoopInvarianceUtils,
   RuntimeConfig) live in `carts/dialect/arts/Utils/`; ARTS-RT ID materialization
-  (`IdRegistry`) lives in `carts/dialect/arts-rt/Utils/`; cross-layer helpers
-  (`LocationMetadata`) live in `carts/utils/`;
+  (`IdRegistry`) lives in `carts/dialect/arts-rt/Utils/`;
   SDE-only SDECostModel moved to `carts/dialect/sde/Utils/`. CODIR ABI
   predicates already lived in `carts/dialect/codir/Utils/`. Remaining:
   pass-local SDE memref/access helpers and ARTS-RT pointer/packing helpers

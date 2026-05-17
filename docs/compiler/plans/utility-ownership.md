@@ -131,11 +131,13 @@ ownership:
 - [x] ARTS-only utilities moved to `include/carts/dialect/arts/Utils/`:
   DbUtils, EdtUtils, LoweringContractUtils, PartitionPredicates,
   BlockedAccessUtils, MetadataEnums, ARTSCostModel (was utils/costs/),
-  LoopInvarianceUtils, RuntimeConfig. Legacy metadata attr-name JSON plumbing
-  has been removed.
+  LoopInvarianceUtils, RuntimeConfig, LocationMetadata. Legacy metadata
+  attr-name JSON plumbing has been removed.
 - [x] ARTS-RT-only utility moved to `include/carts/dialect/arts-rt/Utils/`:
   IdRegistry, which is only used by DB/EDT runtime-lowering ID materialization.
-- [x] Cross-layer utilities kept in `include/carts/utils/`: LocationMetadata.
+- [x] Cross-layer utilities kept in `include/carts/utils/`: none currently;
+  shared utilities below are either project-wide support or still awaiting a
+  larger split.
 - [x] SDE-only utility moved to `include/carts/dialect/sde/Utils/`:
   SDECostModel.
 - [ ] Pass-local SDE memref/access helpers used by PatternAnalysis, tiling,
@@ -155,9 +157,9 @@ Exit gate:
   and RuntimeConfig live in ARTS Utils.
 - [x] CARTS-shared `include/carts/utils/` is now scoped: Debug, LoopUtils,
   OperationAttributes, PassInstrumentation, RemovalUtils, StencilAttributes,
-  Utils, ValueAnalysis, LocationMetadata, plus benchmarks/ and testing/. Every
-  entry is verifiably used across 2+ subdialects or is project-wide
-  infrastructure.
+  Utils, ValueAnalysis, plus benchmarks/ and testing/. Every entry is
+  verifiably used across 2+ subdialects or is project-wide infrastructure, or
+  remains listed for a follow-up split.
 - [ ] Watch for new pass-local duplicates as compiler work continues.
 
 Exit gate:

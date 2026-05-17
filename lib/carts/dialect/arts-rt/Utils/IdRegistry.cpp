@@ -5,7 +5,7 @@
 ///==========================================================================///
 #include "carts/dialect/arts-rt/Utils/IdRegistry.h"
 #include "carts/utils/Debug.h"
-#include "carts/utils/LocationMetadata.h"
+#include "carts/dialect/arts/Utils/LocationMetadata.h"
 
 #include "mlir/IR/Builders.h"
 

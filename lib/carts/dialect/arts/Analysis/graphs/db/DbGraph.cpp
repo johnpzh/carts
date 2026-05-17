@@ -9,7 +9,7 @@
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
-#include "carts/utils/LocationMetadata.h"
+#include "carts/dialect/arts/Utils/LocationMetadata.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "llvm/Support/Debug.h"
