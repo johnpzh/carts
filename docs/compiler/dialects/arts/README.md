@@ -11,4 +11,3 @@ Primary docs:
 
 - [`analysis.md`](./analysis.md)
 - [`optimizations.md`](./optimizations.md)
-- Migration plan: [`../../plans/arts-materialization-cleanup.md`](../../plans/arts-materialization-cleanup.md)

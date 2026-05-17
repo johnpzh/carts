@@ -55,6 +55,10 @@ skills disagree with the compiler, the live compiler manifest wins.
   owns lowering-ready runtime shape.
 - Do not hide correctness behind later cleanup passes, incidental pass order,
   fixture churn, or duplicated local helpers.
+- Passes, operations, attributes, and dialect-owned IR metadata must be
+  declared through the owning TableGen/ODS files first. C++ code should consume
+  generated declarations/accessors instead of adding manual pass/attribute
+  surfaces.
 - Before adding a helper to a pass, use `carts-check-utils`. Reusable helpers
   belong in the narrowest owning dialect `Utils/` area or an owning analysis
   API; keep helpers pass-local only when they are genuinely one-pass logic.

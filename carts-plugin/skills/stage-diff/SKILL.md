@@ -24,23 +24,23 @@ first stage where semantics diverge, or bisect a miscompilation.
 
 ### Dump all stages
 ```bash
-dekk carts compile <file> --all-pipelines -o /tmp/stages/
-ls /tmp/stages/
+dekk carts compile <file> --all-pipelines -o .carts/outputs/stages/<topic>/
+ls .carts/outputs/stages/<topic>/
 ```
 
 ### Compare two stages
 ```bash
-dekk carts compile <file> --pipeline=<stage1> > /tmp/before.mlir
-dekk carts compile <file> --pipeline=<stage2> > /tmp/after.mlir
-diff /tmp/before.mlir /tmp/after.mlir | head -100
+dekk carts compile <file> --pipeline=<stage1> > .carts/outputs/stages/<topic>-before.mlir
+dekk carts compile <file> --pipeline=<stage2> > .carts/outputs/stages/<topic>-after.mlir
+diff .carts/outputs/stages/<topic>-before.mlir .carts/outputs/stages/<topic>-after.mlir | head -100
 ```
 
 ### Bisect: find first divergent stage
 ```bash
 # Dump all stages, then compare adjacent pairs
-dekk carts compile <file> --all-pipelines -o /tmp/stages/
+dekk carts compile <file> --all-pipelines -o .carts/outputs/stages/<topic>/
 # Check each stage for the symptom (e.g., missing op, wrong attribute)
-for f in /tmp/stages/*.mlir; do
+for f in .carts/outputs/stages/<topic>/*.mlir; do
   echo "=== $(basename $f) ==="
   grep -c "symptom_pattern" "$f" || true
 done
@@ -85,19 +85,19 @@ conditionally when requested.
 ### Structural changes (ops added/removed)
 ```bash
 # Count ops by type at each stage
-grep -o 'arts\.[a-z_]*' /tmp/stages/*.mlir | sort | uniq -c | sort -rn
+grep -o 'arts\.[a-z_]*' .carts/outputs/stages/<topic>/*.mlir | sort | uniq -c | sort -rn
 ```
 
 ### Attribute changes
 ```bash
 # Track specific attributes across stages
-grep 'arts.dep_pattern\|arts.partition_mode\|arts.distribution_kind' /tmp/stages/*.mlir
+grep 'arts.dep_pattern\|arts.partition_mode\|arts.distribution_kind' .carts/outputs/stages/<topic>/*.mlir
 ```
 
 ### Loop structure changes
 ```bash
 # Count loops at each stage
-for f in /tmp/stages/*.mlir; do
+for f in .carts/outputs/stages/<topic>/*.mlir; do
   echo "$(basename $f): $(grep -c 'scf.for' $f) implementation loops"
 done
 ```

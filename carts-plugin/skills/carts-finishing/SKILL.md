@@ -21,7 +21,9 @@ Project orchestrator for the CARTS finish-line plan. Tracks the 11-phase task gr
 
 **Does not:**
 - Replace `carts-miscompile-triage`, `carts-distributed-triage`, `carts-stage-diff`, `carts-analysis-triage`, `carts-debug`, or `carts-runtime-triage`. This skill *invokes* those skills.
-- Duplicate the project docs. It cites `docs/plan.md`, `docs/architecture/*`, `docs/compiler/*` as the source of truth and updates the skill if they diverge.
+- Duplicate the project docs. It cites durable docs under `docs/compiler/`
+  plus session archives under `.carts/sessions/...` and updates the skill if
+  they diverge.
 
 ## The operating principle
 
@@ -49,7 +51,7 @@ When invoked (default action `next`):
 
 | Phase | Type | What to do |
 |---|---|---|
-| 0 (task #1) | decision | Use `AskUserQuestion` for the 5 open charter questions in `references/dialect-charter.md` "Open questions". Save answers under `docs/architecture/charter-decisions.md`. |
+| 0 (task #1) | decision | Use `AskUserQuestion` for the 5 open charter questions in `references/dialect-charter.md` "Open questions". Save answers under `.carts/sessions/<topic>/charter-decisions.md`. |
 | 1 (#2) | baseline | Run `dekk carts test`, `dekk carts test --suite e2e`, `dekk carts benchmarks run --size small`. Snapshot to `.results/baseline-YYYY-MM-DD.json`. Add multinode lit rule per `references/phase-plan.md` Phase 1. |
 | 2 (#3) | retired diagnostic | The monolithic partitioning heuristic pass is gone. If metadata-copy recursion or DB-mode churn reappears, inspect the live `copyArtsMetadataAttrs` call sites, `DbAnalysis`, and `DbTransformsPass`; do not recreate the retired partitioning layer. |
 | 3 (#4) | targeted-fix | Edit `lib/carts/dialect/sde/Conversion/PolygeistToSde/MemrefNormalization.cpp` first; `CreateDbs.cpp` is only the ARTS coarse raw bridge and boundary guard. The fix is in shape normalization, NOT in DB partitioning. See `references/triage-rubric.md` anti-pattern #1. |
@@ -66,7 +68,7 @@ When invoked (default action `next`):
 For each failing sample or benchmark:
 
 1. **Compile + run.** Capture full error output and the failing pipeline stage.
-2. **Walk the barrier ladder.** Run `dekk carts compile <file> --all-pipelines -o /tmp/stages/`. Find the first failing verify-barrier (see `references/triage-rubric.md` "Verification barrier map"). The bug lives between the previous green barrier and the failing one.
+2. **Walk the barrier ladder.** Run `dekk carts compile <file> --all-pipelines -o .carts/outputs/stages/<topic>/`. Find the first failing verify-barrier (see `references/triage-rubric.md` "Verification barrier map"). The bug lives between the previous green barrier and the failing one.
 3. **Apply the decision tree.** Match symptom against `references/triage-rubric.md` "Triage decision tree". Identify the originating layer.
 4. **Delegate.** Invoke the matching triage skill via `Skill`:
    - Wrong output / silent miscompilation → `carts-miscompile-triage`
@@ -93,12 +95,9 @@ If the per-item workflow keeps failing on a single item across multiple iteratio
 
 This skill cites but does not duplicate:
 
-- `docs/plan.md` — SDE pipeline phase tracking
-- `docs/architecture/sde-dialect.md`, `arts-rt-dialect.md`, `op-classification.md` — dialect ownership
-- `docs/architecture/pass-placement.md`, `pass-placement-investigation-2026-04-11.md` — placement rules
-- `docs/architecture/architecture-reaudit-2026-04-11.md`, `architecture-gap-analysis-2026-04-11.md` — audit findings
-- `docs/compiler/pipeline.md` — current 16+2 stage pipeline
-- `docs/compiler/sample-suite-triage.md` — current sample status (2026-04-13 snapshot)
+- `docs/compiler/pipeline.md` — live pipeline documentation; verify with `dekk carts pipeline --json`
+- `docs/compiler/dialects/*` — dialect ownership docs for SDE, CODIR, ARTS, and ARTS-RT
+- `.carts/sessions/...` — planning, experiments, investigation notes, and benchmark evidence
 - `tools/compile/Compile.cpp` plus ARTS DB/ownership implementation anchors — current failure taxonomy lives with the pipeline and refinement code
 
 **If any project doc disagrees with this skill, the project doc wins.** Update the skill to match. The references in this skill are distilled rubrics meant to be fast to consult during iteration; the project docs are authoritative.

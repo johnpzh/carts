@@ -2,10 +2,15 @@
 
 ## Attribute Names
 
-Use centralized attribute names:
+For CARTS IR attributes, use owning TableGen definitions and generated ODS
+accessors. Treat new raw string constants or broad `AttrNames` additions as
+review findings unless they are clearly transitional/shared metadata.
 
-- `include/carts/utils/OperationAttributes.h`
-- `include/carts/utils/StencilAttributes.h`
+- `include/carts/dialect/*/IR/*.td`
+- generated accessors such as `op.getStencilMinOffsetsAttrName()`
+- `include/carts/utils/OperationAttributes.h` only for remaining shared or
+  transitional metadata
+- `include/carts/utils/StencilAttributes.h` for helper logic
 
 Do not hardcode project attribute strings in pass logic.
 

@@ -4,6 +4,13 @@
 It is intentionally centered on skills and compact references rather than
 custom workflow engines.
 
+The source plugin is agent-agnostic. Host-specific instruction files, skill
+exports, MCP configs, and editor integrations are adapters emitted from this
+directory; do not put agent-specific environment variables or workflow
+assumptions in source skills, hooks, or MCP tools. Use `CARTS_PROJECT_DIR` /
+`CARTS_PLUGIN_ROOT` when a hook needs an explicit root, and otherwise resolve
+the repository with `git`.
+
 Generate agent-facing resources with:
 
 ```bash
@@ -31,6 +38,6 @@ The skill suite is organized around the compiler workflow:
   and heuristic explanations.
 - Meta: multi-agent development and skill maintenance.
 
-Generated resources may include `AGENTS.md`, `CLAUDE.md`, `.claude/skills/`,
-`.cursorrules`, `.github/copilot-instructions.md`, and `.agents.json`,
-depending on the active dekk version and configured targets.
+Generated resources may include root instruction files, skill exports, editor
+configuration, MCP configuration, and agent registries depending on the active
+dekk version and configured targets.

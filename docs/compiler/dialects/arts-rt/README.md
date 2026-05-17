@@ -10,4 +10,3 @@ Primary docs:
 
 - [`analysis.md`](./analysis.md)
 - [`optimizations.md`](./optimizations.md)
-- Existing migration note: [`../../rt/README.md`](../../rt/README.md)

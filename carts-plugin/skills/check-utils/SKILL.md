@@ -116,8 +116,9 @@ Every utility placement decision must state exactly one of:
 
 If extraction is chosen, the patch must include the declaration, definition,
 call-site update, old helper removal, and focused verification. If a helper uses
-CARTS attributes, add or use `AttrNames::` constants instead of hardcoded
-strings.
+CARTS IR attributes, add or use the owning TableGen attribute/accessor instead
+of hardcoded strings. Use `AttrNames::` only for remaining shared or
+transitional metadata.
 
 ## Existing Helpers To Reuse
 
@@ -142,6 +143,7 @@ Do not re-add these local copies:
 ## Attribute Strings
 
 Never hardcode project attribute strings in new helpers. Use
-`AttrNames::Operation::*`, generated ODS accessors such as
-`op.getStencilMinOffsetsAttrName()`, or the owning dialect's attribute helpers.
-Add a constant or ODS attribute first when no centralized name exists.
+generated ODS accessors such as `op.getStencilMinOffsetsAttrName()` or the
+owning dialect's attribute helpers for CARTS IR attrs. Use
+`AttrNames::Operation::*` only for remaining shared or transitional metadata.
+Add an ODS attr/accessor first when an attr is part of CARTS IR.

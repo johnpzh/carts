@@ -1,6 +1,6 @@
 ---
 name: carts-simplify
-description: Use when finalizing CARTS code, tests, skills, docs, or commits; after compiler pass or runtime edits; or when reducing patch complexity, checking utility placement, removing duplication, reusing existing APIs, or enforcing .carts artifact discipline.
+description: Use as the final simplification gate before committing or finishing CARTS work: reduce patch complexity, remove accidental changes, confirm utility-placement decisions already made by carts-check-utils, and enforce .carts artifact discipline.
 ---
 
 # CARTS Simplify

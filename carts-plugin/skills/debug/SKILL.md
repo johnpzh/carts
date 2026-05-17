@@ -1,6 +1,6 @@
 ---
 name: carts-debug
-description: Use when the user asks to debug, diagnose, inspect, troubleshoot, profile, or analyze CARTS behavior and the failure is not yet classified.
+description: Use when the user asks to debug, diagnose, inspect, troubleshoot, profile, or analyze CARTS behavior and the failure is not yet classified, including crashes, core files, runtime segfaults, benchmark failures, logs, counters, and pipeline artifacts.
 user-invocable: true
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<input-file>]
@@ -15,7 +15,7 @@ parameters:
 
 # CARTS Debug
 
-Two layers: **compile-time** (compiler diagnostics) and **runtime** (ARTS debug builds + counters).
+Two layers: **compile-time** (compiler diagnostics) and **runtime** (ARTS debug builds, crash artifacts, and counters).
 
 Shared resources live here for the other debugging skills too:
 - `references/failure-signatures.md`
@@ -40,10 +40,10 @@ If the symptom is already clear, prefer the narrower skills:
 
 ```bash
 # Stop at a pipeline stage (C or MLIR input)
-dekk carts compile <file> --pipeline <stage> -O3
+dekk carts compile <file> --pipeline=<stage> -O3
 
 # Dump ALL stages (MLIR input only)
-dekk carts compile <file.mlir> --all-pipelines -o /tmp/stages/
+dekk carts compile <file.mlir> --all-pipelines -o .carts/outputs/stages/<topic>/
 
 # Diagnostic JSON (partitioning decisions, EDT/DB info)
 dekk carts compile <file> --diagnose --diagnose-output diag.json -O3
@@ -58,6 +58,62 @@ dekk carts compile <file.mlir> --arts-debug db_partitioning,loop_fusion
 `DbModeTightening.cpp` maps to `db_mode_tightening`.
 
 Use `dekk carts pipeline --json` for the canonical stage list.
+
+## Crash Debugging
+
+Check for LLDB in project-managed toolchains before assuming it is available:
+
+```bash
+command -v lldb || true
+find .dekk .install external/Polygeist/llvm-project/build -maxdepth 5 \
+  -type f \( -name lldb -o -name lldb-server \) -print
+```
+
+Validate a candidate with `<path>/lldb --version`. Only the LLDB driver or
+`lldb-server` counts; helper scripts such as `lldb-python` do not.
+
+If LLDB is unavailable, fall back to available symbol tools:
+
+```bash
+find .install/llvm/bin -maxdepth 1 -type f \
+  \( -name llvm-symbolizer -o -name llvm-addr2line -o -name llvm-objdump \) -print
+```
+
+For an ARTS executable:
+
+```bash
+lldb --batch \
+  -o 'settings set target.env-vars artsConfig=/abs/path/to/arts.cfg' \
+  -o run \
+  -o 'thread backtrace all' \
+  -o 'register read' \
+  -- /abs/path/to/executable
+```
+
+For a core file:
+
+```bash
+file /abs/path/to/core
+readelf -n /abs/path/to/core | sed -n '1,120p'
+lldb --batch \
+  -o 'thread backtrace all' \
+  -o 'image lookup --address <pc-if-known>' \
+  --core /abs/path/to/core \
+  /abs/path/to/executable
+```
+
+Preserve crash artifacts under `.carts/outputs/<topic>/`. If no usable core or
+debugger exists, use signal-only `strace`:
+
+```bash
+strace -ff -tt -e trace=signal -o .carts/outputs/<topic>/trace \
+  env artsConfig=/abs/path/to/arts.cfg /abs/path/to/executable
+```
+
+An empty core is not evidence. Check `ulimit -c` and
+`/proc/sys/kernel/core_pattern` before relying on it. A `SEGV_ACCERR` address
+near a worker thread stack guard often means stack exhaustion; inspect generated
+LLVM for dynamic `alloca` inside loops.
 
 ## Runtime Debugging (ARTS)
 
@@ -87,7 +143,7 @@ Counters are compile-time configured — rebuild ARTS to change. Output: JSON in
 |---------|--------|
 | Program slow | `--diagnose` for partitioning, `--counters 2` for runtime |
 | Pass crashes | `--all-pipelines` to find breaking stage |
-| Wrong codegen | `--pipeline <stage>` to inspect IR |
+| Wrong codegen | `--pipeline=<stage>` to inspect IR |
 | Runtime hang | `dekk carts build --arts --debug 3`, run, check stderr |
 | Benchmark regression | `--counters 1`, compare timing JSON |
 
@@ -104,5 +160,6 @@ Read the shared references before inventing a new workflow:
 1. Identify the layer: compile-time or runtime
 2. For compile-time: use `--diagnose`, `--pipeline`, `--arts-debug`, or `--all-pipelines`
 3. For C source pipeline inspection: compile C first to get `.mlir`, then `--all-pipelines`
-4. For runtime: rebuild ARTS with `--debug 3` or `--counters N`, run the program
-5. Remind user to rebuild ARTS in release mode when done debugging
+4. For crashes: preserve artifacts, check debugger/core availability, and capture a backtrace or symbolized address
+5. For runtime progress: rebuild ARTS with `--debug 3` or `--counters N`, run the program
+6. Remind user to rebuild ARTS in release mode when done debugging

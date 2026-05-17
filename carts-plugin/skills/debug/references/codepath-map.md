@@ -17,13 +17,15 @@ High-value files by failure class.
 - `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp`
 - `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`
 - `lib/carts/dialect/arts/Utils/LoweringContractUtils.cpp`
+- `include/carts/dialect/arts/IR/Ops.td`
+- `include/carts/dialect/arts/IR/Attributes.td`
 - `include/carts/utils/StencilAttributes.h`
 
 ## Runtime / Epoch / Lowering
 
 - `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVM.cpp`
-- `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLowering.cpp`
-- `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EpochLowering.cpp`
+- `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLowering.cpp` (pre-lowering)
+- `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/EpochLowering.cpp` (pre-lowering)
 - `external/arts/`
 
 ## Distributed Ownership / Multi-Node
@@ -38,7 +40,8 @@ High-value files by failure class.
 - `include/carts/dialect/arts/Analysis/AnalysisManager.h`
 - `lib/carts/dialect/arts/Analysis/AnalysisManager.cpp`
 - `docs/compiler/phase-ordering-semantics.md`
-- `docs/plans/phase-ordering-design.md`
+- `tools/compile/Compile.cpp`
+- `docs/compiler/pipeline.md`
 
 ## Benchmark Harness / Artifacts
 

@@ -98,17 +98,17 @@ If a sample passes single-node but fails multinode:
 1. Generate dumps for both modes:
 
    ```bash
-   dekk carts compile samples/<sample> -O3 -o /tmp/single
-   dekk carts compile samples/<sample> --distributed-db -O3 -o /tmp/multi
-   dekk carts compile samples/<sample> --distributed-db -O3 --all-pipelines -o /tmp/multi-stages/
+   dekk carts compile samples/<sample> -O3 -o .carts/outputs/multinode/<sample>-single
+   dekk carts compile samples/<sample> --distributed-db -O3 -o .carts/outputs/multinode/<sample>-multi
+   dekk carts compile samples/<sample> --distributed-db -O3 --all-pipelines -o .carts/outputs/multinode/<sample>-stages/
    ```
 
 2. Diff single-node vs distributed at each stage boundary:
 
    ```bash
-   dekk carts compile samples/<sample> --pipeline=post-db-refinement > /tmp/single-post-db.mlir
-   dekk carts compile samples/<sample> --distributed-db --pipeline=post-db-refinement > /tmp/multi-post-db.mlir
-   diff /tmp/single-post-db.mlir /tmp/multi-post-db.mlir | head -200
+   dekk carts compile samples/<sample> --pipeline=post-db-refinement > .carts/outputs/multinode/<sample>-single-post-db.mlir
+   dekk carts compile samples/<sample> --distributed-db --pipeline=post-db-refinement > .carts/outputs/multinode/<sample>-multi-post-db.mlir
+   diff .carts/outputs/multinode/<sample>-single-post-db.mlir .carts/outputs/multinode/<sample>-multi-post-db.mlir | head -200
    ```
 
 3. Capture node-level logs: `arts.log`, `omp.log`, `cluster.json`, `n0.json`, `n1.json`. The distributed-triage skill has scripts for this.
@@ -117,7 +117,7 @@ If a sample passes single-node but fails multinode:
 
 ## Reference docs
 
-- `docs/architecture/arts-rt-dialect.md` — RT lowering contract
+- `docs/compiler/dialects/arts-rt/README.md` — ARTS-RT lowering contract
 - `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` — DB/window refinement
 - `lib/carts/dialect/arts/Transforms/db/DbDistributedOwnership.cpp` and `lib/carts/dialect/arts/Analysis/db/DbDistributedEligibility.cpp` — distributed ownership gates
 - `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp` — DB/acquire facts

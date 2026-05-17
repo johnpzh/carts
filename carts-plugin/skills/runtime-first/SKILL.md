@@ -1,6 +1,6 @@
 ---
 name: carts-runtime-first
-description: Use when compiler-generated code crashes at runtime and the fix requires understanding how ARTS expects EDTs, DBs, epochs, and dependencies to be structured.
+description: Use after runtime triage shows the compiler must match an ARTS runtime contract for EDTs, DBs, epochs, dependencies, or distributed execution.
 user-invocable: true
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [<benchmark-name | bug-description>]
@@ -62,7 +62,7 @@ compiler to emit that exact pattern.
 
 1. Compile the same benchmark with the CARTS compiler:
    ```bash
-   dekk carts compile <benchmark>.c -O3 --all-pipelines -o /tmp/carts-stages/
+   dekk carts compile <benchmark>.c -O3 --all-pipelines -o .carts/outputs/runtime-first/<topic>-stages/
    ```
 2. Compare the compiler's `pre-lowering` and `arts-rt-to-llvm` stages with the
    hand-written code:

@@ -20,8 +20,8 @@ Optional:
 
 | Tool | Purpose |
 |------|---------|
-| clang-format | Source formatting (`carts format`) |
-| lit | Test runner (`carts test`) -- built automatically if missing |
+| clang-format | Source formatting (`dekk carts format`) |
+| lit | Test runner (`dekk carts test`) -- built automatically if missing |
 
 ## 1. Clone
 
@@ -154,7 +154,7 @@ writing your own CARTS programs.
 carts/
   include/carts/        C++ headers (dialect, passes, utilities)
   lib/carts/            Core MLIR dialect, analysis, and passes
-  tools/               CLI entry point (carts_cli.py) and scripts
+  tools/               Dekk-backed command wrappers and scripts
   tools/compile/       C++ compilation driver (carts-compile)
   lib/carts/dialect/*/test/ MLIR regression tests (FileCheck)
   tests/e2e/          End-to-end C/C++ compile-and-run tests

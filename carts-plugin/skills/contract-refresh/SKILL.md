@@ -52,7 +52,7 @@ dekk carts lit lib/carts/dialect/<dialect>/test/<test>.mlir
 For tests with inline CHECK patterns (no Output/ directory):
 ```bash
 # Dump the actual output and compare
-dekk carts compile lib/carts/dialect/<dialect>/test/<test>.mlir --pipeline=<stage> > /tmp/actual.mlir
+dekk carts compile lib/carts/dialect/<dialect>/test/<test>.mlir --pipeline=<stage> > .carts/outputs/contract-refresh/<test>-actual.mlir
 # Update CHECK lines in the test file to match actual output
 ```
 
@@ -100,8 +100,8 @@ tests/cli/Output/                                   # CLI fixtures
 
 ### Batch refresh after a pass change
 ```bash
-dekk carts test 2>&1 | tee /tmp/test-results.txt
-grep "FAIL:" /tmp/test-results.txt | wc -l  # Count failures
+dekk carts test 2>&1 | tee .carts/outputs/contract-refresh/test-results.txt
+grep "FAIL:" .carts/outputs/contract-refresh/test-results.txt | wc -l  # Count failures
 dekk carts test  # Regenerate all (fixtures auto-update on rerun)
 git diff --stat -- 'lib/carts/dialect/*/test/Output/' 'tests/*/Output/'  # Review scope
 ```

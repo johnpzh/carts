@@ -32,7 +32,7 @@ dekk carts lit -- --filter=pattern lib/carts/dialect/    # Filter by pattern
 ## Writing New Tests
 
 ```mlir
-// RUN: %carts-compile %s --O3 --arts-config %S/../examples/arts.cfg --pipeline <stage> | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %S/../examples/arts.cfg --pipeline=<stage> | %FileCheck %s
 // CHECK: expected_output
 module { ... }
 ```

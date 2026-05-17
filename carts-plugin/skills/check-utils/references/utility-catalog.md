@@ -95,20 +95,19 @@ not loop-specific utilities.
   in ARTS Analysis, not in generic loop helpers.
 - ARTS-RT LLVM CFG loop hints and pointer-lowering decisions live in ARTS-RT.
 
-## Attribute Constants
+## Attribute Names
 
-Always use centralized constants:
+For CARTS IR attributes, prefer the owning TableGen definition and generated
+ODS accessor:
 
 ```cpp
-AttrNames::Operation::ArtsId
-AttrNames::Operation::DepPattern
-AttrNames::Operation::PartitionMode
 op.getStencilCenterOffsetAttrName()
 op.getStencilMinOffsetsAttrName()
 op.getStencilMaxOffsetsAttrName()
 ```
 
-See `include/carts/utils/OperationAttributes.h` for ARTS string constants,
+Use `include/carts/utils/OperationAttributes.h` only for remaining shared or
+transitional ARTS metadata that is not yet an ODS attr. See
 `include/carts/utils/StencilAttributes.h` for ARTS stencil contract helpers,
 and `include/carts/utils/ArrayAttrUtils.h` for dialect-neutral i64 array
 attribute builders/readers.

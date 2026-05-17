@@ -90,7 +90,8 @@ or ARTS.
 
 Important areas:
 
-- `Conversion/ArtsToRt` - lower chosen ARTS objects into runtime-shaped IR.
+- `Conversion/ArtsToRt` - implementation directory for the `pre-lowering`
+  stage, which lowers chosen ARTS objects into runtime-shaped IR.
 - `Conversion/ArtsRtToLLVM` - lower runtime-shaped IR into LLVM dialect
   runtime calls.
 - `Transforms/` - LLVM-facing cleanup, runtime-call optimization, data pointer

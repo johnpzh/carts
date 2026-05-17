@@ -9,10 +9,10 @@ For per-dialect documentation (analysis, optimizations, READMEs), see
 [`dialects/arts/`](./dialects/arts/), and
 [`dialects/arts-rt/`](./dialects/arts-rt/). For the target
 `sde -> codir -> arts -> arts-rt` split, see
-[`dialect-layering-vision.md`](./dialect-layering-vision.md). For execution
-order and subplans, see [`master-plan.md`](./master-plan.md).
-For the source-folder migration (complete as of 2026-05-15), see
-[`plans/folder-reorganization.md`](./plans/folder-reorganization.md).
+[`dialect-layering-vision.md`](./dialect-layering-vision.md).
+
+Planning notes and experiment records live under `.carts/sessions/...`; this
+file stays limited to the live compiler pipeline.
 
 ## CLI Introspection
 
@@ -162,6 +162,7 @@ Mem2Reg
 
 ```text
 DbModeTightening
+DbDistributedOwnership (conditional)
 EdtTransforms
 DbTransforms
 ContractValidation
@@ -229,6 +230,7 @@ canonical manifest token is `arts-rt-to-llvm`; no legacy stage alias is
 accepted.
 
 ```text
+LowerAffine(func)
 ConvertArtsRtToLLVM
 LoweringContractCleanup
 GuidRangeCallOpt

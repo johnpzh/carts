@@ -1,6 +1,6 @@
 ---
 name: carts-benchmark
-description: Use when the user asks about benchmarks, performance testing, regression testing, speedup measurements, benchmark listing, or benchmark comparison.
+description: Use when the user asks to list, build, run, or compare CARTS benchmarks. Use carts-benchmark-triage for failing, timing out, or suspicious benchmark results.
 user-invocable: true
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 argument-hint: [list | run <name> | build | clean]
@@ -26,10 +26,8 @@ Run `dekk carts benchmarks --help` for the latest options. Common:
 4. Compare against known baselines (check memory notes)
 
 ### Known Baselines
-- Use `docs/compiler/benchmark-performance-goal.md` as the current benchmark
-  memory. Recent repeated large/64 focused evidence has `polybench/gemm` faster
-  than OpenMP at median but noisy, with `polybench/2mm` and `polybench/3mm`
-  blocked on matrix-chain/intermediate reuse and stability.
+- Use live benchmark output and `.carts/sessions/...` investigation archives as
+  benchmark memory; experiment notes should not live in `docs/compiler`.
 - **specfem3d**: 126x slower (triple-indirected arrays, known root cause)
 
 ### Known Issues

@@ -4,13 +4,13 @@ This document records the intended CARTS dialect contract. The live pipeline in
 `tools/compile/Compile.cpp` and `dekk carts pipeline --json` remains the source
 of truth for the current implementation.
 
-For execution order, milestones, and subplans, start with
-[`master-plan.md`](./master-plan.md).
-For the target source tree layout, see
-[`plans/folder-reorganization.md`](./plans/folder-reorganization.md).
+For execution order, use [`pipeline.md`](./pipeline.md) and
+`dekk carts pipeline --json`.
 For per-dialect analysis and optimization ownership, see
-[`dialects/`](./dialects/) and
-[`plans/subdialect-analysis-optimization.md`](./plans/subdialect-analysis-optimization.md).
+[`dialects/`](./dialects/).
+
+Planning notes and experiment records live under `.carts/sessions/...`; they
+are not part of the durable docs tree.
 
 ## One-Line Rule
 
@@ -32,17 +32,15 @@ The names are part of the contract:
 - `sde` is a CARTS semantic-decomposition dialect. It is not an ARTS dialect.
 - `codir` is a CARTS codelet dialect. It is not an ARTS dialect.
 - `arts` is the abstract ARTS-machine dialect. It replaces the documentation
-  term "Core ARTS"; the current source tree may still use `core/` while the
-  rename is staged.
+  term "Core ARTS"; do not use retired `core/` source paths in new docs or
+  code.
 - `arts-rt` is the runtime-facing ARTS bridge. It replaces the documentation
-  term "RT"; the textual dialect may continue to use `arts_rt` where MLIR
-  syntax requires an underscore.
+  term "RT"; the textual dialect uses `arts_rt` where MLIR syntax requires an
+  underscore.
 
-Namespace cleanup should follow the same rule. The current implementation still
-uses names such as `mlir::carts::sde` and paths under `lib/carts/dialect/sde`.
-That is an implementation artifact, not the target ownership model. New design
-work should keep SDE and CODIR as CARTS-owned dialects and reserve `arts` for
-the abstract ARTS machine.
+Namespaces follow the same rule: `mlir::carts::sde`,
+`mlir::carts::codir`, `mlir::carts::arts`, and
+`mlir::carts::arts_rt` are the intended namespace roots.
 
 The codelet split is deliberate. Codelet IR is useful enough to stand on its
 own: it is the place where isolated task bodies, token-local memory views,
@@ -258,7 +256,7 @@ arts
   arts.db_acquire       created from codelet deps
   arts.edt              created from codir.codelet with explicit deps/params
         |
-        | ConvertArtsToRt
+        | pre-lowering
         v
 arts-rt
   runtime calls
@@ -326,28 +324,16 @@ The capture rule is explicit:
 - values that can be constructed locally inside a codelet should be constructed
   locally rather than captured.
 
-## Migration Plan
+## Migration Status
 
-1. Add CODIR as a CARTS-owned dialect with an isolated `codir.codelet` contract,
-   explicit dep/param lists, and verifier coverage for no implicit captures.
-2. Move the codelet-specific SDE operations, tests, and passes into CODIR or
-   split them so SDE authors the plan and CODIR materializes/verifies the
-   isolated codelet boundary.
-3. Teach SDE-to-CODIR materialization to rewrite MU/CU/SU together for memref
-   access windows, including ND owner dims, strided accesses, and halo windows.
-4. Convert CODIR to ARTS directly: MU storage to DB allocation, codelet memory
-   deps to DB acquires, control deps to ARTS ordering, params to EDT params, and
-   isolated codelet bodies to EDT bodies.
-5. Strengthen ARTS EDT verification and `EdtLowering` so creation-time deps and
-   params are mandatory and implicit above captures are rejected.
-6. Remove tensor raising/lowering paths once the memref MU/token/CODIR path
-   covers task deps, reductions, and codelet-local state.
-7. Keep Core raw DB indexers removed, keep `CreateDbs` coarse-only during the
-   transition, and then remove it after every supported benchmark reaches
-   direct CODIR/ARTS materialization.
-8. Keep scope and placement selection out of SDE. SDE may request logical
-   capacity; ARTS decides abstract-machine placement; ARTS-RT lowers the chosen
-   runtime API shape.
+The CODIR path, direct CODIR-to-ARTS materialization, ARTS EDT verification,
+and tensor-raising/lowering removal are complete. Remaining work is narrower:
+finish token-local CODIR view rewrites for every supported benchmark, keep
+`CreateDbs` as a coarse raw-memref bridge only until that coverage is complete,
+and preserve the SDE/CODIR/ARTS/ARTS-RT responsibility split.
+
+SDE may request logical capacity; ARTS decides abstract-machine placement;
+ARTS-RT lowers the chosen runtime API shape.
 
 ## Placement Rules
 

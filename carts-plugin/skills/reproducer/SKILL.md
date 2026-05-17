@@ -57,7 +57,7 @@ Read these while shrinking a case:
 ## Lit Test Pattern
 
 ```mlir
-// RUN: %carts-compile %s --pipeline <stage> | %FileCheck %s
+// RUN: %carts-compile %s --pipeline=<stage> | %FileCheck %s
 ```
 
 Use `%carts-compile`, `%S`, and `FileCheck`. Keep one stage boundary per test unless the bug inherently spans multiple stages.

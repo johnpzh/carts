@@ -1,6 +1,6 @@
 ---
 name: carts-heuristic-explain
-description: Use when a benchmark has unexpected partitioning, wrong distribution mode, heuristic drift, or performance anomalies.
+description: Use when a benchmark or test has unexpected partitioning, wrong distribution mode, or heuristic drift in ARTS DB/EDT placement decisions.
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Glob, Agent
 argument-hint: [partition <file> | distribution <file> | thresholds]
@@ -39,7 +39,7 @@ dekk carts compile <file> --pipeline=post-db-refinement --arts-debug=db_transfor
 dekk carts compile <file> --pipeline=db-opt --arts-debug=db_mode_tightening 2>&1
 
 # Full diagnostic JSON
-dekk carts compile <file> --diagnose --diagnose-output /tmp/diag.json 2>/dev/null
+dekk carts compile <file> --diagnose --diagnose-output .carts/outputs/heuristics/<topic>-diag.json 2>/dev/null
 ```
 
 ## DB Partition Decision Surface

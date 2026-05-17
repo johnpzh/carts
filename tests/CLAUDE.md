@@ -13,7 +13,7 @@ Pass-level lit tests are co-located with source code:
 lib/carts/dialect/sde/test/   Semantic (SDE) dialect tests (stages 1-3)
 lib/carts/dialect/arts/test/  ARTS core dialect tests (stages 4-15)
   partitioning/              DB partitioning contract tests (modes/ + safety/)
-lib/carts/dialect/arts-rt/test/    Runtime dialect tests (stage 16 + epilogues)
+lib/carts/dialect/arts-rt/test/    ARTS-RT lowering and LLVM-facing tests
 ```
 
 Demo programs live at the project root:

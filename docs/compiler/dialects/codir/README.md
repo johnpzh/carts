@@ -11,4 +11,3 @@ Primary docs:
 
 - [`analysis.md`](./analysis.md)
 - [`optimizations.md`](./optimizations.md)
-- Migration plan: [`../../plans/codir-edt-isolation.md`](../../plans/codir-edt-isolation.md)

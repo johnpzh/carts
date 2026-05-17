@@ -1,6 +1,6 @@
 ---
 name: carts-multinode-examples
-description: Use when CARTS examples, benchmarks, or generated binaries involve multiple nodes, distributed-db, node routing, ownership, launchers, SSH/Slurm, or multinode-only failures.
+description: Use when the user asks how to compile or run CARTS examples on multiple nodes, including ARTS configs, launchers, SSH, or Slurm. Use carts-distributed-triage for failures.
 ---
 
 # CARTS Multinode Examples

@@ -21,7 +21,7 @@ Phases are ordered to minimize attribution noise:
 
 **Type:** decision
 
-**Stop condition:** `docs/architecture/charter-decisions.md` exists and answers the 5 open questions in `references/dialect-charter.md` "Open questions".
+**Stop condition:** `.carts/sessions/<topic>/charter-decisions.md` exists and answers the 5 open questions in `references/dialect-charter.md` "Open questions".
 
 **Action:** use `AskUserQuestion` to surface the 5 questions one at a time. Each question has a recommendation in the charter doc; offer it as the first option.
 
@@ -35,10 +35,10 @@ Phases are ordered to minimize attribution noise:
 
 **Actions:**
 
-1. `dekk carts test --suite e2e --json /tmp/single-node.json`
+1. `dekk carts test --suite e2e --json .carts/outputs/finishing/single-node.json`
 2. Add `tests/e2e/lit.local.cfg` rule for `arts_multinode.cfg`. Cover the 9 currently-passing samples (convolution, deps, jacobi/deps, matrix, matrixmul, parallel, parallel_for/{block,static}, task) under `--distributed-db`.
 3. Run multinode lit subset; capture status.
-4. `dekk carts benchmarks run --size small --json /tmp/bench.json`. Status snapshot.
+4. `dekk carts benchmarks run --size small --json .carts/outputs/finishing/bench.json`. Status snapshot.
 5. Combine into `.results/baseline-YYYY-MM-DD.json`.
 
 **Why now:** locks the green/red snapshot before any fix. Every later regression-guard run compares against this.
@@ -75,7 +75,8 @@ Phases are ordered to minimize attribution noise:
 
 **Type:** per-item iteration
 
-**Stop condition:** all 26 samples pass single-node. `docs/compiler/sample-suite-triage.md` is refreshed.
+**Stop condition:** all maintained samples pass single-node and the evidence is
+captured under `.carts/sessions/...`.
 
 **Workflow:** see `SKILL.md` "Per-item workflow." For each remaining failure:
 
@@ -144,7 +145,8 @@ Phases are ordered to minimize attribution noise:
 
 **Type:** structural
 
-**Stop condition:** `docs/architecture/pass-placement.md` and `architecture-reaudit-2026-04-11.md` show no remaining TODOs. `docs/compiler/pipeline.md` reflects current state.
+**Stop condition:** `docs/compiler/dialect-layering-vision.md` and
+`docs/compiler/pipeline.md` reflect current state.
 
 **Sub-steps (cheapest to most invasive):**
 
@@ -155,7 +157,7 @@ Phases are ordered to minimize attribution noise:
 3. **4h** — Keep active SDE passes wired in `Compile.cpp`; obsolete
    state/codelet and tensor raising/lowering sources have been removed.
 
-4. **6h** — Add SDE-contract early-exit guards to ARTS refinement passes so they defer when SDE has stamped a contract. Per `docs/plan.md` Phase 3A–3D.
+4. **6h** — Add SDE-contract early-exit guards to ARTS refinement passes so they defer when SDE has stamped a contract.
 
 5. **12h** — Decouple semantic detection from structural rewriting in ARTS DB/EDT refinement. Move wavefront / Jacobi family detection into SDE (extend `PatternAnalysis` or add a later SDE wavefront-planning pass). Make ARTS passes consumers, not detectors. Enforces Invariant 5.
 
@@ -172,9 +174,8 @@ Each sub-step must pass regression-guard against ALL samples and benchmarks in s
 **Actions:**
 
 1. Distill `docs/compiler/fix-attribution-log.md` into live plan updates and implementation anchors for CPS/ownership failures.
-2. Update `docs/architecture/pass-placement.md` with final placement rules.
-3. Update `docs/plan.md` status sections (replace 2026-04-12 snapshot with current).
-4. Promote `docs/compiler/sample-suite-triage.md` from "snapshot" to "verified green baseline."
+2. Update `docs/compiler/dialect-layering-vision.md` with final placement rules.
+3. Keep experiment and sample-suite evidence under `.carts/sessions/...`.
 5. Merge `architecture/sde-restructuring` → `main`.
 6. Mark all carts-finishing tasks `completed`.
 

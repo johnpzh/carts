@@ -11,4 +11,3 @@ Primary docs:
 
 - [`analysis.md`](./analysis.md)
 - [`optimizations.md`](./optimizations.md)
-- Existing migration notes under [`../../sde/`](../../sde/)

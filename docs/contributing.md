@@ -5,9 +5,8 @@
 - `lib/carts/` - Core MLIR dialect implementation
 - `include/carts/` - Public headers
 - `tools/` - User-facing scripts and utilities
-  - `carts_cli.py` - Main compiler CLI entry point (wrapped/activated by dekk)
+  - `scripts/` - Python CLI subcommands/helpers used through `dekk carts`
   - `compile/` - C++ compilation driver (`carts-compile`)
-  - `scripts/` - Python CLI subcommands/helpers
 - `tests/` - Test suites
   - `contracts/` - Pipeline regression tests (MLIR + FileCheck)
   - `examples/` - End-to-end C/C++ tests
@@ -35,7 +34,6 @@ dekk carts compile simple.cpp -o simple # Full compilation pipeline
 dekk carts test                        # Run all tests
 dekk carts lit lib/carts/dialect/arts/test/<file>.mlir # Run focused lit regressions
 dekk carts lit --suite contracts       # Run the maintained contracts suite
-make check-doc-flags                   # Validate docs flags against carts-compile options
 
 # Formatting
 dekk carts format                      # Format tracked C/C++/TableGen files
@@ -94,7 +92,7 @@ Follow LLVM conventions:
 - Braces on same line
 - `CamelCase` for types/ops (e.g., `DbDimOp`)
 - `camelCase` for variables
-- Run `dekk carts format` (or `clang-format -i <file>`) before committing
+- Run `dekk carts format` before committing
 - Keep `// RUN:` and `FileCheck` directives aligned
 
 ## Testing Guidelines

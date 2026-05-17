@@ -52,7 +52,8 @@ Read these before editing invalidation behavior:
 - `include/carts/dialect/arts/Analysis/AnalysisManager.h`
 - `lib/carts/dialect/arts/Analysis/AnalysisManager.cpp`
 - `docs/compiler/phase-ordering-semantics.md`
-- `docs/plans/phase-ordering-design.md`
+- `tools/compile/Compile.cpp`
+- `docs/compiler/pipeline.md`
 - `docs/audits/2026-04-02-analysis-dependency-investigation.md`
 
 ## Guardrails

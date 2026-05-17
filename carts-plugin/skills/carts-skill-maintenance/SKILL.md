@@ -23,6 +23,9 @@ summarize the whole workflow.
    - descriptions start with `Use when` and describe triggers, not workflow;
    - examples use `dekk carts ...`, not raw build tools;
    - `carts-simplify` is referenced from pass, review, and maintenance flows;
+   - source plugin files remain agent-agnostic; do not add host-specific
+     environment variables to `carts-plugin/hooks`, MCP tools, or source
+     skills; use only project-owned `CARTS_*` roots or repository discovery;
    - plugin metadata stays present for supported agent targets.
 6. Generate resources:
    ```bash
@@ -33,7 +36,16 @@ summarize the whole workflow.
    dekk carts skills list
    dekk carts skills status
    ```
-8. If discovery does not use the configured `[agents].source`, fix the tooling
+8. Check generated adapters for source-policy drift:
+   ```bash
+   rg --no-ignore 'PROJECT_DIR|PLUGIN_ROOT|python tools/carts_cli.py' \
+     carts-plugin/hooks carts-plugin/mcp carts-plugin/.mcp.json
+   ```
+   This should show only `CARTS_PROJECT_DIR`, `CARTS_PLUGIN_ROOT`, and
+   repository discovery. If it finds host-specific roots or raw implementation
+   commands, patch the generated adapter back to project-owned roots,
+   `git rev-parse`, and `dekk carts ...` before commit.
+9. If discovery does not use the configured `[agents].source`, fix the tooling
    before relying on generated resources.
 
 ## Pressure Tests

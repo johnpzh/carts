@@ -28,10 +28,11 @@ AM->getEdtAnalysis().getEdtNode(edt)           // Node lookup
 AM->getDbAnalysis().getDbAcquireNode(acquire)  // Node lookup
 ```
 
-**Attribute names** — NEVER hardcode strings. Use centralized names from:
-- `include/carts/utils/OperationAttributes.h` (`AttrNames::Operation`)
-- generated ODS accessors such as `op.getStencilMinOffsetsAttrName()`
-- `include/carts/utils/StencilAttributes.h` for ARTS stencil contract helpers
+**Attribute names** — NEVER hardcode strings. For CARTS IR attrs, add/use the
+owning op or attr in TableGen and consume generated ODS accessors such as
+`op.getStencilMinOffsetsAttrName()`. Use `AttrNames::Operation` only for
+remaining shared or transitional metadata. `StencilAttributes.h` provides
+helper logic; it is not the source of manual attr names.
 
 **Naming** — DB passes: `Db` prefix. EDT passes: `Edt` prefix. LLVM style: 2-space indent, CamelCase types, camelCase variables.
 
@@ -45,7 +46,7 @@ exist in `include/carts/utils`, `include/carts/dialect/*/Utils`,
 ## Key Source Locations
 
 - ARTS transforms: `lib/carts/dialect/arts/Transforms/`
-- ARTS-RT pre-lowering: `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/`
+- ARTS-RT pre-lowering (`pre-lowering` stage): `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/`
 - SDE transforms: `lib/carts/dialect/sde/Transforms/`
 - LLVM conversion: `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/`
 - Analysis: `lib/carts/dialect/arts/Analysis/`
@@ -56,7 +57,8 @@ exist in `include/carts/utils`, `include/carts/dialect/*/Utils`,
 ## Creating a New Pass
 
 1. Create source in the appropriate dialect directory (`lib/carts/dialect/{sde,codir,arts,arts-rt}/...`)
-2. Add declaration in `include/carts/passes/Passes.h`
+2. Add the pass to the owning TableGen `Passes.td`; keep C++ factories behind
+   generated declarations unless the pass needs temporary non-TableGen state
 3. Register in pipeline at appropriate stage in `tools/compile/Compile.cpp`
 4. Add lit test in the co-located `test/` directory (`lib/carts/dialect/{sde,codir,arts,arts-rt}/test/`)
 5. `dekk carts format` then `dekk carts test --suite contracts`

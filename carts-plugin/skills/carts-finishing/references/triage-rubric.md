@@ -35,7 +35,7 @@ When an error surfaces at stage N, check the listed prior stages first.
 
 ## Verification barrier ladder
 
-Each verification pass is a freeze point. If barrier X passes but barrier Y fails, the bug is in stages between them. Run `dekk carts compile <file> --all-pipelines -o /tmp/stages/` then inspect each stage dump.
+Each verification pass is a freeze point. If barrier X passes but barrier Y fails, the bug is in stages between them. Run `dekk carts compile <file> --all-pipelines -o .carts/outputs/stages/<topic>/` then inspect each stage dump.
 
 | Barrier | File | Asserts | Failure severity |
 |---|---|---|---|

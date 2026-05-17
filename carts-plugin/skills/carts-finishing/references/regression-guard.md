@@ -12,15 +12,15 @@ Run in order. Stop at the first failure and investigate.
 
 3. **Pass-test suite.** `dekk carts test`. Full pass-test suite (fast). No new failures.
 
-4. **Re-run a prior-green sample (single-node).** Pick one sample that was passing before this change. `dekk carts compile samples/<sample> -O3 -o /tmp/test && /tmp/test`. Output matches baseline.
+4. **Re-run a prior-green sample (single-node).** Pick one sample that was passing before this change. `dekk carts compile samples/<sample> -O3 -o .carts/outputs/regression/<sample> && .carts/outputs/regression/<sample>`. Output matches baseline.
 
-5. **Sample suite snapshot.** `dekk carts test --suite e2e --json /tmp/carts-e2e.json`. Compare PASS count to the latest baseline in `.results/`. Do not advance if PASS count decreased. New PASS count should match or exceed prior snapshot.
+5. **Sample suite snapshot.** `dekk carts test --suite e2e --json .carts/outputs/regression/carts-e2e.json`. Compare PASS count to the latest baseline in `.results/`. Do not advance if PASS count decreased. New PASS count should match or exceed prior snapshot.
 
-6. **Pipeline-stage IR sanity.** If the fix touches stage N, dump full pipeline: `dekk carts compile samples/<fixed-sample> --all-pipelines -o /tmp/pipelines/`. Run `grep -c "arts\." /tmp/pipelines/*/*.mlir` to spot op-count anomalies. No silent op drops.
+6. **Pipeline-stage IR sanity.** If the fix touches stage N, dump full pipeline: `dekk carts compile samples/<fixed-sample> --all-pipelines -o .carts/outputs/regression/pipelines/`. Run `grep -c "arts\." .carts/outputs/regression/pipelines/*/*.mlir` to spot op-count anomalies. No silent op drops.
 
 7. **Verify-barrier check.** Confirm the verification barrier above the fix still holds. `dekk carts lit lib/carts/dialect/*/test/ -filter=Verify<StageName>`.
 
-8. **Multinode spot-check** (if the fix touches SDE distribution planning, DB refinement, ownership, EDT materialization, EpochLowering, or CPS logic). `dekk carts compile samples/<fixed-sample> --distributed-db -O3 -o /tmp/mn && ARTS_CONFIG=samples/arts_multinode.cfg /tmp/mn`. No regression vs prior multinode baseline.
+8. **Multinode spot-check** (if the fix touches SDE distribution planning, DB refinement, ownership, EDT materialization, EpochLowering, or CPS logic). `dekk carts compile samples/<fixed-sample> --distributed-db -O3 -o .carts/outputs/regression/mn && ARTS_CONFIG=samples/arts_multinode.cfg .carts/outputs/regression/mn`. No regression vs prior multinode baseline.
 
 9. **Stderr scan.** Capture stderr: `dekk carts compile … 2>&1 | grep -i "warn\|error"`. New warnings? Investigate before considering the fix done.
 

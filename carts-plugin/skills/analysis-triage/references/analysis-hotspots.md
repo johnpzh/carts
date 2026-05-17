@@ -11,7 +11,8 @@ Start here when the symptom depends on pass order, graph freshness, or stale met
 ## High-Risk Docs
 
 - `docs/compiler/phase-ordering-semantics.md`
-- `docs/plans/phase-ordering-design.md`
+- `tools/compile/Compile.cpp`
+- `docs/compiler/pipeline.md`
 - `docs/audits/2026-04-02-analysis-dependency-investigation.md`
 - `docs/audits/2026-04-02-am-thread-safety-audit.md`
 

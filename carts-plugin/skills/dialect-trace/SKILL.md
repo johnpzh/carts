@@ -119,8 +119,8 @@ include/carts/dialect/codir/IR/CodirOps.td   # CODIR op definitions
 
 ### Conversion Passes
 ```
-lib/carts/dialect/codir/Transforms/          # SDE → CODIR → ARTS boundary
-lib/carts/dialect/arts-rt/Conversion/ArtsToRt/ # ARTS → ARTS-RT
+lib/carts/dialect/codir/Transforms/              # SDE → CODIR → ARTS boundary
+lib/carts/dialect/arts-rt/Conversion/ArtsToRt/   # pre-lowering implementation
 lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ # ARTS-RT → LLVM
 ```
 

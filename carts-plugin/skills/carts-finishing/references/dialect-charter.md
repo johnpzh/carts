@@ -9,11 +9,11 @@ arbitrary, the charter is wrong (update it) or the pass is wrong (move it).
 
 The authoritative documents are:
 
-- `docs/architecture/sde-dialect.md` — SDE charter
-- `docs/architecture/arts-rt-dialect.md` — RT charter
-- `docs/architecture/op-classification.md` — which op belongs where
-- `docs/architecture/pass-placement.md` — placement rules
-- `docs/architecture/architecture-reaudit-2026-04-11.md` — most recent audit
+- `docs/compiler/dialect-layering-vision.md` — layer contract
+- `docs/compiler/pipeline.md` — live stage order and barriers
+- `docs/compiler/dialects/*/{README,analysis,optimizations}.md` — per-dialect
+  responsibility
+- `.carts/sessions/...` — active planning notes and investigation state
 
 This file is a fast-lookup distillation. If it disagrees with the docs above, the docs win — update this file to match.
 
@@ -110,11 +110,12 @@ These do not block correctness but should be cleaned up in Phase 9. Cite when de
 | 1 | Wavefront family detection in ARTS, should be SDE (Invariant 5) | `lib/carts/dialect/sde/Transforms/state/PatternAnalysis.cpp`, `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`, `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp`, `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` | Move family + tile geometry into `PatternAnalysis` or a later SDE wavefront-planning pass; refactor ARTS realizers to consume the contract. |
 | 2 | ARTS re-detects elementwise/stencil/matmul facts that SDE already proved (Invariant 5) | `lib/carts/dialect/sde/Transforms/state/PatternAnalysis.cpp`, `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp`, `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` | Refactor ARTS refinement to consume SDE/CODIR contracts instead of reclassifying source semantics. |
 | 3 | ARTS creates epoch/EDT structure from re-detected wavefront/Jacobi patterns (Invariants 1 & 5) | `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`, `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp`, `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` | Enhance `PatternAnalysis` and SDE dependency planning; refactor ARTS materialization/refinement to consume lowered SDE contracts. |
-| 4 | Doc disagreement: `op-classification.md` says `arts.lowering_contract` and `arts.omp_dep` should migrate to SDE; `pass-placement.md` says the live pipeline keeps planning inside `sde-planning`. | `docs/architecture/op-classification.md` vs `docs/architecture/pass-placement.md` | `pass-placement.md` is current; the migration is aspirational and tracked under violation #1. |
+| 4 | Historical docs disagreed about `arts.lowering_contract` ownership. | Archived planning notes under `.carts/sessions/...` | The live contract is in `docs/compiler/dialect-layering-vision.md`: ARTS may carry abstract lowering contracts, but SDE/CODIR must materialize source facts before ARTS. |
 
 ## Open questions (Phase 0 / task #1)
 
-The user must decide these before further restructuring. Answers go to `docs/architecture/charter-decisions.md` (created on first answer).
+The user must decide these before further restructuring. Answers go to a
+session note under `.carts/sessions/<topic>/charter-decisions.md`.
 
 1. **DestinationStyleOpInterface on SDE ops.** Make CU/SU ops implement `ins`/`outs` for tensor composition, or keep transient `linalg.generic` carriers? Recommendation: keep transient until benchmarks are green, then upgrade. (Effort if upgrading: 8–10h.)
 
