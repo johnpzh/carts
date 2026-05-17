@@ -9,10 +9,10 @@
 /// block-local access rewriting belongs to SDE MU/token lowering.
 ///==========================================================================///
 
-#ifndef CARTS_DIALECT_ARTS_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
-#define CARTS_DIALECT_ARTS_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
+#ifndef CARTS_DIALECT_ARTS_UTILS_DBLAYOUTPLANUTILS_H
+#define CARTS_DIALECT_ARTS_UTILS_DBLAYOUTPLANUTILS_H
 
-#include "carts/dialect/arts/Transforms/db/DbLayoutPlan.h"
+#include "carts/dialect/arts/Utils/DbLayoutPlan.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Operation.h"
@@ -38,4 +38,4 @@ resolvePhysicalDbLayoutPlan(ArrayAttr ownerDimsAttr, ArrayAttr blockShapeAttr,
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // CARTS_DIALECT_ARTS_TRANSFORMS_DB_DBLAYOUTPLANUTILS_H
+#endif // CARTS_DIALECT_ARTS_UTILS_DBLAYOUTPLANUTILS_H

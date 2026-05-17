@@ -2,7 +2,7 @@
 /// File: DbLayoutPlanUtils.cpp
 ///==========================================================================///
 
-#include "carts/dialect/arts/Transforms/db/DbLayoutPlanUtils.h"
+#include "carts/dialect/arts/Utils/DbLayoutPlanUtils.h"
 
 #include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
 #include "carts/utils/OperationAttributes.h"

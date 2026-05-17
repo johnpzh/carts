@@ -9,8 +9,8 @@
 /// access rewriting belongs to SDE/CODIR token-local memref lowering.
 ///==========================================================================///
 
-#ifndef CARTS_DIALECT_ARTS_TRANSFORMS_DB_DBLAYOUTPLAN_H
-#define CARTS_DIALECT_ARTS_TRANSFORMS_DB_DBLAYOUTPLAN_H
+#ifndef CARTS_DIALECT_ARTS_UTILS_DBLAYOUTPLAN_H
+#define CARTS_DIALECT_ARTS_UTILS_DBLAYOUTPLAN_H
 
 #include "carts/Dialect.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
@@ -47,4 +47,4 @@ struct DbPhysicalLayoutPlan {
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // CARTS_DIALECT_ARTS_TRANSFORMS_DB_DBLAYOUTPLAN_H
+#endif // CARTS_DIALECT_ARTS_UTILS_DBLAYOUTPLAN_H
