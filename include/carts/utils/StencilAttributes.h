@@ -22,16 +22,12 @@ namespace Operation {
 namespace Stencil {
 using namespace llvm;
 constexpr StringLiteral StencilCenterOffset("stencil_center_offset");
-constexpr StringLiteral ElementStride("element_stride");
-constexpr StringLiteral LeftHaloArgIdx("left_halo_arg_idx");
-constexpr StringLiteral RightHaloArgIdx("right_halo_arg_idx");
 constexpr StringLiteral FootprintMinOffsets("stencil_min_offsets");
 constexpr StringLiteral FootprintMaxOffsets("stencil_max_offsets");
 constexpr StringLiteral SpatialDims("stencil_spatial_dims");
 constexpr StringLiteral OwnerDims("stencil_owner_dims");
 constexpr StringLiteral BlockShape("stencil_block_shape");
 constexpr StringLiteral WriteFootprint("stencil_write_footprint");
-constexpr StringLiteral HaloContractId("stencil_halo_contract_id");
 constexpr StringLiteral SupportedBlockHalo("stencil_supported_block_halo");
 } // namespace Stencil
 } // namespace Operation
@@ -132,47 +128,18 @@ inline void copyStencilContractAttrs(Operation *source, Operation *dest) {
 
   for (StringRef attrName : {
            ::mlir::carts::StencilAttrNames::Operation::Stencil::StencilCenterOffset,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::ElementStride,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::LeftHaloArgIdx,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::RightHaloArgIdx,
            ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMinOffsets,
            ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMaxOffsets,
            ::mlir::carts::StencilAttrNames::Operation::Stencil::SpatialDims,
            ::mlir::carts::StencilAttrNames::Operation::Stencil::OwnerDims,
            ::mlir::carts::StencilAttrNames::Operation::Stencil::BlockShape,
            ::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::HaloContractId,
            ::mlir::carts::StencilAttrNames::Operation::Stencil::SupportedBlockHalo,
        }) {
     if (Attribute attr = source->getAttr(attrName))
       dest->setAttr(attrName, attr);
     else
       dest->removeAttr(attrName);
-  }
-}
-
-inline void inheritStencilContractAttrs(Operation *source, Operation *dest) {
-  if (!source || !dest)
-    return;
-
-  for (StringRef attrName : {
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::StencilCenterOffset,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::ElementStride,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::LeftHaloArgIdx,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::RightHaloArgIdx,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMinOffsets,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMaxOffsets,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::SpatialDims,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::OwnerDims,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::BlockShape,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::HaloContractId,
-           ::mlir::carts::StencilAttrNames::Operation::Stencil::SupportedBlockHalo,
-       }) {
-    if (dest->hasAttr(attrName))
-      continue;
-    if (Attribute attr = source->getAttr(attrName))
-      dest->setAttr(attrName, attr);
   }
 }
 

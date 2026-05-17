@@ -26,7 +26,6 @@ namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_CONVERTARTSRTTOLLVM
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
-#include "carts/dialect/arts/Utils/RuntimeConfig.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"

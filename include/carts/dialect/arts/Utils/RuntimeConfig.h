@@ -7,7 +7,6 @@
 
 #pragma once
 
-#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -24,47 +23,33 @@ public:
   /// Core Machine Configuration
   int getThreads() const { return threads; }
   int getNodeCount() const { return nodeCount; }
-  const std::vector<std::string> &getNodes() const { return nodes; }
-  const std::string &getMasterNode() const { return masterNode; }
-  const std::string &getLauncher() const { return launcher; }
 
-  /// GPU Configuration
-  int getScheduler() const { return scheduler; }
-  int getGpuCount() const { return gpu; }
-  int getGpuRouteTableSize() const { return gpuRouteTableSize; }
-  int getGpuLocality() const { return gpuLocality; }
-  int getGpuFit() const { return gpuFit; }
-  int getGpuLCSync() const { return gpuLCSync; }
-  bool isGpuBufferEnabled() const { return gpuBufferOn; }
-  int getGpuMaxMemory() const { return gpuMaxMemory; }
-  int getGpuMaxEdts() const { return gpuMaxEdts; }
-
-  /// Network Configuration
-  int getOutgoingThreads() const { return outgoing; }
-  int getIncomingThreads() const { return incoming; }
-  int getPorts() const { return ports; }
-  const std::string &getProtocol() const { return protocol; }
-  int getPort() const { return port; }
-  const std::string &getNetInterface() const { return netInterface; }
-
-  /// Hardware Configuration
-  int getPinStride() const { return pinStride; }
-  int getWorkerInitDequeSize() const { return workerInitDequeSize; }
-  int getRouteTableSize() const { return routeTableSize; }
-  bool isCoreDumpEnabled() const { return coreDump; }
-
-  /// Performance Monitoring
-  const std::string &getCounterFolder() const { return counterFolder; }
-  int getCounterStartPoint() const { return counterStartPoint; }
-  bool isKillModeEnabled() const { return killMode; }
-
-  /// Machine Capability Queries
-  bool hasGpuSupport() const { return scheduler == 3 && gpu > 0; }
-  bool isSingleNode() const { return nodeCount == 1; }
-  bool isDistributed() const { return nodeCount > 1; }
-  bool isLocalExecution() const {
-    return nodeCount == 1 && nodes.size() == 1 && nodes[0] == "localhost";
+  /// Runtime total workers across cluster (nodes * workers-per-node).
+  int getRuntimeTotalWorkers() const {
+    int nodesCount = nodeCount > 0 ? nodeCount : 1;
+    return nodesCount * getRuntimeWorkersPerNode();
   }
+
+  /// Execution mode derived from runtime-visible worker concurrency.
+  ExecutionMode getExecutionMode() const {
+    if (nodeCount > 1)
+      return ExecutionMode::InterNode;
+    if (getRuntimeWorkersPerNode() > 1)
+      return ExecutionMode::IntraNode;
+    return ExecutionMode::SingleThreaded;
+  }
+
+  /// Configuration file status
+  bool hasConfigFile() const { return configFileExists; }
+  const std::string &getConfigPath() const { return configPath; }
+  bool isValid() const { return isValidFlag; }
+
+  /// Validation methods
+  bool hasValidThreads() const { return threads > 0; }
+  bool hasValidNodeCount() const { return nodeCount > 0; }
+
+private:
+  bool hasGpuSupport() const { return scheduler == 3 && gpu > 0; }
 
   /// Runtime worker count per node used by ARTS scheduling.
   /// `worker_threads` is already the worker count on multi-node runs.
@@ -77,39 +62,9 @@ public:
     return workers > 0 ? workers : 1;
   }
 
-  /// Runtime total workers across cluster (nodes * workers-per-node).
-  int getRuntimeTotalWorkers() const {
-    int nodesCount = nodeCount > 0 ? nodeCount : 1;
-    return nodesCount * getRuntimeWorkersPerNode();
-  }
-  int getTotalGpuThreads() const { return hasGpuSupport() ? gpu : 0; }
-
-  /// Execution mode derived from runtime-visible worker concurrency.
-  ExecutionMode getExecutionMode() const {
-    if (nodeCount > 1)
-      return ExecutionMode::InterNode;
-    if (getRuntimeWorkersPerNode() > 1)
-      return ExecutionMode::IntraNode;
-    return ExecutionMode::SingleThreaded;
-  }
-
-  /// Should chunking be prioritized? (true for distributed execution)
-  bool shouldPrioritizeChunking() const { return nodeCount > 1; }
-
-  /// Configuration file status
-  bool hasConfigFile() const { return configFileExists; }
-  const std::string &getConfigPath() const { return configPath; }
-  bool isValid() const { return isValidFlag; }
-
-  /// Validation methods
-  bool hasValidThreads() const { return threads > 0; }
-  bool hasValidNodeCount() const { return nodeCount > 0; }
   bool validateConfiguration();
-
-  /// Parse arts.cfg at the given path. Returns false on failure.
   bool parseFromFile(const std::string &path);
 
-private:
   static std::string trim(const std::string &s);
   static std::vector<std::string> splitCSV(const std::string &s);
   static int parseInt(const std::string &value, int defaultValue = -1);

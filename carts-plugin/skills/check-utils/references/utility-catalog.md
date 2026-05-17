@@ -104,7 +104,6 @@ AttrNames::Operation::ArtsId
 AttrNames::Operation::DepPattern
 AttrNames::Operation::PartitionMode
 AttrNames::Operation::Stencil::StencilCenterOffset
-AttrNames::Operation::Stencil::ElementStride
 AttrNames::Operation::Stencil::FootprintMinOffsets
 AttrNames::Operation::Stencil::FootprintMaxOffsets
 ```
