@@ -283,20 +283,20 @@ static const std::array<llvm::StringLiteral, 6> kCodirToArtsPasses = {
     "VerifySdeLowered",
     "VerifyArtsObjectsOnly",
     "DeadCodeElimination",
-    "CSE",
+    "CSE(arts.edt)",
     "VerifyEdtCreated"};
 static const std::array<llvm::StringLiteral, 6> kEdtTransformsPasses = {
     "EdtStructuralOpt(runAnalysis=false)",
     "EdtICM",
     "DeadCodeElimination",
     "SymbolDCE",
-    "CSE",
+    "CSE(arts.edt)",
     "EdtPtrRematerialization"};
 static const std::array<llvm::StringLiteral, 6> kCreateDbsPasses = {
-    "CreateDbs", "PolygeistCanonicalize", "CSE",
+    "CreateDbs", "PolygeistCanonicalize", "CSE(arts.edt)",
     "SymbolDCE", "Mem2Reg", "PolygeistCanonicalize"};
 static const std::array<llvm::StringLiteral, 4> kDbOptPasses = {
-    "DbModeTightening", "PolygeistCanonicalize", "CSE", "Mem2Reg"};
+    "DbModeTightening", "PolygeistCanonicalize", "CSE(arts.edt)", "Mem2Reg"};
 static const std::array<llvm::StringLiteral, 8> kPostDbRefinementPasses = {
     "DbModeTightening",
     "DbDistributedOwnership (conditional)",
@@ -305,12 +305,12 @@ static const std::array<llvm::StringLiteral, 8> kPostDbRefinementPasses = {
     "ContractValidation",
     "DbScratchElimination",
     "PolygeistCanonicalize",
-    "CSE"};
+    "CSE(arts.edt)"};
 static const std::array<llvm::StringLiteral, 7> kLateConcurrencyCleanupPasses =
     {"BlockLoopStripMining(func)",
      "Hoisting",
      "PolygeistCanonicalize",
-     "CSE",
+     "CSE(arts.edt)",
      "EdtAllocaSinking",
      "DeadCodeElimination",
      "Mem2Reg"};
@@ -321,10 +321,10 @@ static const std::array<llvm::StringLiteral, 5> kEpochsPasses = {
 static const std::array<llvm::StringLiteral, 22> kPreLoweringPasses = {
     "EdtAllocaSinking",
     "PolygeistCanonicalize",
-    "CSE",
+    "CSE(arts.edt)",
     "DbLowering",
     "PolygeistCanonicalize",
-    "CSE",
+    "CSE(arts.edt)",
     "EdtLowering",
     "PolygeistCanonicalize",
     "CSE",
@@ -1115,6 +1115,19 @@ static void addCanonicalizeAndCSE(PassManager &pm) {
   pm.addPass(createCSEPass());
 }
 
+static void addEdtLocalCSE(PassManager &pm) {
+  /// Generic module CSE can replace an EDT-local scalar with an equivalent
+  /// outer SSA value because arts.edt is intentionally not IsolatedFromAbove.
+  /// Run CSE at the EDT root while abstract EDTs are live so cleanup stays
+  /// within the explicit dep/param boundary.
+  pm.addNestedPass<arts::EdtOp>(createCSEPass());
+}
+
+static void addCanonicalizeAndEdtLocalCSE(PassManager &pm) {
+  pm.addPass(polygeist::createPolygeistCanonicalizePass());
+  addEdtLocalCSE(pm);
+}
+
 /// Normalize frontend storage and dependency shape before SDE conversion.
 void buildSdeInputNormalizationPipeline(PassManager &pm) {
   OpPassManager &optPM = pm.nest<func::FuncOp>();
@@ -1180,7 +1193,7 @@ void buildCodirToArtsPipeline(PassManager &pm) {
   pm.addPass(sde::createVerifySdeLoweredPass());
   pm.addPass(arts::createVerifyArtsObjectsOnlyPass());
   pm.addPass(arts::createDCEPass());
-  pm.addPass(createCSEPass());
+  addEdtLocalCSE(pm);
   pm.addPass(arts::createVerifyEdtCreatedPass());
 }
 
@@ -1190,14 +1203,14 @@ void buildEdtTransformsPipeline(PassManager &pm, arts::AnalysisManager *AM) {
   pm.addPass(arts::createEdtICMPass());
   pm.addPass(arts::createDCEPass());
   pm.addPass(createSymbolDCEPass());
-  pm.addPass(createCSEPass());
+  addEdtLocalCSE(pm);
   pm.addPass(arts::createEdtPtrRematerializationPass());
 }
 
 /// DB creation pass.
 void buildCreateDbsPipeline(PassManager &pm, arts::AnalysisManager *AM) {
   pm.addPass(arts::createCreateDbsPass(AM));
-  addCanonicalizeAndCSE(pm);
+  addCanonicalizeAndEdtLocalCSE(pm);
   pm.addPass(createSymbolDCEPass());
   pm.addPass(createMem2Reg());
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
@@ -1206,7 +1219,7 @@ void buildCreateDbsPipeline(PassManager &pm, arts::AnalysisManager *AM) {
 /// DB creation and optimization passes.
 void buildDbOptPipeline(PassManager &pm, arts::AnalysisManager *AM) {
   pm.addPass(arts::createDbModeTighteningPass(AM));
-  addCanonicalizeAndCSE(pm);
+  addCanonicalizeAndEdtLocalCSE(pm);
   pm.addPass(createMem2Reg());
 }
 
@@ -1226,14 +1239,14 @@ void buildPostDbRefinementPipeline(PassManager &pm, arts::AnalysisManager *AM,
   pm.addPass(arts::createDbTransformsPass(AM));
   pm.addPass(arts::createContractValidationPass());
   pm.addPass(arts::createDbScratchEliminationPass());
-  addCanonicalizeAndCSE(pm);
+  addCanonicalizeAndEdtLocalCSE(pm);
 }
 
 /// Apply late DB-aware loop cleanup and final stack/SSA simplification.
 void buildLateConcurrencyCleanupPipeline(PassManager &pm) {
   pm.addNestedPass<func::FuncOp>(arts::createBlockLoopStripMiningPass());
   pm.addPass(arts::createHoistingPass());
-  addCanonicalizeAndCSE(pm);
+  addCanonicalizeAndEdtLocalCSE(pm);
   /// TODO(PERF): EdtAllocaSinkingPass runs twice (here and pre-lowering).
   pm.addPass(arts::createEdtAllocaSinkingPass());
   pm.addPass(arts::createDCEPass());
@@ -1256,9 +1269,9 @@ void buildPreLoweringPipeline(PassManager &pm) {
   /// TODO(PERF): EdtAllocaSinkingPass runs twice (late concurrency cleanup
   /// and here).
   pm.addPass(arts::createEdtAllocaSinkingPass());
-  addCanonicalizeAndCSE(pm);
+  addCanonicalizeAndEdtLocalCSE(pm);
   pm.addPass(arts_rt::createDbLoweringPass(ArtsIdStride));
-  addCanonicalizeAndCSE(pm);
+  addCanonicalizeAndEdtLocalCSE(pm);
   pm.addPass(arts_rt::createEdtLoweringPass(ArtsIdStride));
   addCanonicalizeAndCSE(pm);
   pm.addPass(arts::createVerifyEdtLoweredPass());

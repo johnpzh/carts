@@ -73,7 +73,6 @@ not loop-specific utilities.
 | Resolve effective contract | `resolveEffectiveContract()` | `LoweringContractUtils.h` |
 | Mark op for deferred removal | `RemovalUtils::markForRemoval()` | `RemovalUtils.h` |
 | Clamp dep indices | `clampDepIndices()` | `Utils.h` |
-| Simplify IR (CSE) | `simplifyIR()` | `Utils.h` |
 
 ## Loop And IV Placement Rules
 

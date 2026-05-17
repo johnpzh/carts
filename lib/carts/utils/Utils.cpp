@@ -13,8 +13,6 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/Support/LLVM.h"
-#include "mlir/Transforms/CSE.h"
-#include "mlir/Transforms/RegionUtils.h"
 #include <cassert>
 
 /// Debug
@@ -142,20 +140,6 @@ bool isArtsRuntimeQuery(Value val) {
     return arts_rt::isRuntimeTopologyQueryCall(callOp);
 
   return false;
-}
-
-///===----------------------------------------------------------------------===///
-/// IR Simplification Utilities
-///===----------------------------------------------------------------------===///
-
-/// Simplifies the IR by running common subexpression elimination (CSE)
-/// across the module using the provided dominance information.
-bool simplifyIR(ModuleOp module, DominanceInfo &domInfo) {
-  IRRewriter rewriter(module.getContext());
-  bool changed = false;
-  eliminateCommonSubExpressions(rewriter, domInfo, module, &changed);
-
-  return changed;
 }
 
 ///===----------------------------------------------------------------------===///

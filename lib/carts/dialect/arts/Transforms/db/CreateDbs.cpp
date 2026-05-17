@@ -57,7 +57,6 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/Dominance.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
@@ -387,9 +386,6 @@ void CreateDbsPass::cleanupAndFinalize() {
   for (Operation *op : opsToRemove)
     removalMgr.markForRemoval(op);
   removalMgr.removeAllMarked(module, /*recursive=*/true);
-
-  DominanceInfo domInfo(module);
-  arts::simplifyIR(module, domInfo);
 }
 
 void CreateDbsPass::projectSemanticContractToDbValue(Operation *sourceOp,

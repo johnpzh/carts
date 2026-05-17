@@ -124,7 +124,7 @@ ConvertCodirToArts
 VerifySdeLowered
 VerifyArtsObjectsOnly
 DeadCodeElimination
-CSE
+CSE(arts.edt)
 VerifyEdtCreated
 ```
 
@@ -135,7 +135,7 @@ EdtStructuralOpt(runAnalysis=false)
 EdtICM
 DeadCodeElimination
 SymbolDCE
-CSE
+CSE(arts.edt)
 EdtPtrRematerialization
 ```
 
@@ -144,7 +144,7 @@ EdtPtrRematerialization
 ```text
 CreateDbs
 PolygeistCanonicalize
-CSE
+CSE(arts.edt)
 SymbolDCE
 Mem2Reg
 PolygeistCanonicalize
@@ -155,7 +155,7 @@ PolygeistCanonicalize
 ```text
 DbModeTightening
 PolygeistCanonicalize
-CSE
+CSE(arts.edt)
 Mem2Reg
 ```
 
@@ -168,7 +168,7 @@ DbTransforms
 ContractValidation
 DbScratchElimination
 PolygeistCanonicalize
-CSE
+CSE(arts.edt)
 ```
 
 ### `late-concurrency-cleanup`
@@ -177,7 +177,7 @@ CSE
 BlockLoopStripMining(func)
 Hoisting
 PolygeistCanonicalize
-CSE
+CSE(arts.edt)
 EdtAllocaSinking
 DeadCodeElimination
 Mem2Reg
@@ -201,10 +201,10 @@ the abstract ARTS object graph.
 ```text
 EdtAllocaSinking
 PolygeistCanonicalize
-CSE
+CSE(arts.edt)
 DbLowering
 PolygeistCanonicalize
-CSE
+CSE(arts.edt)
 EdtLowering
 PolygeistCanonicalize
 CSE

@@ -21,9 +21,6 @@
 namespace mlir {
 namespace carts::arts {
 
-/// IR Simplification Utilities
-bool simplifyIR(ModuleOp module, DominanceInfo &domInfo);
-
 /// Type and Size Utilities
 uint64_t getElementTypeByteSize(Type elementType);
 MemRefType getElementMemRefType(Type elementType, ArrayRef<Value> elementSizes);
