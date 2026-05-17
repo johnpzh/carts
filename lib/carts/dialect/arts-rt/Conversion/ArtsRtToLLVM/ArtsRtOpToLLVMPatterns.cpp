@@ -1,9 +1,9 @@
 ///==========================================================================///
-/// File: RtToLLVMPatterns.cpp
+/// File: ArtsRtOpToLLVMPatterns.cpp
 ///
-/// ARTS runtime dialect (arts_rt) to LLVM conversion patterns.
-/// These patterns convert arts_rt ops into LLVM runtime calls via the
-/// ArtsCodegen infrastructure shared with the ARTS-RT-to-LLVM conversion.
+/// ARTS-RT operation to LLVM conversion patterns.
+/// These patterns convert runtime-shaped ARTS-RT ops into LLVM runtime calls
+/// via the ArtsCodegen infrastructure owned by ConvertArtsRtToLLVM.
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVMInternal.h"
@@ -34,19 +34,19 @@
 ARTS_DEBUG_SETUP(convert_arts_rt_to_llvm);
 
 static llvm::Statistic numEdtOpsConverted{
-    "rt_to_llvm", "NumEdtOpsConverted",
+    "arts_rt_to_llvm", "NumEdtOpsConverted",
     "Number of EDT operations converted to LLVM runtime calls"};
 static llvm::Statistic numEpochOpsConverted{
-    "rt_to_llvm", "NumEpochOpsConverted",
+    "arts_rt_to_llvm", "NumEpochOpsConverted",
     "Number of epoch operations converted to LLVM runtime calls"};
 static llvm::Statistic numDepOpsConverted{
-    "rt_to_llvm", "NumDepOpsConverted",
+    "arts_rt_to_llvm", "NumDepOpsConverted",
     "Number of dependency operations converted to LLVM runtime calls"};
 static llvm::Statistic numDbOpsConverted{
-    "rt_to_llvm", "NumDbOpsConverted",
+    "arts_rt_to_llvm", "NumDbOpsConverted",
     "Number of DataBlock operations converted to LLVM runtime calls"};
 static llvm::Statistic numMiscOpsConverted{
-    "rt_to_llvm", "NumMiscOpsConverted",
+    "arts_rt_to_llvm", "NumMiscOpsConverted",
     "Number of miscellaneous ARTS operations converted"};
 
 using namespace mlir;
@@ -1858,7 +1858,8 @@ struct DepForwardPattern : public ArtsRtToLLVMPattern<DepForwardOp> {
 
 namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm {
 
-void populateRtToLLVMPatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
+void populateArtsRtOpToLLVMPatterns(RewritePatternSet &patterns,
+                                    ArtsCodegen *AC) {
   MLIRContext *context = patterns.getContext();
 
   /// Epoch patterns

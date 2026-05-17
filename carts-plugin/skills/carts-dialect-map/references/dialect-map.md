@@ -91,8 +91,8 @@ or ARTS.
 Important areas:
 
 - `Conversion/ArtsToRt` - lower chosen ARTS objects into runtime-shaped IR.
-- `Conversion/ArtsRtToLLVM` and `Conversion/RtToLLVM` - lower runtime-shaped
-  IR into LLVM dialect runtime calls.
+- `Conversion/ArtsRtToLLVM` - lower runtime-shaped IR into LLVM dialect
+  runtime calls.
 - `Transforms/` - LLVM-facing cleanup, runtime-call optimization, data pointer
   hoisting, alias scopes, loop hints, and lowered-form verification.
 

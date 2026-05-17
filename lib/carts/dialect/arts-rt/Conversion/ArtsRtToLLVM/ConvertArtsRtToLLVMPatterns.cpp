@@ -1583,13 +1583,13 @@ void populateRuntimePatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
   patterns.add<BuiltinObjectSizePattern>(context);
 
   /// Epoch patterns (GetEdtEpochGuid stays in core; CreateEpoch/WaitOnEpoch
-  /// moved to RtToLLVMPatterns)
+  /// moved to ArtsRtOpToLLVMPatterns)
   patterns.add<GetEdtEpochGuidPattern>(context, AC);
 }
 
 void populateDbPatterns(RewritePatternSet &patterns, ArtsCodegen *AC) {
   MLIRContext *context = patterns.getContext();
-  /// DB patterns (DbGepOp/DepDbAcquireOp moved to RtToLLVMPatterns)
+  /// DB patterns (DbGepOp/DepDbAcquireOp moved to ArtsRtOpToLLVMPatterns)
   patterns.add<DbRefPattern, DbAcquirePattern, DbReleasePattern>(context, AC);
 }
 

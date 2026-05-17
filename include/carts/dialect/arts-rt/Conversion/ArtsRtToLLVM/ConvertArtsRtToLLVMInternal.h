@@ -88,7 +88,8 @@ Value buildArtsHintMemref(ArtsCodegen *AC, Value route, Value artsId,
 ///===----------------------------------------------------------------------===///
 
 void populateRuntimePatterns(RewritePatternSet &patterns, ArtsCodegen *AC);
-void populateRtToLLVMPatterns(RewritePatternSet &patterns, ArtsCodegen *AC);
+void populateArtsRtOpToLLVMPatterns(RewritePatternSet &patterns,
+                                    ArtsCodegen *AC);
 void populateDbPatterns(RewritePatternSet &patterns, ArtsCodegen *AC);
 void populateOtherPatterns(RewritePatternSet &patterns, ArtsCodegen *AC);
 

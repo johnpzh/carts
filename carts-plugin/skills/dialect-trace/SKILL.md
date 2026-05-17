@@ -121,8 +121,7 @@ include/carts/dialect/codir/IR/CodirOps.td   # CODIR op definitions
 ```
 lib/carts/dialect/codir/Transforms/          # SDE → CODIR → ARTS boundary
 lib/carts/dialect/arts-rt/Conversion/ArtsToRt/ # ARTS → ARTS-RT
-lib/carts/dialect/arts-rt/Conversion/RtToLLVM/     # ARTS-RT → LLVM
-lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ # ARTS-RT → LLVM cleanup/remaining
+lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ # ARTS-RT → LLVM
 ```
 
 ## Instructions

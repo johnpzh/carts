@@ -60,7 +60,7 @@ Use to locate where to grep when triaging.
 - CODIR-to-ARTS materialization: `lib/carts/dialect/codir/Conversion/CodirToArts/CodirToArts.cpp`
 - SDE distribution/reduction planning: `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`, `lib/carts/dialect/sde/Transforms/effect/scheduling/ReductionStrategy.cpp`
 - ARTS-RT ABI conversion: `lib/carts/dialect/arts-rt/Conversion/ArtsToRt/` and `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/`
-- ARTS-RT LLVM cleanup: `lib/carts/dialect/arts-rt/Conversion/RtToLLVM/RtToLLVMPatterns.cpp`
+- ARTS-RT LLVM cleanup: `lib/carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ArtsRtOpToLLVMPatterns.cpp`
 - Multinode-conditional passes: `DbDistributedOwnership`, `DbDistributedEligibility`, SDE distribution planning, ARTS DB refinement
 
 ## Anti-patterns from prior fixes

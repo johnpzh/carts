@@ -101,11 +101,11 @@ void ConvertArtsRtToLLVMPass::runOnOperation() {
     }
   }
 
-  /// Run 2: arts_rt patterns (EDT create, deps, state, epochs)
+  /// Run 2: arts_rt op patterns (EDT create, deps, state, epochs)
   {
-    ARTS_INFO("Running arts_rt to LLVM patterns");
+    ARTS_INFO("Running arts_rt op to LLVM patterns");
     RewritePatternSet rtPatterns(context);
-    arts_rt_to_llvm::populateRtToLLVMPatterns(rtPatterns, AC);
+    arts_rt_to_llvm::populateArtsRtOpToLLVMPatterns(rtPatterns, AC);
     if (failed(applyPatternsGreedily(module, std::move(rtPatterns), config))) {
       ARTS_ERROR("Failed to apply arts_rt-to-LLVM conversion patterns");
       return signalPassFailure();
@@ -140,7 +140,7 @@ void ConvertArtsRtToLLVMPass::runOnOperation() {
   {
     ARTS_INFO("Running arts_rt cleanup patterns");
     RewritePatternSet cleanupPatterns(context);
-    arts_rt_to_llvm::populateRtToLLVMPatterns(cleanupPatterns, AC);
+    arts_rt_to_llvm::populateArtsRtOpToLLVMPatterns(cleanupPatterns, AC);
     if (failed(applyPatternsGreedily(module, std::move(cleanupPatterns),
                                      config))) {
       ARTS_ERROR("Failed to apply arts_rt cleanup patterns");
