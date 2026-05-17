@@ -21,49 +21,6 @@ using namespace mlir::carts::arts_rt;
 
 namespace {
 
-static Operation *resolveRootAllocFromAttr(Value value) {
-  if (!value)
-    return nullptr;
-
-  std::optional<int64_t> rootId;
-  llvm::SmallPtrSet<Operation *, 8> visited;
-  for (unsigned depth = 0; depth < 16 && value; ++depth) {
-    Operation *defOp = value.getDefiningOp();
-    if (!defOp || !visited.insert(defOp).second)
-      break;
-
-    if (auto candidate = getDbRootAllocId(defOp)) {
-      rootId = candidate;
-      break;
-    }
-
-    if (auto dbGep = dyn_cast<DbGepOp>(defOp)) {
-      value = dbGep.getBasePtr();
-      continue;
-    }
-
-    break;
-  }
-
-  if (!rootId || *rootId <= 0)
-    return nullptr;
-
-  auto module = value.getParentRegion()
-                    ? value.getParentRegion()->getParentOfType<ModuleOp>()
-                    : ModuleOp();
-  if (!module)
-    return nullptr;
-
-  Operation *resolved = nullptr;
-  module.walk([&](DbAllocOp alloc) {
-    if (getArtsId(alloc) != *rootId)
-      return WalkResult::advance();
-    resolved = alloc.getOperation();
-    return WalkResult::interrupt();
-  });
-  return resolved;
-}
-
 static Value getUnderlyingRtValueImpl(Value value,
                                       llvm::SmallPtrSetImpl<Value> &visited,
                                       unsigned depth) {
@@ -221,8 +178,6 @@ Operation *RtDbUtils::getUnderlyingDb(Value value, unsigned depth) {
     return depAcquire.getOperation();
 
   if (Operation *defOp = value.getDefiningOp()) {
-    if (Operation *rootAlloc = resolveRootAllocFromAttr(value))
-      return rootAlloc;
     if (auto dbGep = dyn_cast<DbGepOp>(defOp))
       return getUnderlyingDb(dbGep.getBasePtr(), depth + 1);
   }

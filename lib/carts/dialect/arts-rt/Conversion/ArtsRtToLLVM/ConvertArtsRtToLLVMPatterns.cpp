@@ -57,21 +57,8 @@ using namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm;
 
 namespace mlir::carts::arts_rt::convert_arts_rt_to_llvm {
 
-SmallVector<Value, 4>
-materializeStaticDbOuterShape(Value handle, ArtsCodegen *AC, Location loc) {
-  SmallVector<Value, 4> sizes;
-  auto shape = getDbStaticOuterShape(handle);
-  if (!shape)
-    return sizes;
-
-  sizes.reserve(shape->size());
-  for (int64_t dim : *shape)
-    sizes.push_back(AC->createIndexConstant(dim, loc));
-  return sizes;
-}
-
-SmallVector<Value, 4> resolveSourceOuterSizes(Value sourceGuid, Value sourcePtr,
-                                              ArtsCodegen *AC, Location loc) {
+SmallVector<Value, 4> resolveSourceOuterSizes(Value sourceGuid,
+                                              Value sourcePtr) {
   SmallVector<Value, 4> sizes;
 
   auto resolveFromDefiningDb = [&](Value handle) -> bool {
@@ -99,11 +86,6 @@ SmallVector<Value, 4> resolveSourceOuterSizes(Value sourceGuid, Value sourcePtr,
     resolveFromDefiningDb(sourceGuid);
   if (sizes.empty() && sourcePtr)
     resolveFromDefiningDb(sourcePtr);
-
-  if (sizes.empty())
-    sizes = materializeStaticDbOuterShape(sourceGuid, AC, loc);
-  if (sizes.empty())
-    sizes = materializeStaticDbOuterShape(sourcePtr, AC, loc);
   return sizes;
 }
 
@@ -136,8 +118,7 @@ Value resolveGuidStorageForAcquireSource(Value sourceGuid, Value sourcePtr) {
   return {};
 }
 
-SmallVector<Value, 4> resolveOuterSizesForGuid(Value dbGuid, ArtsCodegen *AC,
-                                               Location loc) {
+SmallVector<Value, 4> resolveOuterSizesForGuid(Value dbGuid) {
   SmallVector<Value, 4> sizes;
   if (!dbGuid)
     return sizes;
@@ -149,11 +130,11 @@ SmallVector<Value, 4> resolveOuterSizesForGuid(Value dbGuid, ArtsCodegen *AC,
 
   if (auto dbAcquireOp = dbGuid.getDefiningOp<DbAcquireOp>())
     return resolveSourceOuterSizes(dbAcquireOp.getSourceGuid(),
-                                   dbAcquireOp.getSourcePtr(), AC, loc);
+                                   dbAcquireOp.getSourcePtr());
 
   if (auto depDbAcquireOp = dbGuid.getDefiningOp<DepDbAcquireOp>())
     return resolveSourceOuterSizes(depDbAcquireOp.getGuid(),
-                                   depDbAcquireOp.getPtr(), AC, loc);
+                                   depDbAcquireOp.getPtr());
 
   return sizes;
 }
@@ -1182,8 +1163,6 @@ struct DbRefPattern : public ArtsRtToLLVMPattern<DbRefOp> {
     SmallVector<Value> outerSizes;
     if (Operation *underlyingDb = RtDbUtils::getUnderlyingDb(source))
       outerSizes = RtDbUtils::getSizesFromDb(underlyingDb);
-    if (outerSizes.empty())
-      outerSizes = materializeStaticDbOuterShape(source, AC, loc);
 
     SmallVector<Value> strides;
     if (!outerSizes.empty() && outerSizes.size() == indices.size())
@@ -1284,7 +1263,7 @@ struct DbAcquirePattern : public ArtsRtToLLVMPattern<DbAcquireOp> {
       sourceSizes.assign(depAcqOp.getSizes().begin(),
                          depAcqOp.getSizes().end());
     if (sourceSizes.empty())
-      sourceSizes = resolveSourceOuterSizes(guidStorage, sourcePtr, AC, loc);
+      sourceSizes = resolveSourceOuterSizes(guidStorage, sourcePtr);
 
     if (!guidStorage)
       return op.emitOpError("cannot lower without a source_guid or a "

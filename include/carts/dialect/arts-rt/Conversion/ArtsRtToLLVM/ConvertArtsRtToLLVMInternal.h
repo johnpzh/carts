@@ -71,14 +71,10 @@ static constexpr int32_t kArtsDepFlagPreserveShape = 1 << 1;
 /// Helper Functions
 ///===----------------------------------------------------------------------===///
 
-SmallVector<Value, 4>
-materializeStaticDbOuterShape(Value handle, ArtsCodegen *AC, Location loc);
+SmallVector<Value, 4> resolveSourceOuterSizes(Value sourceGuid,
+                                              Value sourcePtr);
 
-SmallVector<Value, 4> resolveSourceOuterSizes(Value sourceGuid, Value sourcePtr,
-                                              ArtsCodegen *AC, Location loc);
-
-SmallVector<Value, 4> resolveOuterSizesForGuid(Value dbGuid, ArtsCodegen *AC,
-                                               Location loc);
+SmallVector<Value, 4> resolveOuterSizesForGuid(Value dbGuid);
 
 Value buildArtsHintMemref(ArtsCodegen *AC, Value route, Value artsId,
                           Location loc);

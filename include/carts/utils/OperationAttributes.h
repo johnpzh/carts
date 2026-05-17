@@ -43,7 +43,6 @@ constexpr StringLiteral ReadyLocalLaunch = "arts.ready_local_launch";
 
 /// Partition-related attributes (TableGen-generated names)
 constexpr StringLiteral PartitionMode = "partition_mode";
-constexpr StringLiteral PartitionHint = "arts.partition_hint";
 constexpr StringLiteral AccessPattern = "access_pattern";
 constexpr StringLiteral Distributed = "distributed";
 constexpr StringLiteral DistributedRejectReason =
@@ -61,14 +60,6 @@ constexpr StringLiteral NoStartEpoch = "arts.no_start_epoch";
 /// DB storage-type inference annotations (set by DbModeTighteningPass)
 constexpr StringLiteral LocalOnly = "arts.local_only";
 constexpr StringLiteral ReadOnlyAfterInit = "arts.read_only_after_init";
-
-/// Preserves compile-time DB outer extents on rehydrated handle values when
-/// outlining breaks the original DbAllocOp def-use chain.
-constexpr StringLiteral DbStaticOuterShape = "arts.db_static_outer_shape";
-/// Preserves the original DbAllocOp arts.id on rebuilt compile-time handle
-/// scaffolding so downstream lowering/analysis can recover element sizes and
-/// provenance without transporting raw handle pointers.
-constexpr StringLiteral DbRootAllocId = "arts.db_root_alloc_id";
 
 /// LoweringContractOp attribute names (used in Dialect.cpp build method)
 namespace Contract {
@@ -483,44 +474,6 @@ inline void setRuntimeTotalWorkers(ModuleOp module, int64_t workers) {
       IntegerAttr::get(IntegerType::get(module.getContext(), 64), workers));
 }
 
-inline std::optional<SmallVector<int64_t, 4>>
-getDbStaticOuterShape(Operation *op) {
-  return readI64ArrayAttr(op, AttrNames::Operation::DbStaticOuterShape);
-}
-
-inline std::optional<SmallVector<int64_t, 4>>
-getDbStaticOuterShape(Value value) {
-  return value ? getDbStaticOuterShape(value.getDefiningOp()) : std::nullopt;
-}
-
-inline void setDbStaticOuterShape(Operation *op, ArrayRef<int64_t> shape) {
-  if (!op || shape.empty())
-    return;
-  op->setAttr(AttrNames::Operation::DbStaticOuterShape,
-              buildI64ArrayAttr(op, shape));
-}
-
-inline std::optional<int64_t> getDbRootAllocId(Operation *op) {
-  if (!op)
-    return std::nullopt;
-  if (auto attr =
-          op->getAttrOfType<IntegerAttr>(AttrNames::Operation::DbRootAllocId))
-    return attr.getInt();
-  return std::nullopt;
-}
-
-inline std::optional<int64_t> getDbRootAllocId(Value value) {
-  return value ? getDbRootAllocId(value.getDefiningOp()) : std::nullopt;
-}
-
-inline void setDbRootAllocId(Operation *op, int64_t id) {
-  if (!op || id <= 0)
-    return;
-  auto *ctx = op->getContext();
-  auto type = IntegerType::get(ctx, 64);
-  op->setAttr(AttrNames::Operation::DbRootAllocId, IntegerAttr::get(type, id));
-}
-
 inline bool getRuntimeStaticWorkers(ModuleOp module) {
   if (!module)
     return false;
@@ -553,21 +506,6 @@ inline void setRuntimeTotalNodes(ModuleOp module, int64_t nodes) {
       AttrNames::Module::RuntimeTotalNodes,
       IntegerAttr::get(IntegerType::get(module.getContext(), 64), nodes));
 }
-
-struct PartitioningHint {
-  PartitionMode mode = PartitionMode::coarse;
-  std::optional<int64_t> blockSize;
-
-  static PartitioningHint block(std::optional<int64_t> size) {
-    PartitioningHint h;
-    h.mode = PartitionMode::block;
-    h.blockSize = size;
-    return h;
-  }
-
-  DictionaryAttr toAttribute(MLIRContext *ctx) const;
-  static std::optional<PartitioningHint> fromAttribute(Attribute attr);
-};
 
 inline int64_t getArtsId(Operation *op) {
   if (!op)
@@ -1080,8 +1018,6 @@ inline void copyArtsMetadataAttrs(Operation *source, Operation *dest) {
   if (auto mode = source->getAttrOfType<PartitionModeAttr>(
           AttrNames::Operation::PartitionMode))
     dest->setAttr(AttrNames::Operation::PartitionMode, mode);
-  if (auto hint = source->getAttr(AttrNames::Operation::PartitionHint))
-    dest->setAttr(AttrNames::Operation::PartitionHint, hint);
 }
 
 /// Copy only the semantic contract attrs that specialized pattern detection
@@ -1106,29 +1042,6 @@ inline void copySemanticContractAttrs(Operation *source, Operation *dest) {
     dest->removeAttr(AttrNames::Operation::Contract::NarrowableDep);
 }
 
-/// Copy structured kernel plan attrs from source to dest.
-/// Used by Core materializers to propagate SDE-authored plan attrs to concrete
-/// ARTS objects.
-inline void copyPlanAttrs(Operation *source, Operation *dest) {
-  if (!source || !dest)
-    return;
-  setPlanOwnerDimsAttr(dest, getPlanOwnerDimsAttr(source));
-  setPlanPhysicalBlockShapeAttr(dest, getPlanPhysicalBlockShapeAttr(source));
-  setPlanLogicalWorkerSliceAttr(dest, getPlanLogicalWorkerSliceAttr(source));
-  setPlanHaloShapeAttr(dest, getPlanHaloShapeAttr(source));
-  setPlanIterationTopologyAttr(dest, getPlanIterationTopologyAttr(source));
-  setPlanRepetitionStructureAttr(dest, getPlanRepetitionStructureAttr(source));
-  setPlanAsyncStrategyAttr(dest, getPlanAsyncStrategyAttr(source));
-  setPlanCostSchedulerOverheadAttr(dest,
-                                   getPlanCostSchedulerOverheadAttr(source));
-  setPlanCostSliceWideningPressureAttr(
-      dest, getPlanCostSliceWideningPressureAttr(source));
-  setPlanCostExpectedLocalWorkAttr(dest,
-                                   getPlanCostExpectedLocalWorkAttr(source));
-  setPlanCostRelaunchAmortizationAttr(
-      dest, getPlanCostRelaunchAmortizationAttr(source));
-}
-
 inline void inheritSemanticContractAttrs(Operation *source, Operation *dest) {
   if (!source || !dest)
     return;
@@ -1143,45 +1056,6 @@ inline void inheritSemanticContractAttrs(Operation *source, Operation *dest) {
       source->hasAttr(AttrNames::Operation::Contract::NarrowableDep))
     dest->setAttr(AttrNames::Operation::Contract::NarrowableDep,
                   UnitAttr::get(dest->getContext()));
-}
-
-inline DictionaryAttr PartitioningHint::toAttribute(MLIRContext *ctx) const {
-  SmallVector<NamedAttribute> attrs;
-  attrs.push_back(
-      {StringAttr::get(ctx, "mode"),
-       IntegerAttr::get(IntegerType::get(ctx, 8), static_cast<uint8_t>(mode))});
-  if (blockSize)
-    attrs.push_back({StringAttr::get(ctx, "blockSize"),
-                     IntegerAttr::get(IntegerType::get(ctx, 64), *blockSize)});
-  return DictionaryAttr::get(ctx, attrs);
-}
-
-inline std::optional<PartitioningHint>
-PartitioningHint::fromAttribute(Attribute attr) {
-  auto dictAttr = dyn_cast_or_null<DictionaryAttr>(attr);
-  if (!dictAttr)
-    return std::nullopt;
-  PartitioningHint hint;
-  if (auto modeAttr = dictAttr.getAs<IntegerAttr>("mode"))
-    hint.mode = static_cast<PartitionMode>(modeAttr.getInt());
-  if (auto chunkAttr = dictAttr.getAs<IntegerAttr>("blockSize"))
-    hint.blockSize = chunkAttr.getInt();
-  return hint;
-}
-
-inline std::optional<PartitioningHint> getPartitioningHint(Operation *op) {
-  if (!op)
-    return std::nullopt;
-  if (auto attr = op->getAttr(AttrNames::Operation::PartitionHint))
-    return PartitioningHint::fromAttribute(attr);
-  return std::nullopt;
-}
-
-inline void setPartitioningHint(Operation *op, const PartitioningHint &hint) {
-  if (!op)
-    return;
-  op->setAttr(AttrNames::Operation::PartitionHint,
-              hint.toAttribute(op->getContext()));
 }
 
 } // namespace carts::arts

@@ -857,7 +857,7 @@ boundaries, but it must not expand the logical iteration domain.
 
 Current policy:
 
-1) Explicit compile-time block hints (`PartitioningHint blockSize > 1`)
+1) Structured DB block layouts (`partition_mode = block/stencil`)
    - If loop lower bound is a known constant and misaligned, direct ARTS
      materialization may
      align the chunking base downward.

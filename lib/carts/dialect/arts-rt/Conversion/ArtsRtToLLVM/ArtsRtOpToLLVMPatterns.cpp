@@ -579,7 +579,7 @@ private:
     if (allocOp && !allocOp.getSizes().empty())
       return AC->computeTotalElements(allocOp.getSizes(), allocOp.getLoc());
     SmallVector<Value, 4> sizes =
-        resolveOuterSizesForGuid(dbGuid, AC, dbGuid.getLoc());
+        resolveOuterSizesForGuid(dbGuid);
     if (!sizes.empty())
       return AC->computeTotalElements(sizes, dbGuid.getLoc());
     return nullptr;
@@ -928,7 +928,7 @@ private:
       result.dbInfo = RtDbUtils::extractDbLoweringInfo(dbAcquireOp);
       result.guidStorage =
           dbAcquireOp.getSourceGuid() ? dbAcquireOp.getSourceGuid() : dbGuid;
-      result.allocSizes = resolveOuterSizesForGuid(dbGuid, AC, loc);
+      result.allocSizes = resolveOuterSizesForGuid(dbGuid);
       /// Stencil writer acquires frequently cover [halo..., center, halo...]
       /// DB entries. Recording every entry as WRITE over-serializes adjacent
       /// blocks. Use the acquire's stencil contract to identify the owned
@@ -1012,7 +1012,7 @@ private:
                           ? Value()
                           : getTotalDBsForBoundsCheck(dbGuid, boundsValid);
     if (!result.useDepv)
-      result.allocSizes = resolveOuterSizesForGuid(dbGuid, AC, dbGuid.getLoc());
+      result.allocSizes = resolveOuterSizesForGuid(dbGuid);
 
     return result;
   }
