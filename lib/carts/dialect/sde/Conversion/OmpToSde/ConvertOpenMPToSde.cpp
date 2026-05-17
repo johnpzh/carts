@@ -110,7 +110,7 @@ static bool hasRepeatedStencilParentLoop(Operation *op) {
         !isa<LoopLikeOpInterface>(parent))
       continue;
     std::optional<int64_t> tripCount =
-        ::mlir::carts::arts::getStaticTripCount(parent);
+        ::mlir::carts::getStaticTripCount(parent);
     if (!tripCount || *tripCount >= 2)
       return true;
   }

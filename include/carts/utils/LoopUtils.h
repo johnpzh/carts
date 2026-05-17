@@ -16,9 +16,7 @@
 #include <optional>
 
 namespace mlir {
-namespace carts::arts {
-
-class LoopNode;
+namespace carts {
 
 /// Check whether a scf::ForOp is the innermost loop (contains no nested
 /// scf::ForOp operations). Used by strip-mining and other loop transforms
@@ -82,17 +80,19 @@ inline Operation *findNearestLoop(Operation *op) {
   return nullptr;
 }
 
-/// Return true when a loop lower bound is provably zero, including through
-/// select-based clamping patterns like max(0, expr).
-bool isProvablyZeroLoopLowerBound(Value lb);
-
-/// Return true when a LoopNode covers the full iteration range [0, dimSize)
-/// with unit step.
-bool isLoopFullRange(LoopNode *loop, Value dimSize);
-
 /// Resolve a constant trip count for a loop-like op when all bounds are static.
 /// Returns std::nullopt when the trip count cannot be proven statically.
 std::optional<int64_t> getStaticTripCount(Operation *loopOp);
+
+} // namespace carts
+
+namespace carts::arts {
+
+class LoopNode;
+
+/// Return true when an ARTS loop-analysis node covers the full iteration range
+/// [0, dimSize) with unit step.
+bool isLoopFullRange(LoopNode *loop, Value dimSize);
 
 } // namespace carts::arts
 } // namespace mlir

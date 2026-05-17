@@ -408,7 +408,7 @@ bool tryAmortizeRepeatedEpochLoop(EpochOp epochOp) {
     return false;
 
   std::optional<int64_t> tripCount =
-      arts::getStaticTripCount(repeatLoop.getOperation());
+      ::mlir::carts::getStaticTripCount(repeatLoop.getOperation());
   if (!tripCount || *tripCount < 2)
     return false;
 

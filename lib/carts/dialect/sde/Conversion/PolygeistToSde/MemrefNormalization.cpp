@@ -854,7 +854,7 @@ SdeMemrefNormalizationPass::detectPattern(Value alloc) {
   /// Helper lambda to check a store and extract loop/inner alloc
   /// Uses recursive extraction to support N-level nesting
   auto checkStoreForPattern = [&](memref::StoreOp storeOp) -> bool {
-    Operation *loopOp = arts::findNearestLoop(storeOp.getOperation());
+    Operation *loopOp = ::mlir::carts::findNearestLoop(storeOp.getOperation());
     if (!loopOp)
       return false;
     Value storedVal = storeOp.getValue();
@@ -2530,7 +2530,7 @@ bool SdeMemrefNormalizationPass::extractNestedAllocations(Value storedVal,
       return WalkResult::interrupt();
 
     /// Check if this store is inside a nested loop
-    Operation *nestedLoop = arts::findNearestLoop(nestedStore.getOperation());
+    Operation *nestedLoop = ::mlir::carts::findNearestLoop(nestedStore.getOperation());
     if (!nestedLoop || nestedLoop == loopOp) {
       /// Not in a nested loop, skip
       return WalkResult::advance();

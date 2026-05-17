@@ -311,7 +311,8 @@ LogicalResult DbBlockInfoComputer::computeBlockInfoFromWhile(
     *offsetForCheck = initValue;
 
   SmallVector<Value> whileBounds;
-  arts::collectWhileBounds(condition.getCondition(), loopIV, whileBounds);
+  ::mlir::carts::collectWhileBounds(condition.getCondition(), loopIV,
+                                    whileBounds);
   if (whileBounds.empty())
     return failure();
 

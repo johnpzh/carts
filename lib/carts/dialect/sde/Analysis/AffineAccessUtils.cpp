@@ -54,8 +54,8 @@ matchLinearizedMul(Value mulCandidate, Value innerCandidate,
     return std::nullopt;
   }
 
-  bool lhsIv = ::mlir::carts::arts::isLoopInductionVar(lhs);
-  bool rhsIv = ::mlir::carts::arts::isLoopInductionVar(rhs);
+  bool lhsIv = ::mlir::carts::isLoopInductionVar(lhs);
+  bool rhsIv = ::mlir::carts::isLoopInductionVar(rhs);
   if (lhsIv && !rhsIv)
     return build(lhs, rhs);
   if (rhsIv && !lhsIv)

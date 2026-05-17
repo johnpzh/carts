@@ -138,7 +138,7 @@ std::optional<int64_t> LoopAnalysis::getStaticTripCount(Operation *loopOp) {
     }
     return std::nullopt;
   }
-  return arts::getStaticTripCount(loopOp);
+  return ::mlir::carts::getStaticTripCount(loopOp);
 }
 
 std::optional<int64_t>
