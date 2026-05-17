@@ -20,7 +20,7 @@
 namespace mlir::carts::sde {
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::carts::sde
-#include "carts/utils/Utils.h"
+#include "PolygeistToSdeUtils.h"
 #include "mlir/Analysis/CallGraph.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
@@ -137,7 +137,7 @@ static bool shouldInlineCall(func::CallOp call,
     return true;
   }
 
-  if (containsOmpOp(funcOp))
+  if (sde::containsOmpOp(funcOp))
     return true;
 
   if (containsSequentialLoopLikeOp(funcOp)) {
@@ -306,7 +306,7 @@ struct SdeInputInlinerPass
         /// Generic MLIR inlining into OMP regions can assert because the OMP
         /// dialect does not register a DialectInlinerInterface. Use the
         /// conservative single-block fallback there instead.
-        if (isInsideOmpRegion(call)) {
+        if (sde::isInsideOmpRegion(call)) {
           if (auto funcOp = dyn_cast<func::FuncOp>(callableOp.getOperation())) {
             if (succeeded(inlineSingleBlockFuncCallInOmp(call, funcOp))) {
               ARTS_INFO("Successfully manually inlined call inside OMP region");

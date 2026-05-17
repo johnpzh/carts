@@ -103,7 +103,7 @@ SdeHandleDepsPass::extractDepInfo(Value depVar, omp::TaskOp taskOp,
           for (size_t d = 0; d < info.indices.size(); ++d)
             info.sizes.push_back(::mlir::carts::createConstantIndex(builder, loc, 1));
           info.indices =
-              ::mlir::carts::clampDepIndices(info.source, info.indices, builder, loc);
+              sde::clampDepIndices(info.source, info.indices, builder, loc);
           return info;
         }
       }
@@ -157,7 +157,7 @@ SdeHandleDepsPass::extractDepInfo(Value depVar, omp::TaskOp taskOp,
     for (size_t d = 0; d < info.indices.size(); ++d)
       info.sizes.push_back(::mlir::carts::createConstantIndex(builder, loc, 1));
     info.indices =
-        ::mlir::carts::clampDepIndices(info.source, info.indices, builder, loc);
+        sde::clampDepIndices(info.source, info.indices, builder, loc);
     return info;
   }
 

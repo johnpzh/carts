@@ -56,6 +56,28 @@ static bool sameBlockSizeFamily(Value lhsValue, std::optional<int64_t> lhsConst,
   return lhsResolved && rhsResolved && *lhsResolved == *rhsResolved;
 }
 
+static bool dominatesOrInAncestor(Value value, Operation *op,
+                                  DominanceInfo &domInfo) {
+  if (!value || !op)
+    return false;
+  if (Operation *def = value.getDefiningOp()) {
+    Region *defRegion = def->getParentRegion();
+    Region *opRegion = op->getParentRegion();
+    if (defRegion && opRegion && defRegion != opRegion &&
+        defRegion->isAncestor(opRegion))
+      return true;
+  } else {
+    // Block arguments from ancestor regions are considered in-scope.
+    if (auto arg = dyn_cast<BlockArgument>(value)) {
+      if (Region *argRegion = arg.getOwner()->getParent())
+        if (Region *opRegion = op->getParentRegion())
+          if (argRegion->isAncestor(opRegion))
+            return true;
+    }
+  }
+  return domInfo.dominates(value, op);
+}
+
 std::optional<Value> extractInvariantOffset(Value lhs, Value iv) {
   lhs = ValueAnalysis::stripNumericCasts(lhs);
   if (lhs == iv)

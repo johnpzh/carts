@@ -102,6 +102,18 @@ static bool isInsideHostOpenMPIsland(Operation *op) {
   return false;
 }
 
+static bool hasWorkAfterInParentBlock(Operation *op) {
+  if (!op || !op->getBlock())
+    return false;
+
+  for (Operation *next = op->getNextNode(); next; next = next->getNextNode()) {
+    if (next->hasTrait<OpTrait::IsTerminator>())
+      continue;
+    return true;
+  }
+  return false;
+}
+
 static bool hasRepeatedStencilParentLoop(Operation *op) {
   for (Operation *parent = op ? op->getParentOp() : nullptr; parent;
        parent = parent->getParentOp()) {

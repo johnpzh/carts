@@ -11,13 +11,14 @@ disagree.
 | Dialect-neutral value constants/folding | `include/carts/utils/ValueAnalysis.h` | `isZeroConstant`, `isOneConstant`, `tryFoldConstantIndex`, `sameValue`, `dependsOn`, `stripMemrefViewOps` |
 | ARTS DB/EDT/runtime-query value folding and provenance | `include/carts/dialect/arts/Utils/ValueAnalysisUtils.h` | `tryFoldConstantIndex`, `getUnderlyingValue`, `isDerivedFromPtr` |
 | ARTS-RT depv/DB pointer value folding and provenance | `include/carts/dialect/arts-rt/Utils/RtDbUtils.h` | `RtDbUtils::tryFoldConstantIndex`, `RtDbUtils::getUnderlyingValue`, `RtDbUtils::isDerivedFromPtr` |
-| Index builders/general IR helpers | `include/carts/utils/Utils.h` | `createConstantIndex`, `createZeroIndex`, `createOneIndex`, `dominatesOrInAncestor`, `replaceInRegion` |
+| Index builders/general pure-op predicates | `include/carts/utils/Utils.h` | `createConstantIndex`, `createZeroIndex`, `createOneIndex`, `isSideEffectFreeArithmeticLikeOp` |
 | Loop shape and IV helpers | `include/carts/utils/LoopUtils.h` | `isLoopInductionVar`, `getStaticTripCount`, `findNearestLoop`, `getLoopDepth` |
 | ARTS/ARTS-RT loop invariance and hoisting | `include/carts/dialect/arts/Utils/LoopInvarianceUtils.h` | `isLoopInvariant`, `findHoistTarget`, `allOperandsDominate`, `isSafeDivRemToHoist` |
 | Deferred removal | `include/carts/utils/RemovalUtils.h` | `markForRemoval`, `removeAllMarked`, `replaceWithUndef` |
 | SDE access/planning facts | `include/carts/dialect/sde/Analysis` or `include/carts/dialect/sde/Utils` | `AffineAccessUtils`, `StructuredOpAnalysis`, `SDECostModel` |
 | CODIR codelet ABI | `include/carts/dialect/codir/Utils` | `CodeletABIUtils` |
 | CODIR boundary proof logic | boundary conversion helper | `SdeToCodir/TaskDepSliceUtils.*` |
+| SDE Polygeist input normalization helpers | `lib/carts/dialect/sde/Conversion/PolygeistToSde/PolygeistToSdeUtils.h` | `materializeDependView`, `clampDepIndices`, `isInsideOmpRegion`, `containsOmpOp` |
 | ARTS DB mechanics | `include/carts/dialect/arts/Utils/DbUtils.h` | `traceToDbAlloc`, `getUnderlyingDb`, `getMemoryAccessInfo`, `isWriterMode` |
 | ARTS EDT mechanics | `include/carts/dialect/arts/Utils/EdtUtils.h` | `EdtEnvManager`, `isInsideEpoch`, `classifyEdtArgAccesses` |
 | ARTS partition/block predicates, runtime topology, and source-location IDs | `include/carts/dialect/arts/Utils` | `BlockedAccessUtils`, `PartitionPredicates`, `LoweringContractUtils`, `RuntimeConfig`, `LocationMetadata` |
@@ -43,10 +44,10 @@ not loop-specific utilities.
 | Compare values or value ranges | `ValueAnalysis::{sameValue,areValuesEquivalent,areValueRangesEquivalent}` | `ValueAnalysis.h` |
 | Create zero/one index | `createZeroIndex()`, `createOneIndex()` | `Utils.h` |
 | Create arbitrary index constant | `createConstantIndex()` | `Utils.h` |
-| Check dominance with ancestor regions | `dominatesOrInAncestor()` | `Utils.h` |
-| Replace uses or values in a region | `replaceInRegion()` | `Utils.h` |
-| Detect trailing work in a block | `hasWorkAfterInParentBlock()` | `Utils.h` |
-| Detect undef-like ops | `isUndefLikeOp()` | `Utils.h` |
+| Check dominance with ancestor regions | keep pass-local unless a second owner appears | current ARTS strip-mining helper |
+| Replace uses or values in a region | keep pass-local unless a second owner appears | current EDT rematerialization helper |
+| Detect trailing work in a block | keep pass-local unless a second owner appears | current OpenMP-to-SDE helper |
+| Detect undef-like ops | `isUndefLikeOp()` | `RuntimeOpUtils.h` |
 | Check if op is side-effect-free arithmetic-like | `isSideEffectFreeArithmeticLikeOp()` | `Utils.h` |
 | Check ARTS/ARTS-RT loop invariance | `isLoopInvariant()` | `dialect/arts/Utils/LoopInvarianceUtils.h` |
 | Find ARTS/ARTS-RT loop hoist target | `findHoistTarget()` | `dialect/arts/Utils/LoopInvarianceUtils.h` |
@@ -74,7 +75,8 @@ not loop-specific utilities.
 | Get lowering contract | `getLoweringContract()` | `LoweringContractUtils.h` |
 | Resolve effective contract | `resolveEffectiveContract()` | `LoweringContractUtils.h` |
 | Mark op for deferred removal | `RemovalUtils::markForRemoval()` | `RemovalUtils.h` |
-| Clamp dep indices | `clampDepIndices()` | `Utils.h` |
+| Clamp SDE Polygeist dep indices | `sde::clampDepIndices()` | `PolygeistToSdeUtils.h` |
+| Check OMP nesting during SDE input preparation | `sde::{isInsideOmpRegion,containsOmpOp}` | `PolygeistToSdeUtils.h` |
 
 ## Loop And IV Placement Rules
 
@@ -117,6 +119,7 @@ include/carts/utils/ValueAnalysis.h
 include/carts/dialect/sde/Analysis/AffineAccessUtils.h
 include/carts/dialect/sde/Analysis/StructuredOpAnalysis.h
 include/carts/dialect/sde/Utils/SDECostModel.h
+lib/carts/dialect/sde/Conversion/PolygeistToSde/PolygeistToSdeUtils.h
 include/carts/dialect/codir/Utils/CodeletABIUtils.h
 include/carts/dialect/arts/Utils/DbUtils.h
 include/carts/dialect/arts/Utils/EdtUtils.h

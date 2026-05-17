@@ -1154,7 +1154,7 @@ SdeMemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
               for (size_t d = 0; d < info.indices.size(); ++d)
                 info.sizes.push_back(
                     ::mlir::carts::createConstantIndex(builder, loc, 1));
-              info.indices = ::mlir::carts::clampDepIndices(
+              info.indices = sde::clampDepIndices(
                   info.source, info.indices, builder, loc, pattern.dimensions);
 
               info.opsToRemove = traceResult->chainOps;
@@ -1183,8 +1183,8 @@ SdeMemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
     /// Element-level sizes
     for (size_t d = 0; d < info.indices.size(); ++d)
       info.sizes.push_back(::mlir::carts::createConstantIndex(builder, loc, 1));
-    info.indices = ::mlir::carts::clampDepIndices(info.source, info.indices, builder,
-                                         loc, pattern.dimensions);
+    info.indices = sde::clampDepIndices(info.source, info.indices, builder,
+                                        loc, pattern.dimensions);
 
     info.opsToRemove = traceResult->chainOps;
     info.opsToRemove.push_back(loadOp);
@@ -1206,8 +1206,8 @@ SdeMemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
     /// Element-level sizes
     for (size_t d = 0; d < info.indices.size(); ++d)
       info.sizes.push_back(::mlir::carts::createConstantIndex(builder, loc, 1));
-    info.indices = ::mlir::carts::clampDepIndices(info.source, info.indices, builder,
-                                         loc, pattern.dimensions);
+    info.indices = sde::clampDepIndices(info.source, info.indices, builder,
+                                        loc, pattern.dimensions);
 
     info.opsToRemove = traceResult->chainOps;
     info.opsToRemove.push_back(subIndexOp);

@@ -61,11 +61,12 @@ Use the narrowest correct home:
 | Dialect-neutral value constants, folding, casts, memref views, and same-value checks | `include/carts/utils/ValueAnalysis.h` |
 | ARTS DB/EDT/runtime-query value folding and provenance | `include/carts/dialect/arts/Utils/ValueAnalysisUtils.h` |
 | ARTS-RT depv/DB pointer value folding and provenance | `include/carts/dialect/arts-rt/Utils/RtDbUtils.h` |
-| Index builders, dominance-aware replacement, pure-op predicates, block ordering | `include/carts/utils/Utils.h` |
+| Index builders and generic pure-op predicates | `include/carts/utils/Utils.h` |
 | Loop shape, loop IVs, nearest enclosing loops, trip counts, loop depth | `include/carts/utils/LoopUtils.h` |
 | ARTS/ARTS-RT loop invariance, hoist legality, dominance for hoisting | `include/carts/dialect/arts/Utils/LoopInvarianceUtils.h` |
 | Deferred op removal | `include/carts/utils/RemovalUtils.h` |
-| Source locations, runtime config, instrumentation | existing `include/carts/utils/*` owner |
+| Runtime config, source-location IDs, DB/EDT runtime metadata | `include/carts/dialect/arts/Utils` |
+| Compiler instrumentation or driver-only helpers | existing compile-driver owner or current project-wide helper |
 | SDE source semantics, memref roots/access maps, PatternAnalysis facts, MU/CU/SU planning | `include/carts/dialect/sde/Analysis` or `include/carts/dialect/sde/Utils` |
 | CODIR codelet isolation, dep/param ABI, token-local views | `include/carts/dialect/codir/Utils` or a boundary-specific conversion helper |
 | ARTS DB/EDT/epoch objects, dependency slots, placement, distributed ownership | `include/carts/dialect/arts/Utils` or `include/carts/dialect/arts/Analysis` |
@@ -130,8 +131,9 @@ Do not re-add these local copies:
 | create zero/one/arbitrary index | `createZeroIndex`, `createOneIndex`, `createConstantIndex` |
 | loop IV, trip count, nearest loop, loop depth | `LoopUtils.h` |
 | loop-invariant hoisting target | ARTS `LoopInvarianceUtils.h` |
-| pure op, store ordering, trailing block work | `Utils.h` |
-| undef-like op detection | `isUndefLikeOp` in `Utils.h` |
+| side-effect-free arithmetic-like op | `isSideEffectFreeArithmeticLikeOp` in `Utils.h` |
+| SDE Polygeist dependency index clamping or OMP-region predicates | `PolygeistToSdeUtils.h` |
+| undef-like op detection | `isUndefLikeOp` in ARTS `RuntimeOpUtils.h` |
 | DB provenance/access info | `DbUtils.h` |
 | EDT environment/captures | `EdtUtils.h` |
 | lowering contracts | `LoweringContractUtils.h` |

@@ -39,10 +39,10 @@ namespace mlir::carts::arts_rt {
 
 #include "carts/utils/Debug.h"
 #include "carts/utils/OperationAttributes.h"
-#include "carts/utils/Utils.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Dominance.h"
 #include "llvm/ADT/StringRef.h"
 #include <limits>
@@ -54,6 +54,29 @@ using namespace mlir::carts;
 using namespace mlir::carts::arts;
 
 namespace {
+
+static bool hasFloatingPointType(Type type) {
+  if (!type)
+    return false;
+  if (type.isF16() || type.isBF16() || type.isF32() || type.isF64() ||
+      type.isF80() || type.isF128())
+    return true;
+  if (auto vectorType = dyn_cast<VectorType>(type))
+    return hasFloatingPointType(vectorType.getElementType());
+  return false;
+}
+
+static bool operationTouchesFloatingPoint(Operation *op) {
+  for (Value operand : op->getOperands()) {
+    if (hasFloatingPointType(operand.getType()))
+      return true;
+  }
+  for (Value result : op->getResults()) {
+    if (hasFloatingPointType(result.getType()))
+      return true;
+  }
+  return false;
+}
 
 /// Check if a conditional branch forms a loop backedge by checking if
 /// either target block dominates the block containing the branch.
