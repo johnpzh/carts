@@ -3,7 +3,7 @@
 ///
 /// Materializes CODIR codelets as abstract ARTS DB/EDT objects.
 ///==========================================================================///
-#include "../ConversionUtils.h"
+#include "ArtsMaterializationUtils.h"
 #include "carts/dialect/arts/Utils/LaunchPolicyUtils.h"
 namespace mlir::carts::codir {
 #define GEN_PASS_DEF_CONVERTCODIRTOARTS
@@ -11,8 +11,7 @@ namespace mlir::carts::codir {
 } // namespace mlir::carts::codir
 namespace {
 struct ConvertCodirToArtsPass
-    : public codir::impl::ConvertCodirToArtsBase<
-          ConvertCodirToArtsPass> {
+    : public codir::impl::ConvertCodirToArtsBase<ConvertCodirToArtsPass> {
   llvm::SmallDenseSet<Operation *, 16> loopCompletionBarriers;
 
   bool hasGenericWorkerPlan(codir::CodeletOp codelet) const {
@@ -20,8 +19,7 @@ struct ConvertCodirToArtsPass
       return false;
     return codelet.getDistributionKindAttr() ||
            codelet.getIterationTopologyAttr() ||
-           codelet.getLogicalWorkerSliceAttr() ||
-           codelet.getTileShapeAttr();
+           codelet.getLogicalWorkerSliceAttr() || codelet.getTileShapeAttr();
   }
 
   bool hasDistributedLaunchStoragePlan(codir::CodeletOp codelet) const {
@@ -99,9 +97,8 @@ struct ConvertCodirToArtsPass
     }
 
     SmallVector<sde::SdeResourceQueryOp> resourceQueries;
-    module.walk([&](sde::SdeResourceQueryOp op) {
-      resourceQueries.push_back(op);
-    });
+    module.walk(
+        [&](sde::SdeResourceQueryOp op) { resourceQueries.push_back(op); });
     for (sde::SdeResourceQueryOp op : resourceQueries) {
       if (failed(lowerSdeResourceQuery(op))) {
         signalPassFailure();
@@ -142,7 +139,8 @@ struct ConvertCodirToArtsPass
     }
 
     SmallVector<sde::SdeControlTokenOp> controlTokens;
-    module.walk([&](sde::SdeControlTokenOp op) { controlTokens.push_back(op); });
+    module.walk(
+        [&](sde::SdeControlTokenOp op) { controlTokens.push_back(op); });
     for (sde::SdeControlTokenOp op : controlTokens) {
       if (failed(eraseConsumedSdeControlToken(op))) {
         signalPassFailure();
@@ -219,8 +217,8 @@ struct ConvertCodirToArtsPass
         }
       }
       auto acquire = arts::DbAcquireOp::create(
-          builder, loc, convertAccessMode(modeAttr.getValue()),
-          alloc.getGuid(), alloc.getPtr(), partitionMode,
+          builder, loc, convertAccessMode(modeAttr.getValue()), alloc.getGuid(),
+          alloc.getPtr(), partitionMode,
           /*indices=*/SmallVector<Value>{}, std::move(dbOffsets),
           std::move(dbSizes),
           /*partitionIndices=*/SmallVector<Value>{},
@@ -257,13 +255,13 @@ struct ConvertCodirToArtsPass
         codelet->getParentOfType<ModuleOp>(),
         findGenericWorkerDispatchLoop(codelet),
         hasDistributedLaunchStoragePlan(codelet), builder, loc);
-    auto task = launch.route
-                    ? arts::EdtOp::create(builder, loc, arts::EdtType::task,
-                                          launch.concurrency, launch.route,
-                                          taskDeps, taskParams)
-                    : arts::EdtOp::create(builder, loc, arts::EdtType::task,
-                                          launch.concurrency, taskDeps,
-                                          taskParams);
+    auto task =
+        launch.route
+            ? arts::EdtOp::create(builder, loc, arts::EdtType::task,
+                                  launch.concurrency, launch.route, taskDeps,
+                                  taskParams)
+            : arts::EdtOp::create(builder, loc, arts::EdtType::task,
+                                  launch.concurrency, taskDeps, taskParams);
     propagateCodirPlanToArts(codelet, task);
     bool isTaskDepend = static_cast<bool>(codelet.getTaskDependAttr());
     bool requiresOrderedDependBarrier =
@@ -288,8 +286,8 @@ struct ConvertCodirToArtsPass
     Block &codeletBlock = codelet.getBody().front();
     unsigned numDeps = codelet.getDeps().size();
     for (unsigned idx = 0; idx < numDeps; ++idx) {
-      Value payload = materializeInnerPayload(builder, loc,
-                                              taskBlock.getArgument(idx));
+      Value payload =
+          materializeInnerPayload(builder, loc, taskBlock.getArgument(idx));
       const CodirDepSlice &slice = depSlices[idx];
       if (slice.sliced) {
         auto depType = cast<MemRefType>(codelet.getDeps()[idx].getType());
@@ -301,23 +299,19 @@ struct ConvertCodirToArtsPass
           else if (std::optional<int64_t> constant =
                        getConstantIndexValue(subindex))
             subindex = createConstantIndex(builder, loc, *constant);
-          payload =
-              polygeist::SubIndexOp::create(builder, loc, depType, payload,
-                                            subindex);
+          payload = polygeist::SubIndexOp::create(builder, loc, depType,
+                                                  payload, subindex);
         } else {
-          SmallVector<OpFoldResult> offsets =
-              remapIndexFoldResults(builder, loc, slice.mixedOffsets,
-                                    paramBlockArgs);
-          SmallVector<OpFoldResult> sizes =
-              remapIndexFoldResults(builder, loc, slice.mixedSizes,
-                                    paramBlockArgs);
-          SmallVector<OpFoldResult> strides =
-              remapIndexFoldResults(builder, loc, slice.mixedStrides,
-                                    paramBlockArgs);
+          SmallVector<OpFoldResult> offsets = remapIndexFoldResults(
+              builder, loc, slice.mixedOffsets, paramBlockArgs);
+          SmallVector<OpFoldResult> sizes = remapIndexFoldResults(
+              builder, loc, slice.mixedSizes, paramBlockArgs);
+          SmallVector<OpFoldResult> strides = remapIndexFoldResults(
+              builder, loc, slice.mixedStrides, paramBlockArgs);
           auto resultType = memref::SubViewOp::inferResultType(
               cast<MemRefType>(payload.getType()), offsets, sizes, strides);
-          payload = memref::SubViewOp::create(
-              builder, loc, resultType, payload, offsets, sizes, strides);
+          payload = memref::SubViewOp::create(builder, loc, resultType, payload,
+                                              offsets, sizes, strides);
         }
       }
       mapper.map(codeletBlock.getArgument(idx), payload);
