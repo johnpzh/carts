@@ -1,2 +1,33 @@
-file(GLOB CARTS_ARTS_UTILS_SOURCE_FILES CONFIGURE_DEPENDS "*.cpp")
-set(CARTS_ARTS_UTILS_SOURCE_FILES ${CARTS_ARTS_UTILS_SOURCE_FILES} PARENT_SCOPE)
+add_mlir_dialect_library(MLIRCartsArtsUtils
+  DbLayoutPlanUtils.cpp
+  DbUtils.cpp
+  EdtUtils.cpp
+  LocationMetadata.cpp
+  LoopInvarianceUtils.cpp
+  LoopStructureUtils.cpp
+  LoweringContractUtils.cpp
+  RuntimeConfig.cpp
+  ValueAnalysisUtils.cpp
+
+  ADDITIONAL_HEADER_DIRS
+    ${PROJECT_SOURCE_DIR}/include/carts/dialect/arts/Utils
+
+  DEPENDS
+    MLIROpsIncGen
+    MLIRSdeOpsIncGen
+
+  LINK_LIBS PUBLIC
+    MLIRAffineDialect
+    MLIRArithDialect
+    MLIRFuncDialect
+    MLIRIR
+    MLIRLLVMDialect
+    MLIRMemRefDialect
+    MLIRSCFDialect
+    MLIRSideEffectInterfaces
+    MLIRTransformUtils
+    MLIRCartsArts
+    MLIRCartsSde
+)
+
+target_link_libraries(MLIRCartsArtsUtils PRIVATE ${MLIR_POLYGEIST_LIB})

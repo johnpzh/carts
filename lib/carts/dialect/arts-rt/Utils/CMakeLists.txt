@@ -1,2 +1,21 @@
-file(GLOB CARTS_ARTS_RT_UTILS_SOURCE_FILES CONFIGURE_DEPENDS "*.cpp")
-set(CARTS_ARTS_RT_UTILS_SOURCE_FILES ${CARTS_ARTS_RT_UTILS_SOURCE_FILES} PARENT_SCOPE)
+add_mlir_dialect_library(MLIRCartsArtsRtUtils
+  IdRegistry.cpp
+  RtDbUtils.cpp
+
+  ADDITIONAL_HEADER_DIRS
+    ${PROJECT_SOURCE_DIR}/include/carts/dialect/arts-rt/Utils
+
+  DEPENDS
+    MLIROpsIncGen
+    MLIRRtOpsIncGen
+
+  LINK_LIBS PUBLIC
+    MLIRIR
+    MLIRLLVMDialect
+    MLIRMemRefDialect
+    MLIRCartsArts
+    MLIRCartsArtsRt
+    MLIRCartsArtsUtils
+)
+
+target_link_libraries(MLIRCartsArtsRtUtils PRIVATE ${MLIR_POLYGEIST_LIB})

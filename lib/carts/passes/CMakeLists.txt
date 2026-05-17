@@ -53,6 +53,7 @@ DEPENDS
 
 LINK_LIBS PUBLIC
   ${_carts_common_link_libs}
+  MLIRCartsSdeUtils
 )
 
 ###===---------------------------------------------------------------===###
@@ -61,7 +62,6 @@ LINK_LIBS PUBLIC
 add_mlir_dialect_library(MLIRCartsArtsTransforms
   PARTIAL_SOURCES_INTENDED
   ${CARTS_TRANSFORMS_SOURCE_FILES}
-  ${CARTS_ARTS_UTILS_SOURCE_FILES}
   ${CARTS_ANALYSIS_SOURCE_FILES}
   ${CARTS_UTILS_SOURCE_FILES}
 
@@ -75,6 +75,7 @@ DEPENDS
 
 LINK_LIBS PUBLIC
   ${_carts_common_link_libs}
+  MLIRCartsArtsUtils
 )
 
 ###===---------------------------------------------------------------===###
@@ -84,7 +85,6 @@ add_mlir_dialect_library(MLIRCartsArtsRtTransforms
   PARTIAL_SOURCES_INTENDED
   ${CARTS_RT_TO_LLVM_SOURCE_FILES}
   ${CARTS_RT_TRANSFORMS_SOURCE_FILES}
-  ${CARTS_ARTS_RT_UTILS_SOURCE_FILES}
 
 DEPENDS
   MLIROpsIncGen
@@ -93,6 +93,7 @@ DEPENDS
 
 LINK_LIBS PUBLIC
   ${_carts_common_link_libs}
+  MLIRCartsArtsRtUtils
 )
 
 # All three per-dialect libraries need filesystem support on older toolchains

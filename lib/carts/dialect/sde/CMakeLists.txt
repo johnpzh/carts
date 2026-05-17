@@ -2,6 +2,7 @@ add_subdirectory(Analysis)
 add_subdirectory(Conversion)
 add_subdirectory(IR)
 add_subdirectory(Transforms)
+add_subdirectory(Utils)
 add_subdirectory(Verify)
 
 set(CARTS_SDE_ANALYSIS_SOURCE_FILES ${CARTS_SDE_ANALYSIS_SOURCE_FILES} PARENT_SCOPE)
