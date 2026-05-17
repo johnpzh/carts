@@ -5,8 +5,8 @@
 /// Replaces scattered multi-mode comparisons with named intent.
 ///==========================================================================///
 
-#ifndef ARTS_UTILS_PARTITIONPREDICATES_H
-#define ARTS_UTILS_PARTITIONPREDICATES_H
+#ifndef CARTS_DIALECT_ARTS_UTILS_PARTITIONPREDICATES_H
+#define CARTS_DIALECT_ARTS_UTILS_PARTITIONPREDICATES_H
 
 #include "carts/dialect/arts/IR/ArtsDialect.h"
 
@@ -33,4 +33,4 @@ inline bool usesElementLayout(PartitionMode m) {
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // ARTS_UTILS_PARTITIONPREDICATES_H
+#endif // CARTS_DIALECT_ARTS_UTILS_PARTITIONPREDICATES_H

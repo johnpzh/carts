@@ -4,8 +4,8 @@
 /// CARTS-specific pass instrumentation for per-pass timing and diagnostics.
 ///==========================================================================///
 
-#ifndef ARTS_UTILS_PASSINSTRUMENTATION_H
-#define ARTS_UTILS_PASSINSTRUMENTATION_H
+#ifndef CARTS_UTILS_PASSINSTRUMENTATION_H
+#define CARTS_UTILS_PASSINSTRUMENTATION_H
 
 #include "mlir/Pass/PassInstrumentation.h"
 #include "llvm/ADT/StringMap.h"
@@ -13,7 +13,7 @@
 #include <memory>
 
 namespace mlir {
-namespace carts::arts {
+namespace carts {
 
 /// Shared timing data accumulated across multiple PassManager instances.
 struct PassTimingData {
@@ -53,7 +53,7 @@ private:
   PassTimingData *data;
 };
 
-} // namespace carts::arts
+} // namespace carts
 } // namespace mlir
 
-#endif // ARTS_UTILS_PASSINSTRUMENTATION_H
+#endif // CARTS_UTILS_PASSINSTRUMENTATION_H

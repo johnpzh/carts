@@ -5,8 +5,8 @@
 /// for the ARTS dialect.
 ///==========================================================================///
 
-#ifndef ARTS_PASSES_PASSES_H
-#define ARTS_PASSES_PASSES_H
+#ifndef CARTS_PASSES_PASSES_H
+#define CARTS_PASSES_PASSES_H
 
 #include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "mlir/Conversion/LLVMCommon/LoweringOptions.h"
@@ -115,4 +115,4 @@ namespace mlir::carts::sde {
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::carts::sde
 
-#endif /// ARTS_PASSES_PASSES_H
+#endif /// CARTS_PASSES_PASSES_H

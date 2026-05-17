@@ -6,8 +6,8 @@
 /// MemrefMetadata class is removed.
 ///==========================================================================///
 
-#ifndef ARTS_UTILS_METADATA_METADATAENUMS_H
-#define ARTS_UTILS_METADATA_METADATAENUMS_H
+#ifndef CARTS_DIALECT_ARTS_UTILS_METADATAENUMS_H
+#define CARTS_DIALECT_ARTS_UTILS_METADATAENUMS_H
 
 namespace mlir {
 namespace carts::arts {
@@ -38,4 +38,4 @@ enum class DimAccessPatternType {
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // ARTS_UTILS_METADATA_METADATAENUMS_H
+#endif // CARTS_DIALECT_ARTS_UTILS_METADATAENUMS_H

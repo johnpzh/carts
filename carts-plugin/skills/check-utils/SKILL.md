@@ -71,7 +71,7 @@ Use the narrowest correct home:
 | CODIR codelet isolation, dep/param ABI, token-local views | `include/carts/dialect/codir/Utils` or a boundary-specific conversion helper |
 | ARTS DB/EDT/epoch objects, dependency slots, placement, distributed ownership | `include/carts/dialect/arts/Utils` or `include/carts/dialect/arts/Analysis` |
 | ARTS-RT runtime ABI packing, depv layout, runtime calls, pointer lowering | `include/carts/dialect/arts-rt/Utils` |
-| Shared compiler helper with no dialect semantics | current `include/carts/utils`; create `carts/support` only as a planned repo-wide migration |
+| Shared compiler helper with no dialect semantics | current `include/carts/utils`; do not introduce a separate support tier |
 
 Loop IV helpers are not a new category. Generic IV recognition belongs in
 `LoopUtils`. SDE-specific structured-access IV interpretation belongs in SDE

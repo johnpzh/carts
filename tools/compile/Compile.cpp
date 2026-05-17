@@ -653,14 +653,14 @@ static bool shouldExportDetailedDiagnose(std::optional<StageId> stopAt) {
 
 static LogicalResult
 configurePassManager(PassManager &pm,
-                     arts::PassTimingData *timingData = nullptr) {
+                     PassTimingData *timingData = nullptr) {
   pm.enableVerifier(true);
   if (failed(applyPassManagerCLOptions(pm)))
     return failure();
   applyDefaultTimingPassManagerCLOptions(pm);
   if (timingData)
     pm.addInstrumentation(
-        std::make_unique<arts::CartsPassInstrumentation>(timingData));
+        std::make_unique<CartsPassInstrumentation>(timingData));
   return success();
 }
 
@@ -1622,8 +1622,8 @@ buildPassManager(ModuleOp module, MLIRContext &context,
     ARTS_WARN("Multi-node execution without --distributed-db: all DBs will "
               "be created on their origin node");
   /// Create shared timing data for pass instrumentation.
-  arts::PassTimingData timingData;
-  arts::PassTimingData *timingDataPtr = PassTiming ? &timingData : nullptr;
+  PassTimingData timingData;
+  PassTimingData *timingDataPtr = PassTiming ? &timingData : nullptr;
 
   auto runStage = [&](const StageDescriptor &stage,
                       bool stopAfterStage) -> LogicalResult {

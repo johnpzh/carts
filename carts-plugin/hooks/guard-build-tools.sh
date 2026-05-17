@@ -10,7 +10,7 @@ INPUT=$(cat)
 CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty')
 
 if printf '%s' "$CMD" | grep -qwE 'cmake|ninja|make'; then
-  echo "Use dekk instead of raw build tools (cmake, ninja, make)" >&2
+  echo "Use dekk carts instead of raw build tools (cmake, ninja, make)" >&2
   exit 2
 fi
 

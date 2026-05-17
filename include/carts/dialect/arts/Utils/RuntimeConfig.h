@@ -5,7 +5,8 @@
 /// placement, and runtime-lowering decisions.
 ///==========================================================================///
 
-#pragma once
+#ifndef CARTS_DIALECT_ARTS_UTILS_RUNTIMECONFIG_H
+#define CARTS_DIALECT_ARTS_UTILS_RUNTIMECONFIG_H
 
 #include <string>
 #include <vector>
@@ -116,3 +117,5 @@ private:
 
 } // namespace carts::arts
 } // namespace mlir
+
+#endif // CARTS_DIALECT_ARTS_UTILS_RUNTIMECONFIG_H

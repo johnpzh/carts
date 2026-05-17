@@ -4,8 +4,8 @@
 /// Centralized debug utilities for CARTS passes and components
 ///==========================================================================///
 
-#ifndef ARTS_UTILS_ARTSDEBUG_H
-#define ARTS_UTILS_ARTSDEBUG_H
+#ifndef CARTS_UTILS_DEBUG_H
+#define CARTS_UTILS_DEBUG_H
 
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -156,4 +156,4 @@ static inline llvm::raw_ostream &debugStream() {
   }
 } // namespace carts
 } // namespace mlir
-#endif /// ARTS_UTILS_ARTSDEBUG_H
+#endif /// CARTS_UTILS_DEBUG_H

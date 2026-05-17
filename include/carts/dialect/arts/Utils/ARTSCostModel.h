@@ -8,8 +8,8 @@
 /// those topology decisions after CODIR materialization.
 ///==========================================================================///
 
-#ifndef ARTS_UTILS_COSTS_ARTSCOSTMODEL_H
-#define ARTS_UTILS_COSTS_ARTSCOSTMODEL_H
+#ifndef CARTS_DIALECT_ARTS_UTILS_ARTSCOSTMODEL_H
+#define CARTS_DIALECT_ARTS_UTILS_ARTSCOSTMODEL_H
 
 #include "carts/dialect/sde/Utils/SDECostModel.h"
 #include "carts/dialect/arts/Utils/RuntimeConfig.h"
@@ -64,4 +64,4 @@ public:
 
 } // namespace mlir::carts::arts
 
-#endif // ARTS_UTILS_COSTS_ARTSCOSTMODEL_H
+#endif // CARTS_DIALECT_ARTS_UTILS_ARTSCOSTMODEL_H

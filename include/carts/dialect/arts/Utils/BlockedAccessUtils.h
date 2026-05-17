@@ -6,8 +6,8 @@
 /// codegen cleanups that recover loop-local blocked slices.
 ///==========================================================================///
 
-#ifndef ARTS_UTILS_BLOCKEDACCESSUTILS_H
-#define ARTS_UTILS_BLOCKEDACCESSUTILS_H
+#ifndef CARTS_DIALECT_ARTS_UTILS_BLOCKEDACCESSUTILS_H
+#define CARTS_DIALECT_ARTS_UTILS_BLOCKEDACCESSUTILS_H
 
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
@@ -365,4 +365,4 @@ inline bool isLoopIvBoundedBy(Value idx, Value blockSize) {
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // ARTS_UTILS_BLOCKEDACCESSUTILS_H
+#endif // CARTS_DIALECT_ARTS_UTILS_BLOCKEDACCESSUTILS_H

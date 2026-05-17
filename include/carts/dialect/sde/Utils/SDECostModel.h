@@ -9,8 +9,8 @@
 /// Target object terminology belongs at the dialect boundary.
 ///==========================================================================///
 
-#ifndef ARTS_UTILS_COSTS_SDECOSTMODEL_H
-#define ARTS_UTILS_COSTS_SDECOSTMODEL_H
+#ifndef CARTS_DIALECT_SDE_UTILS_SDECOSTMODEL_H
+#define CARTS_DIALECT_SDE_UTILS_SDECOSTMODEL_H
 
 #include "carts/dialect/sde/IR/SdeDialect.h"
 #include <algorithm>
@@ -78,4 +78,4 @@ public:
 
 } // namespace mlir::carts::sde
 
-#endif // ARTS_UTILS_COSTS_SDECOSTMODEL_H
+#endif // CARTS_DIALECT_SDE_UTILS_SDECOSTMODEL_H
