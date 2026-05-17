@@ -139,7 +139,7 @@ LogicalResult DbBlockInfoComputer::computeBlockInfo(DbAcquireNode *node,
     Location loc = dbAcquireOp.getLoc();
     builder.setInsertionPoint(dbAcquireOp);
 
-    blockOffset = ::mlir::carts::arts::createZeroIndex(builder, loc);
+    blockOffset = ::mlir::carts::createZeroIndex(builder, loc);
     blockSize = allocOp.getElementSizes().front();
     ARTS_DEBUG("  full-range fallback (" << reason << ")");
     return success();
@@ -375,7 +375,7 @@ LogicalResult DbBlockInfoComputer::computeBlockInfoFromWhile(
   for (Value candidate : llvm::drop_begin(blockSizes))
     minSize = arith::MinSIOp::create(builder, loc, minSize, candidate);
 
-  Value zero = ::mlir::carts::arts::createZeroIndex(builder, loc);
+  Value zero = ::mlir::carts::createZeroIndex(builder, loc);
   minSize = arith::MaxSIOp::create(builder, loc, minSize, zero);
 
   auto [partitionOffset, partitionSize] = node->getPartitionInfo();
@@ -399,20 +399,20 @@ LogicalResult DbBlockInfoComputer::computeBlockInfoFromWhile(
   Value adjustedSize = minSize;
 
   if (bounds.minOffset < 0) {
-    Value absAdj = ::mlir::carts::arts::createConstantIndex(builder, loc, -bounds.minOffset);
+    Value absAdj = ::mlir::carts::createConstantIndex(builder, loc, -bounds.minOffset);
     Value cond = arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::uge,
                                        startIdx, absAdj);
     Value sub = arith::SubIOp::create(builder, loc, startIdx, absAdj);
-    Value zeroIdx = ::mlir::carts::arts::createZeroIndex(builder, loc);
+    Value zeroIdx = ::mlir::carts::createZeroIndex(builder, loc);
     adjustedOffset = arith::SelectOp::create(builder, loc, cond, sub, zeroIdx);
   } else if (bounds.minOffset > 0) {
-    Value adj = ::mlir::carts::arts::createConstantIndex(builder, loc, bounds.minOffset);
+    Value adj = ::mlir::carts::createConstantIndex(builder, loc, bounds.minOffset);
     adjustedOffset = arith::AddIOp::create(builder, loc, startIdx, adj);
   }
 
   int64_t sizeAdjustment = bounds.maxOffset - bounds.minOffset;
   if (sizeAdjustment != 0) {
-    Value adjustment = ::mlir::carts::arts::createConstantIndex(builder, loc, sizeAdjustment);
+    Value adjustment = ::mlir::carts::createConstantIndex(builder, loc, sizeAdjustment);
     adjustedSize = arith::AddIOp::create(builder, loc, minSize, adjustment);
   }
 
@@ -512,7 +512,7 @@ LogicalResult DbBlockInfoComputer::computeBlockInfoFromHints(
 
       if (bounds.minOffset != 0) {
         Value adjustment =
-            ::mlir::carts::arts::createConstantIndex(builder, loc, bounds.minOffset);
+            ::mlir::carts::createConstantIndex(builder, loc, bounds.minOffset);
         blockOffset =
             arith::AddIOp::create(builder, loc, partitionOffset, adjustment);
       } else {
@@ -522,7 +522,7 @@ LogicalResult DbBlockInfoComputer::computeBlockInfoFromHints(
       int64_t sizeAdjustment = bounds.maxOffset - bounds.minOffset;
       if (sizeAdjustment != 0) {
         Value adjustment =
-            ::mlir::carts::arts::createConstantIndex(builder, loc, sizeAdjustment);
+            ::mlir::carts::createConstantIndex(builder, loc, sizeAdjustment);
         blockSize =
             arith::AddIOp::create(builder, loc, partitionSize, adjustment);
       } else {
@@ -583,7 +583,7 @@ LogicalResult DbBlockInfoComputer::computeBlockInfoFromForLoop(
     auto pickCandidateFromIndex = [&](Value idx) -> Value {
       Value stripped = ValueAnalysis::stripNumericCasts(idx);
       if (stripped == loopIV)
-        return ::mlir::carts::arts::createZeroIndex(builder, loc);
+        return ::mlir::carts::createZeroIndex(builder, loc);
 
       if (auto addOp = stripped.getDefiningOp<arith::AddIOp>()) {
         Value lhs = addOp.getLhs();
@@ -675,22 +675,22 @@ LogicalResult DbBlockInfoComputer::computeBlockInfoFromForLoop(
       continue;
 
     if (bounds.minOffset < 0) {
-      Value absAdj = ::mlir::carts::arts::createConstantIndex(builder, loc, -bounds.minOffset);
+      Value absAdj = ::mlir::carts::createConstantIndex(builder, loc, -bounds.minOffset);
       Value cond = arith::CmpIOp::create(
           builder, loc, arith::CmpIPredicate::uge, adjustedOffset, absAdj);
       Value sub = arith::SubIOp::create(builder, loc, adjustedOffset, absAdj);
-      Value zeroIdx = ::mlir::carts::arts::createZeroIndex(builder, loc);
+      Value zeroIdx = ::mlir::carts::createZeroIndex(builder, loc);
       adjustedOffset =
           arith::SelectOp::create(builder, loc, cond, sub, zeroIdx);
     } else if (bounds.minOffset > 0) {
-      Value adj = ::mlir::carts::arts::createConstantIndex(builder, loc, bounds.minOffset);
+      Value adj = ::mlir::carts::createConstantIndex(builder, loc, bounds.minOffset);
       adjustedOffset = arith::AddIOp::create(builder, loc, adjustedOffset, adj);
     }
 
     int64_t sizeAdjustment = bounds.maxOffset - bounds.minOffset;
     if (sizeAdjustment != 0) {
       Value adjustment =
-          ::mlir::carts::arts::createConstantIndex(builder, loc, sizeAdjustment);
+          ::mlir::carts::createConstantIndex(builder, loc, sizeAdjustment);
       adjustedSize =
           arith::AddIOp::create(builder, loc, adjustedSize, adjustment);
     }

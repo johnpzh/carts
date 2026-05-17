@@ -33,7 +33,6 @@ static llvm::Statistic numCpsCandidateGroups{
     "Number of SDE CPS candidate groups stamped"};
 
 using namespace mlir;
-using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -114,25 +113,25 @@ static bool isTimestepBarrier(sde::SdeSuBarrierOp barrier) {
 
 static bool haveSameIterationShape(sde::SdeSuIterateOp lhs,
                                    sde::SdeSuIterateOp rhs) {
-  return ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(
+  return ::mlir::carts::ValueAnalysis::areValueRangesEquivalent(
              lhs.getLowerBounds(), rhs.getLowerBounds()) &&
-         ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(
+         ::mlir::carts::ValueAnalysis::areValueRangesEquivalent(
              lhs.getUpperBounds(), rhs.getUpperBounds()) &&
-         ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(
+         ::mlir::carts::ValueAnalysis::areValueRangesEquivalent(
              lhs.getSteps(), rhs.getSteps());
 }
 
 static bool haveSameIterationBounds(sde::SdeSuIterateOp lhs,
                                     sde::SdeSuIterateOp rhs) {
   return lhs.getLowerBounds().size() == rhs.getLowerBounds().size() &&
-         ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(
+         ::mlir::carts::ValueAnalysis::areValueRangesEquivalent(
              lhs.getLowerBounds(), rhs.getLowerBounds()) &&
-         ::mlir::carts::arts::ValueAnalysis::areValueRangesEquivalent(
+         ::mlir::carts::ValueAnalysis::areValueRangesEquivalent(
              lhs.getUpperBounds(), rhs.getUpperBounds());
 }
 
 static bool isTiledMultipleOfStep(Value candidate, Value baseStep) {
-  if (::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(candidate,
+  if (::mlir::carts::ValueAnalysis::areValuesEquivalent(candidate,
                                                               baseStep))
     return true;
 
@@ -142,16 +141,16 @@ static bool isTiledMultipleOfStep(Value candidate, Value baseStep) {
 
   auto isPositiveMultiplier = [](Value value) {
     if (std::optional<int64_t> folded =
-            ::mlir::carts::arts::ValueAnalysis::tryFoldConstantIndex(value))
+            ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(value))
       return *folded >= 1;
-    return ::mlir::carts::arts::ValueAnalysis::isConstantAtLeastOne(value) ||
-           ::mlir::carts::arts::ValueAnalysis::isProvablyNonZero(value);
+    return ::mlir::carts::ValueAnalysis::isConstantAtLeastOne(value) ||
+           ::mlir::carts::ValueAnalysis::isProvablyNonZero(value);
   };
 
-  if (::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(mul.getLhs(),
+  if (::mlir::carts::ValueAnalysis::areValuesEquivalent(mul.getLhs(),
                                                               baseStep))
     return isPositiveMultiplier(mul.getRhs());
-  if (::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(mul.getRhs(),
+  if (::mlir::carts::ValueAnalysis::areValuesEquivalent(mul.getRhs(),
                                                               baseStep))
     return isPositiveMultiplier(mul.getLhs());
   return false;
@@ -163,7 +162,7 @@ static bool haveEquivalentOrTiledSteps(sde::SdeSuIterateOp lhs,
     return false;
 
   for (auto [lhsStep, rhsStep] : llvm::zip(lhs.getSteps(), rhs.getSteps())) {
-    if (::mlir::carts::arts::ValueAnalysis::areValuesEquivalent(lhsStep,
+    if (::mlir::carts::ValueAnalysis::areValuesEquivalent(lhsStep,
                                                                 rhsStep))
       continue;
     if (isTiledMultipleOfStep(lhsStep, rhsStep) ||
@@ -464,7 +463,7 @@ getUniqueStaticWrittenShape(const sde::StructuredMemoryEffectSummary &effects) {
   std::optional<SmallVector<int64_t, 4>> selectedShape;
   for (Value written : effects.writes) {
     Value root =
-        ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(written);
+        ::mlir::carts::ValueAnalysis::stripMemrefViewOps(written);
     auto memrefType = dyn_cast<MemRefType>(root.getType());
     if (!memrefType || !memrefType.hasStaticShape())
       return std::nullopt;

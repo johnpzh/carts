@@ -50,7 +50,7 @@ mlir::carts::arts::computeOwnershipProof(LoweringContractOp contractOp) {
   ///    owner dims rank matches memref rank in the relevant dimensions
   if (proof.ownerDimReachability && depPattern) {
     auto partitionMode = contractOp->getAttrOfType<PartitionModeAttr>(
-        AttrNames::Operation::PartitionMode);
+        ::mlir::carts::arts::AttrNames::Operation::PartitionMode);
     bool hasBlockCompatibleMode =
         !partitionMode || partitionMode.getValue() == PartitionMode::block ||
         partitionMode.getValue() == PartitionMode::stencil;
@@ -102,15 +102,15 @@ void mlir::carts::arts::stampOwnershipProof(LoweringContractOp contractOp,
   if (!contractOp)
     return;
   auto *ctx = contractOp->getContext();
-  contractOp->setAttr(AttrNames::Operation::Proof::OwnerDimReachability,
+  contractOp->setAttr(::mlir::carts::arts::AttrNames::Operation::Proof::OwnerDimReachability,
                       BoolAttr::get(ctx, proof.ownerDimReachability));
-  contractOp->setAttr(AttrNames::Operation::Proof::PartitionAccessMapping,
+  contractOp->setAttr(::mlir::carts::arts::AttrNames::Operation::Proof::PartitionAccessMapping,
                       BoolAttr::get(ctx, proof.partitionAccessMapping));
-  contractOp->setAttr(AttrNames::Operation::Proof::HaloLegality,
+  contractOp->setAttr(::mlir::carts::arts::AttrNames::Operation::Proof::HaloLegality,
                       BoolAttr::get(ctx, proof.haloLegality));
-  contractOp->setAttr(AttrNames::Operation::Proof::DepSliceSoundness,
+  contractOp->setAttr(::mlir::carts::arts::AttrNames::Operation::Proof::DepSliceSoundness,
                       BoolAttr::get(ctx, proof.depSliceSoundness));
-  contractOp->setAttr(AttrNames::Operation::Proof::RelaunchStateSoundness,
+  contractOp->setAttr(::mlir::carts::arts::AttrNames::Operation::Proof::RelaunchStateSoundness,
                       BoolAttr::get(ctx, proof.relaunchStateSoundness));
 }
 
@@ -119,19 +119,19 @@ OwnershipProof mlir::carts::arts::readOwnershipProof(Operation *op) {
   if (!op)
     return proof;
   if (auto attr = op->getAttrOfType<BoolAttr>(
-          AttrNames::Operation::Proof::OwnerDimReachability))
+          ::mlir::carts::arts::AttrNames::Operation::Proof::OwnerDimReachability))
     proof.ownerDimReachability = attr.getValue();
   if (auto attr = op->getAttrOfType<BoolAttr>(
-          AttrNames::Operation::Proof::PartitionAccessMapping))
+          ::mlir::carts::arts::AttrNames::Operation::Proof::PartitionAccessMapping))
     proof.partitionAccessMapping = attr.getValue();
   if (auto attr = op->getAttrOfType<BoolAttr>(
-          AttrNames::Operation::Proof::HaloLegality))
+          ::mlir::carts::arts::AttrNames::Operation::Proof::HaloLegality))
     proof.haloLegality = attr.getValue();
   if (auto attr = op->getAttrOfType<BoolAttr>(
-          AttrNames::Operation::Proof::DepSliceSoundness))
+          ::mlir::carts::arts::AttrNames::Operation::Proof::DepSliceSoundness))
     proof.depSliceSoundness = attr.getValue();
   if (auto attr = op->getAttrOfType<BoolAttr>(
-          AttrNames::Operation::Proof::RelaunchStateSoundness))
+          ::mlir::carts::arts::AttrNames::Operation::Proof::RelaunchStateSoundness))
     proof.relaunchStateSoundness = attr.getValue();
   return proof;
 }

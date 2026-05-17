@@ -24,7 +24,8 @@ namespace carts::arts_rt {
 /// - Sequential ID assignment
 class IdRegistry {
 public:
-  static constexpr auto AttrName = arts::AttrNames::Operation::ArtsId;
+  static constexpr auto AttrName =
+      ::mlir::carts::arts::AttrNames::Operation::ArtsId;
   static constexpr int64_t DefaultStride = 1000;
 
   IdRegistry() = default;

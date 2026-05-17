@@ -21,7 +21,7 @@ ARTS_DEBUG_SETUP(utils);
 [[maybe_unused]] static const auto *kArtsUtilsDebugType = ARTS_DEBUG_TYPE_STR;
 
 namespace mlir {
-namespace carts::arts {
+namespace carts {
 namespace {
 
 bool hasFloatingPointType(Type type) {
@@ -34,8 +34,6 @@ bool hasFloatingPointType(Type type) {
     return hasFloatingPointType(vectorType.getElementType());
   return false;
 }
-
-constexpr int64_t kCurrentNodeRoute = -1;
 
 } // namespace
 
@@ -90,149 +88,6 @@ Value createZeroIndex(OpBuilder &builder, Location loc) {
 
 Value createOneIndex(OpBuilder &builder, Location loc) {
   return createConstantIndex(builder, loc, 1);
-}
-
-Value createCurrentNodeRoute(OpBuilder &builder, Location loc) {
-  return arith::ConstantIntOp::create(builder, loc, kCurrentNodeRoute, 32);
-}
-
-///===----------------------------------------------------------------------===///
-/// OMP Region Utilities
-///===----------------------------------------------------------------------===///
-
-bool isInsideOmpRegion(Operation *op) {
-  for (Operation *ancestor = op ? op->getParentOp() : nullptr; ancestor;
-       ancestor = ancestor->getParentOp()) {
-    if (ancestor->getDialect() &&
-        ancestor->getDialect()->getNamespace() == "omp")
-      return true;
-  }
-  return false;
-}
-
-bool containsOmpOp(Operation *op) {
-  bool found = false;
-  op->walk([&](Operation *nested) {
-    if (nested->getDialect() && nested->getDialect()->getNamespace() == "omp") {
-      found = true;
-      return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
-  });
-  return found;
-}
-
-bool isArtsRuntimeQuery(Value val) {
-  if (!val)
-    return false;
-
-  val = ValueAnalysis::stripNumericCasts(val);
-  Operation *defOp = val.getDefiningOp();
-  if (!defOp)
-    return false;
-
-  /// Check for ARTS dialect ops (before lowering to func::CallOp)
-  if (isa<RuntimeQueryOp>(defOp))
-    return true;
-
-  /// Check for func::CallOp after ARTS-RT-to-LLVM has emitted runtime calls.
-  if (auto callOp = dyn_cast<func::CallOp>(defOp))
-    return arts_rt::isRuntimeTopologyQueryCall(callOp);
-
-  return false;
-}
-
-///===----------------------------------------------------------------------===///
-/// Type and Size Utilities
-///===----------------------------------------------------------------------===///
-
-/// Computes the byte size of the given element type, supporting integer and
-/// floating-point types. When the type is a memref, all static dimensions must
-/// be known; otherwise, the size is treated as unknown (returns 0).
-uint64_t getElementTypeByteSize(Type elemTy) {
-  /// Safety check: return 0 for null or invalid types
-  if (!elemTy) {
-    return 0;
-  }
-
-  if (auto memTy = dyn_cast<MemRefType>(elemTy)) {
-    uint64_t elementBytes = getElementTypeByteSize(memTy.getElementType());
-    if (elementBytes == 0)
-      return 0;
-
-    uint64_t total = elementBytes;
-    for (int64_t dim : memTy.getShape()) {
-      if (dim == ShapedType::kDynamic)
-        return 0;
-      total *= static_cast<uint64_t>(std::max<int64_t>(dim, 0));
-    }
-    return total;
-  }
-  if (auto intTy = dyn_cast<IntegerType>(elemTy))
-    return intTy.getWidth() / 8u;
-  if (auto fTy = dyn_cast<FloatType>(elemTy))
-    return fTy.getWidth() / 8u;
-  /// Unknown type
-  return 0;
-}
-
-/// Gets the element memref type for a given element type and sizes.
-MemRefType getElementMemRefType(Type elementType,
-                                ArrayRef<Value> elementSizes) {
-  /// Enforce scalar payloads use a single trailing dimension of 1 instead of
-  /// an empty shape to keep rank handling uniform across the pipeline.
-  const size_t rank = elementSizes.empty() ? 1 : elementSizes.size();
-  SmallVector<int64_t> elementShape(rank, ShapedType::kDynamic);
-  return MemRefType::get(elementShape, elementType);
-}
-
-///===----------------------------------------------------------------------===///
-/// Access Mode Utilities
-///===----------------------------------------------------------------------===///
-
-/// Combine two access modes and return the more permissive mode
-ArtsMode combineAccessModes(ArtsMode mode1, ArtsMode mode2) {
-  /// If either mode is uninitialized, return the other mode
-  if (mode1 == ArtsMode::uninitialized)
-    return mode2;
-  if (mode2 == ArtsMode::uninitialized)
-    return mode1;
-
-  /// If either mode is inout, the result is inout (most permissive)
-  if (mode1 == ArtsMode::inout || mode2 == ArtsMode::inout)
-    return ArtsMode::inout;
-
-  /// If one is 'in' and the other is 'out', the result is inout
-  if ((mode1 == ArtsMode::in && mode2 == ArtsMode::out) ||
-      (mode1 == ArtsMode::out && mode2 == ArtsMode::in))
-    return ArtsMode::inout;
-
-  /// If both are the same, return that mode
-  if (mode1 == mode2)
-    return mode1;
-
-  /// Default to inout for any other combination (shouldn't happen)
-  return ArtsMode::inout;
-}
-
-///===----------------------------------------------------------------------===///
-/// Operation Replacement Utilities
-///===----------------------------------------------------------------------===///
-
-/// Replaces uses of a value within a specific region.
-void replaceInRegion(Region &region, Value from, Value to) {
-  from.replaceUsesWithIf(to, [&](OpOperand &operand) {
-    return region.isAncestor(operand.getOwner()->getParentRegion());
-  });
-}
-
-/// Replaces uses according to a mapping within a specific region.
-void replaceInRegion(Region &region, DenseMap<Value, Value> &rewireMap,
-                     bool clear) {
-  for (auto &rewire : rewireMap)
-    replaceInRegion(region, rewire.first, rewire.second);
-  if (clear)
-    rewireMap.clear();
 }
 
 bool isSideEffectFreeArithmeticLikeOp(Operation *op) {
@@ -354,6 +209,156 @@ bool hasWorkAfterInParentBlock(Operation *op) {
 }
 
 ///===----------------------------------------------------------------------===///
+/// OMP Region Utilities
+///===----------------------------------------------------------------------===///
+
+bool isInsideOmpRegion(Operation *op) {
+  for (Operation *ancestor = op ? op->getParentOp() : nullptr; ancestor;
+       ancestor = ancestor->getParentOp()) {
+    if (ancestor->getDialect() &&
+        ancestor->getDialect()->getNamespace() == "omp")
+      return true;
+  }
+  return false;
+}
+
+bool containsOmpOp(Operation *op) {
+  bool found = false;
+  op->walk([&](Operation *nested) {
+    if (nested->getDialect() && nested->getDialect()->getNamespace() == "omp") {
+      found = true;
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return found;
+}
+
+namespace arts {
+namespace {
+
+constexpr int64_t kCurrentNodeRoute = -1;
+
+} // namespace
+
+Value createCurrentNodeRoute(OpBuilder &builder, Location loc) {
+  return arith::ConstantIntOp::create(builder, loc, kCurrentNodeRoute, 32);
+}
+
+bool isArtsRuntimeQuery(Value val) {
+  if (!val)
+    return false;
+
+  val = ValueAnalysis::stripNumericCasts(val);
+  Operation *defOp = val.getDefiningOp();
+  if (!defOp)
+    return false;
+
+  /// Check for ARTS dialect ops (before lowering to func::CallOp)
+  if (isa<RuntimeQueryOp>(defOp))
+    return true;
+
+  /// Check for func::CallOp after ARTS-RT-to-LLVM has emitted runtime calls.
+  if (auto callOp = dyn_cast<func::CallOp>(defOp))
+    return arts_rt::isRuntimeTopologyQueryCall(callOp);
+
+  return false;
+}
+
+///===----------------------------------------------------------------------===///
+/// Type and Size Utilities
+///===----------------------------------------------------------------------===///
+
+/// Computes the byte size of the given element type, supporting integer and
+/// floating-point types. When the type is a memref, all static dimensions must
+/// be known; otherwise, the size is treated as unknown (returns 0).
+uint64_t getElementTypeByteSize(Type elemTy) {
+  /// Safety check: return 0 for null or invalid types
+  if (!elemTy) {
+    return 0;
+  }
+
+  if (auto memTy = dyn_cast<MemRefType>(elemTy)) {
+    uint64_t elementBytes = getElementTypeByteSize(memTy.getElementType());
+    if (elementBytes == 0)
+      return 0;
+
+    uint64_t total = elementBytes;
+    for (int64_t dim : memTy.getShape()) {
+      if (dim == ShapedType::kDynamic)
+        return 0;
+      total *= static_cast<uint64_t>(std::max<int64_t>(dim, 0));
+    }
+    return total;
+  }
+  if (auto intTy = dyn_cast<IntegerType>(elemTy))
+    return intTy.getWidth() / 8u;
+  if (auto fTy = dyn_cast<FloatType>(elemTy))
+    return fTy.getWidth() / 8u;
+  /// Unknown type
+  return 0;
+}
+
+/// Gets the element memref type for a given element type and sizes.
+MemRefType getElementMemRefType(Type elementType,
+                                ArrayRef<Value> elementSizes) {
+  /// Enforce scalar payloads use a single trailing dimension of 1 instead of
+  /// an empty shape to keep rank handling uniform across the pipeline.
+  const size_t rank = elementSizes.empty() ? 1 : elementSizes.size();
+  SmallVector<int64_t> elementShape(rank, ShapedType::kDynamic);
+  return MemRefType::get(elementShape, elementType);
+}
+
+///===----------------------------------------------------------------------===///
+/// Access Mode Utilities
+///===----------------------------------------------------------------------===///
+
+/// Combine two access modes and return the more permissive mode
+ArtsMode combineAccessModes(ArtsMode mode1, ArtsMode mode2) {
+  /// If either mode is uninitialized, return the other mode
+  if (mode1 == ArtsMode::uninitialized)
+    return mode2;
+  if (mode2 == ArtsMode::uninitialized)
+    return mode1;
+
+  /// If either mode is inout, the result is inout (most permissive)
+  if (mode1 == ArtsMode::inout || mode2 == ArtsMode::inout)
+    return ArtsMode::inout;
+
+  /// If one is 'in' and the other is 'out', the result is inout
+  if ((mode1 == ArtsMode::in && mode2 == ArtsMode::out) ||
+      (mode1 == ArtsMode::out && mode2 == ArtsMode::in))
+    return ArtsMode::inout;
+
+  /// If both are the same, return that mode
+  if (mode1 == mode2)
+    return mode1;
+
+  /// Default to inout for any other combination (shouldn't happen)
+  return ArtsMode::inout;
+}
+
+///===----------------------------------------------------------------------===///
+/// Operation Replacement Utilities
+///===----------------------------------------------------------------------===///
+
+/// Replaces uses of a value within a specific region.
+void replaceInRegion(Region &region, Value from, Value to) {
+  from.replaceUsesWithIf(to, [&](OpOperand &operand) {
+    return region.isAncestor(operand.getOwner()->getParentRegion());
+  });
+}
+
+/// Replaces uses according to a mapping within a specific region.
+void replaceInRegion(Region &region, DenseMap<Value, Value> &rewireMap,
+                     bool clear) {
+  for (auto &rewire : rewireMap)
+    replaceInRegion(region, rewire.first, rewire.second);
+  if (clear)
+    rewireMap.clear();
+}
+
+///===----------------------------------------------------------------------===///
 /// Undef-Like Operation Detection Utilities
 ///===----------------------------------------------------------------------===///
 
@@ -365,5 +370,6 @@ bool isUndefLikeOp(Operation *op) {
          name == "arts.undef";
 }
 
-} // namespace carts::arts
+} // namespace arts
+} // namespace carts
 } // namespace mlir

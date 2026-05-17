@@ -23,7 +23,6 @@ namespace mlir::carts::sde {
 ARTS_DEBUG_SETUP(vectorization);
 
 using namespace mlir;
-using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {

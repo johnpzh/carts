@@ -19,7 +19,6 @@ namespace mlir::carts::sde {
 #include "llvm/ADT/SetVector.h"
 
 using namespace mlir;
-using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -100,7 +99,7 @@ static void collectSchedulingUnitMemrefRoots(sde::SdeSuIterateOp op,
       return;
     }
 
-    Value root = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(memref);
+    Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(memref);
     if (!root || sde::isDefinedInside(op.getOperation(), root))
       return;
     if (isMuMaterializableAllocation(root))

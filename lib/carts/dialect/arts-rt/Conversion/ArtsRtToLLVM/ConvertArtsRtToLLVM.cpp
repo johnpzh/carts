@@ -38,7 +38,7 @@ ARTS_DEBUG_SETUP(convert_arts_rt_to_llvm);
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts_rt;
-using mlir::carts::arts::debugStream;
+using mlir::carts::debugStream;
 
 namespace arts_rt_to_llvm = mlir::carts::arts_rt::convert_arts_rt_to_llvm;
 

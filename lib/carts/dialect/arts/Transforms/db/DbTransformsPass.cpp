@@ -305,8 +305,8 @@ unsigned DbTransformsPass::consolidateStencilHalos() {
       upsertLoweringContract(builder, loc, acquire.getPtr(), newContract);
 
       Operation *acquireOp = acquire.getOperation();
-      acquireOp->removeAttr(AttrNames::Operation::Stencil::FootprintMinOffsets);
-      acquireOp->removeAttr(AttrNames::Operation::Stencil::FootprintMaxOffsets);
+      acquireOp->removeAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMinOffsets);
+      acquireOp->removeAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMaxOffsets);
 
       ++count;
 

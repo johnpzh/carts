@@ -26,7 +26,6 @@ namespace mlir::carts::sde {
 #include <limits>
 
 using namespace mlir;
-using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -48,7 +47,7 @@ static bool hasPositiveConstantStep(sde::SdeSuIterateOp op) {
     return false;
 
   int64_t step = 0;
-  return ::mlir::carts::arts::ValueAnalysis::getConstantIndex(op.getSteps().front(), step) &&
+  return ::mlir::carts::ValueAnalysis::getConstantIndex(op.getSteps().front(), step) &&
          step > 0;
 }
 

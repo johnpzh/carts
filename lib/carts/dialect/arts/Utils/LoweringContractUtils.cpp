@@ -38,7 +38,7 @@ static SmallVector<Value, 4> materializeIndexValues(OpBuilder &builder,
   SmallVector<Value, 4> result;
   result.reserve(values.size());
   for (int64_t value : values)
-    result.push_back(::mlir::carts::arts::createConstantIndex(builder, loc, value));
+    result.push_back(::mlir::carts::createConstantIndex(builder, loc, value));
   return result;
 }
 
@@ -123,7 +123,7 @@ materializeDominatingIndexValues(OpBuilder &builder, Location loc,
     int64_t constant = 0;
     if (!ValueAnalysis::getConstantIndex(value, constant))
       return {};
-    result.push_back(::mlir::carts::arts::createConstantIndex(builder, loc, constant));
+    result.push_back(::mlir::carts::createConstantIndex(builder, loc, constant));
   }
 
   if (!result.empty())
@@ -434,9 +434,9 @@ mlir::carts::arts::getSemanticContract(Operation *op) {
       hasSupportedBlockHalo(op) && info.pattern.depPattern &&
       isStencilFamilyDepPattern(*info.pattern.depPattern);
   info.analysis.narrowableDep =
-      op->hasAttr(AttrNames::Operation::Contract::NarrowableDep);
+      op->hasAttr(::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep);
   if (auto contractKind = op->getAttrOfType<IntegerAttr>(
-          AttrNames::Operation::Contract::ContractKindKey))
+          ::mlir::carts::arts::AttrNames::Operation::Contract::ContractKindKey))
     info.pattern.kind = static_cast<ContractKind>(contractKind.getInt());
   mergePlanSpatialAttrs(op, info);
   if (info.empty())
@@ -486,7 +486,7 @@ mlir::carts::arts::resolveLoopDistributionContract(Operation *op) {
 
     if (info.pattern.kind == ContractKind::Unknown) {
       if (auto contractKind = current->getAttrOfType<IntegerAttr>(
-              AttrNames::Operation::Contract::ContractKindKey)) {
+              ::mlir::carts::arts::AttrNames::Operation::Contract::ContractKindKey)) {
         int64_t rawKind = contractKind.getInt();
         if (rawKind != static_cast<int64_t>(ContractKind::Unknown))
           info.pattern.kind = static_cast<ContractKind>(rawKind);

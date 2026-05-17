@@ -220,7 +220,7 @@ collectEligibilityFacts(DbAllocOp alloc, DbAnalysis &dbAnalysis) {
 }
 
 static bool hasReadOnlyAfterInitAttr(DbAllocOp alloc) {
-  return alloc->hasAttr(AttrNames::Operation::ReadOnlyAfterInit);
+  return alloc->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit);
 }
 
 } // namespace

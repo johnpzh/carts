@@ -439,7 +439,7 @@ static void analyzeFineGrainedPartition(
   if (!acquire.getPartitionIndices().empty()) {
     for (Value idx : acquire.getPartitionIndices())
       info.partitionOffsets.push_back(idx);
-    Value one = ::mlir::carts::arts::createOneIndex(builder, acquire.getLoc());
+    Value one = ::mlir::carts::createOneIndex(builder, acquire.getLoc());
     for (unsigned i = 0; i < info.partitionOffsets.size(); ++i)
       info.partitionSizes.push_back(one);
     info.isValid = true;
@@ -466,7 +466,7 @@ static void analyzeBlockStencilPartition(
   if (!effectiveOffsets.empty()) {
     for (Value off : effectiveOffsets)
       info.partitionOffsets.push_back(off);
-    Value one = ::mlir::carts::arts::createOneIndex(builder, acquire.getLoc());
+    Value one = ::mlir::carts::createOneIndex(builder, acquire.getLoc());
     for (unsigned i = 0; i < info.partitionOffsets.size(); ++i)
       info.partitionSizes.push_back(
           i < effectiveSizes.size() ? effectiveSizes[i] : one);

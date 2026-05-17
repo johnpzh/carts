@@ -384,7 +384,7 @@ void DbReleaseOp::build(OpBuilder &builder, OperationState &state,
 void DbDimOp::build(OpBuilder &builder, OperationState &state, Value source,
                     int64_t dim) {
   state.addOperands(source);
-  Value c = ::mlir::carts::arts::createConstantIndex(builder, state.location, dim);
+  Value c = ::mlir::carts::createConstantIndex(builder, state.location, dim);
   state.addOperands(c);
   state.addTypes(builder.getIndexType());
 }
@@ -475,10 +475,10 @@ static void buildDbAllocOpCommon(OpBuilder &builder, OperationState &state,
   Type guidType = computeGuidType(builder, info.sizes);
 
   if (info.sizes.empty())
-    info.sizes.push_back(::mlir::carts::arts::createOneIndex(builder, state.location));
+    info.sizes.push_back(::mlir::carts::createOneIndex(builder, state.location));
 
   if (info.elementSizes.empty())
-    info.elementSizes.push_back(::mlir::carts::arts::createOneIndex(builder, state.location));
+    info.elementSizes.push_back(::mlir::carts::createOneIndex(builder, state.location));
 
   Type ptrType;
   if (info.pointerType) {
@@ -503,7 +503,7 @@ static void buildDbAllocOpCommon(OpBuilder &builder, OperationState &state,
   state.addAttribute("dbMode", dbModeAttr);
   state.addAttribute("elementType", elementTypeAttr);
   state.addAttribute(
-      AttrNames::Operation::PartitionMode,
+      ::mlir::carts::arts::AttrNames::Operation::PartitionMode,
       PartitionModeAttr::get(builder.getContext(), info.partitionMode));
 
   state.addOperands(info.route);
@@ -600,7 +600,7 @@ void DbAcquireOp::setPreserveAccessMode(bool preserve) {
     setPreserveAccessModeAttr(PreserveAccessModeAttr::get(getContext()));
     return;
   }
-  (*this)->removeAttr(AttrNames::Operation::PreserveAccessMode);
+  (*this)->removeAttr(::mlir::carts::arts::AttrNames::Operation::PreserveAccessMode);
 }
 
 void DbAcquireOp::setPreserveDepEdge(bool preserve) {
@@ -608,7 +608,7 @@ void DbAcquireOp::setPreserveDepEdge(bool preserve) {
     setPreserveDepEdgeAttr(PreserveDepEdgeAttr::get(getContext()));
     return;
   }
-  (*this)->removeAttr(AttrNames::Operation::PreserveDepEdge);
+  (*this)->removeAttr(::mlir::carts::arts::AttrNames::Operation::PreserveDepEdge);
 }
 
 void DbAcquireOp::setExplicitDepContract(bool preserve) {
@@ -621,7 +621,7 @@ void DbAcquireOp::setDepPattern(ArtsDepPattern pattern) {
 }
 
 void DbAcquireOp::clearDepPattern() {
-  (*this)->removeAttr(AttrNames::Operation::DepPatternAttr);
+  (*this)->removeAttr(::mlir::carts::arts::AttrNames::Operation::DepPatternAttr);
 }
 
 void DbAcquireOp::copyPartitionSegmentsFrom(DbAcquireOp source) {
@@ -830,7 +830,7 @@ static void addDbAcquireOperandsAndAttrs(
       resolvedMode = *parentMode;
   }
   state.addAttribute(
-      AttrNames::Operation::PartitionMode,
+      ::mlir::carts::arts::AttrNames::Operation::PartitionMode,
       PartitionModeAttr::get(builder.getContext(), resolvedMode));
 }
 
@@ -865,12 +865,12 @@ void DbAcquireOp::build(OpBuilder &builder, OperationState &state,
     if (sizes.empty()) {
       sizes.reserve(remainingRank);
       for (uint64_t d = 0; d < remainingRank; ++d)
-        sizes.push_back(::mlir::carts::arts::createOneIndex(builder, state.location));
+        sizes.push_back(::mlir::carts::createOneIndex(builder, state.location));
     }
     if (offsets.empty()) {
       offsets.reserve(remainingRank);
       for (uint64_t d = 0; d < remainingRank; ++d)
-        offsets.push_back(::mlir::carts::arts::createZeroIndex(builder, state.location));
+        offsets.push_back(::mlir::carts::createZeroIndex(builder, state.location));
     }
   }
 
@@ -895,10 +895,10 @@ void DbAcquireOp::build(
   /// Auto-fill sizes/offsets when indices are provided
   if (!indices.empty()) {
     if (sizes.empty())
-      sizes.push_back(::mlir::carts::arts::createOneIndex(builder, state.location));
+      sizes.push_back(::mlir::carts::createOneIndex(builder, state.location));
     if (offsets.empty()) {
       for (size_t i = 0; i < sizes.size(); ++i)
-        offsets.push_back(::mlir::carts::arts::createZeroIndex(builder, state.location));
+        offsets.push_back(::mlir::carts::createZeroIndex(builder, state.location));
     }
   }
 

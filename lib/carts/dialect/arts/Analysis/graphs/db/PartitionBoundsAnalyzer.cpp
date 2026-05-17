@@ -514,20 +514,20 @@ bool PartitionBoundsAnalyzer::computePartitionBounds(DbAcquireNode *node) {
   Value adjustedSize = partitionSize;
 
   if (bounds.minOffset < 0) {
-    Value absAdj = ::mlir::carts::arts::createConstantIndex(builder, loc, -bounds.minOffset);
+    Value absAdj = ::mlir::carts::createConstantIndex(builder, loc, -bounds.minOffset);
     Value cond = arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::uge,
                                        partitionOffset, absAdj);
     Value sub = arith::SubIOp::create(builder, loc, partitionOffset, absAdj);
-    Value zero = ::mlir::carts::arts::createZeroIndex(builder, loc);
+    Value zero = ::mlir::carts::createZeroIndex(builder, loc);
     adjustedOffset = arith::SelectOp::create(builder, loc, cond, sub, zero);
   } else if (bounds.minOffset > 0) {
-    Value adj = ::mlir::carts::arts::createConstantIndex(builder, loc, bounds.minOffset);
+    Value adj = ::mlir::carts::createConstantIndex(builder, loc, bounds.minOffset);
     adjustedOffset = arith::AddIOp::create(builder, loc, partitionOffset, adj);
   }
 
   int64_t sizeAdjustment = bounds.maxOffset - bounds.minOffset;
   if (sizeAdjustment != 0) {
-    Value adjustment = ::mlir::carts::arts::createConstantIndex(builder, loc, sizeAdjustment);
+    Value adjustment = ::mlir::carts::createConstantIndex(builder, loc, sizeAdjustment);
     adjustedSize =
         arith::AddIOp::create(builder, loc, partitionSize, adjustment);
   }

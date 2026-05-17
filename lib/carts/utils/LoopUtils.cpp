@@ -23,8 +23,6 @@
 namespace mlir {
 namespace carts {
 
-using arts::ValueAnalysis;
-
 static std::optional<int64_t> getStaticTripCount(scf::ForOp loop) {
   if (!loop)
     return std::nullopt;

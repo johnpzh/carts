@@ -28,7 +28,7 @@
 #include <cassert>
 
 namespace mlir {
-namespace carts::arts {
+namespace carts {
 
 static std::optional<bool> proveValuesEqualWithBounds(Value lhs, Value rhs) {
   if (!lhs || !rhs || !lhs.getType().isIndex() || !rhs.getType().isIndex())
@@ -403,15 +403,15 @@ std::optional<int64_t> ValueAnalysis::tryFoldConstantIndex(Value v,
     if (auto folded = tryFoldScalarMemrefLoad(load, depth + 1))
       return folded;
 
-  if (auto query = v.getDefiningOp<RuntimeQueryOp>()) {
+  if (auto query = v.getDefiningOp<arts::RuntimeQueryOp>()) {
     ModuleOp module = query->getParentOfType<ModuleOp>();
     if (!module)
       return std::nullopt;
     switch (query.getKind()) {
-    case RuntimeQueryKind::totalWorkers:
-      return getRuntimeTotalWorkers(module);
-    case RuntimeQueryKind::totalNodes:
-      return getRuntimeTotalNodes(module);
+    case arts::RuntimeQueryKind::totalWorkers:
+      return arts::getRuntimeTotalWorkers(module);
+    case arts::RuntimeQueryKind::totalNodes:
+      return arts::getRuntimeTotalNodes(module);
     default:
       return std::nullopt;
     }
@@ -896,7 +896,7 @@ static bool isDerivedFromPtrImpl(Value value, Value source,
   if (auto blockArg = dyn_cast<BlockArgument>(value)) {
     Block *parentBlock = blockArg.getParentBlock();
     if (parentBlock && parentBlock->getParentOp()) {
-      if (auto edt = dyn_cast<EdtOp>(parentBlock->getParentOp())) {
+      if (auto edt = dyn_cast<arts::EdtOp>(parentBlock->getParentOp())) {
         unsigned argIndex = blockArg.getArgNumber();
         ValueRange deps = edt.getDependencies();
         if (argIndex < deps.size())
@@ -915,7 +915,7 @@ static bool isDerivedFromPtrImpl(Value value, Value source,
     return isDerivedFromPtrImpl(v, source, visited, depth + 1);
   };
 
-  if (auto dbAcquire = dyn_cast<DbAcquireOp>(defOp))
+  if (auto dbAcquire = dyn_cast<arts::DbAcquireOp>(defOp))
     return trace(dbAcquire.getSourcePtr());
   if (auto dbGep = dyn_cast<::mlir::carts::arts_rt::DbGepOp>(defOp))
     return trace(dbGep.getBasePtr());
@@ -1074,7 +1074,7 @@ static Value getUnderlyingValueImpl(Value v, SmallPtrSet<Value, 16> &visited,
   if (auto blockArg = dyn_cast<BlockArgument>(v)) {
     Block *owner = blockArg.getOwner();
     if (owner && owner->getParentOp()) {
-      if (auto edt = dyn_cast<EdtOp>(owner->getParentOp())) {
+      if (auto edt = dyn_cast<arts::EdtOp>(owner->getParentOp())) {
         unsigned argIndex = blockArg.getArgNumber();
         ValueRange deps = edt.getDependencies();
         if (argIndex < deps.size())
@@ -1095,8 +1095,8 @@ static Value getUnderlyingValueImpl(Value v, SmallPtrSet<Value, 16> &visited,
     return nullptr;
 
   /// Terminal allocations
-  if (isa<DbAllocOp, memref::AllocOp, memref::AllocaOp, memref::GetGlobalOp>(
-          op))
+  if (isa<arts::DbAllocOp, memref::AllocOp, memref::AllocaOp,
+          memref::GetGlobalOp>(op))
     return v;
 
   /// Helper to recurse through a single source operand
@@ -1104,11 +1104,11 @@ static Value getUnderlyingValueImpl(Value v, SmallPtrSet<Value, 16> &visited,
     return getUnderlyingValueImpl(source, visited, depth + 1);
   };
 
-  if (auto dbAcquire = dyn_cast<DbAcquireOp>(op))
+  if (auto dbAcquire = dyn_cast<arts::DbAcquireOp>(op))
     return trace(dbAcquire.getSourcePtr());
   if (auto dbGep = dyn_cast<::mlir::carts::arts_rt::DbGepOp>(op))
     return trace(dbGep.getBasePtr());
-  if (auto dbRef = dyn_cast<DbRefOp>(op))
+  if (auto dbRef = dyn_cast<arts::DbRefOp>(op))
     return trace(dbRef.getSource());
   if (auto subview = dyn_cast<memref::SubViewOp>(op))
     return trace(subview.getSource());
@@ -1324,7 +1324,7 @@ Value ValueAnalysis::traceValueToDominating(Value value,
   }
   if (auto constIdxOp = dyn_cast<arith::ConstantIndexOp>(defOp)) {
     builder.setInsertionPoint(insertBefore);
-    return ::mlir::carts::arts::createConstantIndex(builder, loc, constIdxOp.value());
+    return ::mlir::carts::createConstantIndex(builder, loc, constIdxOp.value());
   }
   if (auto tsOp = dyn_cast<polygeist::TypeSizeOp>(defOp)) {
     builder.setInsertionPoint(insertBefore);
@@ -1381,5 +1381,5 @@ bool ValueAnalysis::isOneLikeValue(Value value) {
   return false;
 }
 
-} // namespace carts::arts
+} // namespace carts
 } // namespace mlir

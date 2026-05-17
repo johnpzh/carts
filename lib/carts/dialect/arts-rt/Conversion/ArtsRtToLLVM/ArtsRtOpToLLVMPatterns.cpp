@@ -79,7 +79,7 @@ struct CreateEpochPattern : public ArtsRtToLLVMPattern<CreateEpochOp> {
 
     /// Create epoch guid
     Value epochGuid;
-    if (op->hasAttr(AttrNames::Operation::NoStartEpoch))
+    if (op->hasAttr(::mlir::carts::arts::AttrNames::Operation::NoStartEpoch))
       epochGuid = AC->createEpochNoStart(guid, edtSlot, loc);
     else
       epochGuid = AC->createEpoch(guid, edtSlot, loc);
@@ -257,12 +257,12 @@ private:
       return false;
 
     auto reference = site.representativeCreate();
-    if (!reference->hasAttr(AttrNames::Operation::ReadyLocalLaunch) ||
+    if (!reference->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch) ||
         !reference.getEpochGuid())
       return false;
 
     for (EdtCreateOp create : site.creates) {
-      if (!create->hasAttr(AttrNames::Operation::ReadyLocalLaunch) ||
+      if (!create->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch) ||
           !create.getEpochGuid())
         return false;
       if (create.getParamMemref() != reference.getParamMemref() ||
@@ -299,7 +299,7 @@ private:
   func::CallOp emitReadyLocalLaunch(EdtCreateOp op, Value depBuffer,
                                     Location loc) const {
     auto funcNameAttr =
-        op->getAttrOfType<StringAttr>(AttrNames::Operation::OutlinedFunc);
+        op->getAttrOfType<StringAttr>(::mlir::carts::arts::AttrNames::Operation::OutlinedFunc);
     if (!funcNameAttr)
       op.emitError("Missing outlined_func attribute for ready-local launch");
 
@@ -340,7 +340,7 @@ private:
       route = createCurrentNodeRoute(AC->getBuilder(), loc);
 
     auto createIdAttr =
-        op->getAttrOfType<IntegerAttr>(AttrNames::Operation::ArtsCreateId);
+        op->getAttrOfType<IntegerAttr>(::mlir::carts::arts::AttrNames::Operation::ArtsCreateId);
     Value artsIdVal;
     if (createIdAttr)
       artsIdVal = AC->create<arith::ConstantOp>(loc, AC->Int64, createIdAttr);
@@ -1663,7 +1663,7 @@ struct EdtCreatePattern : public ArtsRtToLLVMPattern<EdtCreateOp> {
 
   LogicalResult matchAndRewrite(EdtCreateOp op,
                                 PatternRewriter &rewriter) const override {
-    if (op->hasAttr(AttrNames::Operation::ReadyLocalLaunch) &&
+    if (op->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch) &&
         op.getEpochGuid()) {
       for (Operation *user : op.getGuid().getUsers())
         if (isa<RecordDepOp>(user))
@@ -1674,7 +1674,7 @@ struct EdtCreatePattern : public ArtsRtToLLVMPattern<EdtCreateOp> {
     ArtsCodegen::RewriterGuard RG(*AC, rewriter);
     /// Get outlined function name
     auto funcNameAttr =
-        op->getAttrOfType<StringAttr>(AttrNames::Operation::OutlinedFunc);
+        op->getAttrOfType<StringAttr>(::mlir::carts::arts::AttrNames::Operation::OutlinedFunc);
     if (!funcNameAttr)
       return op.emitError("Missing outlined_func attribute");
 
@@ -1721,7 +1721,7 @@ struct EdtCreatePattern : public ArtsRtToLLVMPattern<EdtCreateOp> {
       route = createCurrentNodeRoute(AC->getBuilder(), loc);
 
     auto createIdAttr =
-        op->getAttrOfType<IntegerAttr>(AttrNames::Operation::ArtsCreateId);
+        op->getAttrOfType<IntegerAttr>(::mlir::carts::arts::AttrNames::Operation::ArtsCreateId);
     Value artsIdVal;
     if (createIdAttr)
       artsIdVal = AC->create<arith::ConstantOp>(loc, AC->Int64, createIdAttr);
@@ -1742,7 +1742,7 @@ struct EdtCreatePattern : public ArtsRtToLLVMPattern<EdtCreateOp> {
                           {funcPtr, paramc, paramv, depc, hintMemref});
     }
     if (createIdAttr)
-      callOp->setAttr(AttrNames::Operation::ArtsCreateId, createIdAttr);
+      callOp->setAttr(::mlir::carts::arts::AttrNames::Operation::ArtsCreateId, createIdAttr);
     rewriter.replaceOp(op, callOp.getResult(0));
     ++numEdtOpsConverted;
     return success();

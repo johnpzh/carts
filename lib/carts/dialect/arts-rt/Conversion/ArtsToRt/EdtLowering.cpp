@@ -218,10 +218,10 @@ static bool hasTrustedPartitionedWriteContract(DbAcquireOp acquire) {
 
   Operation *contract = contractOp.getOperation();
   return getBoolAttr(contract,
-                     AttrNames::Operation::Proof::OwnerDimReachability) &&
+                     ::mlir::carts::arts::AttrNames::Operation::Proof::OwnerDimReachability) &&
          getBoolAttr(contract,
-                     AttrNames::Operation::Proof::PartitionAccessMapping) &&
-         getBoolAttr(contract, AttrNames::Operation::Proof::HaloLegality);
+                     ::mlir::carts::arts::AttrNames::Operation::Proof::PartitionAccessMapping) &&
+         getBoolAttr(contract, ::mlir::carts::arts::AttrNames::Operation::Proof::HaloLegality);
 }
 
 static bool canUseUnorderedLocalWrite(DbAcquireOp acquire, EdtOp edtOp,
@@ -493,19 +493,19 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
 
   setOutlinedFunc(outlineOp, outlinedFunc.getName());
 
-  if (edtOp->hasAttr(AttrNames::Operation::ReadyLocalLaunch))
-    outlineOp->setAttr(AttrNames::Operation::ReadyLocalLaunch,
+  if (edtOp->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch))
+    outlineOp->setAttr(::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch,
                        AC->getBuilder().getUnitAttr());
 
   /// Preserve structured launch schemas on the lowered create op for consumers
   /// that need the explicit state/dependency ABI.
   if (auto stateSchema = edtOp->getAttrOfType<DenseI64ArrayAttr>(
-          AttrNames::Operation::LaunchState::StateSchema))
-    outlineOp->setAttr(AttrNames::Operation::LaunchState::StateSchema,
+          ::mlir::carts::arts::AttrNames::Operation::LaunchState::StateSchema))
+    outlineOp->setAttr(::mlir::carts::arts::AttrNames::Operation::LaunchState::StateSchema,
                        stateSchema);
   if (auto depSchema = edtOp->getAttrOfType<DenseI64ArrayAttr>(
-          AttrNames::Operation::LaunchState::DepSchema))
-    outlineOp->setAttr(AttrNames::Operation::LaunchState::DepSchema, depSchema);
+          ::mlir::carts::arts::AttrNames::Operation::LaunchState::DepSchema))
+    outlineOp->setAttr(::mlir::carts::arts::AttrNames::Operation::LaunchState::DepSchema, depSchema);
   int64_t baseId = getArtsId(edtOp);
   if (!baseId)
     baseId = idRegistry.getOrCreate(edtOp.getOperation());
@@ -1165,7 +1165,7 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
         dbMode == DbMode::read) {
       bool duplicateSafe =
           allocForHint.getDbMode() == DbMode::read ||
-          allocForHint->hasAttr(AttrNames::Operation::ReadOnlyAfterInit);
+          allocForHint->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit);
       if (duplicateSafe) {
         depFlagBits |= kArtsDepFlagPreferDuplicate;
       }

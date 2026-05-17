@@ -616,7 +616,7 @@ void DbModeTighteningPass::inferDbStorageTypes() {
       }
 
       if (isLocalOnly) {
-        allocOp->setAttr(AttrNames::Operation::LocalOnly,
+        allocOp->setAttr(::mlir::carts::arts::AttrNames::Operation::LocalOnly,
                          UnitAttr::get(allocOp.getContext()));
         ++numDbsMarkedLocalOnly;
         ARTS_DEBUG("AllocOp: " << allocOp << " => local_only (PIN candidate)");
@@ -680,7 +680,7 @@ void DbModeTighteningPass::inferDbStorageTypes() {
 
       if (foundWriter && allReadAfterWrite && writerCount == 1 &&
           !writerInRepeatableControl) {
-        allocOp->setAttr(AttrNames::Operation::ReadOnlyAfterInit,
+        allocOp->setAttr(::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit,
                          UnitAttr::get(allocOp.getContext()));
         ++numDbsMarkedReadOnlyAfterInit;
         ARTS_DEBUG("AllocOp: " << allocOp

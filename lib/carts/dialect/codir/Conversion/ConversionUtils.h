@@ -409,17 +409,17 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
     task->setAttr("planHaloShape", haloShape);
   if (auto minOffsets = codelet.getAccessMinOffsetsAttr())
     task->setAttr(
-        ::mlir::carts::arts::AttrNames::Operation::Stencil::FootprintMinOffsets, minOffsets);
+        ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMinOffsets, minOffsets);
   if (auto maxOffsets = codelet.getAccessMaxOffsetsAttr())
     task->setAttr(
-        ::mlir::carts::arts::AttrNames::Operation::Stencil::FootprintMaxOffsets, maxOffsets);
+        ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMaxOffsets, maxOffsets);
   if (auto ownerDims = codelet.getPlanOwnerDimsAttr())
-    task->setAttr(::mlir::carts::arts::AttrNames::Operation::Stencil::OwnerDims, ownerDims);
+    task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::OwnerDims, ownerDims);
   if (auto spatialDims = codelet.getSpatialDimsAttr())
-    task->setAttr(::mlir::carts::arts::AttrNames::Operation::Stencil::SpatialDims,
+    task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::SpatialDims,
                   spatialDims);
   if (auto writeFootprint = codelet.getWriteFootprintAttr())
-    task->setAttr(::mlir::carts::arts::AttrNames::Operation::Stencil::WriteFootprint,
+    task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint,
                   writeFootprint);
   if (codelet.getInPlaceSafeAttr())
     task->setAttr("inPlaceSafe", UnitAttr::get(ctx));
@@ -434,7 +434,7 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
             codir::CodirPattern::jacobi_alternating_buffers) {
       if (codelet.getAccessMinOffsetsAttr() && codelet.getAccessMaxOffsetsAttr())
         task->setAttr(
-            ::mlir::carts::arts::AttrNames::Operation::Stencil::SupportedBlockHalo,
+            ::mlir::carts::StencilAttrNames::Operation::Stencil::SupportedBlockHalo,
             UnitAttr::get(ctx));
     }
   }
@@ -590,7 +590,7 @@ static inline bool isAtomicAddAddressable(
 static inline bool sameMemrefAccess(Value lhsMemref, ValueRange lhsIndices,
                                     Value rhsMemref, ValueRange rhsIndices) {
   return lhsMemref == rhsMemref &&
-         ::mlir::carts::arts::ValueAnalysis::areValueRangesIdentical(lhsIndices, rhsIndices);
+         ::mlir::carts::ValueAnalysis::areValueRangesIdentical(lhsIndices, rhsIndices);
 }
 
 static inline unsigned lowerIntegerAddReductionsToAtomics(
@@ -691,7 +691,7 @@ static inline bool canUseOwnerSliceBoundaryPlan(sde::SdeSuIterateOp source) {
 }
 
 static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
-  if (::mlir::carts::arts::ValueAnalysis::dependsOn(index, ownerIv))
+  if (::mlir::carts::ValueAnalysis::dependsOn(index, ownerIv))
     return true;
 
   auto blockArg = dyn_cast<BlockArgument>(index);
@@ -702,8 +702,8 @@ static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
   if (!loop || loop.getInductionVar() != index)
     return false;
 
-  return ::mlir::carts::arts::ValueAnalysis::dependsOn(loop.getLowerBound(), ownerIv) ||
-         ::mlir::carts::arts::ValueAnalysis::dependsOn(loop.getUpperBound(), ownerIv);
+  return ::mlir::carts::ValueAnalysis::dependsOn(loop.getLowerBound(), ownerIv) ||
+         ::mlir::carts::ValueAnalysis::dependsOn(loop.getUpperBound(), ownerIv);
 }
 
 static inline bool allRootAccessesUseOwnerFirstDim(sde::SdeSuIterateOp source,
@@ -723,7 +723,7 @@ static inline bool allRootAccessesUseOwnerFirstDim(sde::SdeSuIterateOp source,
   bool sawRootAccess = false;
   bool rejected = false;
   auto checkAccess = [&](Value memref, OperandRange indices) {
-    if (::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(memref) != root)
+    if (::mlir::carts::ValueAnalysis::stripMemrefViewOps(memref) != root)
       return;
     sawRootAccess = true;
     if (indices.empty() || !indexSelectsOwnerSlice(indices.front(), ownerIv))
@@ -833,7 +833,7 @@ selectMuAllocWritePlan(sde::SdeMuAllocOp op) {
 
   sde::SdeSuIterateOp selected;
   WalkResult result = module.walk([&](memref::StoreOp store) {
-    if (::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(store.getMemref()) != root)
+    if (::mlir::carts::ValueAnalysis::stripMemrefViewOps(store.getMemref()) != root)
       return WalkResult::advance();
 
     sde::SdeSuIterateOp source = getEnclosingSuIterate(store);
@@ -865,7 +865,7 @@ selectMuAllocWritePlan(sde::SdeMuAllocOp op) {
     auto access = arts::DbUtils::getMemoryAccessInfo(nested);
     if (!access)
       return WalkResult::advance();
-    if (::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(access->memref) != root)
+    if (::mlir::carts::ValueAnalysis::stripMemrefViewOps(access->memref) != root)
       return WalkResult::advance();
 
     sde::SdeSuIterateOp source = getEnclosingSuIterate(nested);
@@ -887,7 +887,7 @@ selectMuAllocWritePlan(sde::SdeMuAllocOp op) {
 
 static inline bool isSdeMuAllocMaterializedWithPlan(Value dep,
                                                     sde::SdeSuIterateOp source) {
-  Value root = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(dep);
+  Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(dep);
   auto muAlloc = root ? root.getDefiningOp<sde::SdeMuAllocOp>() : nullptr;
   if (!muAlloc)
     return true;
@@ -1190,7 +1190,7 @@ static inline bool isCodeletParamDerivedIndex(Value index, codir::CodeletOp code
       continue;
     BlockArgument arg = body.getArgument(argIdx);
     if (isa<IndexType>(arg.getType()) &&
-        ::mlir::carts::arts::ValueAnalysis::dependsOn(index, arg))
+        ::mlir::carts::ValueAnalysis::dependsOn(index, arg))
       return true;
 
     auto indexArg = dyn_cast<BlockArgument>(index);
@@ -1200,9 +1200,9 @@ static inline bool isCodeletParamDerivedIndex(Value index, codir::CodeletOp code
         indexArg.getOwner()->getParentOp());
     if (!loop || loop.getInductionVar() != index)
       continue;
-    if (::mlir::carts::arts::ValueAnalysis::dependsOn(loop.getLowerBound(), arg) ||
-        ::mlir::carts::arts::ValueAnalysis::dependsOn(loop.getUpperBound(), arg) ||
-        ::mlir::carts::arts::ValueAnalysis::dependsOn(loop.getStep(), arg))
+    if (::mlir::carts::ValueAnalysis::dependsOn(loop.getLowerBound(), arg) ||
+        ::mlir::carts::ValueAnalysis::dependsOn(loop.getUpperBound(), arg) ||
+        ::mlir::carts::ValueAnalysis::dependsOn(loop.getStep(), arg))
       return true;
   }
   return false;
@@ -1253,7 +1253,7 @@ rewriteTokenLocalAccesses(codir::CodeletOp codelet,
       return createConstantIndex(builder, op->getLoc(),
                                  *indexConstant - *offsetConstant);
 
-    if (::mlir::carts::arts::ValueAnalysis::sameValue(index, offset))
+    if (::mlir::carts::ValueAnalysis::sameValue(index, offset))
       return createZeroIndex(builder, op->getLoc());
 
     if (!isCodeletParamDerivedIndex(index, codelet, ignoredParams))
@@ -2385,7 +2385,7 @@ static inline Value buildSuDispatchStepFromExtent(sde::SdeSuIterateOp source,
   Location loc = source.getLoc();
   std::optional<int64_t> stepConst = getConstantIndexValue(step);
   if (!stepConst)
-    stepConst = ::mlir::carts::arts::ValueAnalysis::tryFoldConstantIndex(step);
+    stepConst = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(step);
   if (stepConst) {
     if (*stepConst >= extent)
       return step;
@@ -2409,7 +2409,7 @@ inferSingleIvPhysicalAccessDim(sde::SdeSuIterateOp source) {
   auto observeAccess = [&](Value memref, OperandRange indices) {
     if (!memref || indices.empty())
       return;
-    Value root = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(memref);
+    Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(memref);
     if (!root || isDefinedInside(root, source.getBody()))
       return;
     auto rootType = dyn_cast<MemRefType>(root.getType());
@@ -2456,7 +2456,7 @@ getOwnerStripDispatchExtent(sde::SdeSuIterateOp source, ArrayAttr extents) {
     return std::nullopt;
 
   if (std::optional<SmallVector<int64_t, 4>> physicalOwnerDims =
-          arts::readI64ArrayAttr(source.getPhysicalOwnerDimsAttr())) {
+          ::mlir::carts::readI64ArrayAttr(source.getPhysicalOwnerDimsAttr())) {
     if (physicalOwnerDims->size() == 1 && (*physicalOwnerDims)[0] >= 0) {
       unsigned physicalDim = static_cast<unsigned>((*physicalOwnerDims)[0]);
       if (std::optional<int64_t> extent =
@@ -2727,7 +2727,7 @@ static inline void appendSuOwnerSliceLocalRewrites(sde::SdeSuIterateOp source,
     return;
 
   std::optional<SmallVector<int64_t, 4>> ownerDims =
-      arts::readI64ArrayAttr(source.getPhysicalOwnerDimsAttr());
+      ::mlir::carts::readI64ArrayAttr(source.getPhysicalOwnerDimsAttr());
   if (!ownerDims || ownerDims->size() != 1 || (*ownerDims)[0] != 0)
     return;
 
@@ -2766,7 +2766,7 @@ static inline void mapSuEquivalentConstantIndexParams(sde::SdeSuIterateOp source
     if (!param.getType().isIndex())
       continue;
     std::optional<int64_t> folded =
-        arts::ValueAnalysis::tryFoldConstantIndex(param);
+        ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(param);
     if (!folded)
       continue;
     if (Value mapped = mapper.lookupOrNull(param))
@@ -2783,7 +2783,7 @@ static inline void mapSuEquivalentConstantIndexParams(sde::SdeSuIterateOp source
       if (mapper.contains(result) || !result.getType().isIndex())
         continue;
       std::optional<int64_t> folded =
-          arts::ValueAnalysis::tryFoldConstantIndex(result);
+          ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(result);
       if (!folded)
         continue;
       auto it = llvm::find_if(foldedParams, [&](auto entry) {

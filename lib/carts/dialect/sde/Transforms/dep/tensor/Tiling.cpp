@@ -32,7 +32,6 @@ namespace mlir::carts::sde {
 #include <cmath>
 
 using namespace mlir;
-using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -70,7 +69,7 @@ static Value buildTripCountValue(OpBuilder &builder, Location loc,
 
   int64_t constantStep = 0;
   Value safeStep = step;
-  if (::mlir::carts::arts::ValueAnalysis::getConstantIndex(step, constantStep)) {
+  if (::mlir::carts::ValueAnalysis::getConstantIndex(step, constantStep)) {
     if (constantStep <= 0)
       return Value();
   } else {
@@ -124,7 +123,7 @@ static SmallVector<Value> buildPerDimTripCounts(OpBuilder &builder,
 
     int64_t constantStep = 0;
     Value safeStep = step;
-    if (::mlir::carts::arts::ValueAnalysis::getConstantIndex(step, constantStep)) {
+    if (::mlir::carts::ValueAnalysis::getConstantIndex(step, constantStep)) {
       if (constantStep <= 0)
         return {};
     } else {
@@ -296,18 +295,18 @@ static bool loopWritesOwnerColumn(scf::ForOp loop, Value outputRoot,
   Value loopIv = loop.getInductionVar();
   bool matched = false;
   loop.walk([&](memref::StoreOp store) {
-    Value root = ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(store.getMemref());
+    Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(store.getMemref());
     if (root != outputRoot)
       return WalkResult::advance();
 
     ValueRange indices = store.getIndices();
     if (indices.size() < 2)
       return WalkResult::advance();
-    if (!::mlir::carts::arts::ValueAnalysis::dependsOn(indices.front(), ownerIv))
+    if (!::mlir::carts::ValueAnalysis::dependsOn(indices.front(), ownerIv))
       return WalkResult::advance();
 
     for (Value index : indices.drop_front()) {
-      if (::mlir::carts::arts::ValueAnalysis::dependsOn(index, loopIv)) {
+      if (::mlir::carts::ValueAnalysis::dependsOn(index, loopIv)) {
         matched = true;
         return WalkResult::interrupt();
       }
@@ -459,9 +458,9 @@ computeStaticTileIterations(sde::SdeSuIterateOp op,
     int64_t lb = 0;
     int64_t ub = 0;
     int64_t step = 0;
-    if (!::mlir::carts::arts::ValueAnalysis::getConstantIndex(op.getLowerBounds()[d], lb) ||
-        !::mlir::carts::arts::ValueAnalysis::getConstantIndex(op.getUpperBounds()[d], ub) ||
-        !::mlir::carts::arts::ValueAnalysis::getConstantIndex(op.getSteps()[d], step) || step <= 0)
+    if (!::mlir::carts::ValueAnalysis::getConstantIndex(op.getLowerBounds()[d], lb) ||
+        !::mlir::carts::ValueAnalysis::getConstantIndex(op.getUpperBounds()[d], ub) ||
+        !::mlir::carts::ValueAnalysis::getConstantIndex(op.getSteps()[d], step) || step <= 0)
       return std::nullopt;
     tripCounts.push_back(ceilDivPositive(std::max<int64_t>(0, ub - lb), step));
   }
@@ -696,7 +695,7 @@ static bool stripMineLoop(scf::ForOp loop, Value tileIterations) {
     return false;
 
   int64_t tileConstant = 0;
-  if (::mlir::carts::arts::ValueAnalysis::getConstantIndex(tileIterations, tileConstant) &&
+  if (::mlir::carts::ValueAnalysis::getConstantIndex(tileIterations, tileConstant) &&
       tileConstant <= 1)
     return false;
 
@@ -888,7 +887,7 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
       for (unsigned d = 0; d < numDims; ++d) {
         Value originalStep = op.getSteps()[d];
         int64_t constantStep = 0;
-        if (::mlir::carts::arts::ValueAnalysis::getConstantIndex(originalStep, constantStep) &&
+        if (::mlir::carts::ValueAnalysis::getConstantIndex(originalStep, constantStep) &&
             constantStep <= 0) {
           badStep = true;
           break;

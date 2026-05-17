@@ -27,7 +27,6 @@ namespace mlir::carts::sde {
 ARTS_DEBUG_SETUP(scalar_forwarding);
 
 using namespace mlir;
-using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {

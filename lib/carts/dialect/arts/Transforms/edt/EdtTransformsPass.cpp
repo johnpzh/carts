@@ -303,7 +303,7 @@ unsigned EdtTransformsPass::analyzeCriticalPath(func::FuncOp func,
     EdtOp edt = node->getEdtOp();
 
     /// Set critical_path_distance directly on the EdtOp.
-    edt->setAttr(AttrNames::Operation::Contract::CriticalPathDistance,
+    edt->setAttr(::mlir::carts::arts::AttrNames::Operation::Contract::CriticalPathDistance,
                  IntegerAttr::get(i64Type, dist));
 
     /// Also update LoweringContractOps on the EDT's dependency acquires.
@@ -386,7 +386,7 @@ static void markDepNarrowable(DbAcquireOp acquire, Value ptr,
                               std::optional<ArtsDepPattern> edtDepPattern,
                               ArrayRef<int64_t> haloFootprint = {}) {
   if (contractOp) {
-    contractOp->setAttr(AttrNames::Operation::Contract::NarrowableDep,
+    contractOp->setAttr(::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep,
                         UnitAttr::get(contractOp.getContext()));
   } else {
     /// No existing contract -- create one with the marker.
@@ -398,7 +398,7 @@ static void markDepNarrowable(DbAcquireOp acquire, Value ptr,
     auto newContractOp =
         upsertLoweringContract(builder, acquire.getLoc(), ptr, newInfo);
     if (newContractOp) {
-      newContractOp->setAttr(AttrNames::Operation::Contract::NarrowableDep,
+      newContractOp->setAttr(::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep,
                              UnitAttr::get(newContractOp.getContext()));
     }
   }

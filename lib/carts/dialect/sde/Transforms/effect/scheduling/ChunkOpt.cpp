@@ -25,7 +25,6 @@ namespace mlir::carts::sde {
 #include <algorithm>
 
 using namespace mlir;
-using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -75,7 +74,7 @@ static Value buildTripCountValue(OpBuilder &builder, Location loc,
 
   int64_t constantStep = 0;
   Value safeStep = step;
-  if (::mlir::carts::arts::ValueAnalysis::getConstantIndex(step, constantStep)) {
+  if (::mlir::carts::ValueAnalysis::getConstantIndex(step, constantStep)) {
     if (constantStep <= 0)
       return Value();
   }
@@ -87,7 +86,7 @@ static Value buildTripCountValue(OpBuilder &builder, Location loc,
   Value nonNegativeSpan =
       arith::SelectOp::create(builder, loc, spanIsNegative, zero, span);
 
-  if (!::mlir::carts::arts::ValueAnalysis::getConstantIndex(step, constantStep)) {
+  if (!::mlir::carts::ValueAnalysis::getConstantIndex(step, constantStep)) {
     Value stepIsTooSmall = arith::CmpIOp::create(
         builder, loc, arith::CmpIPredicate::sle, step, zero);
     safeStep = arith::SelectOp::create(builder, loc, stepIsTooSmall, one, step);

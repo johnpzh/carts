@@ -18,7 +18,7 @@
 #include "llvm/ADT/StringRef.h"
 
 namespace mlir {
-namespace carts::arts {
+namespace carts {
 
 ///===----------------------------------------------------------------------===///
 /// RemovalUtils - Manages deferred operation removal
@@ -84,7 +84,7 @@ private:
   SetVector<Operation *> opsToRemove;
 };
 
-} // namespace carts::arts
+} // namespace carts
 } // namespace mlir
 
 #endif // ARTS_UTILS_REMOVALUTILS_H

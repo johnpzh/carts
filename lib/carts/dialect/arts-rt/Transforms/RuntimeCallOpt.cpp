@@ -32,7 +32,7 @@ ARTS_DEBUG_SETUP(runtime_call_opt);
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts_rt;
-using mlir::carts::arts::debugStream;
+using mlir::carts::debugStream;
 using mlir::carts::arts::findHoistTarget;
 
 namespace {

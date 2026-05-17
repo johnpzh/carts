@@ -20,7 +20,6 @@ namespace mlir::carts::sde {
 ARTS_DEBUG_SETUP(semantic_contracts);
 
 using namespace mlir;
-using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 namespace {
@@ -40,7 +39,7 @@ static Value accessRoot(Value value) {
   if (!value)
     return {};
   if (isa<BaseMemRefType>(value.getType()))
-    return ::mlir::carts::arts::ValueAnalysis::stripMemrefViewOps(value);
+    return ::mlir::carts::ValueAnalysis::stripMemrefViewOps(value);
   return value;
 }
 
@@ -217,9 +216,9 @@ static bool isSafeRank2OutOfPlaceStencilPromotion(
   if (!innerFor.getInitArgs().empty() || innerFor.getNumResults() != 0)
     return false;
   Value outerIv = op.getBody().front().getArgument(0);
-  if (::mlir::carts::arts::ValueAnalysis::dependsOn(innerFor.getLowerBound(), outerIv) ||
-      ::mlir::carts::arts::ValueAnalysis::dependsOn(innerFor.getUpperBound(), outerIv) ||
-      ::mlir::carts::arts::ValueAnalysis::dependsOn(innerFor.getStep(), outerIv))
+  if (::mlir::carts::ValueAnalysis::dependsOn(innerFor.getLowerBound(), outerIv) ||
+      ::mlir::carts::ValueAnalysis::dependsOn(innerFor.getUpperBound(), outerIv) ||
+      ::mlir::carts::ValueAnalysis::dependsOn(innerFor.getStep(), outerIv))
     return false;
 
   bool nestedLoop = false;

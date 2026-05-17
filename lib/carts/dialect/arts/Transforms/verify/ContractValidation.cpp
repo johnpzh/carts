@@ -144,7 +144,7 @@ struct ContractValidationPass
       /// If owner_dim_reachability is false but block partitioning is
       /// requested, emit warning
       auto partMode = contract->getAttrOfType<PartitionModeAttr>(
-          AttrNames::Operation::PartitionMode);
+          ::mlir::carts::arts::AttrNames::Operation::PartitionMode);
       if (!proof.ownerDimReachability && partMode &&
           (partMode.getValue() == PartitionMode::block ||
            partMode.getValue() == PartitionMode::stencil)) {
@@ -195,7 +195,7 @@ struct ContractValidationPass
         }
 
         /// narrowable_dep without owner_dims
-        if (contract->hasAttr(AttrNames::Operation::Contract::NarrowableDep) &&
+        if (contract->hasAttr(::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep) &&
             (!ownerDims || ownerDims->empty())) {
           contract.emitWarning("proof gap: narrowable_dep without owner_dims");
           ++proofGapWarnings;

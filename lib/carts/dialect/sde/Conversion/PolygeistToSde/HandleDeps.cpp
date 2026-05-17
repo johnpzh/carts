@@ -29,7 +29,6 @@ namespace mlir::carts::sde {
 ARTS_DEBUG_SETUP(handle_deps);
 
 using namespace mlir;
-using namespace mlir::carts::arts;
 using namespace mlir::carts;
 using namespace mlir::omp;
 
@@ -102,9 +101,9 @@ SdeHandleDepsPass::extractDepInfo(Value depVar, omp::TaskOp taskOp,
           info.indices.append(loadOp.getIndices().begin(),
                               loadOp.getIndices().end());
           for (size_t d = 0; d < info.indices.size(); ++d)
-            info.sizes.push_back(::mlir::carts::arts::createConstantIndex(builder, loc, 1));
+            info.sizes.push_back(::mlir::carts::createConstantIndex(builder, loc, 1));
           info.indices =
-              arts::clampDepIndices(info.source, info.indices, builder, loc);
+              ::mlir::carts::clampDepIndices(info.source, info.indices, builder, loc);
           return info;
         }
       }
@@ -156,9 +155,9 @@ SdeHandleDepsPass::extractDepInfo(Value depVar, omp::TaskOp taskOp,
     info.source = loadOp.getMemref();
     info.indices.append(loadOp.getIndices().begin(), loadOp.getIndices().end());
     for (size_t d = 0; d < info.indices.size(); ++d)
-      info.sizes.push_back(::mlir::carts::arts::createConstantIndex(builder, loc, 1));
+      info.sizes.push_back(::mlir::carts::createConstantIndex(builder, loc, 1));
     info.indices =
-        arts::clampDepIndices(info.source, info.indices, builder, loc);
+        ::mlir::carts::clampDepIndices(info.source, info.indices, builder, loc);
     return info;
   }
 

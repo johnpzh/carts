@@ -48,9 +48,9 @@ ARTS_DEBUG_SETUP(guid_range_call_opt);
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts_rt;
-using mlir::carts::arts::debugStream;
+using mlir::carts::debugStream;
 using mlir::carts::getStaticTripCount;
-using mlir::carts::arts::ValueAnalysis;
+using mlir::carts::ValueAnalysis;
 
 namespace {
 

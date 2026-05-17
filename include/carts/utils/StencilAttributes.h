@@ -1,7 +1,7 @@
 ///==========================================================================///
 /// File: StencilAttributes.h
 ///
-/// Stencil and halo attribute getter/setter functions for ARTS operations.
+/// Stencil and halo attribute getter/setter functions for CARTS operations.
 ///==========================================================================///
 
 #ifndef CARTS_UTILS_STENCILATTRIBUTES_H
@@ -17,8 +17,8 @@
 #include <optional>
 
 namespace mlir {
-namespace carts::arts {
-namespace AttrNames {
+namespace carts {
+namespace StencilAttrNames {
 namespace Operation {
 namespace Stencil {
 using namespace llvm;
@@ -36,7 +36,7 @@ constexpr StringLiteral HaloContractId("stencil_halo_contract_id");
 constexpr StringLiteral SupportedBlockHalo("stencil_supported_block_halo");
 } // namespace Stencil
 } // namespace Operation
-} // namespace AttrNames
+} // namespace StencilAttrNames
 
 inline ArrayAttr buildI64ArrayAttr(MLIRContext *ctx, ArrayRef<int64_t> values) {
   SmallVector<Attribute, 8> attrs;
@@ -78,7 +78,7 @@ inline std::optional<int64_t> getStencilCenterOffset(Operation *op) {
   if (!op)
     return std::nullopt;
   if (auto attr = op->getAttrOfType<IntegerAttr>(
-          AttrNames::Operation::Stencil::StencilCenterOffset))
+          ::mlir::carts::StencilAttrNames::Operation::Stencil::StencilCenterOffset))
     return attr.getInt();
   return std::nullopt;
 }
@@ -87,7 +87,7 @@ inline void setStencilCenterOffset(Operation *op, int64_t centerOffset) {
   if (!op)
     return;
   op->setAttr(
-      AttrNames::Operation::Stencil::StencilCenterOffset,
+      ::mlir::carts::StencilAttrNames::Operation::Stencil::StencilCenterOffset,
       IntegerAttr::get(IntegerType::get(op->getContext(), 64), centerOffset));
 }
 
@@ -95,7 +95,7 @@ inline std::optional<int64_t> getElementStride(Operation *op) {
   if (!op)
     return std::nullopt;
   if (auto attr = op->getAttrOfType<IntegerAttr>(
-          AttrNames::Operation::Stencil::ElementStride))
+          ::mlir::carts::StencilAttrNames::Operation::Stencil::ElementStride))
     return attr.getInt();
   return std::nullopt;
 }
@@ -103,7 +103,7 @@ inline std::optional<int64_t> getElementStride(Operation *op) {
 inline void setElementStride(Operation *op, int64_t stride) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::Stencil::ElementStride,
+  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::ElementStride,
               IntegerAttr::get(IndexType::get(op->getContext()), stride));
 }
 
@@ -111,7 +111,7 @@ inline std::optional<unsigned> getLeftHaloArgIndex(Operation *op) {
   if (!op)
     return std::nullopt;
   if (auto attr = op->getAttrOfType<IntegerAttr>(
-          AttrNames::Operation::Stencil::LeftHaloArgIdx)) {
+          ::mlir::carts::StencilAttrNames::Operation::Stencil::LeftHaloArgIdx)) {
     int64_t value = attr.getInt();
     if (value >= 0)
       return static_cast<unsigned>(value);
@@ -123,7 +123,7 @@ inline std::optional<unsigned> getRightHaloArgIndex(Operation *op) {
   if (!op)
     return std::nullopt;
   if (auto attr = op->getAttrOfType<IntegerAttr>(
-          AttrNames::Operation::Stencil::RightHaloArgIdx)) {
+          ::mlir::carts::StencilAttrNames::Operation::Stencil::RightHaloArgIdx)) {
     int64_t value = attr.getInt();
     if (value >= 0)
       return static_cast<unsigned>(value);
@@ -134,89 +134,89 @@ inline std::optional<unsigned> getRightHaloArgIndex(Operation *op) {
 inline void setLeftHaloArgIndex(Operation *op, unsigned argIndex) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::Stencil::LeftHaloArgIdx,
+  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::LeftHaloArgIdx,
               IntegerAttr::get(IndexType::get(op->getContext()), argIndex));
 }
 
 inline void setRightHaloArgIndex(Operation *op, unsigned argIndex) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::Stencil::RightHaloArgIdx,
+  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::RightHaloArgIdx,
               IntegerAttr::get(IndexType::get(op->getContext()), argIndex));
 }
 
 inline std::optional<SmallVector<int64_t, 4>>
 getStencilMinOffsets(Operation *op) {
   return readI64ArrayAttr(op,
-                          AttrNames::Operation::Stencil::FootprintMinOffsets);
+                          ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMinOffsets);
 }
 
 inline void setStencilMinOffsets(Operation *op, ArrayRef<int64_t> offsets) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::Stencil::FootprintMinOffsets,
+  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMinOffsets,
               buildI64ArrayAttr(op, offsets));
 }
 
 inline std::optional<SmallVector<int64_t, 4>>
 getStencilMaxOffsets(Operation *op) {
   return readI64ArrayAttr(op,
-                          AttrNames::Operation::Stencil::FootprintMaxOffsets);
+                          ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMaxOffsets);
 }
 
 inline void setStencilMaxOffsets(Operation *op, ArrayRef<int64_t> offsets) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::Stencil::FootprintMaxOffsets,
+  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMaxOffsets,
               buildI64ArrayAttr(op, offsets));
 }
 
 inline std::optional<SmallVector<int64_t, 4>>
 getStencilSpatialDims(Operation *op) {
-  return readI64ArrayAttr(op, AttrNames::Operation::Stencil::SpatialDims);
+  return readI64ArrayAttr(op, ::mlir::carts::StencilAttrNames::Operation::Stencil::SpatialDims);
 }
 
 inline void setStencilSpatialDims(Operation *op, ArrayRef<int64_t> dims) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::Stencil::SpatialDims,
+  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::SpatialDims,
               buildI64ArrayAttr(op, dims));
 }
 
 inline std::optional<SmallVector<int64_t, 4>>
 getStencilOwnerDims(Operation *op) {
-  return readI64ArrayAttr(op, AttrNames::Operation::Stencil::OwnerDims);
+  return readI64ArrayAttr(op, ::mlir::carts::StencilAttrNames::Operation::Stencil::OwnerDims);
 }
 
 inline void setStencilOwnerDims(Operation *op, ArrayRef<int64_t> dims) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::Stencil::OwnerDims,
+  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::OwnerDims,
               buildI64ArrayAttr(op, dims));
 }
 
 inline std::optional<SmallVector<int64_t, 4>>
 getStencilBlockShape(Operation *op) {
-  return readI64ArrayAttr(op, AttrNames::Operation::Stencil::BlockShape);
+  return readI64ArrayAttr(op, ::mlir::carts::StencilAttrNames::Operation::Stencil::BlockShape);
 }
 
 inline void setStencilBlockShape(Operation *op, ArrayRef<int64_t> blockShape) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::Stencil::BlockShape,
+  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::BlockShape,
               buildI64ArrayAttr(op, blockShape));
 }
 
 inline std::optional<SmallVector<int64_t, 4>>
 getStencilWriteFootprint(Operation *op) {
-  return readI64ArrayAttr(op, AttrNames::Operation::Stencil::WriteFootprint);
+  return readI64ArrayAttr(op, ::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint);
 }
 
 inline void setStencilWriteFootprint(Operation *op,
                                      ArrayRef<int64_t> footprint) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::Stencil::WriteFootprint,
+  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint,
               buildI64ArrayAttr(op, footprint));
 }
 
@@ -224,7 +224,7 @@ inline std::optional<int64_t> getStencilHaloContractId(Operation *op) {
   if (!op)
     return std::nullopt;
   if (auto attr = op->getAttrOfType<IntegerAttr>(
-          AttrNames::Operation::Stencil::HaloContractId))
+          ::mlir::carts::StencilAttrNames::Operation::Stencil::HaloContractId))
     return attr.getInt();
   return std::nullopt;
 }
@@ -232,23 +232,23 @@ inline std::optional<int64_t> getStencilHaloContractId(Operation *op) {
 inline void setStencilHaloContractId(Operation *op, int64_t id) {
   if (!op)
     return;
-  op->setAttr(AttrNames::Operation::Stencil::HaloContractId,
+  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::HaloContractId,
               IntegerAttr::get(IntegerType::get(op->getContext(), 64), id));
 }
 
 inline bool hasSupportedBlockHalo(Operation *op) {
-  return op && op->hasAttr(AttrNames::Operation::Stencil::SupportedBlockHalo);
+  return op && op->hasAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::SupportedBlockHalo);
 }
 
 inline void setSupportedBlockHalo(Operation *op, bool enabled = true) {
   if (!op)
     return;
   if (enabled) {
-    op->setAttr(AttrNames::Operation::Stencil::SupportedBlockHalo,
+    op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::SupportedBlockHalo,
                 UnitAttr::get(op->getContext()));
     return;
   }
-  op->removeAttr(AttrNames::Operation::Stencil::SupportedBlockHalo);
+  op->removeAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::SupportedBlockHalo);
 }
 
 inline void copyStencilContractAttrs(Operation *source, Operation *dest) {
@@ -256,18 +256,18 @@ inline void copyStencilContractAttrs(Operation *source, Operation *dest) {
     return;
 
   for (StringRef attrName : {
-           AttrNames::Operation::Stencil::StencilCenterOffset,
-           AttrNames::Operation::Stencil::ElementStride,
-           AttrNames::Operation::Stencil::LeftHaloArgIdx,
-           AttrNames::Operation::Stencil::RightHaloArgIdx,
-           AttrNames::Operation::Stencil::FootprintMinOffsets,
-           AttrNames::Operation::Stencil::FootprintMaxOffsets,
-           AttrNames::Operation::Stencil::SpatialDims,
-           AttrNames::Operation::Stencil::OwnerDims,
-           AttrNames::Operation::Stencil::BlockShape,
-           AttrNames::Operation::Stencil::WriteFootprint,
-           AttrNames::Operation::Stencil::HaloContractId,
-           AttrNames::Operation::Stencil::SupportedBlockHalo,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::StencilCenterOffset,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::ElementStride,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::LeftHaloArgIdx,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::RightHaloArgIdx,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMinOffsets,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMaxOffsets,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::SpatialDims,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::OwnerDims,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::BlockShape,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::HaloContractId,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::SupportedBlockHalo,
        }) {
     if (Attribute attr = source->getAttr(attrName))
       dest->setAttr(attrName, attr);
@@ -281,18 +281,18 @@ inline void inheritStencilContractAttrs(Operation *source, Operation *dest) {
     return;
 
   for (StringRef attrName : {
-           AttrNames::Operation::Stencil::StencilCenterOffset,
-           AttrNames::Operation::Stencil::ElementStride,
-           AttrNames::Operation::Stencil::LeftHaloArgIdx,
-           AttrNames::Operation::Stencil::RightHaloArgIdx,
-           AttrNames::Operation::Stencil::FootprintMinOffsets,
-           AttrNames::Operation::Stencil::FootprintMaxOffsets,
-           AttrNames::Operation::Stencil::SpatialDims,
-           AttrNames::Operation::Stencil::OwnerDims,
-           AttrNames::Operation::Stencil::BlockShape,
-           AttrNames::Operation::Stencil::WriteFootprint,
-           AttrNames::Operation::Stencil::HaloContractId,
-           AttrNames::Operation::Stencil::SupportedBlockHalo,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::StencilCenterOffset,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::ElementStride,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::LeftHaloArgIdx,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::RightHaloArgIdx,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMinOffsets,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMaxOffsets,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::SpatialDims,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::OwnerDims,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::BlockShape,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::HaloContractId,
+           ::mlir::carts::StencilAttrNames::Operation::Stencil::SupportedBlockHalo,
        }) {
     if (dest->hasAttr(attrName))
       continue;
@@ -301,7 +301,7 @@ inline void inheritStencilContractAttrs(Operation *source, Operation *dest) {
   }
 }
 
-} // namespace carts::arts
+} // namespace carts
 } // namespace mlir
 
 #endif // CARTS_UTILS_STENCILATTRIBUTES_H

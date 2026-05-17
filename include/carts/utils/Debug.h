@@ -1,7 +1,7 @@
 ///==========================================================================///
 /// File: Debug.h
 ///
-/// Centralized debug utilities for ARTS passes and components
+/// Centralized debug utilities for CARTS passes and components
 ///==========================================================================///
 
 #ifndef ARTS_UTILS_ARTSDEBUG_H
@@ -12,10 +12,10 @@
 #include "llvm/Support/raw_ostream.h"
 
 namespace mlir {
-namespace carts::arts {
+namespace carts {
 #define ARTS_DEBUG_COLORS true
 
-/// Returns the ARTS debug output stream. Intended as the single entrypoint
+/// Returns the CARTS debug output stream. Intended as the single entrypoint
 /// for emitting debug logs so callers don't use llvm::dbgs() directly.
 static inline llvm::raw_ostream &debugStream() {
   static llvm::raw_ostream &stream = llvm::errs();
@@ -39,8 +39,8 @@ static inline llvm::raw_ostream &debugStream() {
 #define ARTS_DEBUG_SETUP(pass_name)                                            \
   static constexpr const char *ARTS_DEBUG_TYPE_STR = #pass_name;
 
-/// ARTS debug stream accessor. Use this instead of llvm::dbgs()
-#define ARTS_DBGS() debugStream()
+/// CARTS debug stream accessor. Use this instead of llvm::dbgs().
+#define ARTS_DBGS() ::mlir::carts::debugStream()
 
 #define ARTS_DEBUG_TYPE(x)                                                     \
   DEBUG_WITH_TYPE(ARTS_DEBUG_TYPE_STR, {                                       \
@@ -154,6 +154,6 @@ static inline llvm::raw_ostream &debugStream() {
     __os << " " << msg << "\n";                                                \
     llvm_unreachable(msg);                                                     \
   }
-} // namespace carts::arts
+} // namespace carts
 } // namespace mlir
 #endif /// ARTS_UTILS_ARTSDEBUG_H
