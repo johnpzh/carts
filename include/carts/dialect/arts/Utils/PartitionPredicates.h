@@ -25,12 +25,6 @@ inline bool requiresWorkerBoundsPlanning(PartitionMode m) {
   return m != PartitionMode::coarse;
 }
 
-/// Returns true for partition modes that support halo extension.
-/// Only stencil mode adds halo cells around block boundaries.
-inline bool supportsHaloExtension(PartitionMode m) {
-  return m == PartitionMode::stencil;
-}
-
 /// Returns true for partition modes that use element-level addressing.
 inline bool usesElementLayout(PartitionMode m) {
   return m == PartitionMode::fine_grained;

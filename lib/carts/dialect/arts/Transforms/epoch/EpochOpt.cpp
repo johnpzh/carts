@@ -38,8 +38,7 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
             this, "num-epochs-created-by-narrowing",
             "Number of new epochs created while narrowing epoch scopes"),
         numEpochPairsFused(this, "num-epoch-pairs-fused",
-                           "Number of consecutive epoch pairs fused") {
-  }
+                           "Number of consecutive epoch pairs fused") {}
 
   explicit EpochOptPass(mlir::carts::arts::AnalysisManager *AM)
       : AM(AM), numRepeatedEpochLoopsAmortized(
@@ -51,8 +50,7 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
             this, "num-epochs-created-by-narrowing",
             "Number of new epochs created while narrowing epoch scopes"),
         numEpochPairsFused(this, "num-epoch-pairs-fused",
-                           "Number of consecutive epoch pairs fused") {
-  }
+                           "Number of consecutive epoch pairs fused") {}
 
   EpochOptPass(mlir::carts::arts::AnalysisManager *AM, bool narrowing,
                bool fusion, bool amortization)
@@ -73,7 +71,8 @@ struct EpochOptPass : public impl::EpochOptBase<EpochOptPass> {
   void runOnOperation() override {
     ModuleOp module = getOperation();
     bool changed = false;
-    mlir::carts::arts::AnalysisManager &epochAM = getEpochAnalysisManager(module);
+    mlir::carts::arts::AnalysisManager &epochAM =
+        getEpochAnalysisManager(module);
     EpochAnalysis &epochAnalysis = epochAM.getEpochAnalysis();
 
     ARTS_INFO_HEADER(EpochOptPass);
@@ -137,10 +136,6 @@ namespace carts::arts {
 
 std::unique_ptr<Pass> createEpochOptPass() {
   return std::make_unique<EpochOptPass>();
-}
-
-std::unique_ptr<Pass> createEpochOptPass(mlir::carts::arts::AnalysisManager *AM) {
-  return std::make_unique<EpochOptPass>(AM);
 }
 
 std::unique_ptr<Pass> createEpochOptPass(mlir::carts::arts::AnalysisManager *AM,

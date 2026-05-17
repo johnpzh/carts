@@ -48,7 +48,6 @@ std::unique_ptr<Pass> createLoweringContractCleanupPass();
 
 /// High-level epoch scheduling passes.
 std::unique_ptr<Pass> createEpochOptPass();
-std::unique_ptr<Pass> createEpochOptPass(AnalysisManager *AM);
 /// Create EpochOpt with explicit scheduling flags.
 /// Structural opts (narrowing/fusion) are always enabled.
 std::unique_ptr<Pass> createEpochOptPass(AnalysisManager *AM,

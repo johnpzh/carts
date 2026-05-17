@@ -26,12 +26,6 @@ enum class AccessPatternType {
   Unknown
 };
 
-/// Temporal locality classification based on reuse distance
-enum class TemporalLocalityLevel { Excellent, Good, Fair, Poor, Unknown };
-
-/// Spatial locality classification
-enum class SpatialLocalityLevel { Excellent, Good, Fair, Poor, Unknown };
-
 /// Per-dimension access pattern classification
 enum class DimAccessPatternType {
   Unknown = 0,

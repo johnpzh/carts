@@ -208,8 +208,6 @@ public:
   std::optional<bool> hasUniformAccess, hasStrideOneAccess;
   std::optional<AccessPatternType> dominantAccessPattern;
   std::optional<bool> accessedInParallelLoop, hasLoopCarriedDeps;
-  std::optional<TemporalLocalityLevel> temporalLocality;
-  std::optional<SpatialLocalityLevel> spatialLocality;
   std::optional<int64_t> estimatedAccessBytes;
   SmallVector<DimAccessPatternType> dimAccessPatterns;
 

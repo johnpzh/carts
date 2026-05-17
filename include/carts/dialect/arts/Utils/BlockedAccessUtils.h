@@ -383,69 +383,6 @@ inline bool areEquivalentOwnedSliceExtents(Value lhs, Value rhs) {
          ValueAnalysis::areValuesEquivalent(lhs, rhs);
 }
 
-/// Check whether the offset is aligned to a block boundary.
-inline bool isAlignedToBlock(Value offset, Value blockSize) {
-  if (!offset || !blockSize)
-    return false;
-
-  Value off = ValueAnalysis::stripNumericCasts(offset);
-  Value bs = ValueAnalysis::stripClampOne(blockSize);
-
-  if (ValueAnalysis::isZeroConstant(off))
-    return true;
-
-  auto blockConst = ValueAnalysis::tryFoldConstantIndex(bs);
-  auto offsetConst = ValueAnalysis::tryFoldConstantIndex(off);
-  if (blockConst && offsetConst && *blockConst > 0)
-    return (*offsetConst % *blockConst) == 0;
-
-  if (auto mul = off.getDefiningOp<arith::MulIOp>()) {
-    Value lhs = ValueAnalysis::stripClampOne(mul.getLhs());
-    Value rhs = ValueAnalysis::stripClampOne(mul.getRhs());
-    if (ValueAnalysis::sameValue(lhs, bs) || ValueAnalysis::sameValue(rhs, bs))
-      return true;
-  }
-
-  return false;
-}
-
-/// Check whether a loop window stays within one block span.
-inline bool loopWindowFitsSingleBlock(scf::ForOp loop, Value blockSize) {
-  if (!loop || !blockSize)
-    return false;
-
-  Value lb = ValueAnalysis::stripNumericCasts(loop.getLowerBound());
-  Value ub = ValueAnalysis::stripNumericCasts(loop.getUpperBound());
-  Value bs = ValueAnalysis::stripClampOne(blockSize);
-
-  auto lbConst = ValueAnalysis::tryFoldConstantIndex(lb);
-  auto ubConst = ValueAnalysis::tryFoldConstantIndex(ub);
-  auto bsConst = ValueAnalysis::tryFoldConstantIndex(bs);
-  if (lbConst && ubConst && bsConst && *ubConst >= *lbConst)
-    return (*ubConst - *lbConst) <= *bsConst;
-
-  if (isKnownNonNegative(lb) && isValueBoundedByBlockSpan(ub, bs))
-    return true;
-
-  auto matchesLbPlusBs = [&](Value candidate, const auto &self) -> bool {
-    candidate = ValueAnalysis::stripNumericCasts(candidate);
-    if (detail::matchesBasePlusBlockSpan(candidate, lb, bs))
-      return true;
-    if (auto minOp = candidate.getDefiningOp<arith::MinUIOp>())
-      return self(minOp.getLhs(), self) || self(minOp.getRhs(), self);
-    if (auto selectOp = candidate.getDefiningOp<arith::SelectOp>()) {
-      if (auto cond = detail::tryFoldBool(selectOp.getCondition()))
-        return self(*cond ? selectOp.getTrueValue() : selectOp.getFalseValue(),
-                    self);
-      return self(selectOp.getTrueValue(), self) &&
-             self(selectOp.getFalseValue(), self);
-    }
-    return false;
-  };
-
-  return matchesLbPlusBs(ub, matchesLbPlusBs);
-}
-
 /// Check whether `idx` is the IV of a loop whose upper bound is clamped by the
 /// given block size. This is enough to prove the local slice stays within one
 /// block.
