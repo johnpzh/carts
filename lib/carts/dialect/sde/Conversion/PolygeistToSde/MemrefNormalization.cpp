@@ -387,7 +387,6 @@ private:
   /// Utilities
   Value createCanonicalAllocation(OpBuilder &builder, Location loc,
                                   Type elementType, ArrayRef<Value> dimSizes);
-  void transferMetadata(Operation *oldAlloc, Operation *newAlloc);
   void handleDeallocations(AllocPattern &pattern, Value ndAlloc,
                            OpBuilder &builder,
                            llvm::DenseSet<Operation *> &toRemove,
@@ -1746,8 +1745,6 @@ LogicalResult SdeMemrefNormalizationPass::transformPattern(AllocPattern &pattern
                                             pattern.finalElementType,
                                             pattern.hoistedDimensions);
 
-  transferMetadata(pattern.rootAlloc.getDefiningOp(), ndAlloc.getDefiningOp());
-
   ARTS_DEBUG("  Created N-D allocation: " << ndAlloc);
 
   /// Build unified removal set
@@ -2112,17 +2109,6 @@ Value SdeMemrefNormalizationPass::createCanonicalAllocation(
   auto memrefType = MemRefType::get(shape, elementType);
   auto allocOp = memref::AllocOp::create(builder, loc, memrefType, dynamicDims);
   return allocOp.getResult();
-}
-
-void SdeMemrefNormalizationPass::transferMetadata(Operation *oldAlloc,
-                                               Operation *newAlloc) {
-  if (!oldAlloc || !newAlloc)
-    return;
-  for (auto namedAttr : oldAlloc->getAttrs()) {
-    if (namedAttr.getName().strref().starts_with("arts.")) {
-      newAlloc->setAttr(namedAttr.getName(), namedAttr.getValue());
-    }
-  }
 }
 
 void SdeMemrefNormalizationPass::handleDeallocations(

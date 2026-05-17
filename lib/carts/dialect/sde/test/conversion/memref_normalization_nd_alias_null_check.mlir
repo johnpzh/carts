@@ -2,6 +2,8 @@
 
 // CHECK-LABEL: func.func @main
 // CHECK-NOT: arts.undef : i1
+// CHECK-NOT: arts.id
+// CHECK-NOT: arts.metadata_provenance
 // CHECK-NOT: memref<memref<?xmemref<?xmemref<?xf32>>>>
 // CHECK: %[[CANON:.*]] = memref.alloc() : memref<2x3x4xf32>
 // CHECK: %[[PTR0:.*]] = polygeist.memref2pointer %[[CANON]] : memref<2x3x4xf32> to !llvm.ptr
@@ -26,7 +28,7 @@ module {
     %wrapper = memref.alloca() : memref<memref<?xmemref<?xmemref<?xf32>>>>
     %alias0 = memref.alloca() : memref<memref<?xmemref<?xmemref<?xf32>>>>
     %alias1 = memref.alloca() : memref<memref<?xmemref<?xmemref<?xf32>>>>
-    %root = memref.alloc(%c2) : memref<?xmemref<?xmemref<?xf32>>>
+    %root = memref.alloc(%c2) {arts.id = 4242 : i64, arts.metadata_provenance = "legacy"} : memref<?xmemref<?xmemref<?xf32>>>
     memref.store %root, %wrapper[] : memref<memref<?xmemref<?xmemref<?xf32>>>>
     %root_alias0 = memref.load %wrapper[] : memref<memref<?xmemref<?xmemref<?xf32>>>>
     memref.store %root_alias0, %alias0[] : memref<memref<?xmemref<?xmemref<?xf32>>>>
