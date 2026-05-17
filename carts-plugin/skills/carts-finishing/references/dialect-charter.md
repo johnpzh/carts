@@ -9,7 +9,7 @@ arbitrary, the charter is wrong (update it) or the pass is wrong (move it).
 
 The authoritative documents are:
 
-- `docs/compiler/dialect-layering-vision.md` — layer contract
+- `docs/compiler/dialect-layering.md` — layer contract
 - `docs/compiler/pipeline.md` — live stage order and barriers
 - `docs/compiler/dialects/*/{README,analysis,optimizations}.md` — per-dialect
   responsibility
@@ -110,7 +110,7 @@ These do not block correctness but should be cleaned up in Phase 9. Cite when de
 | 1 | Wavefront family detection in ARTS, should be SDE (Invariant 5) | `lib/carts/dialect/sde/Transforms/state/PatternAnalysis.cpp`, `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`, `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp`, `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` | Move family + tile geometry into `PatternAnalysis` or a later SDE wavefront-planning pass; refactor ARTS realizers to consume the contract. |
 | 2 | ARTS re-detects elementwise/stencil/matmul facts that SDE already proved (Invariant 5) | `lib/carts/dialect/sde/Transforms/state/PatternAnalysis.cpp`, `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp`, `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` | Refactor ARTS refinement to consume SDE/CODIR contracts instead of reclassifying source semantics. |
 | 3 | ARTS creates epoch/EDT structure from re-detected wavefront/Jacobi patterns (Invariants 1 & 5) | `lib/carts/dialect/sde/Transforms/effect/distribution/DistributionPlanning.cpp`, `lib/carts/dialect/arts/Analysis/db/DbAnalysis.cpp`, `lib/carts/dialect/arts/Transforms/db/DbTransformsPass.cpp` | Enhance `PatternAnalysis` and SDE dependency planning; refactor ARTS materialization/refinement to consume lowered SDE contracts. |
-| 4 | Historical docs disagreed about `arts.lowering_contract` ownership. | Archived planning notes under `.carts/sessions/...` | The live contract is in `docs/compiler/dialect-layering-vision.md`: ARTS may carry abstract lowering contracts, but SDE/CODIR must materialize source facts before ARTS. |
+| 4 | Historical docs disagreed about `arts.lowering_contract` ownership. | Archived planning notes under `.carts/sessions/...` | The live contract is in `docs/compiler/dialect-layering.md`: ARTS may carry abstract lowering contracts, but SDE/CODIR must materialize source facts before ARTS. |
 
 ## Open questions (Phase 0 / task #1)
 

@@ -9,7 +9,7 @@ For per-dialect documentation (analysis, optimizations, READMEs), see
 [`dialects/arts/`](./dialects/arts/), and
 [`dialects/arts-rt/`](./dialects/arts-rt/). For the target
 `sde -> codir -> arts -> arts-rt` split, see
-[`dialect-layering-vision.md`](./dialect-layering-vision.md).
+[`dialect-layering.md`](./dialect-layering.md).
 
 Planning notes and experiment records live under `.carts/sessions/...`; this
 file stays limited to the live compiler pipeline.

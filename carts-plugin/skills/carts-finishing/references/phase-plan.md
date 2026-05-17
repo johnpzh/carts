@@ -145,7 +145,7 @@ captured under `.carts/sessions/...`.
 
 **Type:** structural
 
-**Stop condition:** `docs/compiler/dialect-layering-vision.md` and
+**Stop condition:** `docs/compiler/dialect-layering.md` and
 `docs/compiler/pipeline.md` reflect current state.
 
 **Sub-steps (cheapest to most invasive):**
@@ -174,7 +174,7 @@ Each sub-step must pass regression-guard against ALL samples and benchmarks in s
 **Actions:**
 
 1. Distill `docs/compiler/fix-attribution-log.md` into live plan updates and implementation anchors for CPS/ownership failures.
-2. Update `docs/compiler/dialect-layering-vision.md` with final placement rules.
+2. Update `docs/compiler/dialect-layering.md` with final placement rules.
 3. Keep experiment and sample-suite evidence under `.carts/sessions/...`.
 5. Merge `architecture/sde-restructuring` → `main`.
 6. Mark all carts-finishing tasks `completed`.
