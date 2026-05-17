@@ -30,8 +30,8 @@ duplicate-helper backlog.
 
 - Do not extract helpers that are intentionally pass-specific.
 - Do not create a new `*Utils` file when an existing semantic owner such as
-  `LoopUtils`, `LoopInvarianceUtils`, `ValueAnalysis`, `DbUtils`, or `EdtUtils`
-  already fits.
+  `LoopUtils`, ARTS `LoopInvarianceUtils`, shared `ValueAnalysis`, `DbUtils`,
+  or `EdtUtils` already fits.
 - Do not add new hardcoded project attribute strings; use centralized constants.
 - Do not use a later cleanup pass to make malformed IR correct.
 - Keep unrelated refactors out of the patch.

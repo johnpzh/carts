@@ -8,10 +8,12 @@ disagree.
 
 | Category | Canonical owner | Examples |
 |----------|-----------------|----------|
-| Value constants/folding/provenance | `include/carts/utils/ValueAnalysis.h` | `isZeroConstant`, `isOneConstant`, `tryFoldConstantIndex`, `sameValue`, `dependsOn`, `stripMemrefViewOps` |
+| Dialect-neutral value constants/folding | `include/carts/utils/ValueAnalysis.h` | `isZeroConstant`, `isOneConstant`, `tryFoldConstantIndex`, `sameValue`, `dependsOn`, `stripMemrefViewOps` |
+| ARTS DB/EDT/runtime-query value folding and provenance | `include/carts/dialect/arts/Utils/ValueAnalysisUtils.h` | `tryFoldConstantIndex`, `getUnderlyingValue`, `isDerivedFromPtr` |
+| ARTS-RT depv/DB pointer value folding and provenance | `include/carts/dialect/arts-rt/Utils/RtDbUtils.h` | `RtDbUtils::tryFoldConstantIndex`, `RtDbUtils::getUnderlyingValue`, `RtDbUtils::isDerivedFromPtr` |
 | Index builders/general IR helpers | `include/carts/utils/Utils.h` | `createConstantIndex`, `createZeroIndex`, `createOneIndex`, `dominatesOrInAncestor`, `replaceInRegion` |
 | Loop shape and IV helpers | `include/carts/utils/LoopUtils.h` | `isLoopInductionVar`, `getStaticTripCount`, `findNearestLoop`, `getLoopDepth` |
-| Loop invariance and hoisting | `include/carts/utils/LoopInvarianceUtils.h` | `isLoopInvariant`, `findHoistTarget`, `allOperandsDominate`, `isSafeDivRemToHoist` |
+| ARTS/ARTS-RT loop invariance and hoisting | `include/carts/dialect/arts/Utils/LoopInvarianceUtils.h` | `isLoopInvariant`, `findHoistTarget`, `allOperandsDominate`, `isSafeDivRemToHoist` |
 | Deferred removal | `include/carts/utils/RemovalUtils.h` | `markForRemoval`, `removeAllMarked`, `replaceWithUndef` |
 | SDE access/planning facts | `include/carts/dialect/sde/Analysis` or `include/carts/dialect/sde/Utils` | `AffineAccessUtils`, `StructuredOpAnalysis`, `SDECostModel` |
 | CODIR codelet ABI | `include/carts/dialect/codir/Utils` | `CodeletABIUtils` |
@@ -46,11 +48,11 @@ not loop-specific utilities.
 | Detect trailing work in a block | `hasWorkAfterInParentBlock()` | `Utils.h` |
 | Detect undef-like ops | `isUndefLikeOp()` | `Utils.h` |
 | Check if op is side-effect-free arithmetic-like | `isSideEffectFreeArithmeticLikeOp()` | `Utils.h` |
-| Check loop invariance | `isLoopInvariant()` | `LoopInvarianceUtils.h` |
-| Find loop hoist target | `findHoistTarget()` | `LoopInvarianceUtils.h` |
-| Check div/rem hoist safety | `isSafeDivRemToHoist()` | `LoopInvarianceUtils.h` |
-| All operands defined outside? | `allOperandsDefinedOutside()` | `LoopInvarianceUtils.h` |
-| All operands dominate point? | `allOperandsDominate()` | `LoopInvarianceUtils.h` |
+| Check ARTS/ARTS-RT loop invariance | `isLoopInvariant()` | `dialect/arts/Utils/LoopInvarianceUtils.h` |
+| Find ARTS/ARTS-RT loop hoist target | `findHoistTarget()` | `dialect/arts/Utils/LoopInvarianceUtils.h` |
+| Check div/rem hoist safety | `isSafeDivRemToHoist()` | `dialect/arts/Utils/LoopInvarianceUtils.h` |
+| All operands defined outside? | `allOperandsDefinedOutside()` | `dialect/arts/Utils/LoopInvarianceUtils.h` |
+| All operands dominate point? | `allOperandsDominate()` | `dialect/arts/Utils/LoopInvarianceUtils.h` |
 | Get static trip count | `getStaticTripCount()` | `LoopUtils.h` |
 | Is innermost loop? | `isInnermostLoop()` | `LoopUtils.h` |
 | Is loop IV? | `isLoopInductionVar()` | `LoopUtils.h` |
@@ -78,8 +80,8 @@ not loop-specific utilities.
 
 - Generic loop IV, nearest-loop, trip-count, and loop-depth helpers live in
   `LoopUtils.h`.
-- Loop-invariant and hoisting-safety helpers live in
-  `LoopInvarianceUtils.h`.
+- ARTS/ARTS-RT loop-invariant and hoisting-safety helpers live in
+  `include/carts/dialect/arts/Utils/LoopInvarianceUtils.h`.
 - SDE structured-access interpretation, such as row-major scalarized access
   decomposition, lives in SDE Analysis/Utils.
 - ARTS loop graph state, DB-relative loop windows, and ownership proofs live
@@ -108,7 +110,6 @@ See `include/carts/utils/OperationAttributes.h` and
 ```text
 include/carts/utils/Utils.h
 include/carts/utils/LoopUtils.h
-include/carts/utils/LoopInvarianceUtils.h
 include/carts/utils/RemovalUtils.h
 include/carts/utils/LocationMetadata.h
 include/carts/utils/RuntimeConfig.h
@@ -123,7 +124,9 @@ include/carts/dialect/arts/Utils/DbUtils.h
 include/carts/dialect/arts/Utils/EdtUtils.h
 include/carts/dialect/arts/Utils/BlockedAccessUtils.h
 include/carts/dialect/arts/Utils/LoweringContractUtils.h
+include/carts/dialect/arts/Utils/LoopInvarianceUtils.h
 include/carts/dialect/arts/Utils/PartitionPredicates.h
+include/carts/dialect/arts/Utils/ValueAnalysisUtils.h
 include/carts/dialect/arts/Utils/LaunchPolicyUtils.h
 include/carts/dialect/arts-rt/Utils/IdRegistry.h
 include/carts/dialect/arts-rt/Utils/RuntimeCallUtils.h

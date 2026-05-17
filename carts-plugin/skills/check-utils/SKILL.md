@@ -31,7 +31,8 @@ Do not create a new utility file until all of these are true:
 
 One semantic category gets one canonical home. Do not create `LoopIVUtils`,
 `IndexUtils`, `ValueHelpers`, or pass-local copies when `LoopUtils`,
-`LoopInvarianceUtils`, `ValueAnalysis`, or `Utils` already own the category.
+ARTS `LoopInvarianceUtils`, shared `ValueAnalysis`, or `Utils` already own the
+category.
 
 ## Pass-Local Helper Rule
 
@@ -57,10 +58,12 @@ Use the narrowest correct home:
 
 | Helper kind | Canonical home |
 |-------------|----------------|
-| Value constants, folding, provenance, same-value checks | `include/carts/utils/ValueAnalysis.h` |
+| Dialect-neutral value constants, folding, casts, memref views, and same-value checks | `include/carts/utils/ValueAnalysis.h` |
+| ARTS DB/EDT/runtime-query value folding and provenance | `include/carts/dialect/arts/Utils/ValueAnalysisUtils.h` |
+| ARTS-RT depv/DB pointer value folding and provenance | `include/carts/dialect/arts-rt/Utils/RtDbUtils.h` |
 | Index builders, dominance-aware replacement, pure-op predicates, block ordering | `include/carts/utils/Utils.h` |
 | Loop shape, loop IVs, nearest enclosing loops, trip counts, loop depth | `include/carts/utils/LoopUtils.h` |
-| Loop invariance, hoist legality, dominance for hoisting | `include/carts/utils/LoopInvarianceUtils.h` |
+| ARTS/ARTS-RT loop invariance, hoist legality, dominance for hoisting | `include/carts/dialect/arts/Utils/LoopInvarianceUtils.h` |
 | Deferred op removal | `include/carts/utils/RemovalUtils.h` |
 | Source locations, runtime config, instrumentation | existing `include/carts/utils/*` owner |
 | SDE source semantics, memref roots/access maps, PatternAnalysis facts, MU/CU/SU planning | `include/carts/dialect/sde/Analysis` or `include/carts/dialect/sde/Utils` |
@@ -126,7 +129,7 @@ Do not re-add these local copies:
 | same-value or range equivalence | `ValueAnalysis::{sameValue,areValuesEquivalent,areValueRangesEquivalent}` |
 | create zero/one/arbitrary index | `createZeroIndex`, `createOneIndex`, `createConstantIndex` |
 | loop IV, trip count, nearest loop, loop depth | `LoopUtils.h` |
-| loop-invariant hoisting target | `LoopInvarianceUtils.h` |
+| loop-invariant hoisting target | ARTS `LoopInvarianceUtils.h` |
 | pure op, store ordering, trailing block work | `Utils.h` |
 | undef-like op detection | `isUndefLikeOp` in `Utils.h` |
 | DB provenance/access info | `DbUtils.h` |
