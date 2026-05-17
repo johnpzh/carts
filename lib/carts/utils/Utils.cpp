@@ -37,6 +37,8 @@ bool hasFloatingPointType(Type type) {
   return false;
 }
 
+constexpr int64_t kCurrentNodeRoute = -1;
+
 } // namespace
 
 ///===----------------------------------------------------------------------===///

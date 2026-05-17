@@ -25,7 +25,6 @@
 #include "mlir/Transforms/CSE.h"
 #include "polygeist/Ops.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include <algorithm>
 #include <cassert>
 
 namespace mlir {
@@ -253,7 +252,7 @@ static std::optional<int64_t> tryFoldCmpResult(arith::CmpIOp cmp,
   return std::nullopt;
 }
 
-bool ValueAnalysis::canCloneOperation(
+static bool canCloneOperation(
     Operation *op, bool allowMemoryEffectFree,
     llvm::function_ref<bool(Operation *)> extraAllowed) {
   if (!op)
@@ -521,7 +520,7 @@ std::optional<int64_t> ValueAnalysis::getConstantIndexStripped(Value v) {
   return tryFoldConstantIndex(stripNumericCasts(v));
 }
 
-std::optional<double> ValueAnalysis::getConstantFloat(Value v) {
+static std::optional<double> getConstantFloat(Value v) {
   if (!v)
     return std::nullopt;
   if (auto c = v.getDefiningOp<arith::ConstantOp>()) {
@@ -579,12 +578,6 @@ bool ValueAnalysis::areValueRangesIdentical(ValueRange lhs, ValueRange rhs) {
     if (left != right)
       return false;
   return true;
-}
-
-bool ValueAnalysis::hasValueRangePrefix(ValueRange values, ValueRange prefix) {
-  if (values.size() < prefix.size())
-    return false;
-  return std::equal(prefix.begin(), prefix.end(), values.begin());
 }
 
 bool ValueAnalysis::areValueRangesEquivalent(ValueRange lhs, ValueRange rhs) {
@@ -1187,6 +1180,18 @@ Operation *ValueAnalysis::getUnderlyingOperation(Value v) {
 ///===----------------------------------------------------------------------===//
 /// Value Reconstruction for Dominance
 ///===----------------------------------------------------------------------===//
+
+template <typename OpType>
+static Value traceBinaryOp(OpType op, Operation *insertBefore,
+                           OpBuilder &builder, Location loc,
+                           llvm::function_ref<Value(Value)> traceValueFn) {
+  Value lhs = traceValueFn(op.getLhs());
+  Value rhs = traceValueFn(op.getRhs());
+  if (!lhs || !rhs)
+    return nullptr;
+  builder.setInsertionPoint(insertBefore);
+  return OpType::create(builder, loc, lhs, rhs);
+}
 
 Value ValueAnalysis::traceValueToDominating(Value value,
                                             Operation *insertBefore,

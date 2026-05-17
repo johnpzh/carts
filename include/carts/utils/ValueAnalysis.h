@@ -49,7 +49,6 @@ public:
 
   static std::optional<int64_t> getConstantIndexStripped(Value v);
 
-  static std::optional<double> getConstantFloat(Value v);
   static bool isConstantEqual(Value v, int64_t val);
   static bool isZeroConstant(Value v);
   static bool isOneConstant(Value v);
@@ -66,9 +65,6 @@ public:
 
   /// Exact SSA identity comparison for two value ranges.
   static bool areValueRangesIdentical(ValueRange lhs, ValueRange rhs);
-
-  /// Exact SSA identity comparison for a value range prefix.
-  static bool hasValueRangePrefix(ValueRange values, ValueRange prefix);
 
   /// ValueAnalysis::sameValue comparison for two value ranges.
   static bool areValueRangesEquivalent(ValueRange lhs, ValueRange rhs);
@@ -160,27 +156,9 @@ public:
                                       DominanceInfo &domInfo, Location loc,
                                       unsigned depth = 0);
 
-  /// Recreate a binary op at a dominating point. Callback traces each operand.
-  template <typename OpType>
-  static Value traceBinaryOp(OpType op, Operation *insertBefore,
-                             OpBuilder &builder, Location loc,
-                             llvm::function_ref<Value(Value)> traceValueFn) {
-    Value lhs = traceValueFn(op.getLhs());
-    Value rhs = traceValueFn(op.getRhs());
-    if (!lhs || !rhs)
-      return nullptr;
-    builder.setInsertionPoint(insertBefore);
-    return OpType::create(builder, loc, lhs, rhs);
-  }
-
   ///===----------------------------------------------------------------------===///
   /// Value Cloning Utilities
   ///===----------------------------------------------------------------------===///
-
-  /// Check if an operation can be safely cloned (constant-like or pure).
-  static bool
-  canCloneOperation(Operation *op, bool allowMemoryEffectFree = true,
-                    llvm::function_ref<bool(Operation *)> extraAllowed = {});
 
   /// Clone external values and their dependencies into a target region.
   static bool cloneValuesIntoRegion(

@@ -39,9 +39,8 @@ Value createConstantIndex(OpBuilder &builder, Location loc, int64_t val);
 Value createZeroIndex(OpBuilder &builder, Location loc);
 Value createOneIndex(OpBuilder &builder, Location loc);
 
-/// Route sentinel used by the ARTS runtime to mean "run/create on the current
-/// node" when no explicit destination rank is requested.
-inline constexpr int64_t kCurrentNodeRoute = -1;
+/// Create the ARTS runtime route sentinel for "run/create on the current node"
+/// when no explicit destination rank is requested.
 Value createCurrentNodeRoute(OpBuilder &builder, Location loc);
 
 /// ARTS Runtime Query Utilities
