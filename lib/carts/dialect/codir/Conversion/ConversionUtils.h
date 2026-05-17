@@ -204,52 +204,47 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
   if (!codelet || !task)
     return;
   MLIRContext *ctx = codelet.getContext();
+  Operation *taskOp = task.getOperation();
   if (auto pattern = codelet.getPatternAttr()) {
     arts::ArtsDepPattern depPattern = convertPattern(pattern.getValue());
     if (depPattern != arts::ArtsDepPattern::unknown) {
-      task->setAttr("depPattern",
-                    arts::ArtsDepPatternAttr::get(ctx, depPattern));
-      task->setAttr("distribution_pattern",
-                    arts::EdtDistributionPatternAttr::get(
-                        ctx, getDistributionPattern(pattern.getValue())));
-      task->setAttr("distribution_version",
-                    IntegerAttr::get(IntegerType::get(ctx, 32), 1));
-      task->setAttr("arts.pattern_revision",
-                    IntegerAttr::get(IntegerType::get(ctx, 64), 1));
+      setDepPattern(taskOp, depPattern);
+      setEdtDistributionPattern(taskOp,
+                                getDistributionPattern(pattern.getValue()));
+      setDistributionVersion(taskOp, 1);
+      setPatternRevision(taskOp, 1);
     }
   }
   if (auto kind = codelet.getDistributionKindAttr()) {
-    task->setAttr("distribution_kind",
-                  arts::EdtDistributionKindAttr::get(
-                      ctx, convertDistributionKind(kind.getValue())));
+    setEdtDistributionKind(taskOp, convertDistributionKind(kind.getValue()));
   }
   if (auto topology = codelet.getIterationTopologyAttr()) {
-    task->setAttr("planIterationTopology",
-                  arts::ArtsPlanIterationTopologyAttr::get(
-                      ctx, convertIterationTopology(topology.getValue())));
+    setPlanIterationTopologyAttr(
+        taskOp, arts::ArtsPlanIterationTopologyAttr::get(
+                    ctx, convertIterationTopology(topology.getValue())));
   }
   if (auto repetition = codelet.getRepetitionStructureAttr()) {
-    task->setAttr("planRepetitionStructure",
-                  arts::ArtsPlanRepetitionStructureAttr::get(
-                      ctx, convertRepetitionStructure(repetition.getValue())));
+    setPlanRepetitionStructureAttr(
+        taskOp, arts::ArtsPlanRepetitionStructureAttr::get(
+                    ctx, convertRepetitionStructure(repetition.getValue())));
   }
   if (auto async = codelet.getAsyncStrategyAttr()) {
-    task->setAttr("planAsyncStrategy",
-                  arts::ArtsPlanAsyncStrategyAttr::get(
-                      ctx, convertAsyncStrategy(async.getValue())));
+    setPlanAsyncStrategyAttr(
+        taskOp, arts::ArtsPlanAsyncStrategyAttr::get(
+                    ctx, convertAsyncStrategy(async.getValue())));
   }
   ArrayAttr tileShape = codelet.getTileShapeAttr();
   if (tileShape) {
     if (auto tileOwnerDims = codelet.getTileOwnerDimsAttr())
-      setPlanOwnerDimsAttr(task.getOperation(), tileOwnerDims);
-    setPlanPhysicalBlockShapeAttr(task.getOperation(), tileShape);
+      setPlanOwnerDimsAttr(taskOp, tileOwnerDims);
+    setPlanPhysicalBlockShapeAttr(taskOp, tileShape);
   } else if (auto ownerDims = codelet.getPlanOwnerDimsAttr()) {
-    setPlanOwnerDimsAttr(task.getOperation(), ownerDims);
+    setPlanOwnerDimsAttr(taskOp, ownerDims);
   }
   if (auto workerSlice = codelet.getLogicalWorkerSliceAttr())
-    task->setAttr("planLogicalWorkerSlice", workerSlice);
+    setPlanLogicalWorkerSliceAttr(taskOp, workerSlice);
   if (auto haloShape = codelet.getHaloShapeAttr())
-    task->setAttr("planHaloShape", haloShape);
+    setPlanHaloShapeAttr(taskOp, haloShape);
   if (auto minOffsets = codelet.getAccessMinOffsetsAttr())
     task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::
                       FootprintMinOffsets,
@@ -271,9 +266,9 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
         ::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint,
         writeFootprint);
   if (codelet.getInPlaceSafeAttr())
-    task->setAttr("inPlaceSafe", UnitAttr::get(ctx));
+    task.setInPlaceSafeAttr(UnitAttr::get(ctx));
   if (codelet.getInPlaceSharedStateAttr())
-    task->setAttr("inPlaceSharedState", UnitAttr::get(ctx));
+    task.setInPlaceSharedStateAttr(UnitAttr::get(ctx));
   if (auto pattern = codelet.getPatternAttr()) {
     if (pattern.getValue() == codir::CodirPattern::stencil_tiling_nd ||
         pattern.getValue() == codir::CodirPattern::cross_dim_stencil_3d ||
