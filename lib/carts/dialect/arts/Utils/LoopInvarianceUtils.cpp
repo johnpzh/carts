@@ -1,12 +1,11 @@
 ///==========================================================================///
 /// File: LoopInvarianceUtils.cpp
 ///
-/// Consolidated loop invariance checking and hoisting safety utilities.
-/// Previously duplicated across Hoisting.cpp, DataPointerHoisting.cpp,
-/// and ScalarReplacement.cpp.
+/// ARTS loop invariance checking and hoisting safety utilities.
 ///==========================================================================///
 
-#include "carts/utils/LoopInvarianceUtils.h"
+#include "carts/dialect/arts/Utils/LoopInvarianceUtils.h"
+
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 

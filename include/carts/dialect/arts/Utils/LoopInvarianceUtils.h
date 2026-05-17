@@ -1,13 +1,11 @@
 ///==========================================================================///
 /// File: LoopInvarianceUtils.h
 ///
-/// Consolidated loop invariance checking and hoisting safety utilities.
-/// Previously duplicated across Hoisting.cpp, DataPointerHoisting.cpp,
-/// and ScalarReplacement.cpp.
+/// ARTS loop invariance checking and hoisting safety utilities.
 ///==========================================================================///
 
-#ifndef CARTS_UTILS_LOOPINVARIANCEUTILS_H
-#define CARTS_UTILS_LOOPINVARIANCEUTILS_H
+#ifndef CARTS_DIALECT_ARTS_UTILS_LOOPINVARIANCEUTILS_H
+#define CARTS_DIALECT_ARTS_UTILS_LOOPINVARIANCEUTILS_H
 
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Dominance.h"
@@ -51,4 +49,4 @@ scf::ForOp findHoistTarget(Operation *op, Operation *addrOp,
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // CARTS_UTILS_LOOPINVARIANCEUTILS_H
+#endif // CARTS_DIALECT_ARTS_UTILS_LOOPINVARIANCEUTILS_H

@@ -29,7 +29,7 @@ namespace mlir::carts::arts_rt {
 } // namespace mlir::carts::arts_rt
 
 #include "carts/utils/Debug.h"
-#include "carts/utils/LoopInvarianceUtils.h"
+#include "carts/dialect/arts/Utils/LoopInvarianceUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Dominance.h"
