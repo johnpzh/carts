@@ -7,7 +7,6 @@
 #ifndef CARTS_UTILS_STENCILATTRIBUTES_H
 #define CARTS_UTILS_STENCILATTRIBUTES_H
 
-#include "carts/Dialect.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"

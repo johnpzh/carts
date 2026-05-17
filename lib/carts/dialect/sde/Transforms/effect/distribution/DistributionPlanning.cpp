@@ -16,7 +16,6 @@ namespace mlir::carts::sde {
 #include "carts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/utils/LoopUtils.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/StencilAttributes.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"

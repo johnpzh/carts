@@ -15,7 +15,6 @@
 #include "carts/dialect/codir/Conversion/Passes.h"
 #include "carts/dialect/codir/Utils/CodeletABIUtils.h"
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/StencilAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"

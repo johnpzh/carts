@@ -8,7 +8,6 @@
 
 #include "carts/dialect/arts/Analysis/heuristics/EpochHeuristics.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
-#include "carts/utils/StencilAttributes.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"

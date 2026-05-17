@@ -9,7 +9,6 @@
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
 #include "carts/utils/Debug.h"
 #include "carts/utils/LoopUtils.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Interfaces/LoopLikeInterface.h"
 #include <algorithm>

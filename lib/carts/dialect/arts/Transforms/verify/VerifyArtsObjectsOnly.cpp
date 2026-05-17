@@ -8,7 +8,6 @@
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/sde/IR/SdeDialect.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_VERIFYARTSOBJECTSONLY
 #include "carts/passes/Passes.h"

@@ -14,7 +14,6 @@
 /// Dialects
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/RemovalUtils.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
