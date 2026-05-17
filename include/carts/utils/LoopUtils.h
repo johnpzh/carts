@@ -33,15 +33,6 @@ inline bool isInnermostLoop(scf::ForOp loop) {
   return !hasNested;
 }
 
-/// Collect upper bounds from a while-loop condition for the given iteration
-/// argument. Recursively decomposes AND-ed conditions and extracts bounds
-/// from less-than / greater-than comparisons.
-void collectWhileBounds(Value cond, Value iterArg, SmallVector<Value> &bounds);
-
-/// Compute the loop nesting depth of an operation by counting how many
-/// enclosing loop operations surround it.
-unsigned getLoopDepth(Operation *op);
-
 /// Resolve a constant trip count for a loop-like op when all bounds are static.
 /// Returns std::nullopt when the trip count cannot be proven statically.
 std::optional<int64_t> getStaticTripCount(Operation *loopOp);

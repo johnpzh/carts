@@ -15,7 +15,7 @@
 #include "carts/dialect/arts/Analysis/graphs/db/PartitionBoundsAnalyzer.h"
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
-#include "carts/utils/LoopUtils.h"
+#include "carts/dialect/arts/Utils/LoopStructureUtils.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -311,8 +311,7 @@ LogicalResult DbBlockInfoComputer::computeBlockInfoFromWhile(
     *offsetForCheck = initValue;
 
   SmallVector<Value> whileBounds;
-  ::mlir::carts::collectWhileBounds(condition.getCondition(), loopIV,
-                                    whileBounds);
+  arts::collectWhileBounds(condition.getCondition(), loopIV, whileBounds);
   if (whileBounds.empty())
     return failure();
 

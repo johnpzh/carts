@@ -38,8 +38,8 @@
 #include "llvm/ADT/SmallVector.h"
 
 #include "carts/dialect/arts/Utils/LoopInvarianceUtils.h"
+#include "carts/dialect/arts/Utils/LoopStructureUtils.h"
 #include "carts/utils/Debug.h"
-#include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 ARTS_DEBUG_SETUP(hoisting);
 

@@ -10,6 +10,7 @@
 #define ARTS_DIALECT_CORE_TRANSFORMS_BLOCKLOOPSTRIPMININGINTERNAL_H
 
 #include "carts/Dialect.h"
+#include "carts/dialect/arts/Utils/LoopStructureUtils.h"
 #include "carts/utils/Debug.h"
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/Utils.h"
