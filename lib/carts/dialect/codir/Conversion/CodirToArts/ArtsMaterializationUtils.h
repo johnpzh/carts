@@ -33,6 +33,75 @@ static inline arts::ArtsMode convertAccessMode(codir::CodirAccessMode mode) {
   return arts::ArtsMode::inout;
 }
 
+static inline bool isReductionCodelet(codir::CodeletOp codelet) {
+  auto pattern = codelet.getPatternAttr();
+  return pattern && pattern.getValue() == codir::CodirPattern::reduction;
+}
+
+static inline bool
+isAtomicAddAddressable(Value memref, ValueRange indices,
+                       const DenseMap<Value, Value> &sourceByBlockArgument) {
+  auto memrefType = dyn_cast<MemRefType>(memref.getType());
+  if (!memrefType)
+    return false;
+  if (memrefType.getRank() == 0)
+    return indices.empty();
+  if (memrefType.getRank() != 1 || indices.size() != 1)
+    return false;
+  return isKnownZeroIndex(indices.front(), sourceByBlockArgument);
+}
+
+static inline bool sameMemrefAccess(Value lhsMemref, ValueRange lhsIndices,
+                                    Value rhsMemref, ValueRange rhsIndices) {
+  return lhsMemref == rhsMemref &&
+         ::mlir::carts::ValueAnalysis::areValueRangesIdentical(lhsIndices,
+                                                               rhsIndices);
+}
+
+static inline unsigned lowerIntegerAddReductionsToAtomics(
+    Region &region, const DenseMap<Value, Value> &sourceByBlockArgument) {
+  SmallVector<memref::StoreOp, 8> stores;
+  region.walk([&](memref::StoreOp store) { stores.push_back(store); });
+
+  unsigned lowered = 0;
+  for (memref::StoreOp store : stores) {
+    auto add = store.getValue().getDefiningOp<arith::AddIOp>();
+    if (!add || !add->hasOneUse())
+      continue;
+
+    memref::LoadOp load;
+    Value increment;
+    for (Value operand : add->getOperands()) {
+      auto candidate = operand.getDefiningOp<memref::LoadOp>();
+      if (!candidate)
+        continue;
+      if (!sameMemrefAccess(candidate.getMemref(), candidate.getIndices(),
+                            store.getMemref(), store.getIndices()))
+        continue;
+      load = candidate;
+      increment = add.getLhs() == operand ? add.getRhs() : add.getLhs();
+      break;
+    }
+    if (!load || !load->hasOneUse() || !increment)
+      continue;
+    if (!isAtomicAddAddressable(store.getMemref(), store.getIndices(),
+                                sourceByBlockArgument))
+      continue;
+
+    OpBuilder builder(store);
+    arts::AtomicAddOp::create(builder, store.getLoc(), store.getMemref(),
+                              increment);
+    store.erase();
+    if (add->use_empty())
+      add.erase();
+    if (load->use_empty())
+      load.erase();
+    ++lowered;
+  }
+
+  return lowered;
+}
+
 static inline arts::ArtsBarrierReason
 convertBarrierReason(sde::SdeBarrierReason reason) {
   switch (reason) {
@@ -164,43 +233,44 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
   if (auto pattern = codelet.getPatternAttr()) {
     arts::ArtsDepPattern depPattern = convertPattern(pattern.getValue());
     if (depPattern != arts::ArtsDepPattern::unknown) {
-      setDepPattern(taskOp, depPattern);
-      setEdtDistributionPattern(taskOp,
-                                getDistributionPattern(pattern.getValue()));
-      setDistributionVersion(taskOp, 1);
-      setPatternRevision(taskOp, 1);
+      arts::setDepPattern(taskOp, depPattern);
+      arts::setEdtDistributionPattern(taskOp,
+                                      getDistributionPattern(pattern.getValue()));
+      arts::setDistributionVersion(taskOp, 1);
+      arts::setPatternRevision(taskOp, 1);
     }
   }
   if (auto kind = codelet.getDistributionKindAttr()) {
-    setEdtDistributionKind(taskOp, convertDistributionKind(kind.getValue()));
+    arts::setEdtDistributionKind(taskOp,
+                                 convertDistributionKind(kind.getValue()));
   }
   if (auto topology = codelet.getIterationTopologyAttr()) {
-    setPlanIterationTopologyAttr(
+    arts::setPlanIterationTopologyAttr(
         taskOp, arts::ArtsPlanIterationTopologyAttr::get(
                     ctx, convertIterationTopology(topology.getValue())));
   }
   if (auto repetition = codelet.getRepetitionStructureAttr()) {
-    setPlanRepetitionStructureAttr(
+    arts::setPlanRepetitionStructureAttr(
         taskOp, arts::ArtsPlanRepetitionStructureAttr::get(
                     ctx, convertRepetitionStructure(repetition.getValue())));
   }
   if (auto async = codelet.getAsyncStrategyAttr()) {
-    setPlanAsyncStrategyAttr(taskOp,
-                             arts::ArtsPlanAsyncStrategyAttr::get(
-                                 ctx, convertAsyncStrategy(async.getValue())));
+    arts::setPlanAsyncStrategyAttr(
+        taskOp, arts::ArtsPlanAsyncStrategyAttr::get(
+                    ctx, convertAsyncStrategy(async.getValue())));
   }
   ArrayAttr tileShape = codelet.getTileShapeAttr();
   if (tileShape) {
     if (auto tileOwnerDims = codelet.getTileOwnerDimsAttr())
-      setPlanOwnerDimsAttr(taskOp, tileOwnerDims);
-    setPlanPhysicalBlockShapeAttr(taskOp, tileShape);
+      arts::setPlanOwnerDimsAttr(taskOp, tileOwnerDims);
+    arts::setPlanPhysicalBlockShapeAttr(taskOp, tileShape);
   } else if (auto ownerDims = codelet.getPlanOwnerDimsAttr()) {
-    setPlanOwnerDimsAttr(taskOp, ownerDims);
+    arts::setPlanOwnerDimsAttr(taskOp, ownerDims);
   }
   if (auto workerSlice = codelet.getLogicalWorkerSliceAttr())
-    setPlanLogicalWorkerSliceAttr(taskOp, workerSlice);
+    arts::setPlanLogicalWorkerSliceAttr(taskOp, workerSlice);
   if (auto haloShape = codelet.getHaloShapeAttr())
-    setPlanHaloShapeAttr(taskOp, haloShape);
+    arts::setPlanHaloShapeAttr(taskOp, haloShape);
   if (auto minOffsets = codelet.getAccessMinOffsetsAttr())
     task->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::
                       FootprintMinOffsets,
@@ -328,7 +398,7 @@ createDbBackedMemref(OpBuilder &builder, Location loc, MemRefType memrefType,
     partitionMode = physicalPlan->mode;
   }
 
-  Value route = createCurrentNodeRoute(builder, loc);
+  Value route = arts::createCurrentNodeRoute(builder, loc);
   arts::DbAllocOp dbAlloc;
   if (planSource) {
     dbAlloc = arts::DbAllocOp::create(
@@ -379,7 +449,7 @@ createDbBackedMemref(OpBuilder &builder, Location loc, MemRefType memrefType,
   if (failed(physicalPlan))
     return failure();
 
-  Value route = createCurrentNodeRoute(builder, loc);
+  Value route = arts::createCurrentNodeRoute(builder, loc);
   auto dbAlloc = arts::DbAllocOp::create(
       builder, loc, arts::ArtsMode::inout, route, arts::DbAllocType::heap,
       arts::DbMode::write, memrefType.getElementType(),
@@ -506,7 +576,7 @@ materializeRawCodirDependency(Value dep, codir::CodeletOp planSource) {
                                       ValueRange{}, replacement, planSource)))
         return failure();
     } else {
-      Value route = createCurrentNodeRoute(builder, root.getLoc());
+      Value route = arts::createCurrentNodeRoute(builder, root.getLoc());
       auto dbAlloc = arts::DbAllocOp::create(
           builder, root.getLoc(), arts::ArtsMode::inout, route,
           arts::DbAllocType::unknown, arts::DbMode::write,

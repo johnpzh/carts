@@ -10,14 +10,13 @@
 #include "SdeToCodir/SdeToCodirMetadataUtils.h"
 #include "SdeToCodir/TaskDepSliceUtils.h"
 #include "carts/Dialect.h"
-#include "carts/dialect/arts/Utils/DbLayoutPlanUtils.h"
-#include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/codir/Conversion/Passes.h"
 #include "carts/dialect/codir/Utils/CodeletABIUtils.h"
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/utils/StencilAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/IRMapping.h"
@@ -29,7 +28,6 @@
 #include "llvm/ADT/SetVector.h"
 #include <functional>
 using namespace mlir;
-using namespace mlir::carts::arts;
 using namespace mlir::carts;
 using namespace mlir::carts::codir;
 
@@ -151,75 +149,6 @@ remapIndexFoldResults(OpBuilder &builder, Location loc,
   for (OpFoldResult value : values)
     remapped.push_back(remapIndexFoldResult(builder, loc, value, mapping));
   return remapped;
-}
-
-static inline bool isReductionCodelet(codir::CodeletOp codelet) {
-  auto pattern = codelet.getPatternAttr();
-  return pattern && pattern.getValue() == codir::CodirPattern::reduction;
-}
-
-static inline bool
-isAtomicAddAddressable(Value memref, ValueRange indices,
-                       const DenseMap<Value, Value> &sourceByBlockArgument) {
-  auto memrefType = dyn_cast<MemRefType>(memref.getType());
-  if (!memrefType)
-    return false;
-  if (memrefType.getRank() == 0)
-    return indices.empty();
-  if (memrefType.getRank() != 1 || indices.size() != 1)
-    return false;
-  return isKnownZeroIndex(indices.front(), sourceByBlockArgument);
-}
-
-static inline bool sameMemrefAccess(Value lhsMemref, ValueRange lhsIndices,
-                                    Value rhsMemref, ValueRange rhsIndices) {
-  return lhsMemref == rhsMemref &&
-         ::mlir::carts::ValueAnalysis::areValueRangesIdentical(lhsIndices,
-                                                               rhsIndices);
-}
-
-static inline unsigned lowerIntegerAddReductionsToAtomics(
-    Region &region, const DenseMap<Value, Value> &sourceByBlockArgument) {
-  SmallVector<memref::StoreOp, 8> stores;
-  region.walk([&](memref::StoreOp store) { stores.push_back(store); });
-
-  unsigned lowered = 0;
-  for (memref::StoreOp store : stores) {
-    auto add = store.getValue().getDefiningOp<arith::AddIOp>();
-    if (!add || !add->hasOneUse())
-      continue;
-
-    memref::LoadOp load;
-    Value increment;
-    for (Value operand : add->getOperands()) {
-      auto candidate = operand.getDefiningOp<memref::LoadOp>();
-      if (!candidate)
-        continue;
-      if (!sameMemrefAccess(candidate.getMemref(), candidate.getIndices(),
-                            store.getMemref(), store.getIndices()))
-        continue;
-      load = candidate;
-      increment = add.getLhs() == operand ? add.getRhs() : add.getLhs();
-      break;
-    }
-    if (!load || !load->hasOneUse() || !increment)
-      continue;
-    if (!isAtomicAddAddressable(store.getMemref(), store.getIndices(),
-                                sourceByBlockArgument))
-      continue;
-
-    OpBuilder builder(store);
-    arts::AtomicAddOp::create(builder, store.getLoc(), store.getMemref(),
-                              increment);
-    store.erase();
-    if (add->use_empty())
-      add.erase();
-    if (load->use_empty())
-      load.erase();
-    ++lowered;
-  }
-
-  return lowered;
 }
 
 static inline std::optional<sde::SdeStructuredClassification>
@@ -354,6 +283,48 @@ static inline sde::SdeSuIterateOp getEnclosingSuIterate(Operation *op) {
   return {};
 }
 
+struct CodirMemoryAccessInfo {
+  Operation *op = nullptr;
+  Value memref;
+  SmallVector<Value> indices;
+};
+
+static inline std::optional<CodirMemoryAccessInfo>
+getCodirMemoryAccessInfo(Operation *op) {
+  if (!op)
+    return std::nullopt;
+
+  if (auto load = dyn_cast<memref::LoadOp>(op))
+    return CodirMemoryAccessInfo{
+        op, load.getMemRef(),
+        SmallVector<Value>(load.getIndices().begin(), load.getIndices().end())};
+  if (auto store = dyn_cast<memref::StoreOp>(op))
+    return CodirMemoryAccessInfo{
+        op, store.getMemRef(),
+        SmallVector<Value>(store.getIndices().begin(),
+                           store.getIndices().end())};
+  if (auto load = dyn_cast<polygeist::DynLoadOp>(op))
+    return CodirMemoryAccessInfo{
+        op, load.getMemref(),
+        SmallVector<Value>(load.getIndices().begin(), load.getIndices().end())};
+  if (auto store = dyn_cast<polygeist::DynStoreOp>(op))
+    return CodirMemoryAccessInfo{
+        op, store.getMemref(),
+        SmallVector<Value>(store.getIndices().begin(),
+                           store.getIndices().end())};
+  if (auto load = dyn_cast<affine::AffineLoadOp>(op))
+    return CodirMemoryAccessInfo{op, load.getMemRef(),
+                                 SmallVector<Value>(
+                                     load.getMapOperands().begin(),
+                                     load.getMapOperands().end())};
+  if (auto store = dyn_cast<affine::AffineStoreOp>(op))
+    return CodirMemoryAccessInfo{op, store.getMemRef(),
+                                 SmallVector<Value>(
+                                     store.getMapOperands().begin(),
+                                     store.getMapOperands().end())};
+  return std::nullopt;
+}
+
 static inline bool hasHostMemrefAccessOutsideSchedulingUnit(Value root) {
   if (!root)
     return false;
@@ -366,7 +337,7 @@ static inline bool hasHostMemrefAccessOutsideSchedulingUnit(Value root) {
       continue;
 
     for (Operation *user : llvm::make_early_inc_range(current.getUsers())) {
-      if (!user || user->getParentOfType<arts::EdtOp>() ||
+      if (!user || user->getParentOfType<codir::CodeletOp>() ||
           user->getParentOfType<sde::SdeSuIterateOp>())
         continue;
       if (isa<memref::DeallocOp, memref::DimOp>(user))
@@ -428,7 +399,7 @@ selectMuAllocWritePlan(sde::SdeMuAllocOp op) {
     return selected;
 
   result = module.walk([&](Operation *nested) {
-    auto access = arts::DbUtils::getMemoryAccessInfo(nested);
+    auto access = getCodirMemoryAccessInfo(nested);
     if (!access)
       return WalkResult::advance();
     if (::mlir::carts::ValueAnalysis::stripMemrefViewOps(access->memref) !=
@@ -1319,7 +1290,7 @@ static inline LogicalResult buildCodirTaskPlan(sde::SdeCuTaskOp task,
 
   Region &taskRegion = task.getBody();
   WalkResult walkResult = taskRegion.walk([&](Operation *nested) {
-    if (isa<sde::SdeYieldOp, arts::YieldOp>(nested))
+    if (isa<sde::SdeYieldOp>(nested))
       return WalkResult::advance();
     if (auto subview = dyn_cast<memref::SubViewOp>(nested);
         subview && plan.exactSubviewDepIndex.contains(subview.getResult()))
@@ -1513,7 +1484,7 @@ static inline LogicalResult convertCuTaskToCodir(sde::SdeCuTaskOp task) {
   };
 
   for (Operation &nested : task.getBody().front()) {
-    if (isa<sde::SdeYieldOp, arts::YieldOp>(&nested))
+    if (isa<sde::SdeYieldOp>(&nested))
       continue;
     if (auto subview = dyn_cast<memref::SubViewOp>(&nested);
         subview && plan.exactSubviewDepIndex.contains(subview.getResult()))
