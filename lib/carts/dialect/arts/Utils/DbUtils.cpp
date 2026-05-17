@@ -196,6 +196,59 @@ static MemoryRootSummary summarizeMemoryRoots(Operation *scope) {
 
 } // namespace
 
+namespace mlir::carts::arts {
+
+uint64_t getElementTypeByteSize(Type elemTy) {
+  if (!elemTy)
+    return 0;
+
+  if (auto memTy = dyn_cast<MemRefType>(elemTy)) {
+    uint64_t elementBytes = getElementTypeByteSize(memTy.getElementType());
+    if (elementBytes == 0)
+      return 0;
+
+    uint64_t total = elementBytes;
+    for (int64_t dim : memTy.getShape()) {
+      if (dim == ShapedType::kDynamic)
+        return 0;
+      total *= static_cast<uint64_t>(std::max<int64_t>(dim, 0));
+    }
+    return total;
+  }
+  if (auto intTy = dyn_cast<IntegerType>(elemTy))
+    return intTy.getWidth() / 8u;
+  if (auto fTy = dyn_cast<FloatType>(elemTy))
+    return fTy.getWidth() / 8u;
+  return 0;
+}
+
+MemRefType getElementMemRefType(Type elementType, ArrayRef<Value> elementSizes) {
+  const size_t rank = elementSizes.empty() ? 1 : elementSizes.size();
+  SmallVector<int64_t> elementShape(rank, ShapedType::kDynamic);
+  return MemRefType::get(elementShape, elementType);
+}
+
+ArtsMode combineAccessModes(ArtsMode mode1, ArtsMode mode2) {
+  if (mode1 == ArtsMode::uninitialized)
+    return mode2;
+  if (mode2 == ArtsMode::uninitialized)
+    return mode1;
+
+  if (mode1 == ArtsMode::inout || mode2 == ArtsMode::inout)
+    return ArtsMode::inout;
+
+  if ((mode1 == ArtsMode::in && mode2 == ArtsMode::out) ||
+      (mode1 == ArtsMode::out && mode2 == ArtsMode::in))
+    return ArtsMode::inout;
+
+  if (mode1 == mode2)
+    return mode1;
+
+  return ArtsMode::inout;
+}
+
+} // namespace mlir::carts::arts
+
 Value DbUtils::getAccessedMemref(Operation *memOp) {
   if (!memOp)
     return Value();

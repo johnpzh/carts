@@ -1,9 +1,8 @@
 ///==========================================================================///
 /// File: Utils.cpp
-/// Defines utility functions for the ARTS dialect.
+/// Defines dialect-neutral CARTS IR utility functions.
 ///==========================================================================///
 #include "carts/utils/Utils.h"
-#include "carts/Dialect.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -231,93 +230,5 @@ bool containsOmpOp(Operation *op) {
   });
   return found;
 }
-
-namespace arts {
-
-///===----------------------------------------------------------------------===///
-/// Type and Size Utilities
-///===----------------------------------------------------------------------===///
-
-/// Computes the byte size of the given element type, supporting integer and
-/// floating-point types. When the type is a memref, all static dimensions must
-/// be known; otherwise, the size is treated as unknown (returns 0).
-uint64_t getElementTypeByteSize(Type elemTy) {
-  /// Safety check: return 0 for null or invalid types
-  if (!elemTy) {
-    return 0;
-  }
-
-  if (auto memTy = dyn_cast<MemRefType>(elemTy)) {
-    uint64_t elementBytes = getElementTypeByteSize(memTy.getElementType());
-    if (elementBytes == 0)
-      return 0;
-
-    uint64_t total = elementBytes;
-    for (int64_t dim : memTy.getShape()) {
-      if (dim == ShapedType::kDynamic)
-        return 0;
-      total *= static_cast<uint64_t>(std::max<int64_t>(dim, 0));
-    }
-    return total;
-  }
-  if (auto intTy = dyn_cast<IntegerType>(elemTy))
-    return intTy.getWidth() / 8u;
-  if (auto fTy = dyn_cast<FloatType>(elemTy))
-    return fTy.getWidth() / 8u;
-  /// Unknown type
-  return 0;
-}
-
-/// Gets the element memref type for a given element type and sizes.
-MemRefType getElementMemRefType(Type elementType,
-                                ArrayRef<Value> elementSizes) {
-  /// Enforce scalar payloads use a single trailing dimension of 1 instead of
-  /// an empty shape to keep rank handling uniform across the pipeline.
-  const size_t rank = elementSizes.empty() ? 1 : elementSizes.size();
-  SmallVector<int64_t> elementShape(rank, ShapedType::kDynamic);
-  return MemRefType::get(elementShape, elementType);
-}
-
-///===----------------------------------------------------------------------===///
-/// Access Mode Utilities
-///===----------------------------------------------------------------------===///
-
-/// Combine two access modes and return the more permissive mode
-ArtsMode combineAccessModes(ArtsMode mode1, ArtsMode mode2) {
-  /// If either mode is uninitialized, return the other mode
-  if (mode1 == ArtsMode::uninitialized)
-    return mode2;
-  if (mode2 == ArtsMode::uninitialized)
-    return mode1;
-
-  /// If either mode is inout, the result is inout (most permissive)
-  if (mode1 == ArtsMode::inout || mode2 == ArtsMode::inout)
-    return ArtsMode::inout;
-
-  /// If one is 'in' and the other is 'out', the result is inout
-  if ((mode1 == ArtsMode::in && mode2 == ArtsMode::out) ||
-      (mode1 == ArtsMode::out && mode2 == ArtsMode::in))
-    return ArtsMode::inout;
-
-  /// If both are the same, return that mode
-  if (mode1 == mode2)
-    return mode1;
-
-  /// Default to inout for any other combination (shouldn't happen)
-  return ArtsMode::inout;
-}
-
-///===----------------------------------------------------------------------===///
-/// Operation Replacement Utilities
-///===----------------------------------------------------------------------===///
-
-/// Replaces uses of a value within a specific region.
-void replaceInRegion(Region &region, Value from, Value to) {
-  from.replaceUsesWithIf(to, [&](OpOperand &operand) {
-    return region.isAncestor(operand.getOwner()->getParentRegion());
-  });
-}
-
-} // namespace arts
 } // namespace carts
 } // namespace mlir

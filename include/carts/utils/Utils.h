@@ -1,13 +1,12 @@
 ///==========================================================================///
 /// File: Utils.h
 ///
-/// Utility functions for ARTS.
+/// Dialect-neutral CARTS IR utility functions.
 ///==========================================================================///
 
-#ifndef CARTS_UTILS_ARTSUTILS_H
-#define CARTS_UTILS_ARTSUTILS_H
+#ifndef CARTS_UTILS_UTILS_H
+#define CARTS_UTILS_UTILS_H
 
-#include "carts/Dialect.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -15,7 +14,6 @@
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
-#include "mlir/IR/Region.h"
 #include "mlir/IR/Value.h"
 
 namespace mlir {
@@ -53,20 +51,7 @@ bool isInsideOmpRegion(Operation *op);
 /// Return true when `op` transitively contains any OMP dialect operation.
 bool containsOmpOp(Operation *op);
 
-namespace arts {
-
-/// Type and Size Utilities
-uint64_t getElementTypeByteSize(Type elementType);
-MemRefType getElementMemRefType(Type elementType, ArrayRef<Value> elementSizes);
-
-/// Access Mode Utilities
-ArtsMode combineAccessModes(ArtsMode mode1, ArtsMode mode2);
-
-/// Region Replacement Utilities
-void replaceInRegion(Region &region, Value from, Value to);
-
-} // namespace arts
 } // namespace carts
 } // namespace mlir
 
-#endif // CARTS_UTILS_ARTSUTILS_H
+#endif // CARTS_UTILS_UTILS_H

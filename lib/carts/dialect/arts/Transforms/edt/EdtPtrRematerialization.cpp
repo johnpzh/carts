@@ -22,7 +22,6 @@
 /// Arts
 #include "carts/Dialect.h"
 #include "carts/dialect/arts/Transforms/edt/EdtPtrRematerialization.h"
-#include "carts/utils/Utils.h"
 
 /// Others
 #include "mlir/IR/Operation.h"
@@ -110,6 +109,12 @@ static bool shouldRematerialize(Operation *defOp,
     return true;
 
   return false;
+}
+
+static void replaceInRegion(Region &region, Value from, Value to) {
+  from.replaceUsesWithIf(to, [&](OpOperand &operand) {
+    return region.isAncestor(operand.getOwner()->getParentRegion());
+  });
 }
 
 void rematerializePointersInEdt(EdtOp edt) {

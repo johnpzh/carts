@@ -65,9 +65,9 @@ not loop-specific utilities.
 | Get indices from load/store | `DbUtils::getMemoryAccessIndices()` | `DbUtils.h` |
 | Is inside epoch? | `EdtUtils::isInsideEpoch()` | `EdtUtils.h` |
 | Classify EDT captures | `EdtEnvManager` / `EdtUtils` | `EdtUtils.h` |
-| Combine access modes | `combineAccessModes()` | `Utils.h` |
+| Combine access modes | `combineAccessModes()` | `DbUtils.h` |
 | Check writer mode | `DbUtils::isWriterMode()` | `DbUtils.h` |
-| Get element byte size | `getElementTypeByteSize()` | `Utils.h` |
+| Get element byte size | `getElementTypeByteSize()` | `DbUtils.h` |
 | Check block layout | `usesBlockLayout()` | `PartitionPredicates.h` |
 | Supports halo? | `supportsHaloExtension()` | `PartitionPredicates.h` |
 | Is stencil family? | `isStencilFamilyDepPattern()` | `StencilAttributes.h` |

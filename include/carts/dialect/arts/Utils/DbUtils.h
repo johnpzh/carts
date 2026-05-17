@@ -16,6 +16,7 @@
 #include "mlir/IR/Visitors.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/SetVector.h"
+#include <cstdint>
 #include <optional>
 
 namespace mlir {
@@ -30,6 +31,16 @@ struct DbLoweringInfo {
   SmallVector<Value> indices;
   bool isSingleElement = false;
 };
+
+/// Computes the byte size of a DB element type. Memref element types require
+/// all static dimensions; dynamic shapes return 0.
+uint64_t getElementTypeByteSize(Type elementType);
+
+/// Build the uniform memref type used for an ARTS DB element payload.
+MemRefType getElementMemRefType(Type elementType, ArrayRef<Value> elementSizes);
+
+/// Combine two ARTS access modes and return the least restrictive mode.
+ArtsMode combineAccessModes(ArtsMode mode1, ArtsMode mode2);
 
 ///===----------------------------------------------------------------------===///
 /// Datablock Utilities
