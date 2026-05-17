@@ -45,7 +45,8 @@ set(LIBS
   MLIRCartsArtsTransforms
   MLIRCartsArtsRtTransforms
   MLIRCartsCodir
-  MLIRCartsCodirConversion
+  MLIRCartsSdeToCodirConversion
+  MLIRCartsCodirToArtsConversion
   MLIRCartsCodirTransforms
   MLIRFuncAllExtensions
   MLIRPolygeist

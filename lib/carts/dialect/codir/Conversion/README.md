@@ -15,3 +15,7 @@ Shared conversion-only helpers live in `ConversionUtils.h`. Helpers that depend
 on SDE contracts, such as task-dependency slice proof logic, stay under
 `SdeToCodir/` instead of `codir/Utils` so the CODIR dialect library remains
 isolated from SDE and ARTS.
+
+The implementations are built as separate CMake targets:
+`MLIRCartsSdeToCodirConversion` links only the SDE/CODIR side, while
+`MLIRCartsCodirToArtsConversion` links ARTS for the materialization boundary.
