@@ -2,20 +2,18 @@
 /// File: RemovalUtils.h
 ///
 /// This file defines the RemovalUtils class which manages deferred
-/// operation removal with safety checks and verification utilities.
+/// operation removal with safety checks.
 ///==========================================================================///
 
-#ifndef ARTS_UTILS_REMOVALUTILS_H
-#define ARTS_UTILS_REMOVALUTILS_H
+#ifndef CARTS_UTILS_REMOVALUTILS_H
+#define CARTS_UTILS_REMOVALUTILS_H
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
-#include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/StringRef.h"
 
 namespace mlir {
 namespace carts {
@@ -40,25 +38,9 @@ public:
   /// Check if an operation is marked for removal
   bool isMarkedForRemoval(Operation *op) const;
 
-  /// Verify all users of a value are marked for removal
-  /// Returns success if all users are marked, failure otherwise
-  /// Logs warnings about unmarked users if verification fails
-  LogicalResult verifyAllUsersMarked(Value value, StringRef allocName = "");
-
-  /// Remove all marked operations (non-recursive)
-  /// Operations are removed in a safe order to avoid dangling references
-  /// Only removes operations that have no uses
-  void removeAllMarked();
-
   /// Remove all marked operations with recursive removal support
   /// Drops all uses before erasing
   void removeAllMarked(ModuleOp module, bool recursive = false);
-
-  /// Remove all arts.undef operations in the module
-  static void removeUndefOps(ModuleOp module);
-
-  /// Replace operation results with undef operations
-  static void replaceWithUndef(Operation *op, OpBuilder &builder);
 
   /// Get the set of operations to remove (for inspection/debugging)
   const SetVector<Operation *> &getOpsToRemove() const { return opsToRemove; }
@@ -81,10 +63,15 @@ private:
   void removeOpImpl(Operation *op, OpBuilder &builder,
                     SmallPtrSet<Operation *, 32> &seen, bool recursive);
 
+  /// Replace remaining result uses with dialect-neutral placeholders before
+  /// erasing an operation that still feeds a terminator.
+  static void replaceLiveUsesWithUnrealizedCast(Operation *op,
+                                                OpBuilder &builder);
+
   SetVector<Operation *> opsToRemove;
 };
 
 } // namespace carts
 } // namespace mlir
 
-#endif // ARTS_UTILS_REMOVALUTILS_H
+#endif // CARTS_UTILS_REMOVALUTILS_H

@@ -4,7 +4,6 @@
 ///==========================================================================///
 
 #include "carts/utils/RemovalUtils.h"
-#include "carts/Dialect.h"
 #include "carts/utils/Debug.h"
 #include "mlir/IR/Builders.h"
 
@@ -46,59 +45,6 @@ void RemovalUtils::markForRemoval(Operation *op) {
 
 bool RemovalUtils::isMarkedForRemoval(Operation *op) const {
   return opsToRemove.contains(op);
-}
-
-LogicalResult RemovalUtils::verifyAllUsersMarked(Value value,
-                                                 StringRef allocName) {
-  unsigned totalUsers = 0;
-  SmallVector<Operation *> unmarkedUsers;
-
-  for (Operation *user : value.getUsers()) {
-    totalUsers++;
-    if (!isMarkedForRemoval(user))
-      unmarkedUsers.push_back(user);
-  }
-
-  if (!unmarkedUsers.empty()) {
-    if (!allocName.empty()) {
-      ARTS_DEBUG("  Warning: " << allocName << " has " << unmarkedUsers.size()
-                               << " unmarked users out of " << totalUsers);
-    } else {
-      ARTS_DEBUG("  Warning: Value has " << unmarkedUsers.size()
-                                         << " unmarked users out of "
-                                         << totalUsers);
-    }
-    for (Operation *user : unmarkedUsers) {
-      ARTS_DEBUG("    - Unmarked: " << user->getName().getStringRef());
-    }
-    return failure();
-  }
-
-  return success();
-}
-
-void RemovalUtils::removeAllMarked() {
-  /// Track erased operations to avoid use-after-free when an operation
-  /// was erased as a nested child of a previously-erased operation
-  SmallPtrSet<Operation *, 32> erased;
-
-  for (Operation *op : opsToRemove) {
-    if (!op || erased.contains(op))
-      continue;
-
-    /// Check if operation is still alive (not already erased as a child)
-    Block *block = op->getBlock();
-    if (!block)
-      continue;
-
-    if (!op->use_empty())
-      continue;
-
-    /// Mark all nested operations as erased before erasing parent
-    op->walk([&](Operation *nested) { erased.insert(nested); });
-    op->erase();
-  }
-  opsToRemove.clear();
 }
 
 ///===----------------------------------------------------------------------===///
@@ -162,8 +108,9 @@ void RemovalUtils::removeOpImpl(Operation *op, OpBuilder &builder,
   }
 
   if (hasTerminatorUser) {
-    replaceWithUndef(op, builder);
-    ARTS_DEBUG("   - Replaced uses with undef (terminator user)");
+    replaceLiveUsesWithUnrealizedCast(op, builder);
+    ARTS_DEBUG("   - Replaced live uses with unrealized casts (terminator "
+               "user)");
   }
   op->dropAllUses();
 
@@ -208,18 +155,8 @@ void RemovalUtils::removeAllMarked(ModuleOp module, bool recursive) {
   ARTS_DEBUG(" - Removed " << seen.size() << " operations total");
 }
 
-///===----------------------------------------------------------------------===///
-/// Static Utility Methods
-///===----------------------------------------------------------------------===///
-
-void RemovalUtils::removeUndefOps(ModuleOp module) {
-  RemovalUtils mgr;
-  module.walk([&](arts::UndefOp op) { mgr.markForRemoval(op); });
-  ARTS_DEBUG(" - Removing " << mgr.size() << " undef operations");
-  mgr.removeAllMarked(module, /*recursive=*/true);
-}
-
-void RemovalUtils::replaceWithUndef(Operation *op, OpBuilder &builder) {
+void RemovalUtils::replaceLiveUsesWithUnrealizedCast(Operation *op,
+                                                     OpBuilder &builder) {
   if (!op || op->getNumResults() == 0)
     return;
 
@@ -227,9 +164,9 @@ void RemovalUtils::replaceWithUndef(Operation *op, OpBuilder &builder) {
   builder.setInsertionPoint(op);
   for (Value result : op->getResults()) {
     if (!result.use_empty()) {
-      auto undef =
-          arts::UndefOp::create(builder, op->getLoc(), result.getType());
-      result.replaceAllUsesWith(undef.getResult());
+      auto placeholder = UnrealizedConversionCastOp::create(
+          builder, op->getLoc(), result.getType(), ValueRange{});
+      result.replaceAllUsesWith(placeholder.getResult(0));
     }
   }
 }
