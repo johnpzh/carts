@@ -18,7 +18,6 @@
 #include "carts/dialect/sde/Analysis/AffineAccessUtils.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
 #include "carts/utils/Debug.h"
-#include "carts/utils/LoopUtils.h"
 #include "carts/utils/RemovalUtils.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -33,6 +32,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/Interfaces/CallInterfaces.h"
+#include "mlir/Interfaces/LoopLikeInterface.h"
 #include "mlir/Pass/Pass.h"
 #include "polygeist/Ops.h"
 #include "llvm/ADT/DenseSet.h"
@@ -55,6 +55,14 @@ namespace mlir::carts::sde {
 ARTS_DEBUG_SETUP(memref_normalization);
 
 namespace {
+
+static Operation *findNearestLoop(Operation *op) {
+  for (Operation *cur = op->getParentOp(); cur; cur = cur->getParentOp()) {
+    if (isa<LoopLikeOpInterface>(cur) || isa<omp::WsloopOp>(cur))
+      return cur;
+  }
+  return nullptr;
+}
 
 static Value getForwardedMemrefAliasSource(Value value) {
   if (!value)
@@ -853,7 +861,7 @@ SdeMemrefNormalizationPass::detectPattern(Value alloc) {
   /// Helper lambda to check a store and extract loop/inner alloc
   /// Uses recursive extraction to support N-level nesting
   auto checkStoreForPattern = [&](memref::StoreOp storeOp) -> bool {
-    Operation *loopOp = ::mlir::carts::findNearestLoop(storeOp.getOperation());
+    Operation *loopOp = findNearestLoop(storeOp.getOperation());
     if (!loopOp)
       return false;
     Value storedVal = storeOp.getValue();
@@ -2529,7 +2537,7 @@ bool SdeMemrefNormalizationPass::extractNestedAllocations(Value storedVal,
       return WalkResult::interrupt();
 
     /// Check if this store is inside a nested loop
-    Operation *nestedLoop = ::mlir::carts::findNearestLoop(nestedStore.getOperation());
+    Operation *nestedLoop = findNearestLoop(nestedStore.getOperation());
     if (!nestedLoop || nestedLoop == loopOp) {
       /// Not in a nested loop, skip
       return WalkResult::advance();

@@ -4,15 +4,42 @@
 
 #include "carts/dialect/sde/Analysis/AffineAccessUtils.h"
 
-#include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/OpenMP/OpenMPDialect.h"
+#include "mlir/Interfaces/LoopLikeInterface.h"
 
 using namespace mlir;
 using namespace mlir::carts;
 
 namespace mlir::carts::sde {
 namespace {
+
+static bool isLoopInductionVar(Value value) {
+  auto arg = dyn_cast_or_null<BlockArgument>(value);
+  if (!arg)
+    return false;
+
+  Operation *parent = arg.getOwner()->getParentOp();
+  if (!parent)
+    return false;
+
+  if (auto loopNest = dyn_cast<omp::LoopNestOp>(parent)) {
+    for (BlockArgument iv : loopNest.getIVs())
+      if (iv == arg)
+        return true;
+    return false;
+  }
+
+  if (auto loopLike = dyn_cast<LoopLikeOpInterface>(parent)) {
+    if (auto ivs = loopLike.getLoopInductionVars()) {
+      for (Value iv : *ivs)
+        if (iv == value)
+          return true;
+    }
+  }
+  return false;
+}
 
 static std::optional<LinearizedAccess2D>
 matchLinearizedMul(Value mulCandidate, Value innerCandidate,
@@ -54,8 +81,8 @@ matchLinearizedMul(Value mulCandidate, Value innerCandidate,
     return std::nullopt;
   }
 
-  bool lhsIv = ::mlir::carts::isLoopInductionVar(lhs);
-  bool rhsIv = ::mlir::carts::isLoopInductionVar(rhs);
+  bool lhsIv = isLoopInductionVar(lhs);
+  bool rhsIv = isLoopInductionVar(rhs);
   if (lhsIv && !rhsIv)
     return build(lhs, rhs);
   if (rhsIv && !lhsIv)
