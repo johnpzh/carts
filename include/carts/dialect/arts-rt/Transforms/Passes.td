@@ -40,6 +40,22 @@ def ConvertArtsRtToLLVM : Pass<"convert-arts-rt-to-llvm", "mlir::ModuleOp"> {
   ];
 }
 
+def LoweringContractCleanup
+    : Pass<"lowering-contract-cleanup", "mlir::ModuleOp"> {
+  let summary = "Erase arts.lowering_contract metadata ops before LLVM lowering";
+  let description = [{
+    Removes `arts.lowering_contract` operations after ARTS-RT lowering has
+    consumed them. This keeps semantic contracts available through ARTS object
+    refinement while ensuring final LLVM translation does not see dialect-only
+    metadata ops.
+  }];
+  let dependentDialects = [
+    "::mlir::carts::arts::ArtsDialect", "::mlir::func::FuncDialect"
+  ];
+  let constructor =
+      "mlir::carts::arts_rt::createLoweringContractCleanupPass()";
+}
+
 def DataPtrHoisting
     : Pass<"arts-data-ptr-hoisting", "mlir::ModuleOp"> {
   let summary =

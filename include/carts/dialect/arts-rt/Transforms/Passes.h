@@ -43,6 +43,8 @@ std::unique_ptr<::mlir::Pass> createConvertArtsRtToLLVMPass();
 std::unique_ptr<::mlir::Pass>
 createConvertArtsRtToLLVMPass(bool debug, bool distributedInitPerWorker,
                               const arts::RuntimeConfig *machine);
+/// Erase abstract ARTS lowering-contract metadata after ARTS-RT lowering.
+std::unique_ptr<::mlir::Pass> createLoweringContractCleanupPass();
 /// Hoist dependency/data pointer loads after runtime ABI lowering.
 std::unique_ptr<::mlir::Pass> createDataPtrHoistingPass();
 /// Rewrite scalar GUID reservation loops to range reservation calls.

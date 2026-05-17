@@ -142,18 +142,6 @@ def EdtPtrRematerialization
   let constructor = "mlir::carts::arts::createEdtPtrRematerializationPass()";
 }
 
-def LoweringContractCleanup : Pass<"lowering-contract-cleanup", "mlir::ModuleOp"> {
-  let summary = "Erase arts.lowering_contract metadata ops before LLVM lowering";
-  let description = [{
-    Removes `arts.lowering_contract` operations after all DB/EDT optimization
-    passes have consumed them. This keeps semantic contracts available through
-    post-db-refinement and late-concurrency-cleanup while ensuring
-    pre-lowering/LLVM translation does not see dialect-only metadata ops.
-  }];
-  let dependentDialects = ["::mlir::carts::arts::ArtsDialect", "::mlir::func::FuncDialect"];
-  let constructor = "mlir::carts::arts::createLoweringContractCleanupPass()";
-}
-
 def EpochOpt : Pass<"arts-epoch-opt", "mlir::ModuleOp"> {
   let summary = "Unified epoch optimizations (structural + scheduling)";
   let description = [{

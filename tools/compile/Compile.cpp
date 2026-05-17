@@ -1297,7 +1297,7 @@ void buildArtsRtToLLVMPipeline(PassManager &pm, bool debug,
   /// ConvertArtsRtToLLVM still consults lowering contracts for late dependency
   /// decisions (for example N-D stencil halo slices). Clean them up only after
   /// that conversion has consumed them.
-  pm.addPass(arts::createLoweringContractCleanupPass());
+  pm.addPass(arts_rt::createLoweringContractCleanupPass());
   pm.addPass(arts_rt::createGuidRangeCallOptPass());
   pm.addPass(arts_rt::createRuntimeCallOptPass());
   /// Hoist loop-invariant loads after ARTS-RT-to-LLVM lowering for
