@@ -1,4 +1,5 @@
 // RUN: %carts-compile %s --arts-config %arts_config --start-from codir-to-arts --pipeline codir-to-arts | %FileCheck %s --implicit-check-not="EDT region captures scalar value"
+// RUN: %carts-compile %s --arts-config %arts_config --start-from codir-to-arts --pipeline edt-transforms | %FileCheck %s --implicit-check-not="EDT region captures scalar value"
 
 module attributes {arts.runtime_total_nodes = 1 : i64, arts.runtime_total_workers = 8 : i64} {
   func.func private @sink(index)

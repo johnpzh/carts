@@ -285,9 +285,8 @@ static const std::array<llvm::StringLiteral, 6> kCodirToArtsPasses = {
     "DeadCodeElimination",
     "CSE(arts.edt)",
     "VerifyEdtCreated"};
-static const std::array<llvm::StringLiteral, 6> kEdtTransformsPasses = {
+static const std::array<llvm::StringLiteral, 5> kEdtTransformsPasses = {
     "EdtStructuralOpt(runAnalysis=false)",
-    "EdtICM",
     "DeadCodeElimination",
     "SymbolDCE",
     "CSE(arts.edt)",
@@ -1200,7 +1199,6 @@ void buildCodirToArtsPipeline(PassManager &pm) {
 /// EDT transformation passes.
 void buildEdtTransformsPipeline(PassManager &pm, arts::AnalysisManager *AM) {
   pm.addPass(arts::createEdtStructuralOptPass(AM, false));
-  pm.addPass(arts::createEdtICMPass());
   pm.addPass(arts::createDCEPass());
   pm.addPass(createSymbolDCEPass());
   addEdtLocalCSE(pm);

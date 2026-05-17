@@ -133,12 +133,6 @@ def CreateEpochs : Pass<"create-epochs", "mlir::ModuleOp"> {
   let constructor = "mlir::carts::arts::createCreateEpochsPass()";
 }
 
-def EdtICM : Pass<"arts-edt-icm", "mlir::ModuleOp"> {
-  let summary = "Hoist invariant operations from arts edt regions";
-  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
-  let constructor = "mlir::carts::arts::createEdtICMPass()";
-}
-
 def EdtPtrRematerialization
     : Pass<"edt-ptr-rematerialization", "mlir::ModuleOp"> {
   let summary = "Rematerialize pointer dependencies in EDTs.";

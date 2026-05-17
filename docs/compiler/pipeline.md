@@ -132,7 +132,6 @@ VerifyEdtCreated
 
 ```text
 EdtStructuralOpt(runAnalysis=false)
-EdtICM
 DeadCodeElimination
 SymbolDCE
 CSE(arts.edt)

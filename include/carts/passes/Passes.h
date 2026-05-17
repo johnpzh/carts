@@ -42,7 +42,6 @@ std::unique_ptr<Pass> createDbTransformsPass(AnalysisManager *AM);
 std::unique_ptr<Pass> createCreateEpochsPass();
 
 /// EDT-local cleanup and ARTS object refinement passes.
-std::unique_ptr<Pass> createEdtICMPass();
 std::unique_ptr<Pass> createEdtAllocaSinkingPass();
 std::unique_ptr<Pass> createEdtPtrRematerializationPass();
 std::unique_ptr<Pass> createLoweringContractCleanupPass();
