@@ -145,13 +145,6 @@ void RuntimeQueryOp::getCanonicalizationPatterns(RewritePatternSet &results,
   results.add<FoldKnownRuntimeQuery>(context);
 }
 
-bool isArtsRegion(Operation *op) { return isa<EdtOp>(op) || isa<EpochOp>(op); }
-bool isArtsOp(Operation *op) {
-  return isArtsRegion(op) ||
-         isa<arts::BarrierOp, arts::AllocOp, arts::DbAllocOp, arts::DbAcquireOp,
-             arts::DbReleaseOp, arts::DbFreeOp, arts::RuntimeQueryOp>(op);
-}
-
 /// Arts Dialect Types
 #define GET_TYPEDEF_CLASSES
 #include "carts/dialect/arts/IR/OpsTypes.cpp.inc"

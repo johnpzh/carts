@@ -26,9 +26,6 @@
 /// Arts Dialect
 #include "carts/dialect/arts/IR/OpsDialect.h.inc"
 
-bool isArtsRegion(mlir::Operation *op);
-bool isArtsOp(mlir::Operation *op);
-
 /// Arts Dialect Types
 #define GET_TYPEDEF_CLASSES
 #include "carts/dialect/arts/IR/OpsTypes.h.inc"

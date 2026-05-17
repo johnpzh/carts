@@ -6,9 +6,9 @@
 /// arts.* or arts_rt.* op indicates a lowering bug.
 ///==========================================================================///
 
-#include "carts/Dialect.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
+#include "carts/dialect/arts/Utils/ArtsOpUtils.h"
 namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_VERIFYLOWERED
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
@@ -27,7 +27,7 @@ struct VerifyLoweredPass
                               ->getContext()
                               ->getLoadedDialect<arts_rt::ArtsRtDialect>();
     getOperation().walk([&](Operation *op) {
-      if (isArtsOp(op)) {
+      if (arts::isArtsOp(op)) {
         op->emitError("high-level ARTS operation survived past "
                       "arts-rt-to-llvm");
         found = true;
