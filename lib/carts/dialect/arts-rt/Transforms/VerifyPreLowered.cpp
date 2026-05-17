@@ -9,10 +9,11 @@
 /// residual arts.edt/arts.epoch indicate a lowering boundary bug.
 ///==========================================================================///
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
+#include "carts/dialect/arts-rt/Transforms/Passes.h"
+namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_VERIFYPRELOWERED
-#include "carts/passes/Passes.h"
-#include "carts/passes/Passes.h.inc"
+#include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
+} // namespace mlir::carts::arts_rt
 #include "mlir/Pass/Pass.h"
 
 using namespace mlir;
@@ -20,7 +21,7 @@ using namespace mlir::carts;
 
 namespace {
 struct VerifyPreLoweredPass
-    : public impl::VerifyPreLoweredBase<VerifyPreLoweredPass> {
+    : public arts_rt::impl::VerifyPreLoweredBase<VerifyPreLoweredPass> {
   void runOnOperation() override {
     bool found = false;
     getOperation().walk([&](Operation *op) {
@@ -36,6 +37,6 @@ struct VerifyPreLoweredPass
 };
 } // namespace
 
-std::unique_ptr<Pass> mlir::carts::arts::createVerifyPreLoweredPass() {
+std::unique_ptr<Pass> mlir::carts::arts_rt::createVerifyPreLoweredPass() {
   return std::make_unique<VerifyPreLoweredPass>();
 }

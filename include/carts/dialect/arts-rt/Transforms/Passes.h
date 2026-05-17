@@ -38,6 +38,12 @@ std::unique_ptr<::mlir::Pass> createDbLoweringPass(uint64_t idStride = 1000);
 std::unique_ptr<::mlir::Pass> createEdtLoweringPass(uint64_t idStride = 1000);
 /// Lower ARTS epochs into ARTS-RT epoch ops.
 std::unique_ptr<::mlir::Pass> createEpochLoweringPass();
+/// Verify no arts.edt ops survive EDT lowering.
+std::unique_ptr<::mlir::Pass> createVerifyEdtLoweredPass();
+/// Verify no arts.epoch ops survive epoch lowering.
+std::unique_ptr<::mlir::Pass> createVerifyEpochLoweredPass();
+/// Verify no high-level scheduler ops survive pre-lowering.
+std::unique_ptr<::mlir::Pass> createVerifyPreLoweredPass();
 /// Lower runtime-shaped ARTS-RT ops to LLVM dialect runtime calls.
 std::unique_ptr<::mlir::Pass> createConvertArtsRtToLLVMPass();
 std::unique_ptr<::mlir::Pass>
@@ -57,6 +63,8 @@ std::unique_ptr<::mlir::Pass> createAliasScopeGenPass();
 std::unique_ptr<::mlir::Pass> createLoopVectorizationHintsPass();
 /// Transform memory-based reductions to register-based iter_args.
 std::unique_ptr<::mlir::Pass> createScalarReplacementPass();
+/// Verify no ARTS DB ops survive DB lowering.
+std::unique_ptr<::mlir::Pass> createVerifyDbLoweredPass();
 /// Verify no ARTS/ARTS-RT ops survive after runtime-to-LLVM lowering.
 std::unique_ptr<::mlir::Pass> createVerifyLoweredPass();
 

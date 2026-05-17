@@ -1278,7 +1278,7 @@ void buildPreLoweringPipeline(PassManager &pm) {
   addCanonicalizeAndEdtLocalCSE(pm);
   pm.addPass(arts_rt::createEdtLoweringPass(ArtsIdStride));
   addCanonicalizeAndCSE(pm);
-  pm.addPass(arts::createVerifyEdtLoweredPass());
+  pm.addPass(arts_rt::createVerifyEdtLoweredPass());
   pm.addPass(createLoopInvariantCodeMotionPass());
   /// Hoist loop-invariant DB/dep pointer loads before scalar replacement;
   /// buildArtsRtToLLVMPipeline runs hoisting again after ARTS-RT-to-LLVM
@@ -1289,8 +1289,8 @@ void buildPreLoweringPipeline(PassManager &pm) {
   addCanonicalizeAndCSE(pm);
   pm.addPass(arts_rt::createEpochLoweringPass());
   addCanonicalizeAndCSE(pm);
-  pm.addPass(arts::createVerifyEpochLoweredPass());
-  pm.addPass(arts::createVerifyPreLoweredPass());
+  pm.addPass(arts_rt::createVerifyEpochLoweredPass());
+  pm.addPass(arts_rt::createVerifyPreLoweredPass());
 }
 
 /// ARTS-RT to LLVM conversion passes.
@@ -1314,7 +1314,7 @@ void buildArtsRtToLLVMPipeline(PassManager &pm, bool debug,
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
   pm.addPass(createControlFlowSinkPass());
   pm.addPass(polygeist::createPolygeistCanonicalizePass());
-  pm.addPass(arts::createVerifyDbLoweredPass());
+  pm.addPass(arts_rt::createVerifyDbLoweredPass());
   pm.addPass(arts_rt::createVerifyLoweredPass());
 }
 

@@ -5,10 +5,11 @@
 /// epoch lowering.
 ///==========================================================================///
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
+#include "carts/dialect/arts-rt/Transforms/Passes.h"
+namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_VERIFYEPOCHLOWERED
-#include "carts/passes/Passes.h"
-#include "carts/passes/Passes.h.inc"
+#include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
+} // namespace mlir::carts::arts_rt
 #include "mlir/Pass/Pass.h"
 
 using namespace mlir;
@@ -16,7 +17,7 @@ using namespace mlir::carts;
 
 namespace {
 struct VerifyEpochLoweredPass
-    : public impl::VerifyEpochLoweredBase<VerifyEpochLoweredPass> {
+    : public arts_rt::impl::VerifyEpochLoweredBase<VerifyEpochLoweredPass> {
   void runOnOperation() override {
     bool found = false;
     getOperation().walk([&](arts::EpochOp op) {
@@ -29,6 +30,6 @@ struct VerifyEpochLoweredPass
 };
 } // namespace
 
-std::unique_ptr<Pass> mlir::carts::arts::createVerifyEpochLoweredPass() {
+std::unique_ptr<Pass> mlir::carts::arts_rt::createVerifyEpochLoweredPass() {
   return std::make_unique<VerifyEpochLoweredPass>();
 }

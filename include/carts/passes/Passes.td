@@ -266,28 +266,4 @@ def VerifyArtsObjectsOnly : Pass<"verify-arts-objects-only", "mlir::ModuleOp"> {
   let constructor = "mlir::carts::arts::createVerifyArtsObjectsOnlyPass()";
 }
 
-def VerifyPreLowered : Pass<"verify-pre-lowered", "mlir::ModuleOp"> {
-  let summary = "Verify pre-lowering removed high-level scheduler ops";
-  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
-  let constructor = "mlir::carts::arts::createVerifyPreLoweredPass()";
-}
-
-def VerifyEdtLowered : Pass<"verify-edt-lowered", "mlir::ModuleOp"> {
-  let summary = "Verify all EDTs have been lowered";
-  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
-  let constructor = "mlir::carts::arts::createVerifyEdtLoweredPass()";
-}
-
-def VerifyDbLowered : Pass<"verify-db-lowered", "mlir::ModuleOp"> {
-  let summary = "Verify all DB operations have been lowered";
-  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
-  let constructor = "mlir::carts::arts::createVerifyDbLoweredPass()";
-}
-
-def VerifyEpochLowered : Pass<"verify-epoch-lowered", "mlir::ModuleOp"> {
-  let summary = "Verify all epoch operations have been lowered";
-  let dependentDialects = ["::mlir::carts::arts::ArtsDialect"];
-  let constructor = "mlir::carts::arts::createVerifyEpochLoweredPass()";
-}
-
 #endif // CARTS_PASSES

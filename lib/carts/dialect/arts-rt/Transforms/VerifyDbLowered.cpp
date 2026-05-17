@@ -5,10 +5,11 @@
 /// lowering.
 ///==========================================================================///
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
+#include "carts/dialect/arts-rt/Transforms/Passes.h"
+namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_VERIFYDBLOWERED
-#include "carts/passes/Passes.h"
-#include "carts/passes/Passes.h.inc"
+#include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
+} // namespace mlir::carts::arts_rt
 #include "mlir/Pass/Pass.h"
 
 using namespace mlir;
@@ -16,7 +17,7 @@ using namespace mlir::carts;
 
 namespace {
 struct VerifyDbLoweredPass
-    : public impl::VerifyDbLoweredBase<VerifyDbLoweredPass> {
+    : public arts_rt::impl::VerifyDbLoweredBase<VerifyDbLoweredPass> {
   void runOnOperation() override {
     bool found = false;
     getOperation().walk([&](arts::DbAllocOp op) {
@@ -37,6 +38,6 @@ struct VerifyDbLoweredPass
 };
 } // namespace
 
-std::unique_ptr<Pass> mlir::carts::arts::createVerifyDbLoweredPass() {
+std::unique_ptr<Pass> mlir::carts::arts_rt::createVerifyDbLoweredPass() {
   return std::make_unique<VerifyDbLoweredPass>();
 }
