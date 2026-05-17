@@ -13,10 +13,11 @@ namespace mlir::carts::sde {
 } // namespace mlir::carts::sde
 
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
-#include "carts/utils/LoopUtils.h"
-#include "carts/utils/ArrayAttrUtils.h"
-#include "carts/utils/ValueAnalysis.h"
+#include "carts/dialect/sde/Utils/IterationSizingUtils.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
+#include "carts/utils/ArrayAttrUtils.h"
+#include "carts/utils/LoopUtils.h"
+#include "carts/utils/ValueAnalysis.h"
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -40,60 +41,15 @@ static Value getConstantIndex(OpBuilder &builder, Location loc, int64_t value) {
   return arith::ConstantIndexOp::create(builder, loc, value);
 }
 
-static Value buildLogicalWorkerCapacityValue(OpBuilder &builder,
-                                             Location loc) {
-  Value logicalWorkers =
-      sde::SdeResourceQueryOp::create(
-          builder, loc, sde::SdeResourceQueryKind::logicalWorkers)
-          .getResult();
-  return arith::MaxUIOp::create(builder, loc, logicalWorkers,
-                                getConstantIndex(builder, loc, 1));
-}
-
-static Value buildTripCountValue(OpBuilder &builder, Location loc,
-                                 sde::SdeSuIterateOp op) {
-  if (std::optional<int64_t> tripCount = getStaticTripCount(op.getOperation()))
-    return getConstantIndex(builder, loc, *tripCount);
-
-  if (op.getLowerBounds().size() != 1 || op.getUpperBounds().size() != 1 ||
-      op.getSteps().size() != 1)
-    return Value();
-
-  Value lowerBound = op.getLowerBounds().front();
-  Value upperBound = op.getUpperBounds().front();
-  Value step = op.getSteps().front();
-  Value zero = getConstantIndex(builder, loc, 0);
-  Value one = getConstantIndex(builder, loc, 1);
-
-  Value span = arith::SubIOp::create(builder, loc, upperBound, lowerBound);
-
-  int64_t constantStep = 0;
-  Value safeStep = step;
-  if (::mlir::carts::ValueAnalysis::getConstantIndex(step, constantStep)) {
-    if (constantStep <= 0)
-      return Value();
-  } else {
-    Value stepIsTooSmall = arith::CmpIOp::create(
-        builder, loc, arith::CmpIPredicate::sle, step, zero);
-    safeStep = arith::SelectOp::create(builder, loc, stepIsTooSmall, one, step);
-  }
-
-  Value spanIsNegative = arith::CmpIOp::create(
-      builder, loc, arith::CmpIPredicate::slt, span, zero);
-  Value nonNegativeSpan =
-      arith::SelectOp::create(builder, loc, spanIsNegative, zero, span);
-  return arith::CeilDivSIOp::create(builder, loc, nonNegativeSpan, safeStep);
-}
-
 static Value buildTileIterationValue(OpBuilder &builder, Location loc,
                                      sde::SdeSuIterateOp op,
                                      sde::SDECostModel &costModel) {
-  Value tripCount = buildTripCountValue(builder, loc, op);
+  Value tripCount = sde::buildTripCountValue(builder, loc, op);
   if (!tripCount)
     return Value();
 
   Value one = getConstantIndex(builder, loc, 1);
-  Value workerCountValue = buildLogicalWorkerCapacityValue(builder, loc);
+  Value workerCountValue = sde::buildLogicalWorkerCapacityValue(builder, loc);
   Value minIterationsValue = getConstantIndex(
       builder, loc,
       std::max<int64_t>(1, costModel.getMinIterationsPerWorker()));
@@ -153,9 +109,8 @@ buildPerDimTileIterations(OpBuilder &builder, Location loc,
 
   unsigned numDims = tripCounts.size();
   int workersPerDim =
-      std::max(1, static_cast<int>(std::ceil(
-                      std::pow(costModel.getLogicalWorkerCapacity(),
-                               1.0 / numDims))));
+      std::max(1, static_cast<int>(std::ceil(std::pow(
+                      costModel.getLogicalWorkerCapacity(), 1.0 / numDims))));
   int64_t minIter = costModel.getMinIterationsPerWorker();
 
   SmallVector<Value> tileIterations;
@@ -176,23 +131,17 @@ buildPerDimTileIterations(OpBuilder &builder, Location loc,
   return tileIterations;
 }
 
-static int64_t ceilDivPositive(int64_t value, int64_t divisor) {
-  return llvm::divideCeil(std::max<int64_t>(1, value),
-                          std::max<int64_t>(1, divisor));
-}
-
 static int64_t chooseMatmulColumnWorkers(int64_t workers) {
   workers = std::max<int64_t>(1, workers);
-  return std::max<int64_t>(
-      1, static_cast<int64_t>(
-             std::ceil(std::sqrt(static_cast<double>(workers)))));
+  return std::max<int64_t>(1, static_cast<int64_t>(std::ceil(
+                                  std::sqrt(static_cast<double>(workers)))));
 }
 
 static int64_t chooseStaticMatmulTile(int64_t extent, int64_t participants,
                                       int64_t minIterations) {
   if (extent <= 1)
     return std::max<int64_t>(1, extent);
-  int64_t balanced = ceilDivPositive(extent, participants);
+  int64_t balanced = sde::ceilDivPositive(extent, participants);
   int64_t preferred =
       std::max<int64_t>(balanced, std::max<int64_t>(1, minIterations));
   return std::clamp<int64_t>(preferred, 1, extent);
@@ -228,8 +177,7 @@ buildDirectMatmulTilePlan(OpBuilder &builder, Location loc,
   if (rows <= 1 || columns <= 1)
     return std::nullopt;
 
-  int64_t workers =
-      std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
+  int64_t workers = std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
   int64_t columnWorkers = chooseMatmulColumnWorkers(workers);
   int64_t minIterations =
       std::max<int64_t>(1, costModel.getMinIterationsPerWorker());
@@ -295,7 +243,8 @@ static bool loopWritesOwnerColumn(scf::ForOp loop, Value outputRoot,
   Value loopIv = loop.getInductionVar();
   bool matched = false;
   loop.walk([&](memref::StoreOp store) {
-    Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(store.getMemref());
+    Value root =
+        ::mlir::carts::ValueAnalysis::stripMemrefViewOps(store.getMemref());
     if (root != outputRoot)
       return WalkResult::advance();
 
@@ -316,18 +265,18 @@ static bool loopWritesOwnerColumn(scf::ForOp loop, Value outputRoot,
   return matched;
 }
 
-static void collectDirectMatmulColumnLoops(
-    Block &body, Value outputRoot, Value ownerIv,
-    SmallVectorImpl<scf::ForOp> &columnLoops) {
+static void
+collectDirectMatmulColumnLoops(Block &body, Value outputRoot, Value ownerIv,
+                               SmallVectorImpl<scf::ForOp> &columnLoops) {
   body.walk([&](scf::ForOp loop) {
     if (loopWritesOwnerColumn(loop, outputRoot, ownerIv))
       columnLoops.push_back(loop);
   });
 }
 
-static bool isDirectMemoryMatmulCandidate(sde::SdeSuIterateOp op,
-                                          Block &body) {
-  if (op.getLowerBounds().size() != 1 || op.getReductionAccumulators().size() != 0)
+static bool isDirectMemoryMatmulCandidate(sde::SdeSuIterateOp op, Block &body) {
+  if (op.getLowerBounds().size() != 1 ||
+      op.getReductionAccumulators().size() != 0)
     return false;
 
   std::optional<sde::LoopIndexedOutputPlan> outputPlan =
@@ -434,7 +383,7 @@ factorWorkersAcrossDims(int64_t workers, ArrayRef<int64_t> extents) {
     unsigned bestDim = 0;
     int64_t bestSpan = -1;
     for (auto [idx, extent] : llvm::enumerate(extents)) {
-      int64_t span = ceilDivPositive(extent, grid[idx]);
+      int64_t span = sde::ceilDivPositive(extent, grid[idx]);
       if (span > bestSpan) {
         bestSpan = span;
         bestDim = static_cast<unsigned>(idx);
@@ -458,11 +407,16 @@ computeStaticTileIterations(sde::SdeSuIterateOp op,
     int64_t lb = 0;
     int64_t ub = 0;
     int64_t step = 0;
-    if (!::mlir::carts::ValueAnalysis::getConstantIndex(op.getLowerBounds()[d], lb) ||
-        !::mlir::carts::ValueAnalysis::getConstantIndex(op.getUpperBounds()[d], ub) ||
-        !::mlir::carts::ValueAnalysis::getConstantIndex(op.getSteps()[d], step) || step <= 0)
+    if (!::mlir::carts::ValueAnalysis::getConstantIndex(op.getLowerBounds()[d],
+                                                        lb) ||
+        !::mlir::carts::ValueAnalysis::getConstantIndex(op.getUpperBounds()[d],
+                                                        ub) ||
+        !::mlir::carts::ValueAnalysis::getConstantIndex(op.getSteps()[d],
+                                                        step) ||
+        step <= 0)
       return std::nullopt;
-    tripCounts.push_back(ceilDivPositive(std::max<int64_t>(0, ub - lb), step));
+    tripCounts.push_back(
+        sde::ceilDivPositive(std::max<int64_t>(0, ub - lb), step));
   }
 
   int64_t minIter = std::max<int64_t>(1, costModel.getMinIterationsPerWorker());
@@ -472,27 +426,22 @@ computeStaticTileIterations(sde::SdeSuIterateOp op,
     int64_t tripCount = tripCounts.front();
     if (tripCount <= 0)
       return std::nullopt;
-    int64_t balanced =
-        ceilDivPositive(
-            tripCount,
-            std::max<int64_t>(1, costModel.getLogicalWorkerCapacity()));
-    tileIterations.push_back(
-        std::clamp(std::max<int64_t>(balanced, minIter), int64_t{1},
-                   tripCount));
+    int64_t balanced = sde::ceilDivPositive(
+        tripCount, std::max<int64_t>(1, costModel.getLogicalWorkerCapacity()));
+    tileIterations.push_back(std::clamp(std::max<int64_t>(balanced, minIter),
+                                        int64_t{1}, tripCount));
     return tileIterations;
   }
 
-  int64_t workersPerDim =
-      std::max<int64_t>(1, static_cast<int64_t>(std::ceil(std::pow(
-                              costModel.getLogicalWorkerCapacity(),
-                              1.0 / numDims))));
+  int64_t workersPerDim = std::max<int64_t>(
+      1, static_cast<int64_t>(std::ceil(
+             std::pow(costModel.getLogicalWorkerCapacity(), 1.0 / numDims))));
   for (int64_t tripCount : tripCounts) {
     if (tripCount <= 0)
       return std::nullopt;
-    int64_t balanced = ceilDivPositive(tripCount, workersPerDim);
-    tileIterations.push_back(
-        std::clamp(std::max<int64_t>(balanced, minIter), int64_t{1},
-                   tripCount));
+    int64_t balanced = sde::ceilDivPositive(tripCount, workersPerDim);
+    tileIterations.push_back(std::clamp(std::max<int64_t>(balanced, minIter),
+                                        int64_t{1}, tripCount));
   }
   return tileIterations;
 }
@@ -501,9 +450,8 @@ static void applyStencilTileGuardsToStaticPlan(
     sde::SdeSuIterateOp op, SmallVectorImpl<int64_t> &tileIterations,
     unsigned numDims, sde::SDECostModel &costModel) {
   SmallVector<int64_t> halos = getStencilHaloWidths(op);
-  for (unsigned d = 0; d < numDims && d < halos.size() &&
-                       d < tileIterations.size();
-       ++d)
+  for (unsigned d = 0;
+       d < numDims && d < halos.size() && d < tileIterations.size(); ++d)
     tileIterations[d] = std::max<int64_t>(tileIterations[d], halos[d]);
 
   int64_t elemSize = 8;
@@ -515,8 +463,8 @@ static void applyStencilTileGuardsToStaticPlan(
     foundElem = true;
     return WalkResult::interrupt();
   });
-  int64_t cacheLineTile = costModel.getL2CacheSize() /
-                          (elemSize * std::max<unsigned>(1, numDims));
+  int64_t cacheLineTile =
+      costModel.getL2CacheSize() / (elemSize * std::max<unsigned>(1, numDims));
   cacheLineTile = std::max<int64_t>(1, cacheLineTile);
   for (int64_t &tile : tileIterations)
     tile = std::min<int64_t>(tile, cacheLineTile);
@@ -572,10 +520,9 @@ buildNdStencilPhysicalTilePlan(sde::SdeSuIterateOp op,
       op.getPhysicalBlockShapeAttr() || op.getInPlaceSharedStateAttr())
     return std::nullopt;
   auto pattern = op.getPattern();
-  if (!pattern ||
-      (*pattern != sde::SdePattern::cross_dim_stencil_3d &&
-       *pattern != sde::SdePattern::stencil_tiling_nd &&
-       *pattern != sde::SdePattern::higher_order_stencil))
+  if (!pattern || (*pattern != sde::SdePattern::cross_dim_stencil_3d &&
+                   *pattern != sde::SdePattern::stencil_tiling_nd &&
+                   *pattern != sde::SdePattern::higher_order_stencil))
     return std::nullopt;
 
   auto effects = sde::collectStructuredMemoryEffects(op.getBody());
@@ -596,7 +543,8 @@ buildNdStencilPhysicalTilePlan(sde::SdeSuIterateOp op,
 
   PhysicalTilePlan plan;
   plan.blockShape.assign(outputPlan->shape.begin(), outputPlan->shape.end());
-  plan.tileIterations.assign(outputPlan->shape.begin(), outputPlan->shape.end());
+  plan.tileIterations.assign(outputPlan->shape.begin(),
+                             outputPlan->shape.end());
   if (plan.tileIterations.size() < op.getLowerBounds().size())
     return std::nullopt;
   plan.tileIterations.resize(op.getLowerBounds().size());
@@ -607,8 +555,8 @@ buildNdStencilPhysicalTilePlan(sde::SdeSuIterateOp op,
         static_cast<size_t>(rawDim) >= outputPlan->shape.size() ||
         idx >= minOffsets->size())
       continue;
-    int64_t halo = std::max<int64_t>(0, std::max(-(*minOffsets)[idx],
-                                                 (*maxOffsets)[idx]));
+    int64_t halo =
+        std::max<int64_t>(0, std::max(-(*minOffsets)[idx], (*maxOffsets)[idx]));
     if (halo == 0)
       continue;
     plan.ownerPhysicalDims.push_back(rawDim);
@@ -618,13 +566,11 @@ buildNdStencilPhysicalTilePlan(sde::SdeSuIterateOp op,
   if (plan.ownerPhysicalDims.empty())
     return std::nullopt;
 
-  SmallVector<int64_t, 4> grid =
-      factorWorkersAcrossDims(
-          std::max<int64_t>(1, costModel.getLogicalWorkerCapacity()),
-          ownerExtents);
+  SmallVector<int64_t, 4> grid = factorWorkersAcrossDims(
+      std::max<int64_t>(1, costModel.getLogicalWorkerCapacity()), ownerExtents);
   for (auto [idx, physicalDim] : llvm::enumerate(plan.ownerPhysicalDims)) {
     int64_t tile =
-        ceilDivPositive(outputPlan->shape[physicalDim], grid[idx]);
+        sde::ceilDivPositive(outputPlan->shape[physicalDim], grid[idx]);
     plan.blockShape[physicalDim] = tile;
     if (static_cast<size_t>(physicalDim) < plan.tileIterations.size())
       plan.tileIterations[physicalDim] = tile;
@@ -695,7 +641,8 @@ static bool stripMineLoop(scf::ForOp loop, Value tileIterations) {
     return false;
 
   int64_t tileConstant = 0;
-  if (::mlir::carts::ValueAnalysis::getConstantIndex(tileIterations, tileConstant) &&
+  if (::mlir::carts::ValueAnalysis::getConstantIndex(tileIterations,
+                                                     tileConstant) &&
       tileConstant <= 1)
     return false;
 
@@ -887,7 +834,8 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
       for (unsigned d = 0; d < numDims; ++d) {
         Value originalStep = op.getSteps()[d];
         int64_t constantStep = 0;
-        if (::mlir::carts::ValueAnalysis::getConstantIndex(originalStep, constantStep) &&
+        if (::mlir::carts::ValueAnalysis::getConstantIndex(originalStep,
+                                                           constantStep) &&
             constantStep <= 0) {
           badStep = true;
           break;
@@ -923,13 +871,12 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
           op.getStructuredClassificationAttr(), op.getPatternAttr(),
           op.getAccessMinOffsetsAttr(), op.getAccessMaxOffsetsAttr(),
           op.getOwnerDimsAttr(), op.getSpatialDimsAttr(),
-          op.getWriteFootprintAttr(),
-          op.getPhysicalOwnerDimsAttr(), op.getPhysicalBlockShapeAttr(),
-          op.getLogicalWorkerSliceAttr(), op.getPhysicalHaloShapeAttr(),
-          op.getIterationTopologyAttr(), op.getRepetitionStructureAttr(),
-          op.getAsyncStrategyAttr(), op.getCpsGroupIdAttr(),
-          op.getCpsStageIndexAttr(), op.getCpsStageCountAttr(),
-          op.getDistributionKindAttr(),
+          op.getWriteFootprintAttr(), op.getPhysicalOwnerDimsAttr(),
+          op.getPhysicalBlockShapeAttr(), op.getLogicalWorkerSliceAttr(),
+          op.getPhysicalHaloShapeAttr(), op.getIterationTopologyAttr(),
+          op.getRepetitionStructureAttr(), op.getAsyncStrategyAttr(),
+          op.getCpsGroupIdAttr(), op.getCpsStageIndexAttr(),
+          op.getCpsStageCountAttr(), op.getDistributionKindAttr(),
           op.getInPlaceSafeAttr(), op.getInPlaceSharedStateAttr(),
           op.getVectorizeWidthAttr(), op.getUnrollFactorAttr(),
           op.getInterleaveCountAttr());
@@ -957,13 +904,11 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
         }
         Value tileLimit =
             arith::AddIOp::create(rewriter, loc, tileBase, tiledSteps[d]);
-        Value tileUpper =
-            arith::MinUIOp::create(rewriter, loc, tileLimit,
-                                   op.getUpperBounds()[d]);
+        Value tileUpper = arith::MinUIOp::create(rewriter, loc, tileLimit,
+                                                 op.getUpperBounds()[d]);
         Value originalStep = op.getSteps()[d];
-        auto tileLoop =
-            scf::ForOp::create(rewriter, loc, tileBase, tileUpper,
-                               originalStep);
+        auto tileLoop = scf::ForOp::create(rewriter, loc, tileBase, tileUpper,
+                                           originalStep);
         tileLoops.push_back(tileLoop);
         mapper.map(srcBody.getArgument(d), tileLoop.getInductionVar());
         rewriter.setInsertionPointToStart(tileLoop.getBody());
@@ -972,7 +917,8 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
       cloneBodyIntoTileLoop(*computeBody, mapper, rewriter);
 
       if (directMatmul && !tileLoops.empty()) {
-        Value outputRoot = mapper.lookupOrDefault(directMatmulPlan->output.root);
+        Value outputRoot =
+            mapper.lookupOrDefault(directMatmulPlan->output.root);
         Value ownerIv = mapper.lookupOrDefault(srcBody.getArgument(0));
         unsigned tiledColumns = stripMineDirectMatmulColumnLoops(
             *tileLoops.back().getBody(), outputRoot, ownerIv,

@@ -13,12 +13,12 @@ namespace mlir::carts::sde {
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::carts::sde
 
-#include "carts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
-#include "carts/utils/LoopUtils.h"
-#include "carts/utils/ArrayAttrUtils.h"
-#include "carts/utils/ValueAnalysis.h"
+#include "carts/dialect/sde/Analysis/StructuredOpAnalysis.h"
+#include "carts/dialect/sde/Utils/IterationSizingUtils.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
+#include "carts/utils/ArrayAttrUtils.h"
+#include "carts/utils/LoopUtils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -69,11 +69,6 @@ static bool isInPlaceSelfReadStencil(sde::SdeSuIterateOp op) {
   return !effects.hasUnknownEffects && sde::hasInPlaceSelfRead(effects);
 }
 
-static int64_t ceilDivPositive(int64_t value, int64_t divisor) {
-  return llvm::divideCeil(std::max<int64_t>(1, value),
-                          std::max<int64_t>(1, divisor));
-}
-
 static SmallVector<int64_t, 4>
 factorWorkersAcrossDims(int64_t workers, ArrayRef<int64_t> extents) {
   SmallVector<int64_t, 4> grid(extents.size(), 1);
@@ -96,7 +91,7 @@ factorWorkersAcrossDims(int64_t workers, ArrayRef<int64_t> extents) {
     unsigned bestDim = 0;
     int64_t bestSpan = -1;
     for (auto [idx, extent] : llvm::enumerate(extents)) {
-      int64_t span = ceilDivPositive(extent, grid[idx]);
+      int64_t span = sde::ceilDivPositive(extent, grid[idx]);
       if (span > bestSpan) {
         bestSpan = span;
         bestDim = static_cast<unsigned>(idx);
@@ -136,12 +131,12 @@ chooseMappedSdeOwnerLoopDims(sde::SdeSuIterateOp op,
   return mappedLoopDims;
 }
 
-static bool buildOwnerDimPlan(
-    sde::SdeSuIterateOp op, const sde::StructuredOutputLayoutPlan &outputPlan,
-    ArrayRef<unsigned> ownerLoopDims, int64_t workers,
-    SmallVectorImpl<int64_t> &ownerPhysicalDims,
-    SmallVectorImpl<int64_t> &physicalBlockShape,
-    SmallVectorImpl<int64_t> &haloShape) {
+static bool buildOwnerDimPlan(sde::SdeSuIterateOp op,
+                              const sde::StructuredOutputLayoutPlan &outputPlan,
+                              ArrayRef<unsigned> ownerLoopDims, int64_t workers,
+                              SmallVectorImpl<int64_t> &ownerPhysicalDims,
+                              SmallVectorImpl<int64_t> &physicalBlockShape,
+                              SmallVectorImpl<int64_t> &haloShape) {
   if (ownerLoopDims.empty() || outputPlan.shape.empty())
     return false;
 
@@ -170,16 +165,16 @@ static bool buildOwnerDimPlan(
       factorWorkersAcrossDims(std::max<int64_t>(1, workers), ownerExtents);
   for (auto [idx, physicalDim] : llvm::enumerate(ownerPhysicalDims)) {
     physicalBlockShape[physicalDim] =
-        ceilDivPositive(outputPlan.shape[physicalDim], workerGrid[idx]);
+        sde::ceilDivPositive(outputPlan.shape[physicalDim], workerGrid[idx]);
   }
 
   return true;
 }
 
-static bool buildOwnerDimPlan(
-    const sde::LoopIndexedOutputPlan &outputPlan, int64_t workers,
-    SmallVectorImpl<int64_t> &ownerPhysicalDims,
-    SmallVectorImpl<int64_t> &physicalBlockShape) {
+static bool buildOwnerDimPlan(const sde::LoopIndexedOutputPlan &outputPlan,
+                              int64_t workers,
+                              SmallVectorImpl<int64_t> &ownerPhysicalDims,
+                              SmallVectorImpl<int64_t> &physicalBlockShape) {
   if (outputPlan.ownerPhysicalDims.empty() || outputPlan.shape.empty())
     return false;
 
@@ -202,7 +197,7 @@ static bool buildOwnerDimPlan(
       factorWorkersAcrossDims(std::max<int64_t>(1, workers), ownerExtents);
   for (auto [idx, physicalDim] : llvm::enumerate(ownerPhysicalDims)) {
     physicalBlockShape[physicalDim] =
-        ceilDivPositive(outputPlan.shape[physicalDim], workerGrid[idx]);
+        sde::ceilDivPositive(outputPlan.shape[physicalDim], workerGrid[idx]);
   }
 
   return true;
@@ -231,9 +226,8 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
       costModel.getLogicalWorkerCapacity() <= 1)
     return;
   auto classification = op.getStructuredClassification();
-  bool isStencil =
-      classification &&
-      *classification == sde::SdeStructuredClassification::stencil;
+  bool isStencil = classification &&
+                   *classification == sde::SdeStructuredClassification::stencil;
   if (op.getInPlaceSafe() && !isStencil)
     return;
   if (classification && !isStencil)
@@ -304,8 +298,7 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
       return;
   }
 
-  int64_t workers =
-      std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
+  int64_t workers = std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
   SmallVector<int64_t, 4> ownerDims;
   SmallVector<int64_t, 4> physicalBlockShape;
   if (!buildOwnerDimPlan(*secondaryPlan, workers, ownerDims,
@@ -327,7 +320,8 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
   }
   std::optional<sde::LoopIndexedOutputPlan> outputPlan =
       sde::findLoopIndexedOutputPlan(op);
-  if (!outputPlan || outputPlan->shape.empty() || outputPlan->shape.front() <= 0)
+  if (!outputPlan || outputPlan->shape.empty() ||
+      outputPlan->shape.front() <= 0)
     return;
   if (!classification) {
     auto effects = sde::collectStructuredMemoryEffects(op.getBody());
@@ -339,18 +333,17 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
       return;
   }
 
-  int64_t workers =
-      std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
+  int64_t workers = std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
   if (outputPlan->shape.front() >= workers * 4LL * 1024LL * 1024LL)
     workers *= 2;
   SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
-  physicalBlockShape.front() =
-      std::max<int64_t>(1,
-                        llvm::divideCeil(outputPlan->shape.front(), workers));
+  physicalBlockShape.front() = std::max<int64_t>(
+      1, llvm::divideCeil(outputPlan->shape.front(), workers));
 
   if (!classification)
-    op.setStructuredClassificationAttr(sde::SdeStructuredClassificationAttr::get(
-        op.getContext(), sde::SdeStructuredClassification::elementwise));
+    op.setStructuredClassificationAttr(
+        sde::SdeStructuredClassificationAttr::get(
+            op.getContext(), sde::SdeStructuredClassification::elementwise));
   op.setPhysicalOwnerDimsAttr(
       buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{0}));
   op.setPhysicalBlockShapeAttr(
@@ -372,25 +365,24 @@ static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
     return;
   std::optional<sde::LoopIndexedOutputPlan> outputPlan =
       sde::findLoopIndexedOutputPlan(op);
-  if (!outputPlan || outputPlan->shape.size() < 2 || outputPlan->shape[0] <= 0 ||
-      outputPlan->shape[1] <= 0)
+  if (!outputPlan || outputPlan->shape.size() < 2 ||
+      outputPlan->shape[0] <= 0 || outputPlan->shape[1] <= 0)
     return;
 
   auto effects = sde::collectStructuredMemoryEffects(op.getBody());
   if (effects.hasUnknownEffects || !effects.writes.contains(outputPlan->root))
     return;
 
-  int64_t workers =
-      std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
+  int64_t workers = std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
   SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
   SmallVector<int64_t, 4> ownerExtents{outputPlan->shape[0],
                                        outputPlan->shape[1]};
   SmallVector<int64_t, 4> workerGrid =
       factorWorkersAcrossDims(workers, ownerExtents);
   physicalBlockShape[0] =
-      ceilDivPositive(outputPlan->shape[0], workerGrid[0]);
+      sde::ceilDivPositive(outputPlan->shape[0], workerGrid[0]);
   physicalBlockShape[1] =
-      ceilDivPositive(outputPlan->shape[1], workerGrid[1]);
+      sde::ceilDivPositive(outputPlan->shape[1], workerGrid[1]);
 
   op.setPhysicalOwnerDimsAttr(
       buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 2>{0, 1}));
@@ -415,17 +407,16 @@ static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
   if (!tripCount || *tripCount <= 0)
     return;
 
-  int64_t workers =
-      std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
-  int64_t slice = ceilDivPositive(*tripCount, workers);
+  int64_t workers = std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
+  int64_t slice = sde::ceilDivPositive(*tripCount, workers);
   op.setLogicalWorkerSliceAttr(
       buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{slice}));
   op.setIterationTopologyAttr(sde::SdeIterationTopologyAttr::get(
       op.getContext(), sde::SdeIterationTopology::owner_strip));
 }
 
-static void stampInPlaceSharedStencilSerialSlice(
-    sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
+static void stampInPlaceSharedStencilSerialSlice(sde::SdeSuIterateOp op,
+                                                 sde::SDECostModel &costModel) {
   if (op.getLogicalWorkerSliceAttr() ||
       costModel.getLogicalWorkerCapacity() <= 1)
     return;
@@ -445,7 +436,7 @@ static void stampInPlaceSharedStencilSerialSlice(
 
   int64_t targetTasks = std::min<int64_t>(
       64, std::max<int64_t>(1, costModel.getLogicalWorkerCapacity()));
-  int64_t slice = ceilDivPositive(*tripCount, targetTasks);
+  int64_t slice = sde::ceilDivPositive(*tripCount, targetTasks);
   if (slice <= 1)
     return;
 
@@ -473,9 +464,9 @@ static bool hasEnoughWorkForDistribution(sde::SdeSuIterateOp op,
   if (!tripCount)
     return true;
 
-  int64_t threshold = saturatingMultiplyPositive(
-      costModel.getLogicalWorkerCapacity(),
-      costModel.getMinIterationsPerWorker());
+  int64_t threshold =
+      saturatingMultiplyPositive(costModel.getLogicalWorkerCapacity(),
+                                 costModel.getMinIterationsPerWorker());
   return *tripCount >= threshold;
 }
 
@@ -500,9 +491,8 @@ chooseDistributionKind(sde::SdeSuIterateOp op, sde::SDECostModel &costModel) {
     return std::nullopt;
   }
 
-  if (op.getNumResults() > 0 &&
-      classificationAttr.getValue() !=
-          sde::SdeStructuredClassification::reduction)
+  if (op.getNumResults() > 0 && classificationAttr.getValue() !=
+                                    sde::SdeStructuredClassification::reduction)
     return std::nullopt;
 
   switch (classificationAttr.getValue()) {

@@ -12,9 +12,9 @@ namespace mlir::carts::sde {
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::carts::sde
 
-#include "carts/utils/LoopUtils.h"
-#include "carts/utils/ValueAnalysis.h"
+#include "carts/dialect/sde/Utils/IterationSizingUtils.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
+#include "carts/utils/LoopUtils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -45,65 +45,15 @@ static Value getConstantIndex(OpBuilder &builder, Location loc, int64_t value) {
   return arith::ConstantIndexOp::create(builder, loc, value);
 }
 
-static Value buildLogicalWorkerCapacityValue(OpBuilder &builder,
-                                             Location loc) {
-  Value logicalWorkers =
-      sde::SdeResourceQueryOp::create(
-          builder, loc, sde::SdeResourceQueryKind::logicalWorkers)
-          .getResult();
-  return arith::MaxUIOp::create(builder, loc, logicalWorkers,
-                                getConstantIndex(builder, loc, 1));
-}
-
-static Value buildTripCountValue(OpBuilder &builder, Location loc,
-                                 sde::SdeSuIterateOp op) {
-  if (std::optional<int64_t> tripCount = getStaticTripCount(op.getOperation()))
-    return getConstantIndex(builder, loc, *tripCount);
-
-  if (op.getLowerBounds().size() != 1 || op.getUpperBounds().size() != 1 ||
-      op.getSteps().size() != 1)
-    return Value();
-
-  Value lowerBound = op.getLowerBounds().front();
-  Value upperBound = op.getUpperBounds().front();
-  Value step = op.getSteps().front();
-  Value zero = getConstantIndex(builder, loc, 0);
-  Value one = getConstantIndex(builder, loc, 1);
-
-  Value span = arith::SubIOp::create(builder, loc, upperBound, lowerBound);
-
-  int64_t constantStep = 0;
-  Value safeStep = step;
-  if (::mlir::carts::ValueAnalysis::getConstantIndex(step, constantStep)) {
-    if (constantStep <= 0)
-      return Value();
-  }
-
-  // Keep symbolic trip-count computation signed-safe so negative runtime
-  // spans clamp to zero even when the lower bound is zero.
-  Value spanIsNegative = arith::CmpIOp::create(
-      builder, loc, arith::CmpIPredicate::slt, span, zero);
-  Value nonNegativeSpan =
-      arith::SelectOp::create(builder, loc, spanIsNegative, zero, span);
-
-  if (!::mlir::carts::ValueAnalysis::getConstantIndex(step, constantStep)) {
-    Value stepIsTooSmall = arith::CmpIOp::create(
-        builder, loc, arith::CmpIPredicate::sle, step, zero);
-    safeStep = arith::SelectOp::create(builder, loc, stepIsTooSmall, one, step);
-  }
-
-  return arith::CeilDivSIOp::create(builder, loc, nonNegativeSpan, safeStep);
-}
-
 static Value buildSymbolicChunkValue(OpBuilder &builder, Location loc,
                                      sde::SdeSuIterateOp op,
                                      int64_t minIterations) {
-  Value tripCount = buildTripCountValue(builder, loc, op);
+  Value tripCount = sde::buildTripCountValue(builder, loc, op);
   if (!tripCount)
     return Value();
 
   Value one = getConstantIndex(builder, loc, 1);
-  Value workerCountValue = buildLogicalWorkerCapacityValue(builder, loc);
+  Value workerCountValue = sde::buildLogicalWorkerCapacityValue(builder, loc);
   Value minIterationsValue =
       getConstantIndex(builder, loc, std::max<int64_t>(1, minIterations));
 
@@ -181,8 +131,7 @@ struct ChunkOptPass : public sde::impl::ChunkOptBase<ChunkOptPass> {
           rewrite.op.getReductionKindsAttr(),
           rewrite.op.getReductionStrategyAttr(),
           rewrite.op.getStructuredClassificationAttr(),
-          rewrite.op.getPatternAttr(),
-          rewrite.op.getAccessMinOffsetsAttr(),
+          rewrite.op.getPatternAttr(), rewrite.op.getAccessMinOffsetsAttr(),
           rewrite.op.getAccessMaxOffsetsAttr(), rewrite.op.getOwnerDimsAttr(),
           rewrite.op.getSpatialDimsAttr(), rewrite.op.getWriteFootprintAttr(),
           rewrite.op.getPhysicalOwnerDimsAttr(),
@@ -191,14 +140,11 @@ struct ChunkOptPass : public sde::impl::ChunkOptBase<ChunkOptPass> {
           rewrite.op.getPhysicalHaloShapeAttr(),
           rewrite.op.getIterationTopologyAttr(),
           rewrite.op.getRepetitionStructureAttr(),
-          rewrite.op.getAsyncStrategyAttr(),
-          rewrite.op.getCpsGroupIdAttr(), rewrite.op.getCpsStageIndexAttr(),
-          rewrite.op.getCpsStageCountAttr(),
-          rewrite.op.getDistributionKindAttr(),
-          rewrite.op.getInPlaceSafeAttr(),
+          rewrite.op.getAsyncStrategyAttr(), rewrite.op.getCpsGroupIdAttr(),
+          rewrite.op.getCpsStageIndexAttr(), rewrite.op.getCpsStageCountAttr(),
+          rewrite.op.getDistributionKindAttr(), rewrite.op.getInPlaceSafeAttr(),
           rewrite.op.getInPlaceSharedStateAttr(),
-          rewrite.op.getVectorizeWidthAttr(),
-          rewrite.op.getUnrollFactorAttr(),
+          rewrite.op.getVectorizeWidthAttr(), rewrite.op.getUnrollFactorAttr(),
           rewrite.op.getInterleaveCountAttr());
       newOp->setAttrs(sde::getRewrittenAttrs(rewrite.op));
       newOp.getBody().takeBody(rewrite.op.getBody());
