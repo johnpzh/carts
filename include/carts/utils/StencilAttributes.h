@@ -90,71 +90,10 @@ inline void setStencilCenterOffset(Operation *op, int64_t centerOffset) {
       IntegerAttr::get(IntegerType::get(op->getContext(), 64), centerOffset));
 }
 
-inline std::optional<int64_t> getElementStride(Operation *op) {
-  if (!op)
-    return std::nullopt;
-  if (auto attr = op->getAttrOfType<IntegerAttr>(
-          ::mlir::carts::StencilAttrNames::Operation::Stencil::ElementStride))
-    return attr.getInt();
-  return std::nullopt;
-}
-
-inline void setElementStride(Operation *op, int64_t stride) {
-  if (!op)
-    return;
-  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::ElementStride,
-              IntegerAttr::get(IndexType::get(op->getContext()), stride));
-}
-
-inline std::optional<unsigned> getLeftHaloArgIndex(Operation *op) {
-  if (!op)
-    return std::nullopt;
-  if (auto attr = op->getAttrOfType<IntegerAttr>(
-          ::mlir::carts::StencilAttrNames::Operation::Stencil::LeftHaloArgIdx)) {
-    int64_t value = attr.getInt();
-    if (value >= 0)
-      return static_cast<unsigned>(value);
-  }
-  return std::nullopt;
-}
-
-inline std::optional<unsigned> getRightHaloArgIndex(Operation *op) {
-  if (!op)
-    return std::nullopt;
-  if (auto attr = op->getAttrOfType<IntegerAttr>(
-          ::mlir::carts::StencilAttrNames::Operation::Stencil::RightHaloArgIdx)) {
-    int64_t value = attr.getInt();
-    if (value >= 0)
-      return static_cast<unsigned>(value);
-  }
-  return std::nullopt;
-}
-
-inline void setLeftHaloArgIndex(Operation *op, unsigned argIndex) {
-  if (!op)
-    return;
-  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::LeftHaloArgIdx,
-              IntegerAttr::get(IndexType::get(op->getContext()), argIndex));
-}
-
-inline void setRightHaloArgIndex(Operation *op, unsigned argIndex) {
-  if (!op)
-    return;
-  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::RightHaloArgIdx,
-              IntegerAttr::get(IndexType::get(op->getContext()), argIndex));
-}
-
 inline std::optional<SmallVector<int64_t, 4>>
 getStencilMinOffsets(Operation *op) {
   return readI64ArrayAttr(op,
                           ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMinOffsets);
-}
-
-inline void setStencilMinOffsets(Operation *op, ArrayRef<int64_t> offsets) {
-  if (!op)
-    return;
-  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMinOffsets,
-              buildI64ArrayAttr(op, offsets));
 }
 
 inline std::optional<SmallVector<int64_t, 4>>
@@ -163,23 +102,9 @@ getStencilMaxOffsets(Operation *op) {
                           ::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMaxOffsets);
 }
 
-inline void setStencilMaxOffsets(Operation *op, ArrayRef<int64_t> offsets) {
-  if (!op)
-    return;
-  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::FootprintMaxOffsets,
-              buildI64ArrayAttr(op, offsets));
-}
-
 inline std::optional<SmallVector<int64_t, 4>>
 getStencilSpatialDims(Operation *op) {
   return readI64ArrayAttr(op, ::mlir::carts::StencilAttrNames::Operation::Stencil::SpatialDims);
-}
-
-inline void setStencilSpatialDims(Operation *op, ArrayRef<int64_t> dims) {
-  if (!op)
-    return;
-  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::SpatialDims,
-              buildI64ArrayAttr(op, dims));
 }
 
 inline std::optional<SmallVector<int64_t, 4>>
@@ -187,23 +112,9 @@ getStencilOwnerDims(Operation *op) {
   return readI64ArrayAttr(op, ::mlir::carts::StencilAttrNames::Operation::Stencil::OwnerDims);
 }
 
-inline void setStencilOwnerDims(Operation *op, ArrayRef<int64_t> dims) {
-  if (!op)
-    return;
-  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::OwnerDims,
-              buildI64ArrayAttr(op, dims));
-}
-
 inline std::optional<SmallVector<int64_t, 4>>
 getStencilBlockShape(Operation *op) {
   return readI64ArrayAttr(op, ::mlir::carts::StencilAttrNames::Operation::Stencil::BlockShape);
-}
-
-inline void setStencilBlockShape(Operation *op, ArrayRef<int64_t> blockShape) {
-  if (!op)
-    return;
-  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::BlockShape,
-              buildI64ArrayAttr(op, blockShape));
 }
 
 inline std::optional<SmallVector<int64_t, 4>>
@@ -211,43 +122,8 @@ getStencilWriteFootprint(Operation *op) {
   return readI64ArrayAttr(op, ::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint);
 }
 
-inline void setStencilWriteFootprint(Operation *op,
-                                     ArrayRef<int64_t> footprint) {
-  if (!op)
-    return;
-  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::WriteFootprint,
-              buildI64ArrayAttr(op, footprint));
-}
-
-inline std::optional<int64_t> getStencilHaloContractId(Operation *op) {
-  if (!op)
-    return std::nullopt;
-  if (auto attr = op->getAttrOfType<IntegerAttr>(
-          ::mlir::carts::StencilAttrNames::Operation::Stencil::HaloContractId))
-    return attr.getInt();
-  return std::nullopt;
-}
-
-inline void setStencilHaloContractId(Operation *op, int64_t id) {
-  if (!op)
-    return;
-  op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::HaloContractId,
-              IntegerAttr::get(IntegerType::get(op->getContext(), 64), id));
-}
-
 inline bool hasSupportedBlockHalo(Operation *op) {
   return op && op->hasAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::SupportedBlockHalo);
-}
-
-inline void setSupportedBlockHalo(Operation *op, bool enabled = true) {
-  if (!op)
-    return;
-  if (enabled) {
-    op->setAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::SupportedBlockHalo,
-                UnitAttr::get(op->getContext()));
-    return;
-  }
-  op->removeAttr(::mlir::carts::StencilAttrNames::Operation::Stencil::SupportedBlockHalo);
 }
 
 inline void copyStencilContractAttrs(Operation *source, Operation *dest) {
