@@ -23,8 +23,6 @@
 using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts;
-#include "carts/utils/Debug.h"
-ARTS_DEBUG_SETUP(memory_access_classifier);
 
 ///===----------------------------------------------------------------------===///
 /// Indirect index detection helpers

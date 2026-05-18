@@ -94,10 +94,11 @@ endif()
 # CARTS testing options
 option(CARTS_ENABLE_TESTS "Enable CARTS test suite" ON)
 option(CARTS_TESTS_REQUIRE_INSTALLED_RUNNER
-       "Keep .install/carts/bin/carts-compile in sync when running tests" ON)
+       "Keep the active CARTS install runner in sync when running tests" ON)
 if(CARTS_ENABLE_TESTS)
   message(STATUS "CARTS tests enabled")
   set(CARTS_TOOLS_DIR bin)
+  get_filename_component(_CARTS_INSTALL_ROOT "${CMAKE_INSTALL_PREFIX}/.." ABSOLUTE)
 
   # Locate LLVM test tools (llvm-lit and FileCheck) from common LLVM build/install dirs
   set(_LLVM_TOOL_HINT_DIRS
@@ -108,6 +109,7 @@ if(CARTS_ENABLE_TESTS)
       ${LLVM_DIR}/../bin
       ${POLYGEIST_DIR}/llvm-project/build/bin
       ${POLYGEIST_DIR}/llvm-project/build/NATIVE/bin
+      ${_CARTS_INSTALL_ROOT}/llvm/bin
       ${CMAKE_SOURCE_DIR}/.install/llvm/bin)
 
   find_program(LLVM_LIT_EXECUTABLE NAMES llvm-lit lit.py

@@ -13,6 +13,12 @@ runtime.
   and is on `PATH`.
 - Do not use raw `make`, `ninja`, `cmake`, or `python tools/carts_cli.py` for
   normal project work; Dekk sets up the required environment.
+- Generated build/install artifacts live under `CARTS_HOME` when it is set.
+  Otherwise CARTS reads the local untracked `carts.config` file, then falls
+  back to the checkout root. Keep tracked config portable.
+- Dekk-visible managed tools are exposed through portable shims under
+  `tools/dekk-shims`; the shims resolve the active CARTS install root at
+  runtime.
 
 ## Essential Commands
 

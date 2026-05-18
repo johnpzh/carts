@@ -4,10 +4,9 @@
 This script is intentionally small and imperative. Dekk owns the outer install
 flow; this driver owns the CARTS-specific work that dekk cannot infer:
 
-1. create local build/install directories
+1. create configured build/install directories
 2. initialize the required submodules
 3. build LLVM, Polygeist, ARTS, and CARTS in order
-4. optionally install the project-local `carts` wrapper into `.install/`
 """
 
 from __future__ import annotations
@@ -23,34 +22,39 @@ from scripts import (
     SUBMODULE_POLYGEIST,
     run_subprocess,
 )
+from scripts.build_env import (
+    available_parallel_jobs,
+    build_parallel_env,
+    configured_make_command,
+)
 from scripts.platform import get_config
 
 
-def _run(cmd: list[str], *, cwd: Path, label: str) -> None:
-    result = run_subprocess(cmd, cwd=cwd, realtime=True, check=False)
+def _run(
+    cmd: list[str],
+    *,
+    cwd: Path,
+    label: str,
+    env: dict[str, str] | None = None,
+) -> None:
+    result = run_subprocess(cmd, cwd=cwd, env=env, realtime=True, check=False)
     if result.returncode != 0:
         raise RuntimeError(f"{label} failed")
 
 
-def _setup_project() -> None:
+def _prepare_project_sources() -> None:
     config = get_config()
     project_root = config.carts_dir
-
-    print_step("Synchronizing conda environment from environment.yml...")
-    _run(
-        [
-            "conda", "env", "update",
-            "-p", str(project_root / ".dekk" / "env"),
-            "-f", str(project_root / "environment.yml"),
-            "--prune",
-        ],
-        cwd=project_root,
-        label="conda environment sync",
-    )
+    git_jobs = str(available_parallel_jobs())
 
     print_step("Preparing build directories...")
-    for dir_name in [".install", ".install/bin", "build", "external"]:
-        (project_root / dir_name).mkdir(parents=True, exist_ok=True)
+    for directory in [
+        config.install_dir,
+        config.install_dir / "bin",
+        config.carts_home / "build",
+        project_root / "external",
+    ]:
+        directory.mkdir(parents=True, exist_ok=True)
 
     print_step("Synchronizing submodule metadata...")
     _run(["git", "submodule", "sync", "--recursive"], cwd=project_root, label="submodule sync")
@@ -59,7 +63,8 @@ def _setup_project() -> None:
     _run(
         [
             "git", "submodule", "update", "--init",
-            "--depth", "1", "--single-branch", "--recommend-shallow", "--jobs", "4",
+            "--depth", "1", "--single-branch", "--recommend-shallow",
+            "--jobs", git_jobs,
             SUBMODULE_ARTS, SUBMODULE_POLYGEIST, SUBMODULE_BENCHMARKS,
         ],
         cwd=project_root,
@@ -72,7 +77,8 @@ def _setup_project() -> None:
     _run(
         [
             "git", "submodule", "update", "--init",
-            "--depth", "1", "--single-branch", "--recommend-shallow", "--jobs", "4",
+            "--depth", "1", "--single-branch", "--recommend-shallow",
+            "--jobs", git_jobs,
             *ARTS_NESTED_SUBMODULES,
         ],
         cwd=arts_dir,
@@ -89,7 +95,8 @@ def _setup_project() -> None:
     _run(
         [
             "git", "submodule", "update", "--init",
-            "--depth", "1", "--single-branch", "--recommend-shallow", "--jobs", "4",
+            "--depth", "1", "--single-branch", "--recommend-shallow",
+            "--jobs", git_jobs,
             *POLYGEIST_NESTED_SUBMODULES,
         ],
         cwd=polygeist_dir,
@@ -100,26 +107,27 @@ def _setup_project() -> None:
 def _build_project() -> None:
     config = get_config()
     project_root = config.carts_dir
+    parallel_env = build_parallel_env()
 
     build_steps = [
-        ("Building LLVM...", ["make", "llvm"]),
-        ("Building Polygeist...", ["make", "polygeist"]),
-        ("Building ARTS runtime...", ["make", "arts"]),
-        ("Building CARTS...", ["make", "build"]),
+        ("Building LLVM...", configured_make_command(config, "llvm")),
+        ("Building Polygeist...", configured_make_command(config, "polygeist")),
+        ("Building ARTS runtime...", configured_make_command(config, "arts")),
+        ("Building CARTS...", configured_make_command(config, "build")),
     ]
 
     for label, cmd in build_steps:
         print_step(label)
-        _run(cmd, cwd=project_root, label=label)
+        _run(cmd, cwd=project_root, label=label, env=parallel_env)
 
 
 def main() -> int:
     print_header("CARTS Install")
     print_info("Running CARTS project install through dekk-managed environment setup.")
-    print_info("Use `dekk carts install --wrap` if you also want a project-local `carts` wrapper in `.install/`.")
+    print_info("Use `dekk carts install --wrap` if you also want a project-local `carts` wrapper.")
 
     try:
-        _setup_project()
+        _prepare_project_sources()
         _build_project()
     except RuntimeError as exc:
         print_error(str(exc))

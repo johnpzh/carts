@@ -21,6 +21,15 @@ Common workflows:
 - `dekk carts build --arts --debug 3` — rebuild ARTS runtime with full debug logging
 - `dekk carts build --arts --counters 2` — rebuild ARTS with workload counters
 
+The build respects `CARTS_HOME` first, then the local untracked `carts.config`
+file, then the checkout root. Do not hardcode machine-local install paths in
+tracked files. Builds default to all visible CPUs; set `CARTS_BUILD_JOBS` if a
+machine needs a lower or higher explicit limit.
+
+`dekk carts doctor` sees CARTS-managed LLVM tools through `tools/dekk-shims`.
+If `llvm-lit`, `FileCheck`, or `clang-format` is missing there, rebuild LLVM
+with `dekk carts build --llvm`.
+
 ## Build targets
 
 | Flag | What it builds | When to use |

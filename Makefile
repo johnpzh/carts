@@ -5,7 +5,8 @@
 
 # Build verbosity control (set VERBOSE=1 to enable verbose output)
 VERBOSE ?= 0
-NINJA_FLAGS := $(if $(filter 1,$(VERBOSE)),-v,)
+NINJA_FLAGS := $(if $(filter 1,$(VERBOSE)),-v,) $(if $(CARTS_BUILD_JOBS),-j$(CARTS_BUILD_JOBS),)
+CMAKE_BUILD_FLAGS := $(if $(filter 1,$(VERBOSE)),--verbose,) $(if $(CARTS_BUILD_JOBS),--parallel $(CARTS_BUILD_JOBS),)
 
 # CMake executable (override via `make CMAKE=/path/to/cmake` or from build.py)
 CMAKE ?= cmake
@@ -17,8 +18,31 @@ ARTS_DIR ?= ${CARTS_DIR}/external/arts
 POLYGEIST_DIR ?= ${CARTS_DIR}/external/Polygeist
 LLVM_DIR ?= ${POLYGEIST_DIR}/llvm-project
 
+# Output Directories
+#
+# By default CARTS keeps build/install artifacts in the project checkout for a
+# self-contained developer tree. Set CARTS_HOME to move every heavy generated
+# artifact to another filesystem while preserving the same source tree.
+ifeq ($(strip $(CARTS_HOME)),)
+CARTS_OUTPUT_HOME := ${CARTS_DIR}
+CARTS_BUILD_DIR ?= build
+ARTS_BUILD_DIR ?= $(ARTS_DIR)/build
+POLYGEIST_BUILD_DIR ?= $(POLYGEIST_DIR)/build
+LLVM_BUILD_DIR ?= $(LLVM_DIR)/build
+else
+CARTS_OUTPUT_HOME := $(abspath $(CARTS_HOME))
+CARTS_BUILD_DIR ?= $(CARTS_OUTPUT_HOME)/build/carts
+ARTS_BUILD_DIR ?= $(CARTS_OUTPUT_HOME)/build/arts
+POLYGEIST_BUILD_DIR ?= $(CARTS_OUTPUT_HOME)/build/polygeist
+LLVM_BUILD_DIR ?= $(CARTS_OUTPUT_HOME)/build/llvm-project
+CARTS_TMP_DIR ?= $(CARTS_OUTPUT_HOME)/tmp
+export TMPDIR ?= $(CARTS_TMP_DIR)
+export TMP ?= $(TMPDIR)
+export TEMP ?= $(TMPDIR)
+endif
+
 # Install Directories
-INSTALL_DIR ?= ${CARTS_DIR}/.install
+INSTALL_DIR ?= $(CARTS_OUTPUT_HOME)/.install
 CARTS_INSTALL_DIR ?= ${INSTALL_DIR}/carts
 ARTS_INSTALL_DIR ?= $(INSTALL_DIR)/arts
 LLVM_INSTALL_DIR ?= $(INSTALL_DIR)/llvm
@@ -50,16 +74,11 @@ LLVM_RUNTIME_CMAKE_FLAGS = \
 	-DCMAKE_C_FLAGS="--gcc-toolchain=$(LLVM_GCC_INSTALL_PREFIX)" \
 	)
 
-# Build Directories
-CARTS_BUILD_DIR = build
-ARTS_BUILD_DIR = $(ARTS_DIR)/build
-POLYGEIST_BUILD_DIR = $(POLYGEIST_DIR)/build
-LLVM_BUILD_DIR = $(LLVM_DIR)/build
-
 # Shared Docker workspaces can carry stale CMake caches from older branches
 # or build systems. Recreate the build directory before reconfiguring when
 # the cached generator is not Ninja.
 ensure_ninja_build_dir = if [ -f "$(1)/CMakeCache.txt" ] && ! grep -q '^CMAKE_GENERATOR:INTERNAL=Ninja$$' "$(1)/CMakeCache.txt"; then echo "Removing stale CMake build directory $(1) (generator mismatch)..."; rm -rf "$(1)"; fi
+ensure_output_dirs = mkdir -p "$(CARTS_OUTPUT_HOME)" $(if $(CARTS_TMP_DIR),"$(CARTS_TMP_DIR)",)
 
 # Targets
 all: install
@@ -75,6 +94,7 @@ polygeist-download:
 polygeist:
 	@$(call ensure_ninja_build_dir,$(POLYGEIST_BUILD_DIR))
 	echo "Building Polygeist..."; \
+	$(call ensure_output_dirs); \
 	mkdir -p $(POLYGEIST_BUILD_DIR); \
 	mkdir -p $(POLYGEIST_INSTALL_DIR); \
 	$(CMAKE_CMD) -B $(POLYGEIST_BUILD_DIR) \
@@ -88,7 +108,7 @@ polygeist:
 		-DLLVM_EXTERNAL_LIT="$(LLVM_BUILD_DIR)/bin/llvm-lit" \
 		$(LLVM_RUNTIME_CMAKE_FLAGS) \
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON;
-	ninja -C $(POLYGEIST_BUILD_DIR) install;
+	ninja $(NINJA_FLAGS) -C $(POLYGEIST_BUILD_DIR) install;
 polygeist-clean:
 	rm -f -r $(POLYGEIST_BUILD_DIR)
 	rm -f -r $(POLYGEIST_INSTALL_DIR)
@@ -98,6 +118,7 @@ llvm:
 	@set -e; \
 	$(call ensure_ninja_build_dir,$(LLVM_BUILD_DIR)); \
 	echo "Building LLVM..."; \
+	$(call ensure_output_dirs); \
 	mkdir -p $(LLVM_BUILD_DIR); \
 	mkdir -p $(LLVM_INSTALL_DIR); \
 	$(CMAKE_CMD) -B $(LLVM_BUILD_DIR) \
@@ -125,7 +146,7 @@ llvm:
 		-DCMAKE_C_FLAGS="--gcc-toolchain=$(LLVM_GCC_INSTALL_PREFIX)" \
 		-DCROSS_TOOLCHAIN_FLAGS_NATIVE="-DCMAKE_C_COMPILER=$(LLVM_C_COMPILER);-DCMAKE_CXX_COMPILER=$(LLVM_CXX_COMPILER);-DCMAKE_CXX_FLAGS=--gcc-toolchain=$(LLVM_GCC_INSTALL_PREFIX);-DCMAKE_C_FLAGS=--gcc-toolchain=$(LLVM_GCC_INSTALL_PREFIX)" \
 		); \
-	ninja -C $(LLVM_BUILD_DIR) install; \
+	ninja $(NINJA_FLAGS) -C $(LLVM_BUILD_DIR) install; \
 	if [ -f "$(LLVM_BUILD_DIR)/bin/llvm-lit" ]; then \
 		mkdir -p $(LLVM_INSTALL_DIR)/bin; \
 		cp $(LLVM_BUILD_DIR)/bin/llvm-lit $(LLVM_INSTALL_DIR)/bin/; \
@@ -199,6 +220,7 @@ arts:
 	fi
 	@$(call ensure_ninja_build_dir,$(ARTS_BUILD_DIR))
 	@mkdir -p $(ARTS_BUILD_DIR); \
+	$(call ensure_output_dirs); \
 	mkdir -p $(ARTS_INSTALL_DIR); \
 	CURRENT_HASH=$$(echo "$(ARTS_CONFIG_STRING)" | shasum -a 256 | cut -d' ' -f1); \
 	STORED_HASH=""; \
@@ -243,6 +265,7 @@ build:
 		exit 1; \
 	fi
 	@$(call ensure_ninja_build_dir,$(CARTS_BUILD_DIR))
+	$(call ensure_output_dirs)
 	mkdir -p $(CARTS_BUILD_DIR)
 	mkdir -p $(CARTS_INSTALL_DIR)
 	$(CMAKE_CMD) -B $(CARTS_BUILD_DIR) \
@@ -257,7 +280,7 @@ build:
 		-DPOLYGEIST_DIR=$(POLYGEIST_DIR) \
 		$(LLVM_RUNTIME_CMAKE_FLAGS) \
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-	$(CMAKE_CMD) --build $(CARTS_BUILD_DIR) $(if $(filter 1,$(VERBOSE)),--verbose,)
+	$(CMAKE_CMD) --build $(CARTS_BUILD_DIR) $(CMAKE_BUILD_FLAGS)
 	$(CMAKE_CMD) --install $(CARTS_BUILD_DIR)
 
 # Build only carts-compile

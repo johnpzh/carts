@@ -91,7 +91,9 @@ def format_sources(
     config = get_config()
     clang_format = _resolve_clang_format(config)
     if not clang_format:
-        print_error("clang-format not found in .install/llvm/bin or PATH.")
+        print_error(
+            f"clang-format not found in {config.llvm_install_dir / 'bin'} or PATH."
+        )
         print_info("Run `dekk carts build` (or install clang-format) and retry.")
         raise Exit(1)
 

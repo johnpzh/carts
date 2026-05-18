@@ -13,6 +13,8 @@ CMake's lit.site.cfg.py, paths come from CMake variables.
 
 import os
 import shutil
+import sys
+from pathlib import Path
 
 import lit.formats
 import lit.util
@@ -34,12 +36,20 @@ config.suffixes = [".mlir"]
 # Detect project root: lit.cfg.py lives at the project root.
 project_root = getattr(config, "carts_source_dir", None) or os.path.dirname(os.path.abspath(__file__))
 tests_dir = os.path.join(project_root, "tests")
+tools_scripts_dir = os.path.join(project_root, "tools", "scripts")
+if tools_scripts_dir not in sys.path:
+    sys.path.insert(0, tools_scripts_dir)
+from local_config import BUILD_DIR_NAME, INSTALL_DIR_NAME, resolve_carts_home
+
+carts_home = str(resolve_carts_home(Path(project_root)))
 
 # Source root is the project root so lit can discover test/ dirs under lib/.
 config.test_source_root = project_root
 
 # Out-of-source test execution: avoids polluting source tree with Output/ dirs.
-build_dir = getattr(config, "carts_build_dir", None) or os.path.join(project_root, "build")
+build_dir = getattr(config, "carts_build_dir", None) or os.path.join(
+    carts_home, BUILD_DIR_NAME, "carts"
+)
 config.test_exec_root = os.path.join(build_dir, "tests", "lit-output")
 
 # Tell lit which subdirectories to scan for tests (IREE pattern).
@@ -75,11 +85,11 @@ for test_times_path in (
             time_file.writelines(cleaned_lines)
 
 # --- Tool paths ---
-install_root = os.path.join(project_root, ".install")
+install_root = os.path.join(carts_home, INSTALL_DIR_NAME)
 carts_bin_dir = os.path.join(install_root, "carts", "bin")
 llvm_bin_dir = os.path.join(install_root, "llvm", "bin")
 llvm_lib_dir = os.path.join(install_root, "llvm", "lib")
-build_bin_dir = os.path.join(project_root, "build", "bin")
+build_bin_dir = os.path.join(build_dir, "bin")
 
 carts_compile_tool = getattr(config, "carts_compile_tool", None)
 if not carts_compile_tool:
@@ -100,7 +110,7 @@ for subst, tool in required_tools:
     if not os.path.exists(tool):
         lit_config.fatal(
             f"Required tool '{tool}' was not found. "
-            "Run `dekk carts build` so the toolchain under .install/ is up to date."
+            f"Run `dekk carts build` so the toolchain under {install_root} is up to date."
         )
     config.substitutions.append((subst, tool))
 

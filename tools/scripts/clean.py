@@ -7,6 +7,7 @@ import shutil
 from dekk import print_debug, print_info, print_success, print_error
 from scripts.platform import get_config, is_verbose
 from scripts import run_subprocess
+from scripts.build_env import build_parallel_env, configured_make_command
 
 
 # Files to clean
@@ -66,14 +67,16 @@ def run_full_clean() -> None:
     """Clean all build directories (LLVM, Polygeist, ARTS, CARTS)."""
     config = get_config()
     carts_dir = config.carts_dir
+    parallel_env = build_parallel_env()
 
     targets = ["llvm-clean", "polygeist-clean", "arts-clean", "clean"]
 
     for target in targets:
         print_info(f"Running make {target}...")
         result = run_subprocess(
-            ["make", target],
+            configured_make_command(config, target),
             cwd=carts_dir,
+            env=parallel_env,
             check=False,
         )
         if result.returncode != 0:

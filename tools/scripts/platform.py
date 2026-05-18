@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dekk import PlatformDetector, PlatformInfo
+from scripts.local_config import INSTALL_DIR_NAME, resolve_carts_home
 
 
 @dataclass
@@ -43,6 +44,7 @@ class CartsConfig:
 
     # Project directories
     carts_dir: Path
+    carts_home: Path
     install_dir: Path
     llvm_install_dir: Path
     polygeist_install_dir: Path
@@ -82,16 +84,19 @@ class CartsConfig:
 
         info = PlatformDetector().detect()
 
-        if ".install/carts/bin" in str(script_dir):
+        installed_bin_marker = f"{INSTALL_DIR_NAME}/carts/bin"
+        if installed_bin_marker in str(script_dir):
             carts_dir = script_dir.parent.parent.parent
         else:
             carts_dir = script_dir.parent
 
-        install_dir = carts_dir / ".install"
+        carts_home = resolve_carts_home(carts_dir)
+        install_dir = carts_home / INSTALL_DIR_NAME
 
         config = cls(
             info=info,
             carts_dir=carts_dir,
+            carts_home=carts_home,
             install_dir=install_dir,
             llvm_install_dir=install_dir / "llvm",
             polygeist_install_dir=install_dir / "polygeist",

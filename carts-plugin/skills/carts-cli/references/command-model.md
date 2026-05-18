@@ -6,9 +6,27 @@ Use this when a task depends on how commands should be run.
 
 - Guaranteed: `dekk carts ...`
 - Optional wrapper: `carts ...` only after confirming `which carts` or
-  `./.install/carts`/`./.install/bin/carts` is usable.
+  the wrapper under the active CARTS install root is usable.
 - Raw implementation path: avoid `python tools/carts_cli.py ...` in normal
   work. It bypasses the project runner assumptions agents should preserve.
+
+## Local Artifact Root
+
+Generated build/install artifacts resolve in this order:
+
+1. `CARTS_HOME` environment variable
+2. local untracked `carts.config` file (`[carts] home = "..."`
+   is the preferred shape)
+3. checkout root
+
+When `CARTS_HOME` or `carts.config` points outside the checkout, installed
+tools live under `<home>/.install` and builds under `<home>/build`. Keep
+`.dekk.toml` and agent resources portable; put machine-local paths only in
+environment variables or `carts.config`.
+
+`tools/dekk-shims` is the only tracked PATH entry for CARTS-managed LLVM tools.
+Those shims resolve the active install root dynamically, so Dekk can detect
+`llvm-lit`, `FileCheck`, and `clang-format` without tracked machine-local paths.
 
 ## Required Preflight
 

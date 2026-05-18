@@ -65,7 +65,7 @@ Check for LLDB in project-managed toolchains before assuming it is available:
 
 ```bash
 command -v lldb || true
-find .dekk .install external/Polygeist/llvm-project/build -maxdepth 5 \
+find .dekk "${CARTS_HOME:-.}/.install" "${CARTS_HOME:-.}/build/llvm-project" -maxdepth 5 \
   -type f \( -name lldb -o -name lldb-server \) -print
 ```
 
@@ -75,7 +75,7 @@ Validate a candidate with `<path>/lldb --version`. Only the LLDB driver or
 If LLDB is unavailable, fall back to available symbol tools:
 
 ```bash
-find .install/llvm/bin -maxdepth 1 -type f \
+find "${CARTS_HOME:-.}/.install/llvm/bin" -maxdepth 1 -type f \
   \( -name llvm-symbolizer -o -name llvm-addr2line -o -name llvm-objdump \) -print
 ```
 

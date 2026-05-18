@@ -15,6 +15,7 @@ from scripts import (
     SUBMODULE_BENCHMARKS,
     SUBMODULE_POLYGEIST,
 )
+from scripts.build_env import build_parallel_env, configured_make_command
 
 
 def _get_repo_hash(repo_dir: Path) -> Optional[str]:
@@ -135,6 +136,7 @@ def update(
     """Update CARTS, submodules, and rebuild affected components."""
     config = get_config()
     carts_dir = config.carts_dir
+    parallel_env = build_parallel_env()
 
     # If no specific flags, update all
     update_all = not (arts or polygeist or benchmarks)
@@ -234,8 +236,9 @@ def update(
     if selected_polygeist and (polygeist_changed or force):
         print_step("Rebuilding Polygeist...")
         result = run_subprocess(
-            ["make", MAKE_TARGET_POLYGEIST],
+            configured_make_command(config, MAKE_TARGET_POLYGEIST),
             cwd=carts_dir,
+            env=parallel_env,
             check=False,
         )
         if result.returncode != 0:
@@ -245,8 +248,9 @@ def update(
     if selected_arts and (arts_changed or force):
         print_step("Rebuilding ARTS...")
         result = run_subprocess(
-            ["make", MAKE_TARGET_ARTS],
+            configured_make_command(config, MAKE_TARGET_ARTS),
             cwd=carts_dir,
+            env=parallel_env,
             check=False,
         )
         if result.returncode != 0:
@@ -257,8 +261,9 @@ def update(
     if rebuild_carts:
         print_step("Rebuilding CARTS...")
         result = run_subprocess(
-            ["make", MAKE_TARGET_BUILD],
+            configured_make_command(config, MAKE_TARGET_BUILD),
             cwd=carts_dir,
+            env=parallel_env,
             check=False,
         )
         if result.returncode != 0:

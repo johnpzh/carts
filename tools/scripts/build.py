@@ -1,6 +1,5 @@
 """Build command for CARTS CLI."""
 
-import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -11,8 +10,6 @@ from dekk import (
     print_step,
     print_error,
     print_success,
-    DependencyChecker,
-    DependencySpec,
     Exit,
     Option,
 )
@@ -24,6 +21,13 @@ from scripts import (
     MAKE_TARGET_LLVM,
     MAKE_TARGET_POLYGEIST,
     SUBMODULE_BENCHMARKS,
+)
+from scripts.build_env import (
+    build_parallel_env,
+    configured_make_command,
+    configured_make_vars,
+    make_command_with_vars,
+    ENV_CARTS_BUILD_JOBS,
 )
 
 _CLEAN_TARGETS = {
@@ -100,7 +104,7 @@ def build(
     console.print(f"Target: [{Colors.INFO}]{target}[/{Colors.INFO}]")
 
     # Build make variables
-    make_vars = []
+    make_vars = configured_make_vars(config)
 
     if arts:
         # Expose the raw v2 ARTS runtime levels directly:
@@ -145,25 +149,18 @@ def build(
         make_vars.append(f"COUNTER_CONFIG_PATH={effective_counter_config}")
 
     # Pass platform-specific paths to make
-    if config.linker_path:
-        make_vars.append(f'CARTS_LINKER_PATH={config.linker_path}')
-    if config.gcc_install_prefix:
-        make_vars.append(f'LLVM_GCC_INSTALL_PREFIX={config.gcc_install_prefix}')
-
     # Pass bootstrap compiler overrides to make
     if cc:
         make_vars.append(f'LLVM_C_COMPILER={cc}')
     if cxx:
         make_vars.append(f'LLVM_CXX_COMPILER={cxx}')
 
-    cmake_spec = DependencySpec(name="cmake", command="cmake", min_version="3.20")
-    cmake_result = DependencyChecker().check(cmake_spec)
-    cmake_path = shutil.which("cmake")
-    if cmake_result.ok and cmake_path:
-        make_vars.append(f"CMAKE={cmake_path}")
-
     if make_vars:
         console.print(f"Options: [{Colors.DEBUG}]{' '.join(make_vars)}[/{Colors.DEBUG}]")
+    parallel_env = build_parallel_env()
+    console.print(
+        f"Parallel jobs: [{Colors.INFO}]{parallel_env[ENV_CARTS_BUILD_JOBS]}[/{Colors.INFO}]"
+    )
 
     console.print()
 
@@ -171,13 +168,23 @@ def build(
     if clean:
         print_step("Cleaning previous build...")
         clean_target = _CLEAN_TARGETS[target]
-        run_subprocess(["make", clean_target], cwd=config.carts_dir, check=False)
+        run_subprocess(
+            configured_make_command(config, clean_target),
+            cwd=config.carts_dir,
+            env=parallel_env,
+            check=False,
+        )
 
     # Run build
     print_step(f"Building {target}...")
-    cmd = ["make"] + make_vars + [target]
+    cmd = make_command_with_vars(make_vars, target)
 
-    result = run_subprocess(cmd, cwd=config.carts_dir, check=False)
+    result = run_subprocess(
+        cmd,
+        cwd=config.carts_dir,
+        env=parallel_env,
+        check=False,
+    )
 
     if result.returncode == 0:
         print_header("Build Complete")
