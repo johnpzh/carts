@@ -28,6 +28,7 @@ namespace mlir::carts::sde {
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/MathExtras.h"
 
+#include <algorithm>
 #include <limits>
 
 using namespace mlir;
@@ -394,6 +395,8 @@ static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
       op.getContext(), sde::SdeIterationTopology::owner_tile_2d));
 }
 
+static int64_t saturatingMultiplyPositive(int64_t lhs, int64_t rhs);
+
 static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
                                         sde::SDECostModel &costModel) {
   if (op.getLogicalWorkerSliceAttr() ||
@@ -408,7 +411,38 @@ static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
     return;
 
   int64_t workers = std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
-  int64_t slice = sde::ceilDivPositive(*tripCount, workers);
+  int64_t targetTasks = workers;
+  if (op.getReductionAccumulators().empty())
+    targetTasks = saturatingMultiplyPositive(workers, 4);
+  int64_t slice = std::max<int64_t>(
+      costModel.getMinIterationsPerWorker(),
+      sde::ceilDivPositive(*tripCount, targetTasks));
+  slice = std::clamp<int64_t>(slice, 1, *tripCount);
+
+  if (op.getReductionAccumulators().empty()) {
+    std::optional<sde::LoopIndexedOutputPlan> outputPlan =
+        sde::findLoopIndexedOutputPlan(op);
+    if (outputPlan && !outputPlan->ownerPhysicalDims.empty() &&
+        !outputPlan->shape.empty()) {
+      SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
+      for (int64_t rawDim : outputPlan->ownerPhysicalDims) {
+        if (rawDim < 0 ||
+            static_cast<size_t>(rawDim) >= physicalBlockShape.size())
+          return;
+        physicalBlockShape[rawDim] = slice;
+      }
+      op.setPhysicalOwnerDimsAttr(
+          buildI64ArrayAttr(op.getContext(), outputPlan->ownerPhysicalDims));
+      op.setPhysicalBlockShapeAttr(
+          buildI64ArrayAttr(op.getContext(), physicalBlockShape));
+      op.setLogicalWorkerSliceAttr(
+          buildI64ArrayAttr(op.getContext(), physicalBlockShape));
+      op.setIterationTopologyAttr(sde::SdeIterationTopologyAttr::get(
+          op.getContext(), sde::SdeIterationTopology::owner_strip));
+      return;
+    }
+  }
+
   op.setLogicalWorkerSliceAttr(
       buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{slice}));
   op.setIterationTopologyAttr(sde::SdeIterationTopologyAttr::get(

@@ -85,8 +85,8 @@ public:
                std::ceil((getTaskCreationCost() + getTaskSyncCost()) /
                          (getDataAccessCost() + 1.0))));
     int64_t capacityIterations = std::max<int64_t>(
-        1, static_cast<int64_t>(std::ceil(std::sqrt(
-               static_cast<double>(std::max(1, getLogicalWorkerCapacity()))))));
+        1, static_cast<int64_t>(std::ceil(std::log2(
+               static_cast<double>(std::max(2, getLogicalWorkerCapacity()))))));
     return std::max({getMinIterationsPerWorker(), lifecycleIterations,
                      capacityIterations});
   }
