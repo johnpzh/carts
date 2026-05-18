@@ -326,7 +326,9 @@ class CartsConfig:
 
         if self.info.is_linux or self.info.is_macos:
             if self.info.is_linux:
-                self.linker_flags.append("-Wl,--disable-new-dtags")
+                # Use DT_RUNPATH so Slurm jobs can select the per-artifact ARTS
+                # runtime snapshot through LD_LIBRARY_PATH without LD_PRELOAD.
+                self.linker_flags.append("-Wl,--enable-new-dtags")
 
             rpaths = [
                 self.carts_install_dir / "lib",
