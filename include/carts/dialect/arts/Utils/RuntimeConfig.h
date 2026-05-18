@@ -31,6 +31,9 @@ public:
     return nodesCount * getRuntimeWorkersPerNode();
   }
 
+  /// Optional compiler scheduling floor for SDE task grain.
+  int getMinIterationsPerWorker() const { return minIterationsPerWorker; }
+
   /// Execution mode derived from runtime-visible worker concurrency.
   ExecutionMode getExecutionMode() const {
     if (nodeCount > 1)
@@ -102,6 +105,7 @@ private:
   int pinStride = 1;
   int workerInitDequeSize = 2048;
   int routeTableSize = 16;
+  int minIterationsPerWorker = 0;
   bool coreDump = false;
 
   /// Performance Monitoring

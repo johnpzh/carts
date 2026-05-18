@@ -60,6 +60,13 @@ public:
   int getLogicalWorkerCapacity() const override {
     return machine.getRuntimeTotalWorkers();
   }
+
+  int64_t getMinIterationsPerWorker() const override {
+    int configured = machine.getMinIterationsPerWorker();
+    if (configured > 0)
+      return configured;
+    return carts::sde::SDECostModel::getMinIterationsPerWorker();
+  }
 };
 
 } // namespace mlir::carts::arts

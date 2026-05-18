@@ -153,6 +153,8 @@ bool RuntimeConfig::parseFromFile(const std::string &path) {
       workerInitDequeSize = parseInt(val, 2048);
     else if (key == "route_table_size")
       routeTableSize = parseInt(val, 16);
+    else if (key == "min_iterations_per_worker")
+      minIterationsPerWorker = parseInt(val, 0);
     else if (key == "core_dump")
       coreDump = parseBool(val, false);
     else if (key == "counter_folder")
