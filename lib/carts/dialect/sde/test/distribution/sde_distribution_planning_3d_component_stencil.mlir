@@ -4,7 +4,8 @@
 // SDE owns the physical shape for component stencils: all semantic owner dims
 // remain in the stencil contract while the storage plan distributes the three
 // spatial dimensions and leaves the component dimension local in the physical
-// block.
+// block.  The two-node config contributes an abstract locality wave, creating
+// smaller source blocks while leaving concrete ARTS placement to ARTS.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
@@ -13,10 +14,10 @@
 // SDE: sde.su_iterate (%c1, %c1, %c1, %c0) to (%c15, %c15, %c15, %c3) step ({{.*}}) classification(<stencil>) {
 // SDE: } {accessMaxOffsets
 // SDE-SAME: iterationTopology = #sde.iteration_topology<owner_tile>
-// SDE-SAME: logicalWorkerSlice = [4, 8, 8, 3]
+// SDE-SAME: logicalWorkerSlice = [4, 4, 8, 3]
 // SDE-SAME: ownerDims = [0, 1, 2, 3]
 // SDE-SAME: pattern = #sde.pattern<cross_dim_stencil_3d>
-// SDE-SAME: physicalBlockShape = [4, 8, 8, 3]
+// SDE-SAME: physicalBlockShape = [4, 4, 8, 3]
 // SDE-SAME: physicalHaloShape = [1, 1, 1]
 // SDE-SAME: physicalOwnerDims = [0, 1, 2]
 // SDE-NOT: {{plan[A-Z]}}

@@ -4,7 +4,9 @@
 
 // Verify that SDE authors an owner-compute distribution advisory for a stencil
 // loop, and that boundary materialization consumes the advisory at the lowering
-// boundary without SDE selecting local/distributed scope.
+// boundary without SDE selecting concrete ARTS placement.  The two-node config
+// contributes an abstract locality wave, so the SDE block shape exposes more
+// ready owner tiles before ARTS chooses placement.
 // In-place neighbor stencils keep the original dependency ordering and do not
 // receive a physical block storage plan because the update reads neighboring
 // values from the same backing store it writes.
@@ -16,10 +18,10 @@
 // SDE: sde.su_iterate (%c1, %c1) to (%c63, %c63) step ({{.*}}) classification(<stencil>) {
 // SDE: } {accessMaxOffsets
 // SDE-SAME: iterationTopology = #sde.iteration_topology<owner_tile>
-// SDE-SAME: logicalWorkerSlice = [16, 16]
+// SDE-SAME: logicalWorkerSlice = [8, 16]
 // SDE-SAME: ownerDims = [0, 1]
 // SDE-SAME: pattern = #sde.pattern<stencil_tiling_nd>
-// SDE-SAME: physicalBlockShape = [16, 16]
+// SDE-SAME: physicalBlockShape = [8, 16]
 // SDE-SAME: physicalHaloShape = [1, 1]
 // SDE-SAME: physicalOwnerDims = [0, 1]
 // SDE-NOT: {{plan[A-Z]}}

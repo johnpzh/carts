@@ -31,6 +31,17 @@ public:
     return nodesCount * getRuntimeWorkersPerNode();
   }
 
+  /// Runtime worker count per node used by ARTS scheduling.
+  /// `worker_threads` is already the worker count on multi-node runs.
+  /// On single-node runs ARTS reclaims sender/receiver threads as workers.
+  int getRuntimeWorkersPerNode() const {
+    int workers = threads;
+    if (nodeCount <= 1) {
+      workers += outgoing + incoming;
+    }
+    return workers > 0 ? workers : 1;
+  }
+
   /// Optional compiler scheduling floor for SDE task grain.
   int getMinIterationsPerWorker() const { return minIterationsPerWorker; }
 
@@ -54,17 +65,6 @@ public:
 
 private:
   bool hasGpuSupport() const { return scheduler == 3 && gpu > 0; }
-
-  /// Runtime worker count per node used by ARTS scheduling.
-  /// `worker_threads` is already the worker count on multi-node runs.
-  /// On single-node runs ARTS reclaims sender/receiver threads as workers.
-  int getRuntimeWorkersPerNode() const {
-    int workers = threads;
-    if (nodeCount <= 1) {
-      workers += outgoing + incoming;
-    }
-    return workers > 0 ? workers : 1;
-  }
 
   bool validateConfiguration();
   bool parseFromFile(const std::string &path);

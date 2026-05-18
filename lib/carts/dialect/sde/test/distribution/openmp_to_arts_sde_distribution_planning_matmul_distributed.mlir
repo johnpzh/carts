@@ -4,7 +4,8 @@
 
 // Verify that SDE classifies direct-memory matmul before ARTS, applies local
 // column strip-mining, and keeps physical ownership row-strip until input DBs
-// can be tiled with the output.
+// can be tiled with the output.  The two-node config plans an extra abstract
+// locality wave, exposing one row task per worker-wave.
 
 // TILE-LABEL: // -----// IR Dump After Tiling (tiling) //----- //
 // TILE: func.func @main
@@ -16,8 +17,8 @@
 // TILE: memref.store %{{.*}}, %{{.*}}[%[[I]], %[[J]]] : memref<32x32xf32>
 // TILE: } {
 // TILE-SAME: iterationTopology = #sde.iteration_topology<owner_strip>
-// TILE-SAME: logicalWorkerSlice = [2, 32]
-// TILE-SAME: physicalBlockShape = [2, 32]
+// TILE-SAME: logicalWorkerSlice = [1, 32]
+// TILE-SAME: physicalBlockShape = [1, 32]
 // TILE-SAME: physicalOwnerDims = [0]
 // TILE-NOT: {{plan[A-Z]}}
 // TILE-LABEL: // -----// IR Dump After DistributionPlanning
@@ -29,8 +30,8 @@
 // SDE: sde.su_iterate (%c0) to (%c32) step (%{{.+}}) classification(<matmul>) {
 // SDE: } {
 // SDE-SAME: iterationTopology = #sde.iteration_topology<owner_strip>
-// SDE-SAME: logicalWorkerSlice = [2, 32]
-// SDE-SAME: physicalBlockShape = [2, 32]
+// SDE-SAME: logicalWorkerSlice = [1, 32]
+// SDE-SAME: physicalBlockShape = [1, 32]
 // SDE-SAME: physicalOwnerDims = [0]
 // SDE-NOT: {{plan[A-Z]}}
 // SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition
@@ -41,13 +42,13 @@
 // ARTS-SAME: depPattern = #arts.dep_pattern<matmul>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<matmul>
 // ARTS-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_strip>
-// ARTS-SAME: planLogicalWorkerSlice = [2, 32]
+// ARTS-SAME: planLogicalWorkerSlice = [1, 32]
 // ARTS: arts.edt <task>
 // ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: depPattern = #arts.dep_pattern<matmul>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<matmul>
 // ARTS-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_strip>
-// ARTS-SAME: planLogicalWorkerSlice = [2, 32]
+// ARTS-SAME: planLogicalWorkerSlice = [1, 32]
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f32, dense<32> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<32x32xf32>, %B: memref<32x32xf32>, %C: memref<32x32xf32>) {

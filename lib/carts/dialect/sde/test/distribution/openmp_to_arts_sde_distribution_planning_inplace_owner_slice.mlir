@@ -5,7 +5,8 @@
 // access stays within the owner row. SDE may author the owner-slice plan during
 // distribution planning. Until SDE/CODIR materializes token-local reduction
 // views, the unsupported physical storage attrs are demoted before the raw
-// CreateDbs bridge.
+// CreateDbs bridge. Owner-local pipeline slices use the SDE lifecycle floor,
+// so an 8-worker single-node config keeps ten rows per task.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
@@ -16,7 +17,7 @@
 // SDE: } {
 // SDE-SAME: iterationTopology = #sde.iteration_topology<owner_strip>
 // SDE-SAME: pattern = #sde.pattern<elementwise_pipeline>
-// SDE-SAME: physicalBlockShape = [16, 64]
+// SDE-SAME: physicalBlockShape = [10, 64]
 // SDE-SAME: physicalOwnerDims = [0]
 // SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition
 
@@ -24,7 +25,7 @@
 // DB: func.func @main
 // DB: depPattern = #arts.dep_pattern<elementwise_pipeline>
 // DB-SAME: planOwnerDims = [0]
-// DB-SAME: planPhysicalBlockShape = [16, 64]
+// DB-SAME: planPhysicalBlockShape = [10, 64]
 // DB-NOT: planHaloShape
 // DB-NOT: SDE-authored physical DB layout reached CreateDbs as a raw memref
 

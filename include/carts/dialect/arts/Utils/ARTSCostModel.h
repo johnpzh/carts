@@ -3,16 +3,20 @@
 ///
 /// ARTS-backed implementation of SDECostModel. SDE passes consume only the
 /// runtime-neutral SDECostModel interface. This adapter may use the configured
-/// ARTS runtime to expose total logical worker capacity, but it must not expose
-/// node topology or local-vs-distributed placement costs to SDE. ARTS owns
-/// those topology decisions after CODIR materialization.
+/// ARTS runtime to expose total logical worker capacity and abstract locality
+/// groups. SDE uses those values only for source-level grain and task-wave
+/// decisions; ARTS still owns DB ownership, EDT placement, routes, and runtime
+/// memory-model choices after CODIR materialization.
 ///==========================================================================///
 
 #ifndef CARTS_DIALECT_ARTS_UTILS_ARTSCOSTMODEL_H
 #define CARTS_DIALECT_ARTS_UTILS_ARTSCOSTMODEL_H
 
-#include "carts/dialect/sde/Utils/SDECostModel.h"
 #include "carts/dialect/arts/Utils/RuntimeConfig.h"
+#include "carts/dialect/sde/Utils/SDECostModel.h"
+
+#include <algorithm>
+#include <cmath>
 
 namespace mlir::carts::arts {
 
@@ -59,6 +63,14 @@ public:
   // --- Abstract execution capacity ---
   int getLogicalWorkerCapacity() const override {
     return machine.getRuntimeTotalWorkers();
+  }
+
+  int getWorkerLocalityGroupCount() const override {
+    return std::max(1, machine.getNodeCount());
+  }
+
+  int getWorkersPerLocalityGroup() const override {
+    return std::max(1, machine.getRuntimeWorkersPerNode());
   }
 
   int64_t getMinIterationsPerWorker() const override {

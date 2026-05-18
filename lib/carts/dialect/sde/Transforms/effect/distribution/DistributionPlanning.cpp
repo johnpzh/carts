@@ -3,8 +3,9 @@
 ///
 /// SDE distribution planning. This pass keeps distribution intent on the SDE
 /// side of the boundary by wrapping eligible `sde.su_iterate` operations in
-/// `sde.su_distribute`; it uses SDE pattern/effect facts and generic logical
-/// worker capacity, not local/distributed machine scope.
+/// `sde.su_distribute`; it uses SDE pattern/effect facts plus abstract worker
+/// capacity/locality. Concrete DB ownership, EDT placement, routes, and runtime
+/// memory-model choices remain ARTS decisions.
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
@@ -40,6 +41,13 @@ struct PlannedDistribution {
   sde::SdeSuIterateOp op;
   sde::SdeDistributionKind kind = sde::SdeDistributionKind::blocked;
 };
+
+static int64_t saturatingMultiplyPositive(int64_t lhs, int64_t rhs);
+
+static int64_t getInterLocalityTargetWorkers(sde::SDECostModel &costModel) {
+  return saturatingMultiplyPositive(costModel.getLogicalWorkerCapacity(),
+                                    costModel.getInterLocalityTaskWaves());
+}
 
 static int64_t readStencilHaloForOwnerDim(sde::SdeSuIterateOp op,
                                           unsigned ownerDim) {
@@ -247,8 +255,8 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
     if (outputPlan) {
       SmallVector<unsigned, 4> ownerLoopDims =
           chooseMappedSdeOwnerLoopDims(op, *outputPlan);
-      int64_t workers =
-          std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
+      int64_t workers = std::max<int64_t>(
+          1, getInterLocalityTargetWorkers(costModel));
       // One-dimensional halo stencils form a dependency pipeline between
       // neighboring owner blocks. Planning modestly more owner blocks than
       // logical worker capacity gives later ARTS scheduling enough ready tasks
@@ -299,7 +307,8 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
       return;
   }
 
-  int64_t workers = std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
+  int64_t workers =
+      std::max<int64_t>(1, getInterLocalityTargetWorkers(costModel));
   SmallVector<int64_t, 4> ownerDims;
   SmallVector<int64_t, 4> physicalBlockShape;
   if (!buildOwnerDimPlan(*secondaryPlan, workers, ownerDims,
@@ -334,7 +343,8 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
       return;
   }
 
-  int64_t workers = std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
+  int64_t workers =
+      std::max<int64_t>(1, getInterLocalityTargetWorkers(costModel));
   if (outputPlan->shape.front() >= workers * 4LL * 1024LL * 1024LL)
     workers *= 2;
   SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
@@ -374,7 +384,8 @@ static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
   if (effects.hasUnknownEffects || !effects.writes.contains(outputPlan->root))
     return;
 
-  int64_t workers = std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
+  int64_t workers =
+      std::max<int64_t>(1, getInterLocalityTargetWorkers(costModel));
   SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
   SmallVector<int64_t, 4> ownerExtents{outputPlan->shape[0],
                                        outputPlan->shape[1]};
@@ -395,8 +406,6 @@ static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
       op.getContext(), sde::SdeIterationTopology::owner_tile_2d));
 }
 
-static int64_t saturatingMultiplyPositive(int64_t lhs, int64_t rhs);
-
 static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
                                         sde::SDECostModel &costModel) {
   if (op.getLogicalWorkerSliceAttr() ||
@@ -413,7 +422,8 @@ static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
   int64_t workers = std::max<int64_t>(1, costModel.getLogicalWorkerCapacity());
   int64_t targetTasks = workers;
   if (op.getReductionAccumulators().empty())
-    targetTasks = saturatingMultiplyPositive(workers, 4);
+    targetTasks = saturatingMultiplyPositive(
+        workers, costModel.getOwnerLocalPipelineTargetTaskWaves());
   int64_t slice = std::max<int64_t>(
       costModel.getMinIterationsPerWorker(),
       sde::ceilDivPositive(*tripCount, targetTasks));
@@ -468,8 +478,8 @@ static void stampInPlaceSharedStencilSerialSlice(sde::SdeSuIterateOp op,
   if (!tripCount || *tripCount <= 1)
     return;
 
-  int64_t targetTasks = std::min<int64_t>(
-      64, std::max<int64_t>(1, costModel.getLogicalWorkerCapacity()));
+  int64_t targetTasks =
+      std::max<int64_t>(1, getInterLocalityTargetWorkers(costModel));
   int64_t slice = sde::ceilDivPositive(*tripCount, targetTasks);
   if (slice <= 1)
     return;

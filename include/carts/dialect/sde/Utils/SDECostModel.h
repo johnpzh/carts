@@ -42,6 +42,17 @@ public:
   // --- Abstract execution capacity ---
   virtual int getLogicalWorkerCapacity() const = 0;
 
+  // --- Abstract execution topology ---
+  // SDE may use these runtime-neutral locality groups to choose enough source
+  // tasks for both intra-group and inter-group parallelism. The model is
+  // intentionally abstract: target dialects map locality groups to concrete
+  // concepts such as nodes, sockets, or accelerator islands, while SDE only
+  // reasons about source-level work availability.
+  virtual int getWorkerLocalityGroupCount() const { return 1; }
+  virtual int getWorkersPerLocalityGroup() const {
+    return std::max(1, getLogicalWorkerCapacity());
+  }
+
   // --- Hardware parameters ---
   virtual int getVectorWidth() const = 0;
   virtual int64_t getL2CacheSize() const = 0;
@@ -89,6 +100,29 @@ public:
                static_cast<double>(std::max(2, getLogicalWorkerCapacity()))))));
     return std::max({getMinIterationsPerWorker(), lifecycleIterations,
                      capacityIterations});
+  }
+
+  virtual int64_t getInterLocalityTaskWaves() const {
+    int64_t localityGroups =
+        std::max<int64_t>(1, getWorkerLocalityGroupCount());
+    if (localityGroups <= 1)
+      return 1;
+    // Cross-locality launches need at least one spare wave so every locality
+    // can receive work while earlier tasks are paying runtime/communication
+    // startup costs. Scale sublinearly to avoid exploding tiny kernels.
+    return std::max<int64_t>(
+        2, 1 + static_cast<int64_t>(std::ceil(std::log2(static_cast<double>(
+                   std::max<int64_t>(2, localityGroups))))));
+  }
+
+  virtual int64_t getOwnerLocalPipelineTargetTaskWaves() const {
+    int64_t baseIterations = std::max<int64_t>(1, getMinIterationsPerWorker());
+    int64_t pipelineIterations =
+        std::max<int64_t>(baseIterations,
+                          getMinPipelineOwnerIterationsPerTask());
+    int64_t amortizationWaves = std::max<int64_t>(
+        1, (pipelineIterations + baseIterations - 1) / baseIterations);
+    return std::max(amortizationWaves, getInterLocalityTaskWaves());
   }
 };
 

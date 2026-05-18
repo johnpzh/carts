@@ -17,7 +17,7 @@
 // SDE: sde.su_distribute <blocked> {
 // SDE: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) classification(<elementwise_pipeline>)
 // SDE: iterationTopology = #sde.iteration_topology<owner_strip>
-// SDE-SAME: physicalBlockShape = [16]
+// SDE-SAME: physicalBlockShape = [10]
 // SDE-SAME: physicalOwnerDims = [0]
 
 // ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
