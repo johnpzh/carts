@@ -28,7 +28,15 @@ struct ConvertCodirToArtsPass
       return false;
     if (codelet.getDeps().empty())
       return true;
-    return hasCodirTileOwnerSlicePlan(codelet);
+    if (!hasCodirTileOwnerSlicePlan(codelet))
+      return false;
+
+    for (Value dep : codelet.getDeps()) {
+      arts::DbAllocOp alloc = findBackingDbAlloc(dep);
+      if (!canUseCodirOwnerSliceForAlloc(codelet, alloc))
+        return false;
+    }
+    return true;
   }
 
   scf::ForOp findGenericWorkerDispatchLoop(codir::CodeletOp codelet) const {

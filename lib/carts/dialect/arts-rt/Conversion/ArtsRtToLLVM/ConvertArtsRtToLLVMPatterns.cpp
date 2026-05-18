@@ -874,8 +874,6 @@ private:
 
           Value workerNodeId = workerInitFn.getArgument(0);
           Value workerLocalId = workerInitFn.getArgument(1);
-          Value zeroLoopIdx = AC->createIndexConstant(0, op.getLoc());
-          Value oneIdx = AC->createIndexConstant(1, op.getLoc());
           Value zeroI32 = AC->createIntConstant(0, AC->Int32, op.getLoc());
           Value isPrimaryWorker = AC->create<arith::CmpIOp>(
               op.getLoc(), arith::CmpIPredicate::eq, workerLocalId, zeroI32);
@@ -883,24 +881,18 @@ private:
               AC->create<scf::IfOp>(op.getLoc(), isPrimaryWorker, false);
           AC->setInsertionPointToStart(
               &primaryWorkerIf.getThenRegion().front());
-          auto workerLoop = AC->create<scf::ForOp>(op.getLoc(), zeroLoopIdx,
-                                                   workerTotalElems, oneIdx);
+          Value workerNodeIndex = AC->castToIndex(workerNodeId, op.getLoc());
+          Value workerTotalNodes =
+              AC->castToIndex(AC->getTotalNodes(op.getLoc()), op.getLoc());
+          auto workerLoop = AC->create<scf::ForOp>(
+              op.getLoc(), workerNodeIndex, workerTotalElems, workerTotalNodes);
           AC->setInsertionPointToStart(&workerLoop.getRegion().front());
           Value linearIndex = workerLoop.getInductionVar();
           Value reservedGuid = AC->create<memref::LoadOp>(
               op.getLoc(), workerGuidBuffer, ValueRange{linearIndex});
-          ArtsCodegen::RuntimeCallBuilder RCB(*AC, op.getLoc());
-          Value guidRank =
-              RCB.call(types::ARTSRTL_arts_guid_get_rank, {reservedGuid});
-          Value isLocalGuid = AC->create<arith::CmpIOp>(
-              op.getLoc(), arith::CmpIPredicate::eq, guidRank, workerNodeId);
-          auto localGuidIf =
-              AC->create<scf::IfOp>(op.getLoc(), isLocalGuid, false);
-          AC->setInsertionPointToStart(&localGuidIf.getThenRegion().front());
           createDbFromGuidAtIndex(workerPtrBuffer, reservedGuid, linearIndex,
                                   workerTotalDbSize, callbackNextId,
                                   op.getLoc(), DbMemoryPlacement::Default);
-          AC->setInsertionPointAfter(localGuidIf);
           AC->setInsertionPointAfter(workerLoop);
           AC->setInsertionPointAfter(primaryWorkerIf);
           AC->create<func::ReturnOp>(op.getLoc());

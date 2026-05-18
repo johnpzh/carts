@@ -49,7 +49,7 @@ def build(
         False, "--polygeist", "-p", help="Build only Polygeist (mutually exclusive target flag)"),
     llvm: bool = Option(False, "--llvm", "-l", help="Build only LLVM (mutually exclusive target flag)"),
     debug_level: int = Option(
-        0, "--debug", min=0, max=3,
+        1, "--debug", min=0, max=3,
         help="ARTS log level (--arts only): 0=error, 1=warn, 2=info, 3=debug"),
     counters_level: int = Option(
         0, "--counters",
@@ -57,6 +57,9 @@ def build(
     profile: Optional[Path] = Option(
         None, "--profile",
         help="Custom counter profile file path (overrides --counters)"),
+    rdma: bool = Option(
+        False, "--rdma",
+        help="Build ARTS with RDMA RSockets transport (--arts only)"),
     cc: Optional[str] = Option(
         None, "--cc",
         help="C compiler for LLVM bootstrap (default: clang; use gcc on systems without clang)"),
@@ -79,6 +82,9 @@ def build(
     selected_targets = sum((1 if arts else 0, 1 if polygeist else 0, 1 if llvm else 0))
     if selected_targets > 1:
         print_error("Choose only one target flag among --arts, --polygeist, --llvm.")
+        raise Exit(1)
+    if rdma and not arts:
+        print_error("--rdma is only valid with --arts.")
         raise Exit(1)
 
     # Determine build target
@@ -107,6 +113,8 @@ def build(
             make_vars.extend([
                 "ARTS_BUILD_TYPE=Debug",
             ])
+        if rdma:
+            make_vars.append("ARTS_USE_RDMA=ON")
 
     # Counter levels: 0=off, 1=artsid, 2=deep
     # Levels 1+ require USE_COUNTERS and USE_METRICS

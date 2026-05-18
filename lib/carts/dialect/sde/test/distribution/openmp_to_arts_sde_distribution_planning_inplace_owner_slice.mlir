@@ -10,20 +10,21 @@
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
 // SDE: sde.su_distribute <blocked> {
-// SDE: sde.su_iterate (%c0) to (%c128) step (%c1) classification(<reduction>) {
+// SDE: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) classification(<elementwise_pipeline>) {
 // SDE: memref.load %{{.+}}[%arg{{[0-9]+}}, %arg{{[0-9]+}}] : memref<128x64xf32>
 // SDE: memref.store %{{.+}}, %{{.+}}[%arg{{[0-9]+}}, %arg{{[0-9]+}}] : memref<128x64xf32>
 // SDE: } {
 // SDE-SAME: iterationTopology = #sde.iteration_topology<owner_strip>
-// SDE-SAME: pattern = #sde.pattern<reduction>
+// SDE-SAME: pattern = #sde.pattern<elementwise_pipeline>
 // SDE-SAME: physicalBlockShape = [16, 64]
 // SDE-SAME: physicalOwnerDims = [0]
 // SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition
 
 // DB-LABEL: // -----// IR Dump After CreateDbs
 // DB: func.func @main
-// DB-NOT: planOwnerDims
-// DB-NOT: planPhysicalBlockShape
+// DB: depPattern = #arts.dep_pattern<elementwise_pipeline>
+// DB-SAME: planOwnerDims = [0]
+// DB-SAME: planPhysicalBlockShape = [16, 64]
 // DB-NOT: planHaloShape
 // DB-NOT: SDE-authored physical DB layout reached CreateDbs as a raw memref
 

@@ -78,6 +78,11 @@ findCompatibleOutputLayoutPlan(const StructuredLoopSummary &summary);
 std::optional<StructuredOutputLayoutPlan>
 findCompatibleOutputLayoutPlan(SdeSuIterateOp op);
 
+/// Return true when a one-dimensional apparent reduction is only reducing
+/// within the owner-local output slice. These loops can use elementwise
+/// pipeline planning because no cross-owner reduction carrier is needed.
+bool isOwnerLocalPipelineReduction(SdeSuIterateOp op);
+
 //===----------------------------------------------------------------------===//
 // Shared affine decomposition utilities
 //===----------------------------------------------------------------------===//

@@ -172,6 +172,9 @@ COUNTER_CONFIG_ABSPATH := $(abspath $(COUNTER_CONFIG_PATH))
 # jemalloc allocator (opt-in). OFF because ARTS's jemalloc uses an empty
 # symbol prefix, which crashes libarts on macOS via cross-allocator free.
 ARTS_USE_JEMALLOC ?= OFF
+# RDMA/RoCE transport via ARTS RSockets. OFF by default so local developer
+# builds keep working on systems without librdmacm/RoCE devices.
+ARTS_USE_RDMA ?= OFF
 
 # Configuration hash file for ARTS build caching
 ARTS_CONFIG_HASH_FILE := $(ARTS_BUILD_DIR)/.arts-build-config
@@ -180,7 +183,7 @@ ARTS_CONFIG_HASH_FILE := $(ARTS_BUILD_DIR)/.arts-build-config
 COUNTER_CONFIG_HASH := $(shell md5sum "$(COUNTER_CONFIG_ABSPATH)" 2>/dev/null | cut -d' ' -f1 || echo "no-config")
 
 # Compute current configuration as a string for hashing
-ARTS_CONFIG_STRING := $(ARTS_BUILD_TYPE)|$(ARTS_USE_COUNTERS)|$(ARTS_USE_METRICS)|$(ARTS_LOG_LEVEL)|$(COUNTER_CONFIG_ABSPATH)|$(COUNTER_CONFIG_HASH)|$(CARTS_LINKER_PATH)|$(ARTS_USE_JEMALLOC)
+ARTS_CONFIG_STRING := $(ARTS_BUILD_TYPE)|$(ARTS_USE_COUNTERS)|$(ARTS_USE_METRICS)|$(ARTS_LOG_LEVEL)|$(COUNTER_CONFIG_ABSPATH)|$(COUNTER_CONFIG_HASH)|$(CARTS_LINKER_PATH)|$(ARTS_USE_JEMALLOC)|$(ARTS_USE_RDMA)
 
 arts-download:
 	@if [ ! -d "$(ARTS_DIR)/.git" ]; then \
@@ -205,7 +208,7 @@ arts:
 	if [ "$$CURRENT_HASH" = "$$STORED_HASH" ] && [ -f "$(ARTS_BUILD_DIR)/build.ninja" ]; then \
 		echo "ARTS configuration unchanged, skipping cmake..."; \
 	else \
-		echo "Building ARTS (build_type=$(ARTS_BUILD_TYPE), counters=$(ARTS_USE_COUNTERS), metrics=$(ARTS_USE_METRICS), log_level=$(ARTS_LOG_LEVEL), counter_config=$(notdir $(COUNTER_CONFIG_PATH)))..."; \
+		echo "Building ARTS (build_type=$(ARTS_BUILD_TYPE), counters=$(ARTS_USE_COUNTERS), metrics=$(ARTS_USE_METRICS), log_level=$(ARTS_LOG_LEVEL), counter_config=$(notdir $(COUNTER_CONFIG_PATH)), rdma=$(ARTS_USE_RDMA))..."; \
 		$(CMAKE_CMD) -B $(ARTS_BUILD_DIR) -S $(ARTS_DIR) -G Ninja \
 			-DCMAKE_C_COMPILER=$(LLVM_INSTALL_DIR)/bin/clang \
 			-DCMAKE_CXX_COMPILER=$(LLVM_INSTALL_DIR)/bin/clang++ \
@@ -213,6 +216,7 @@ arts:
 			-DARTS_LOG_LEVEL=$(ARTS_LOG_LEVEL) \
 			-DARTS_USE_GPU=OFF \
 			-DARTS_USE_JEMALLOC=$(ARTS_USE_JEMALLOC) \
+			-DARTS_USE_RDMA=$(ARTS_USE_RDMA) \
 			-DARTS_BUILD_BENCHMARKS=OFF \
 			-DARTS_BUILD_TESTS=OFF \
 			-DARTS_BUILD_EXAMPLES=OFF \

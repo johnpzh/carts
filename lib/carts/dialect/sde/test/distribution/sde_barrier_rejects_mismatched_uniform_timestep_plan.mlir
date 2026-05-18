@@ -9,13 +9,13 @@
 // CHECK: sde.su_iterate
 // CHECK-SAME: classification(<elementwise>)
 // CHECK: } {
-// CHECK-SAME: physicalBlockShape = [1, 8]
+// CHECK-SAME: physicalBlockShape = [3, 8]
 // CHECK-NOT: asyncStrategy
 // CHECK-NOT: repetitionStructure
 // CHECK: sde.su_iterate
 // CHECK-SAME: classification(<elementwise>)
 // CHECK: } {
-// CHECK-SAME: physicalBlockShape = [1]
+// CHECK-SAME: physicalBlockShape = [3]
 // CHECK-NOT: asyncStrategy
 // CHECK-NOT: repetitionStructure
 // CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //

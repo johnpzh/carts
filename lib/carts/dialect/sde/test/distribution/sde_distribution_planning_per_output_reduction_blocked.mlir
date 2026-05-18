@@ -1,21 +1,21 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
 
-// Per-output reductions such as matrix-vector rows do not carry OpenMP
-// reduction accumulators. SDE still owns the legality proof: the outer output
-// index is parallel, the inner loop is the reduction dimension, and blocked
+// Per-output row reductions such as matrix-vector rows do not carry OpenMP
+// reduction accumulators. SDE proves that the self-read stays within the owner
+// row, classifies the loop as an owner-local elementwise pipeline, and blocked
 // distribution is safe because each task owns disjoint output elements.
 
 // SDE-LABEL: // -----// IR Dump After PatternAnalysis (sde-pattern-analysis) //----- //
 // SDE: func.func @main
-// SDE: sde.su_iterate (%c0) to (%c128) step (%c1) classification(<reduction>)
-// SDE: pattern = #sde.pattern<reduction>
+// SDE: sde.su_iterate (%c0) to (%c128) step (%c1) classification(<elementwise_pipeline>)
+// SDE: pattern = #sde.pattern<elementwise_pipeline>
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
 // SDE: sde.cu_region <parallel> {
 // SDE: sde.su_distribute <blocked> {
-// SDE: sde.su_iterate (%c0) to (%c128) step (%c1) classification(<reduction>)
+// SDE: sde.su_iterate (%c0) to (%c128) step (%{{.+}}) classification(<elementwise_pipeline>)
 // SDE: iterationTopology = #sde.iteration_topology<owner_strip>
 // SDE-SAME: physicalBlockShape = [16]
 // SDE-SAME: physicalOwnerDims = [0]
@@ -25,7 +25,7 @@
 // ARTS: arts.edt <task>
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
 // ARTS: arts.edt <task>
-// ARTS: depPattern = #arts.dep_pattern<uniform>
+// ARTS: depPattern = #arts.dep_pattern<elementwise_pipeline>
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
 // ARTS-NOT: sde.
 

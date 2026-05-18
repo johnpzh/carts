@@ -603,6 +603,36 @@ buildLoopPhysicalDimMaps(AffineMap map, unsigned numLoops, unsigned rank) {
 
 } // namespace
 
+bool isOwnerLocalPipelineReduction(SdeSuIterateOp iterOp) {
+  if (iterOp.getReductionAccumulators().size() != 0)
+    return false;
+  if (iterOp.getLowerBounds().size() != 1)
+    return false;
+
+  std::optional<LoopIndexedOutputPlan> outputPlan =
+      findLoopIndexedOutputPlan(iterOp);
+  if (!outputPlan || outputPlan->ownerPhysicalDims.empty())
+    return false;
+
+  StructuredMemoryEffectSummary effects =
+      collectStructuredMemoryEffects(iterOp.getBody());
+  if (effects.hasUnknownEffects || effects.writes.empty() ||
+      !effects.writes.contains(outputPlan->root))
+    return false;
+
+  for (Value written : effects.writes) {
+    if (isDefinedInside(iterOp.getOperation(), written))
+      continue;
+    if (!effects.reads.contains(written))
+      continue;
+    if (!allRootAccessesStayWithinOwnerSlice(iterOp, written,
+                                             outputPlan->ownerPhysicalDims))
+      return false;
+  }
+
+  return true;
+}
+
 std::optional<AffineDimOffset> extractDimOffset(AffineExpr expr) {
   if (auto dimExpr = dyn_cast<AffineDimExpr>(expr))
     return AffineDimOffset{dimExpr.getPosition(), 0};
@@ -671,6 +701,9 @@ analyzeStructuredLoop(SdeSuIterateOp iterOp) {
   summary.classification =
       classifyPattern(summary.reads, summary.outputMaps, summary.iterTypes,
                       summary.nest.ivs.size());
+  if (summary.classification == SdeStructuredClassification::reduction &&
+      isOwnerLocalPipelineReduction(iterOp))
+    summary.classification = SdeStructuredClassification::elementwise_pipeline;
   summary.supportsReductionCarrier = supportsReductionCarrierSubset(
       iterOp, summary.nest, summary.reads, summary.writes);
   return summary;

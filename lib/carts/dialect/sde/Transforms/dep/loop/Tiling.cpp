@@ -13,6 +13,7 @@ namespace mlir::carts::sde {
 } // namespace mlir::carts::sde
 
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
+#include "carts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "carts/dialect/sde/Utils/IterationSizingUtils.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
 #include "carts/utils/ArrayAttrUtils.h"
@@ -482,7 +483,12 @@ buildStencilPhysicalTilePlan(sde::SdeSuIterateOp op,
   if (op.getLowerBounds().size() != 1)
     return std::nullopt;
   auto effects = sde::collectStructuredMemoryEffects(op.getBody());
-  if (effects.hasUnknownEffects || sde::hasInPlaceSelfRead(effects))
+  bool ownerLocalPipeline =
+      op.getStructuredClassification() ==
+          sde::SdeStructuredClassification::elementwise_pipeline &&
+      sde::isOwnerLocalPipelineReduction(op);
+  if (effects.hasUnknownEffects ||
+      (sde::hasInPlaceSelfRead(effects) && !ownerLocalPipeline))
     return std::nullopt;
 
   std::optional<sde::LoopIndexedOutputPlan> outputPlan =
@@ -600,7 +606,7 @@ static void stampPhysicalTilePlan(sde::SdeSuIterateOp op,
 static bool isTilingCandidate(sde::SdeSuIterateOp op, Block &body) {
   if (op.getChunkSize())
     return false;
-  if (op->getParentOfType<scf::ForOp>())
+  if (op->getParentOfType<sde::SdeSuIterateOp>())
     return false;
   if (op.getLowerBounds().empty())
     return false;
@@ -617,15 +623,20 @@ static bool isTilingCandidate(sde::SdeSuIterateOp op, Block &body) {
       return false;
     return isExecutableInnermostBody(body) ||
            hasPerfectNestedScalarLoopNest(body, /*numLoops=*/2);
+  case sde::SdeStructuredClassification::elementwise_pipeline:
+    if (op.getReductionAccumulators().size() != 0)
+      return false;
+    return isExecutableInnermostBody(body) ||
+           hasPerfectNestedScalarLoopNest(body, /*numLoops=*/2) ||
+           sde::isOwnerLocalPipelineReduction(op);
   case sde::SdeStructuredClassification::matmul:
     if (op.getReductionAccumulators().size() != 0)
       return false;
     return isDirectMemoryMatmulCandidate(op, body);
   case sde::SdeStructuredClassification::reduction:
     return false;
-  default:
-    return false;
   }
+  return false;
 }
 
 static void cloneBodyIntoTileLoop(Block &srcBody, IRMapping &mapper,
@@ -794,6 +805,14 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
         perDimTileIter.clear();
         for (int64_t tile : physicalTilePlan->tileIterations)
           perDimTileIter.push_back(getConstantIndex(rewriter, loc, tile));
+      }
+
+      if (!physicalTilePlan && !directMatmul &&
+          sde::isOwnerLocalPipelineReduction(op)) {
+        if (auto staticTileIterations =
+                computeStaticTileIterations(op, *costModel))
+          physicalTilePlan =
+              buildStencilPhysicalTilePlan(op, *staticTileIterations);
       }
 
       // For stencils, enforce halo-aware minimum tile size per dimension.
