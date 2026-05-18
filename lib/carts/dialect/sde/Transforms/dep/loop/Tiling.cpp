@@ -42,6 +42,22 @@ static Value getConstantIndex(OpBuilder &builder, Location loc, int64_t value) {
   return arith::ConstantIndexOp::create(builder, loc, value);
 }
 
+static bool usesOwnerLocalPipelineGrain(sde::SdeSuIterateOp op) {
+  auto classification = op.getStructuredClassification();
+  return classification &&
+         *classification ==
+             sde::SdeStructuredClassification::elementwise_pipeline &&
+         sde::isOwnerLocalPipelineReduction(op);
+}
+
+static int64_t getMinTileIterations(sde::SdeSuIterateOp op,
+                                    sde::SDECostModel &costModel) {
+  if (usesOwnerLocalPipelineGrain(op))
+    return std::max<int64_t>(
+        1, costModel.getMinPipelineOwnerIterationsPerTask());
+  return std::max<int64_t>(1, costModel.getMinIterationsPerWorker());
+}
+
 static Value buildTileIterationValue(OpBuilder &builder, Location loc,
                                      sde::SdeSuIterateOp op,
                                      sde::SDECostModel &costModel) {
@@ -51,9 +67,8 @@ static Value buildTileIterationValue(OpBuilder &builder, Location loc,
 
   Value one = getConstantIndex(builder, loc, 1);
   Value workerCountValue = sde::buildLogicalWorkerCapacityValue(builder, loc);
-  Value minIterationsValue = getConstantIndex(
-      builder, loc,
-      std::max<int64_t>(1, costModel.getMinIterationsPerWorker()));
+  Value minIterationsValue =
+      getConstantIndex(builder, loc, getMinTileIterations(op, costModel));
 
   Value clampedTripCount = arith::MaxUIOp::create(builder, loc, tripCount, one);
   Value balancedTile = arith::CeilDivUIOp::create(
@@ -112,7 +127,7 @@ buildPerDimTileIterations(OpBuilder &builder, Location loc,
   int workersPerDim =
       std::max(1, static_cast<int>(std::ceil(std::pow(
                       costModel.getLogicalWorkerCapacity(), 1.0 / numDims))));
-  int64_t minIter = costModel.getMinIterationsPerWorker();
+  int64_t minIter = getMinTileIterations(op, costModel);
 
   SmallVector<Value> tileIterations;
   for (unsigned d = 0; d < numDims; ++d) {
@@ -420,7 +435,7 @@ computeStaticTileIterations(sde::SdeSuIterateOp op,
         sde::ceilDivPositive(std::max<int64_t>(0, ub - lb), step));
   }
 
-  int64_t minIter = std::max<int64_t>(1, costModel.getMinIterationsPerWorker());
+  int64_t minIter = getMinTileIterations(op, costModel);
   SmallVector<int64_t, 4> tileIterations;
   tileIterations.reserve(numDims);
   if (numDims == 1) {
@@ -777,10 +792,10 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
           int64_t balancedTile = llvm::divideCeil(
               *tripCount,
               std::max<int64_t>(1, costModel->getLogicalWorkerCapacity()));
-          int64_t tileCount = std::clamp(
-              std::max<int64_t>(balancedTile,
-                                costModel->getMinIterationsPerWorker()),
-              int64_t{1}, *tripCount);
+          int64_t tileCount =
+              std::clamp(std::max<int64_t>(
+                             balancedTile, getMinTileIterations(op, *costModel)),
+                         int64_t{1}, *tripCount);
           if (tileCount <= 1)
             continue;
           tileIterations = getConstantIndex(rewriter, loc, tileCount);

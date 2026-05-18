@@ -33,8 +33,10 @@ def Tiling : Pass<"tiling", "mlir::ModuleOp"> {
     `sde.resource_query <logical_workers>` and remains target-neutral in SDE.
     The current implementation focuses on the first executable subset:
     one-dimensional elementwise loops are strip-mined into logical-capacity
-    tiles and the surrounding sde.su_iterate step is rewritten so the
-    transformed loop nest survives into later lowering.
+    tiles and owner-local elementwise pipelines are coarsened with the SDE cost
+    model so codelets amortize local pipeline stages before CODIR lowering. The
+    surrounding sde.su_iterate step is rewritten so the transformed loop nest
+    survives into later lowering.
   }];
   let dependentDialects = ["::mlir::carts::sde::CartsSdeDialect",
                            "::mlir::arith::ArithDialect",

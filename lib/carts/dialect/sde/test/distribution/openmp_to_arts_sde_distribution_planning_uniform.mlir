@@ -19,7 +19,7 @@
 // SDE: sde.su_iterate
 // SDE: } {
 // SDE-SAME: iterationTopology = #sde.iteration_topology<owner_strip>
-// SDE-SAME: physicalBlockShape = [8]
+// SDE-SAME: physicalBlockShape = [10]
 // SDE-SAME: physicalOwnerDims = [0]
 // SDE-NOT: {{plan[A-Z]}}
 // SDE-LABEL: // -----// IR Dump After IterationSpaceDecomposition

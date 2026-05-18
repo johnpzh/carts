@@ -1,4 +1,5 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline sde-to-codir --mlir-print-ir-after-all 2>&1 | %FileCheck %s
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode_64x64.cfg --start-from sde-planning --pipeline sde-to-codir --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=MN64
 
 // Row-local reductions inside one owner iteration are not cross-iteration
 // reductions. SDE should keep the owner dimension chunkable so CODIR/ARTS do
@@ -15,6 +16,24 @@
 // CHECK: sde.su_iterate (%c0) to (%c1024) step (%[[STEP]]) classification(<elementwise_pipeline>) {
 // CHECK: func.func @shifted_self_read_not_owner_local
 // CHECK: sde.su_iterate (%c0) to (%c1023) step (%c1) classification(<reduction>) {
+// CHECK-LABEL: // -----// IR Dump After ConvertSdeToCodir (convert-sde-to-codir) //----- //
+// CHECK: func.func @row_local_pipeline
+// CHECK: codir.codelet
+// CHECK-SAME: logical_worker_slice = [128, 256]
+// CHECK-SAME: pattern = #codir.pattern<elementwise_pipeline>
+// CHECK-SAME: tile_shape = [128, 256]
+
+// MN64-LABEL: // -----// IR Dump After Tiling (tiling) //----- //
+// MN64: func.func @row_local_pipeline
+// MN64: %[[STEP:.*]] = arith.muli %c1, %c64{{(_[0-9]+)?}} : index
+// MN64: sde.su_iterate (%c0) to (%c1024) step (%[[STEP]]) classification(<elementwise_pipeline>) {
+// MN64: physicalBlockShape = [64, 256]
+// MN64-LABEL: // -----// IR Dump After ConvertSdeToCodir (convert-sde-to-codir) //----- //
+// MN64: func.func @row_local_pipeline
+// MN64: codir.codelet
+// MN64-SAME: logical_worker_slice = [64, 256]
+// MN64-SAME: pattern = #codir.pattern<elementwise_pipeline>
+// MN64-SAME: tile_shape = [64, 256]
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @row_local_pipeline(%x: memref<1024x256xf32>, %gamma: memref<256xf32>, %beta: memref<256xf32>) {
