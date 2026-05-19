@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --pass-pipeline='builtin.module(verify-codir,convert-codir-to-arts)' \
+// RUN: %carts-compile %s --pass-pipeline='builtin.module(verify-codir,storage-planning,convert-codir-to-arts)' \
 // RUN:   --arts-config %inputs_dir/arts_multinode_4x16.cfg | %FileCheck %s --implicit-check-not="arts.edt <task> <intranode>"
 
 module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_workers = 64 : i64} {

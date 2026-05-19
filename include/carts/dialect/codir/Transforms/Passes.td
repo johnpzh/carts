@@ -38,4 +38,22 @@ def CodirCodeletOpt : Pass<"codir-codelet-opt", "mlir::ModuleOp"> {
   let constructor = "mlir::carts::codir::createCodirCodeletOptPass()";
 }
 
+def StoragePlanning : Pass<"storage-planning", "mlir::ModuleOp"> {
+  let summary = "Normalize CODIR dependency storage plans before ARTS lowering";
+  let description = [{
+    CODIR-owned storage planning pass. It turns high-level dependency storage
+    requests into explicit per-dependency contracts that ARTS materialization can
+    consume directly: owner-local compute blocks, phase redistribution bridges,
+    or host-whole local fallback. This keeps bridge selection and cost policy out
+    of the CODIR-to-ARTS conversion.
+  }];
+  let dependentDialects = [
+    "::mlir::carts::codir::CartsCodirDialect",
+    "::mlir::arith::ArithDialect",
+    "::mlir::memref::MemRefDialect",
+    "::mlir::scf::SCFDialect"
+  ];
+  let constructor = "mlir::carts::codir::createStoragePlanningPass()";
+}
+
 #endif // CARTS_DIALECT_CODIR_TRANSFORMS_PASSES

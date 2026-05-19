@@ -278,7 +278,8 @@ static const std::array<llvm::StringLiteral, 14> kSdePlanningPasses = {
     "MemoryUnitMaterialization"};
 static const std::array<llvm::StringLiteral, 3> kSdeToCodirPasses = {
     "ConvertSdeToCodir", "CodirCodeletOpt", "VerifyCodir"};
-static const std::array<llvm::StringLiteral, 6> kCodirToArtsPasses = {
+static const std::array<llvm::StringLiteral, 7> kCodirToArtsPasses = {
+    "StoragePlanning",
     "ConvertCodirToArts",
     "VerifySdeLowered",
     "VerifyArtsObjectsOnly",
@@ -410,7 +411,7 @@ static constexpr llvm::StringLiteral kTargetSdeStages[] = {
 static constexpr llvm::StringLiteral kTargetSdeToCodirStages[] = {
     "sde-to-codir"};
 static constexpr llvm::StringLiteral kTargetCodirStages[] = {
-    "verify-codir", "codir-codelet-opt"};
+    "verify-codir", "codelet-opt", "storage-planning"};
 static constexpr llvm::StringLiteral kTargetCodirToArtsStages[] = {
     "codir-to-arts"};
 static constexpr llvm::StringLiteral kTargetArtsStages[] = {
@@ -1194,6 +1195,7 @@ void buildSdeToCodirPipeline(PassManager &pm) {
 /// CODIR-to-ARTS materialization. Every ARTS EDT must come from a CODIR
 /// codelet; any remaining SDE op is a boundary error.
 void buildCodirToArtsPipeline(PassManager &pm) {
+  pm.addPass(codir::createStoragePlanningPass());
   pm.addPass(codir::createConvertCodirToArtsPass());
   pm.addPass(sde::createVerifySdeLoweredPass());
   pm.addPass(arts::createVerifyArtsObjectsOnlyPass());

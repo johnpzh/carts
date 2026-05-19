@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --pass-pipeline='builtin.module(verify-codir,convert-codir-to-arts,verify-arts-objects-only)' \
+// RUN: %carts-compile %s --pass-pipeline='builtin.module(verify-codir,storage-planning,convert-codir-to-arts,verify-arts-objects-only)' \
 // RUN:   | %FileCheck %s --implicit-check-not="arts.edt <task> <internode>"
 
 // A codelet may carry generic distribution intent before SDE/CODIR can

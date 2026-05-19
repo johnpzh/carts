@@ -1,11 +1,12 @@
 // RUN: %carts-compile %s --pass-pipeline='builtin.module(convert-sde-to-codir,verify-codir)' \
 // RUN:   | %FileCheck %s --check-prefix=CODIR
-// RUN: %carts-compile %s --pass-pipeline='builtin.module(convert-sde-to-codir,verify-codir,convert-codir-to-arts)' \
+// RUN: %carts-compile %s --pass-pipeline='builtin.module(convert-sde-to-codir,verify-codir,storage-planning,convert-codir-to-arts)' \
 // RUN:   | %FileCheck %s --check-prefix=ARTS --implicit-check-not="arts.edt <task> <intranode>"
 
 // CODIR remains machine-generic: it carries logical worker and physical owner
-// slice metadata only. CODIR-to-ARTS is the first boundary that may consult the
-// ARTS runtime topology and route planned codelet chunks across nodes.
+// slice metadata only. Storage planning normalizes the dependency storage
+// contract, then CODIR-to-ARTS consults the ARTS runtime topology and routes
+// planned codelet chunks across nodes.
 
 module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_workers = 256 : i64} {
   func.func @planned_owner_strip_routes_by_chunk(%A: memref<128x16xf32>, %B: memref<128x16xf32>) {

@@ -1,9 +1,9 @@
-// RUN: %carts-compile %s --pass-pipeline='builtin.module(verify-codir,convert-codir-to-arts)' \
+// RUN: %carts-compile %s --pass-pipeline='builtin.module(verify-codir,storage-planning,convert-codir-to-arts)' \
 // RUN:   --arts-config %inputs_dir/arts_multinode_8x64.cfg | %FileCheck %s --check-prefixes=CHECK,WRITE,WRITEFIRST,HOIST,SHARED,READONLY,PERSIST
 
-// A dependency with an explicit compute_block storage view can be backed by a
-// separate block DB even when host code still needs the original whole view.
-// CODIR-to-ARTS must insert the bridge copies instead of replacing the host
+// Storage planning turns an owner-local compute_block request into an explicit
+// phase_redistributed contract when host code still needs the original whole
+// view. CODIR-to-ARTS then inserts bridge copies instead of replacing the host
 // allocation with block zero. Write-only owner-slice bridges do not need to
 // seed the block DB from stale host contents before the EDTs run. Repeated
 // owner-slice waves with no host-whole uses inside the repetition keep the

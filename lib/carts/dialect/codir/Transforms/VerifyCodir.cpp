@@ -70,6 +70,35 @@ struct VerifyCodirPass
         }
       }
 
+      ArrayAttr depOwnerDims = codelet.getDepOwnerDimsAttr();
+      if (depOwnerDims) {
+        if (depOwnerDims.size() != codelet.getDeps().size()) {
+          codelet.emitOpError()
+              << "expects dep_owner_dims entry count (" << depOwnerDims.size()
+              << ") to match dependency operand count ("
+              << codelet.getDeps().size() << ")";
+          failed = true;
+        }
+        for (auto [index, attr] : llvm::enumerate(depOwnerDims)) {
+          auto dims = dyn_cast<ArrayAttr>(attr);
+          if (!dims) {
+            codelet.emitOpError()
+                << "dep_owner_dims entry #" << index
+                << " must be an array attribute, got " << attr;
+            failed = true;
+            continue;
+          }
+          for (Attribute dim : dims) {
+            if (isa<IntegerAttr>(dim))
+              continue;
+            codelet.emitOpError()
+                << "dep_owner_dims entry #" << index
+                << " must contain integer attributes, got " << dim;
+            failed = true;
+          }
+        }
+      }
+
       for (auto [index, dep] : llvm::enumerate(codelet.getDeps())) {
         if (codir::isCodirDependencyType(dep.getType()))
           continue;

@@ -80,8 +80,8 @@ createCodirCodelet(OpBuilder &builder, Location loc, ArrayAttr depModes,
                    UnitAttr taskDepend = {}, UnitAttr orderedTaskDepend = {},
                    UnitAttr completionBarrier = {}) {
   return codir::CodeletOp::create(
-      builder, loc, depModes, depStorageViews, taskDepend, orderedTaskDepend,
-      completionBarrier, metadata.pattern, metadata.distributionKind,
+      builder, loc, depModes, depStorageViews, ArrayAttr{}, taskDepend,
+      orderedTaskDepend, completionBarrier, metadata.pattern, metadata.distributionKind,
       metadata.iterationTopology, metadata.repetitionStructure,
       metadata.asyncStrategy, metadata.planOwnerDims, metadata.tileOwnerDims,
       metadata.tileShape, metadata.logicalWorkerSlice, metadata.haloShape,
@@ -235,28 +235,46 @@ static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
   return indexSelectsOwnerSlice(index, ownerIv, seen);
 }
 
-static inline bool allRootAccessesUseOwnerFirstDim(sde::SdeSuIterateOp source,
-                                                   Value root) {
+static inline std::optional<unsigned>
+inferSingleOwnerAccessDim(sde::SdeSuIterateOp source, Value root) {
   if (!source || !root || source.getBody().empty())
-    return false;
+    return std::nullopt;
 
   auto rootType = dyn_cast<MemRefType>(root.getType());
   if (!rootType || rootType.getRank() == 0)
-    return false;
+    return std::nullopt;
 
   Block &body = source.getBody().front();
   if (body.getNumArguments() == 0)
-    return false;
+    return std::nullopt;
   Value ownerIv = body.getArgument(0);
 
   bool sawRootAccess = false;
   bool rejected = false;
+  std::optional<unsigned> selectedDim;
   auto checkAccess = [&](Value memref, OperandRange indices) {
     if (::mlir::carts::ValueAnalysis::stripMemrefViewOps(memref) != root)
       return;
     sawRootAccess = true;
-    if (indices.empty() || !indexSelectsOwnerSlice(indices.front(), ownerIv))
+    std::optional<unsigned> accessDim;
+    for (auto [dim, index] : llvm::enumerate(indices)) {
+      if (!indexSelectsOwnerSlice(index, ownerIv))
+        continue;
+      if (accessDim && *accessDim != dim) {
+        rejected = true;
+        return;
+      }
+      accessDim = static_cast<unsigned>(dim);
+    }
+    if (!accessDim) {
       rejected = true;
+      return;
+    }
+    if (selectedDim && *selectedDim != *accessDim) {
+      rejected = true;
+      return;
+    }
+    selectedDim = *accessDim;
   };
 
   source.getBody().walk([&](Operation *op) {
@@ -277,7 +295,16 @@ static inline bool allRootAccessesUseOwnerFirstDim(sde::SdeSuIterateOp source,
     return WalkResult::advance();
   });
 
-  return sawRootAccess && !rejected;
+  if (!sawRootAccess || rejected)
+    return std::nullopt;
+  return selectedDim;
+}
+
+static inline bool allRootAccessesUseOwnerFirstDim(sde::SdeSuIterateOp source,
+                                                   Value root) {
+  std::optional<unsigned> ownerDim =
+      inferSingleOwnerAccessDim(source, root);
+  return ownerDim && *ownerDim == 0;
 }
 
 static inline bool hasSamePhysicalLayoutPlan(sde::SdeSuIterateOp lhs,
@@ -2022,27 +2049,36 @@ static inline void appendSuOwnerSliceLocalRewrites(sde::SdeSuIterateOp source,
 
   std::optional<SmallVector<int64_t, 4>> ownerDims =
       ::mlir::carts::readI64ArrayAttr(source.getPhysicalOwnerDimsAttr());
-  if (!ownerDims || ownerDims->size() != 1 || (*ownerDims)[0] != 0)
+  if (!ownerDims || ownerDims->size() != 1 || (*ownerDims)[0] < 0)
     return;
+  unsigned plannedOwnerDim = static_cast<unsigned>((*ownerDims)[0]);
 
   for (auto [depIndex, dep] : llvm::enumerate(plan.deps)) {
     auto depType = dyn_cast<MemRefType>(dep.getType());
-    if (!depType || depType.getRank() == 0 ||
-        !allRootAccessesUseOwnerFirstDim(source, dep))
+    if (!depType || depType.getRank() == 0)
       continue;
 
     Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(dep);
+    std::optional<unsigned> accessOwnerDim =
+        inferSingleOwnerAccessDim(source, root);
+    if (!accessOwnerDim || *accessOwnerDim >= depType.getRank())
+      continue;
+
     bool needsHostWholeBridge =
         isa_and_nonnull<BlockArgument>(root) ||
         canBridgeSdeMuAllocHostWholeToComputeBlock(dep, source);
+    bool matchesMaterializedPlan = *accessOwnerDim == plannedOwnerDim;
 
-    if (!needsHostWholeBridge &&
+    if (!needsHostWholeBridge && matchesMaterializedPlan &&
         isSdeMuAllocMaterializedWithPlan(dep, source)) {
       SmallVector<Value> offsets;
       offsets.reserve(depType.getRank());
-      offsets.push_back(dispatchBase);
-      for (int64_t dim = 1, rank = depType.getRank(); dim < rank; ++dim)
-        offsets.push_back(createZeroIndex(builder, source.getLoc()));
+      for (int64_t dim = 0, rank = depType.getRank(); dim < rank; ++dim) {
+        if (static_cast<unsigned>(dim) == *accessOwnerDim)
+          offsets.push_back(dispatchBase);
+        else
+          offsets.push_back(createZeroIndex(builder, source.getLoc()));
+      }
 
       plan.localIndexRewrites.push_back(
           {static_cast<unsigned>(depIndex), std::move(offsets), {}});
@@ -2052,7 +2088,7 @@ static inline void appendSuOwnerSliceLocalRewrites(sde::SdeSuIterateOp source,
       continue;
     }
 
-    if (needsHostWholeBridge && depIndex < plan.depStorageViews.size())
+    if (depIndex < plan.depStorageViews.size())
       plan.depStorageViews[depIndex] =
           codir::CodirStorageViewKind::compute_block;
   }

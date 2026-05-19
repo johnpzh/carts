@@ -28,6 +28,7 @@ def CartsCodir_CodeletOp
   let arguments = (ins
     OptionalAttr<ArrayAttr>:$dep_modes,
     OptionalAttr<ArrayAttr>:$dep_storage_views,
+    OptionalAttr<ArrayAttr>:$dep_owner_dims,
     OptionalAttr<UnitAttr>:$task_depend,
     OptionalAttr<UnitAttr>:$ordered_task_depend,
     OptionalAttr<UnitAttr>:$completion_barrier,

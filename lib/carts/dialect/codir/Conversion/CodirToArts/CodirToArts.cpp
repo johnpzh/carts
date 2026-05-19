@@ -46,7 +46,8 @@ struct ConvertCodirToArtsPass
       if (!codirDepAllowsComputeBlockStorage(codelet,
                                              static_cast<unsigned>(idx)))
         return false;
-      if (!canUseCodirOwnerSliceForAlloc(codelet, alloc))
+      if (!canUseCodirOwnerSliceForAlloc(codelet, static_cast<unsigned>(idx),
+                                         alloc))
         return false;
       if (!codirDepAccessesStayWithinSingleOwnerSlice(
               codelet, static_cast<unsigned>(idx)))
@@ -242,15 +243,15 @@ struct ConvertCodirToArtsPass
       SmallVector<Value> dbOffsets{createZeroIndex(builder, loc)};
       SmallVector<Value> dbSizes{createOneIndex(builder, loc)};
       std::optional<unsigned> plannedBlockOwnerDim;
+      unsigned depIdx = static_cast<unsigned>(idx);
       if (codirDepAllowsComputeBlockStorage(codelet,
-                                             static_cast<unsigned>(idx)) &&
-          canUseCodirOwnerSliceForAlloc(codelet, alloc) &&
-          codirDepAccessesStayWithinSingleOwnerSlice(
-              codelet, static_cast<unsigned>(idx)) &&
+                                             depIdx) &&
+          canUseCodirOwnerSliceForAlloc(codelet, depIdx, alloc) &&
+          codirDepAccessesStayWithinSingleOwnerSlice(codelet, depIdx) &&
           !codelet.getParams().empty()) {
         if (std::optional<int64_t> blockSize =
                 getSingleCodirTileOwnerBlockSize(
-                    codelet,
+                    codelet, depIdx,
                     static_cast<unsigned>(alloc.getElementSizes().size()))) {
           Value blockSizeValue = createConstantIndex(builder, loc, *blockSize);
           Value base = codelet.getParams().back();
@@ -258,7 +259,7 @@ struct ConvertCodirToArtsPass
               arith::DivUIOp::create(builder, loc, base, blockSizeValue);
           dbOffsets.assign({blockIndex});
           dbSizes.assign({createOneIndex(builder, loc)});
-          plannedBlockOwnerDim = getSingleCodirTileOwnerDim(codelet);
+          plannedBlockOwnerDim = getCodirDepOwnerDim(codelet, depIdx);
         }
       }
       auto acquire = arts::DbAcquireOp::create(
