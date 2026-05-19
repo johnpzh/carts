@@ -62,6 +62,17 @@ def SdeAccessMode
     ]>;
 def SdeAccessModeAttr : CartsSde_I32EnumAttr<"access_mode", SdeAccessMode>;
 
+def SdeStorageViewKind
+    : CartsSde_I32Enum<"SdeStorageViewKind",
+                      "SDE storage view contract", [
+      I32EnumAttrCase<"host_whole", 0, "host_whole">,
+      I32EnumAttrCase<"compute_block", 1, "compute_block">,
+      I32EnumAttrCase<"replicated_read", 2, "replicated_read">,
+      I32EnumAttrCase<"phase_redistributed", 3, "phase_redistributed">
+    ]>;
+def SdeStorageViewKindAttr
+    : CartsSde_I32EnumAttr<"storage_view", SdeStorageViewKind>;
+
 def SdeReductionKind
     : CartsSde_I32Enum<"SdeReductionKind", "Reduction operation kind", [
       I32EnumAttrCase<"add", 0, "add">,
@@ -483,7 +494,8 @@ def SdeMuDepOp
     SdeAccessModeAttr:$mode,
     AnyMemRef:$source,
     Variadic<Index>:$offsets,
-    Variadic<Index>:$sizes
+    Variadic<Index>:$sizes,
+    OptionalAttr<SdeStorageViewKindAttr>:$storageView
   );
 
   let results = (outs SdeDepType:$dep);
@@ -514,7 +526,8 @@ def SdeMuTokenOp
     SdeAccessModeAttr:$mode,
     AnyMemRef:$source,
     Variadic<Index>:$offsets,
-    Variadic<Index>:$sizes
+    Variadic<Index>:$sizes,
+    OptionalAttr<SdeStorageViewKindAttr>:$storageView
   );
 
   let results = (outs SdeTokenType:$token);

@@ -947,7 +947,8 @@ struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
           auto muDep = sde::SdeMuDepOp::create(
               rewriter, loc, sde::DepType::get(ctx),
               sde::SdeAccessModeAttr::get(ctx, *sdeMode), depSlice->source,
-              depSlice->offsets, depSlice->sizes);
+              depSlice->offsets, depSlice->sizes,
+              sde::SdeStorageViewKindAttr{});
           deps.push_back(muDep.getDep());
         }
         dependSpecs.push_back(TaskDependSpec{*sdeMode, std::move(*depSlice)});

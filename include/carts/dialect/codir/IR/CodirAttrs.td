@@ -30,6 +30,17 @@ def CodirAccessMode
     ]>;
 def AccessModeAttr : CartsCodir_I32EnumAttr<"access_mode", CodirAccessMode>;
 
+def CodirStorageViewKind
+    : CartsCodir_I32Enum<"CodirStorageViewKind",
+                         "CODIR dependency storage view contract", [
+      I32EnumAttrCase<"host_whole", 0, "host_whole">,
+      I32EnumAttrCase<"compute_block", 1, "compute_block">,
+      I32EnumAttrCase<"replicated_read", 2, "replicated_read">,
+      I32EnumAttrCase<"phase_redistributed", 3, "phase_redistributed">
+    ]>;
+def StorageViewKindAttr
+    : CartsCodir_I32EnumAttr<"storage_view", CodirStorageViewKind>;
+
 def CodirPattern
     : CartsCodir_I32Enum<"CodirPattern",
                          "CODIR codelet dependency and schedule family", [

@@ -1,5 +1,6 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline create-dbs --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=DB
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode_8x64.cfg --start-from sde-planning --pipeline create-dbs --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=MNDB
 
 // In-place row-local kernels read and write the same root memref, but every
 // access stays within the owner row. SDE may author the owner-slice plan during
@@ -23,11 +24,41 @@
 
 // DB-LABEL: // -----// IR Dump After CreateDbs
 // DB: func.func @main
+// DB: arts.db_alloc
+// DB-SAME: <coarse>
+// DB: arts.db_alloc
+// DB-SAME: <block>
+// DB-SAME: arts.storage_bridge = "host_whole_to_compute_block"
+// DB: scf.for
+// DB: memref.load
+// DB: memref.store
+// DB: arts.edt <task> <intranode>
 // DB: depPattern = #arts.dep_pattern<elementwise_pipeline>
 // DB-SAME: planOwnerDims = [0]
 // DB-SAME: planPhysicalBlockShape = [16, 64]
+// DB: arts.barrier
+// DB: scf.for
+// DB: memref.load
+// DB: memref.store
 // DB-NOT: planHaloShape
 // DB-NOT: SDE-authored physical DB layout reached CreateDbs as a raw memref
+
+// MNDB-LABEL: // -----// IR Dump After CreateDbs
+// MNDB: arts.db_alloc
+// MNDB-SAME: <coarse>
+// MNDB: arts.db_alloc
+// MNDB-SAME: <block>
+// MNDB-SAME: arts.storage_bridge = "host_whole_to_compute_block"
+// MNDB: scf.for
+// MNDB: memref.load
+// MNDB: memref.store
+// MNDB: arts.edt <task> <internode>
+// MNDB-SAME: planPhysicalBlockShape = [10, 64]
+// MNDB: arts.barrier
+// MNDB: scf.for
+// MNDB: memref.load
+// MNDB: memref.store
+// MNDB-NOT: SDE-authored physical DB layout reached CreateDbs as a raw memref
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main() -> i32 {

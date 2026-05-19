@@ -33,6 +33,9 @@ struct ConvertCodirToArtsPass
 
     for (auto [idx, dep] : llvm::enumerate(codelet.getDeps())) {
       arts::DbAllocOp alloc = findBackingDbAlloc(dep);
+      if (!codirDepAllowsComputeBlockStorage(codelet,
+                                             static_cast<unsigned>(idx)))
+        return false;
       if (!canUseCodirOwnerSliceForAlloc(codelet, alloc))
         return false;
       if (!codirDepAccessesStayWithinSingleOwnerSlice(
@@ -121,10 +124,20 @@ struct ConvertCodirToArtsPass
     SmallVector<codir::CodeletOp> codelets;
     module.walk([&](codir::CodeletOp op) { codelets.push_back(op); });
     for (codir::CodeletOp codelet : codelets) {
-      for (Value dep : codelet.getDeps()) {
-        if (findBackingDbAlloc(dep))
+      for (auto [depIndex, dep] : llvm::enumerate(codelet.getDeps())) {
+        unsigned depIdx = static_cast<unsigned>(depIndex);
+        if (findBackingDbAlloc(dep)) {
+          if (failed(materializeExistingDbHostBridgeIfNeeded(codelet, depIdx))) {
+            codelet.emitOpError()
+                << "dependency #" << depIdx
+                << " requests compute-block storage but cannot be bridged "
+                   "from its host-whole DB view";
+            signalPassFailure();
+            return;
+          }
           continue;
-        if (failed(materializeRawCodirDependency(dep, codelet))) {
+        }
+        if (failed(materializeRawCodirDependency(dep, codelet, depIdx))) {
           codelet.emitOpError()
               << "dependency is not backed by SDE/CODIR DB materialization "
                  "and cannot be materialized from a local memref allocation";
@@ -219,7 +232,9 @@ struct ConvertCodirToArtsPass
       SmallVector<Value> dbOffsets{createZeroIndex(builder, loc)};
       SmallVector<Value> dbSizes{createOneIndex(builder, loc)};
       std::optional<unsigned> plannedBlockOwnerDim;
-      if (canUseCodirOwnerSliceForAlloc(codelet, alloc) &&
+      if (codirDepAllowsComputeBlockStorage(codelet,
+                                             static_cast<unsigned>(idx)) &&
+          canUseCodirOwnerSliceForAlloc(codelet, alloc) &&
           codirDepAccessesStayWithinSingleOwnerSlice(
               codelet, static_cast<unsigned>(idx)) &&
           !codelet.getParams().empty()) {

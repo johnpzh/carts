@@ -54,16 +54,16 @@ static bool usesOwnerLocalPipelineGrain(sde::SdeSuIterateOp op) {
 static int64_t getMinTileIterations(sde::SdeSuIterateOp op,
                                     sde::SDECostModel &costModel) {
   if (usesOwnerLocalPipelineGrain(op))
-    return std::max<int64_t>(
-        1, costModel.getMinPipelineOwnerIterationsPerTask());
+    return std::max<int64_t>(1,
+                             costModel.getMinPipelineOwnerIterationsPerTask());
   return std::max<int64_t>(1, costModel.getMinIterationsPerWorker());
 }
 
 static int64_t getTargetTaskWaves(sde::SdeSuIterateOp op,
                                   sde::SDECostModel &costModel) {
   if (usesOwnerLocalPipelineGrain(op))
-    return std::max<int64_t>(
-        1, costModel.getOwnerLocalPipelineTargetTaskWaves());
+    return std::max<int64_t>(1,
+                             costModel.getOwnerLocalPipelineTargetTaskWaves());
   return std::max<int64_t>(1, costModel.getInterLocalityTaskWaves());
 }
 
@@ -467,8 +467,8 @@ computeStaticTileIterations(sde::SdeSuIterateOp op,
     int64_t tripCount = tripCounts.front();
     if (tripCount <= 0)
       return std::nullopt;
-    int64_t balanced = sde::ceilDivPositive(
-        tripCount, getTargetTileTasks(op, costModel));
+    int64_t balanced =
+        sde::ceilDivPositive(tripCount, getTargetTileTasks(op, costModel));
     tileIterations.push_back(std::clamp(std::max<int64_t>(balanced, minIter),
                                         int64_t{1}, tripCount));
     return tileIterations;
@@ -643,6 +643,76 @@ static void stampPhysicalTilePlan(sde::SdeSuIterateOp op,
       sde::SdeIterationTopologyAttr::get(op.getContext(), plan.topology));
 }
 
+static std::optional<int64_t> getPositiveConstantIndex(Value value) {
+  int64_t constant = 0;
+  if (::mlir::carts::ValueAnalysis::getConstantIndex(value, constant) &&
+      constant > 0)
+    return constant;
+  std::optional<int64_t> folded =
+      ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(value);
+  if (folded && *folded > 0)
+    return folded;
+  return std::nullopt;
+}
+
+static std::optional<unsigned> mapLoopDimToPhysicalDim(sde::SdeSuIterateOp op,
+                                                       unsigned loopDim) {
+  if (std::optional<SmallVector<int64_t, 4>> ownerDims =
+          readI64ArrayAttr(op.getPhysicalOwnerDimsAttr())) {
+    if (loopDim < ownerDims->size() && (*ownerDims)[loopDim] >= 0)
+      return static_cast<unsigned>((*ownerDims)[loopDim]);
+  }
+  return loopDim;
+}
+
+static std::optional<SmallVector<int64_t, 4>>
+alignStaticShapeAttrToSteps(sde::SdeSuIterateOp op, ArrayAttr attr,
+                            ArrayRef<Value> tiledSteps,
+                            ArrayRef<bool> parallelMask) {
+  std::optional<SmallVector<int64_t, 4>> shape = readI64ArrayAttr(attr);
+  if (!shape)
+    return std::nullopt;
+
+  for (unsigned dim = 0, e = std::min(tiledSteps.size(),
+                                      static_cast<size_t>(parallelMask.size()));
+       dim < e; ++dim) {
+    if (!parallelMask[dim])
+      continue;
+    std::optional<int64_t> step = getPositiveConstantIndex(tiledSteps[dim]);
+    if (!step || *step <= 1)
+      continue;
+    std::optional<unsigned> physicalDim = mapLoopDimToPhysicalDim(op, dim);
+    if (!physicalDim || *physicalDim >= shape->size())
+      continue;
+    int64_t &extent = (*shape)[*physicalDim];
+    if (extent <= 0)
+      return std::nullopt;
+    int64_t chunks = (extent + *step - 1) / *step;
+    if (chunks > std::numeric_limits<int64_t>::max() / *step)
+      return std::nullopt;
+    extent = chunks * *step;
+  }
+
+  return shape;
+}
+
+static void
+alignExistingStaticPhysicalPlanToSteps(sde::SdeSuIterateOp op,
+                                       ArrayRef<Value> tiledSteps,
+                                       ArrayRef<bool> parallelMask) {
+  if (std::optional<SmallVector<int64_t, 4>> blockShape =
+          alignStaticShapeAttrToSteps(op, op.getPhysicalBlockShapeAttr(),
+                                      tiledSteps, parallelMask))
+    op.setPhysicalBlockShapeAttr(
+        buildI64ArrayAttr(op.getContext(), *blockShape));
+
+  if (std::optional<SmallVector<int64_t, 4>> workerSlice =
+          alignStaticShapeAttrToSteps(op, op.getLogicalWorkerSliceAttr(),
+                                      tiledSteps, parallelMask))
+    op.setLogicalWorkerSliceAttr(
+        buildI64ArrayAttr(op.getContext(), *workerSlice));
+}
+
 static bool isTilingCandidate(sde::SdeSuIterateOp op, Block &body) {
   if (op.getChunkSize())
     return false;
@@ -815,12 +885,11 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
         if (std::optional<int64_t> tripCount =
                 getStaticTripCount(op.getOperation())) {
           int64_t balancedTile =
-              llvm::divideCeil(*tripCount,
-                               getTargetTileTasks(op, *costModel));
-          int64_t tileCount =
-              std::clamp(std::max<int64_t>(
-                             balancedTile, getMinTileIterations(op, *costModel)),
-                         int64_t{1}, *tripCount);
+              llvm::divideCeil(*tripCount, getTargetTileTasks(op, *costModel));
+          int64_t tileCount = std::clamp(
+              std::max<int64_t>(balancedTile,
+                                getMinTileIterations(op, *costModel)),
+              int64_t{1}, *tripCount);
           if (tileCount <= 1)
             continue;
           tileIterations = getConstantIndex(rewriter, loc, tileCount);
@@ -940,6 +1009,8 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
           op.getVectorizeWidthAttr(), op.getUnrollFactorAttr(),
           op.getInterleaveCountAttr());
       newOp->setAttrs(sde::getRewrittenAttrs(op));
+      if (!physicalTilePlan && !directMatmul)
+        alignExistingStaticPhysicalPlanToSteps(newOp, tiledSteps, parallelMask);
       if (physicalTilePlan)
         stampPhysicalTilePlan(newOp, *physicalTilePlan);
 

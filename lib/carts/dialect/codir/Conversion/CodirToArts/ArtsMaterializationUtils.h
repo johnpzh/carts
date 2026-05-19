@@ -233,8 +233,8 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
     arts::ArtsDepPattern depPattern = convertPattern(pattern.getValue());
     if (depPattern != arts::ArtsDepPattern::unknown) {
       arts::setDepPattern(taskOp, depPattern);
-      arts::setEdtDistributionPattern(taskOp,
-                                      getDistributionPattern(pattern.getValue()));
+      arts::setEdtDistributionPattern(
+          taskOp, getDistributionPattern(pattern.getValue()));
       arts::setDistributionVersion(taskOp, 1);
       arts::setPatternRevision(taskOp, 1);
     }
@@ -418,7 +418,8 @@ codirDepAccessesStayWithinSingleOwnerSlice(codir::CodeletOp codelet,
     return false;
 
   Block &body = codelet.getBody().front();
-  if (depIndex >= codelet.getDeps().size() || depIndex >= body.getNumArguments())
+  if (depIndex >= codelet.getDeps().size() ||
+      depIndex >= body.getNumArguments())
     return false;
 
   Value depArg = body.getArgument(depIndex);
@@ -460,9 +461,10 @@ struct PlannedBlockLocalAccessRewrite {
   Value ownerBase;
 };
 
-static inline FailureOr<Value>
-materializeBlockLocalIndex(OpBuilder &builder, Location loc, Value index,
-                           Value ownerBase) {
+static inline FailureOr<Value> materializeBlockLocalIndex(OpBuilder &builder,
+                                                          Location loc,
+                                                          Value index,
+                                                          Value ownerBase) {
   if (!index || !ownerBase)
     return failure();
   if (::mlir::carts::ValueAnalysis::sameValue(index, ownerBase))
@@ -678,19 +680,582 @@ findCodirDependencyIndexForRoot(codir::CodeletOp codelet, Value root) {
   return std::nullopt;
 }
 
-static inline bool canMaterializeRawCodirDependencyWithPlan(
-    Value root, codir::CodeletOp planSource) {
+static inline std::optional<codir::CodirStorageViewKind>
+getCodirDepStorageViewKind(codir::CodeletOp codelet, unsigned depIndex) {
+  ArrayAttr views = codelet ? codelet.getDepStorageViewsAttr() : ArrayAttr{};
+  if (!views || depIndex >= views.size())
+    return std::nullopt;
+  auto view = dyn_cast<codir::CodirStorageViewKindAttr>(views[depIndex]);
+  if (!view)
+    return std::nullopt;
+  return view.getValue();
+}
+
+static inline std::optional<codir::CodirAccessMode>
+getCodirDepAccessMode(codir::CodeletOp codelet, unsigned depIndex) {
+  ArrayAttr modes = codelet ? codelet.getDepModesAttr() : ArrayAttr{};
+  if (!modes || depIndex >= modes.size())
+    return std::nullopt;
+  auto mode = dyn_cast<codir::CodirAccessModeAttr>(modes[depIndex]);
+  if (!mode)
+    return std::nullopt;
+  return mode.getValue();
+}
+
+static inline bool codirDepAllowsComputeBlockStorage(codir::CodeletOp codelet,
+                                                     unsigned depIndex) {
+  std::optional<codir::CodirStorageViewKind> view =
+      getCodirDepStorageViewKind(codelet, depIndex);
+  if (!view)
+    return true;
+  return *view == codir::CodirStorageViewKind::compute_block;
+}
+
+static inline bool codirDepRequiresComputeBlockStorage(codir::CodeletOp codelet,
+                                                       unsigned depIndex) {
+  std::optional<codir::CodirStorageViewKind> view =
+      getCodirDepStorageViewKind(codelet, depIndex);
+  return view && *view == codir::CodirStorageViewKind::compute_block;
+}
+
+static inline bool codirAccessMayWrite(codir::CodirAccessMode mode) {
+  return mode == codir::CodirAccessMode::write ||
+         mode == codir::CodirAccessMode::readwrite;
+}
+
+static inline bool codirAccessMayRead(codir::CodirAccessMode mode) {
+  return mode == codir::CodirAccessMode::read ||
+         mode == codir::CodirAccessMode::readwrite;
+}
+
+static inline Operation *
+findCodirDispatchBridgeAnchor(codir::CodeletOp codelet) {
+  Operation *anchor = codelet ? codelet.getOperation() : nullptr;
+  for (Operation *parent = codelet ? codelet->getParentOp() : nullptr; parent;
+       parent = parent->getParentOp()) {
+    auto loop = dyn_cast<scf::ForOp>(parent);
+    if (loop && containsValue(codelet.getParams(), loop.getInductionVar()))
+      anchor = parent;
+  }
+  return anchor;
+}
+
+struct HostBridgeParticipant {
+  codir::CodeletOp codelet;
+  unsigned depIndex = 0;
+  codir::CodirAccessMode mode = codir::CodirAccessMode::readwrite;
+};
+
+static inline std::optional<unsigned>
+getCodeletDepOperandIndex(codir::CodeletOp codelet, OpOperand &use);
+
+static inline bool isUseInsideAnchor(Operation *anchor, Operation *owner) {
+  if (!anchor || !owner)
+    return false;
+  if (anchor == owner)
+    return true;
+  for (Region &region : anchor->getRegions())
+    if (region.isAncestor(owner->getParentRegion()))
+      return true;
+  return false;
+}
+
+static inline bool hostBridgeValueMayBeWrittenInsideAnchor(Operation *anchor,
+                                                           Value value);
+
+static inline bool hostBridgeUseMayWrite(Operation *anchor, OpOperand &use) {
+  Operation *owner = use.getOwner();
+  if (!anchor || !owner)
+    return true;
+  if (!isUseInsideAnchor(anchor, owner))
+    return false;
+
+  if (auto codelet = dyn_cast<codir::CodeletOp>(owner)) {
+    std::optional<unsigned> depIndex = getCodeletDepOperandIndex(codelet, use);
+    if (!depIndex)
+      return true;
+    std::optional<codir::CodirAccessMode> mode =
+        getCodirDepAccessMode(codelet, *depIndex);
+    return !mode || codirAccessMayWrite(*mode);
+  }
+
+  if (auto store = dyn_cast<memref::StoreOp>(owner))
+    return store.getMemRef() == use.get();
+  if (auto store = dyn_cast<polygeist::DynStoreOp>(owner))
+    return store.getMemref() == use.get();
+  if (auto store = dyn_cast<affine::AffineStoreOp>(owner))
+    return store.getMemRef() == use.get();
+  if (isa<memref::DeallocOp>(owner))
+    return true;
+  if (isa<memref::LoadOp, memref::DimOp>(owner))
+    return false;
+
+  if (isMemrefForwardingOp(owner)) {
+    for (Value result : owner->getResults())
+      if (isa<MemRefType>(result.getType()) &&
+          hostBridgeValueMayBeWrittenInsideAnchor(anchor, result))
+        return true;
+    return false;
+  }
+
+  return true;
+}
+
+static inline bool hostBridgeValueMayBeWrittenInsideAnchor(Operation *anchor,
+                                                           Value value) {
+  if (!anchor || !value)
+    return true;
+  for (OpOperand &use : value.getUses())
+    if (hostBridgeUseMayWrite(anchor, use))
+      return true;
+  return false;
+}
+
+static inline bool hasSameHostBridgePlan(codir::CodeletOp lhs,
+                                         codir::CodeletOp rhs) {
+  if (!lhs || !rhs)
+    return false;
+  return lhs.getTileOwnerDimsAttr() == rhs.getTileOwnerDimsAttr() &&
+         lhs.getTileShapeAttr() == rhs.getTileShapeAttr() &&
+         lhs.getLogicalWorkerSliceAttr() == rhs.getLogicalWorkerSliceAttr();
+}
+
+static inline std::optional<unsigned>
+getCodeletDepOperandIndex(codir::CodeletOp codelet, OpOperand &use) {
+  if (!codelet)
+    return std::nullopt;
+  unsigned operandIndex = use.getOperandNumber();
+  if (operandIndex >= codelet.getDeps().size())
+    return std::nullopt;
+  return operandIndex;
+}
+
+static inline bool isCompatibleHostBridgeParticipant(codir::CodeletOp seed,
+                                                     codir::CodeletOp codelet,
+                                                     unsigned depIndex) {
+  if (!seed || !codelet || !hasSameHostBridgePlan(seed, codelet))
+    return false;
+  if (!codirDepRequiresComputeBlockStorage(codelet, depIndex))
+    return false;
+  if (!hasCodirTileOwnerSlicePlan(codelet) ||
+      !codirDepAccessesStayWithinSingleOwnerSlice(codelet, depIndex))
+    return false;
+  return true;
+}
+
+static inline FailureOr<SmallVector<HostBridgeParticipant>>
+collectHostBridgeParticipants(Operation *anchor, codir::CodeletOp seed,
+                              Value hostView) {
+  if (!anchor || !seed || !hostView)
+    return failure();
+
+  SmallVector<HostBridgeParticipant> participants;
+  for (OpOperand &use : hostView.getUses()) {
+    Operation *owner = use.getOwner();
+    if (!isUseInsideAnchor(anchor, owner))
+      continue;
+
+    auto codelet = dyn_cast<codir::CodeletOp>(owner);
+    if (!codelet)
+      return failure();
+
+    std::optional<unsigned> depIndex = getCodeletDepOperandIndex(codelet, use);
+    if (!depIndex ||
+        !isCompatibleHostBridgeParticipant(seed, codelet, *depIndex))
+      return failure();
+
+    std::optional<codir::CodirAccessMode> mode =
+        getCodirDepAccessMode(codelet, *depIndex);
+    if (!mode)
+      return failure();
+    participants.push_back({codelet, *depIndex, *mode});
+  }
+
+  if (participants.empty())
+    return failure();
+  return participants;
+}
+
+static inline bool canHoistHostBridgeAcrossLoop(scf::ForOp loop,
+                                                codir::CodeletOp codelet,
+                                                Value hostView,
+                                                bool seedMayWrite) {
+  if (!loop || !codelet || !hostView)
+    return false;
+  if (containsValue(codelet.getParams(), loop.getInductionVar()))
+    return false;
+
+  bool bridgeGroupMayWrite = seedMayWrite;
+  Region &loopRegion = loop.getRegion();
+  for (OpOperand &use : hostView.getUses()) {
+    Operation *owner = use.getOwner();
+    if (!owner || !loopRegion.isAncestor(owner->getParentRegion()))
+      continue;
+    auto userCodelet = dyn_cast<codir::CodeletOp>(owner);
+    std::optional<unsigned> depIndex =
+        userCodelet ? getCodeletDepOperandIndex(userCodelet, use)
+                    : std::nullopt;
+    if (!depIndex ||
+        !isCompatibleHostBridgeParticipant(codelet, userCodelet, *depIndex))
+      continue;
+    std::optional<codir::CodirAccessMode> mode =
+        getCodirDepAccessMode(userCodelet, *depIndex);
+    if (!mode || codirAccessMayWrite(*mode))
+      bridgeGroupMayWrite = true;
+  }
+
+  for (OpOperand &use : hostView.getUses()) {
+    Operation *owner = use.getOwner();
+    if (!owner || !loopRegion.isAncestor(owner->getParentRegion()))
+      continue;
+    auto userCodelet = dyn_cast<codir::CodeletOp>(owner);
+    std::optional<unsigned> depIndex =
+        userCodelet ? getCodeletDepOperandIndex(userCodelet, use)
+                    : std::nullopt;
+    if (depIndex &&
+        isCompatibleHostBridgeParticipant(codelet, userCodelet, *depIndex))
+      continue;
+    if (!bridgeGroupMayWrite &&
+        !hostBridgeUseMayWrite(loop.getOperation(), use))
+      continue;
+    return false;
+  }
+  return true;
+}
+
+static inline Operation *findCodirHostBridgeAnchor(codir::CodeletOp codelet,
+                                                   Value hostView,
+                                                   bool seedMayWrite) {
+  Operation *anchor = findCodirDispatchBridgeAnchor(codelet);
+  if (!anchor)
+    return nullptr;
+
+  for (Operation *parent = anchor->getParentOp(); parent;
+       parent = parent->getParentOp()) {
+    auto loop = dyn_cast<scf::ForOp>(parent);
+    if (!loop)
+      continue;
+    if (!canHoistHostBridgeAcrossLoop(loop, codelet, hostView, seedMayWrite))
+      break;
+    anchor = loop.getOperation();
+  }
+  return anchor;
+}
+
+static inline SmallVector<Value>
+getBridgeLogicalElementSizes(OpBuilder &builder, Location loc, Value hostView) {
+  if (arts::DbAllocOp hostAlloc = findBackingDbAlloc(hostView))
+    return SmallVector<Value>(hostAlloc.getElementSizes().begin(),
+                              hostAlloc.getElementSizes().end());
+
+  SmallVector<Value> sizes;
+  auto memrefType = dyn_cast<MemRefType>(hostView.getType());
+  if (!memrefType)
+    return sizes;
+  sizes.reserve(memrefType.getRank());
+  for (int64_t dim = 0, rank = memrefType.getRank(); dim < rank; ++dim) {
+    if (memrefType.isDynamicDim(dim)) {
+      sizes.push_back(memref::DimOp::create(builder, loc, hostView, dim));
+      continue;
+    }
+    sizes.push_back(
+        createConstantIndex(builder, loc, memrefType.getDimSize(dim)));
+  }
+  return sizes;
+}
+
+static inline void materializeHostBlockElementCopyNest(
+    OpBuilder &builder, Location loc, Value hostView, Value blockPayload,
+    ArrayRef<Value> copySizes, Value ownerOffset, unsigned ownerDim,
+    bool copyIntoBlock, SmallVectorImpl<Value> &indices) {
+  unsigned dim = indices.size();
+  if (dim == copySizes.size()) {
+    SmallVector<Value> hostIndices;
+    SmallVector<Value> blockIndices;
+    hostIndices.reserve(indices.size());
+    blockIndices.reserve(indices.size());
+    for (auto [idx, value] : llvm::enumerate(indices)) {
+      blockIndices.push_back(value);
+      if (idx == ownerDim) {
+        hostIndices.push_back(
+            arith::AddIOp::create(builder, loc, ownerOffset, value));
+        continue;
+      }
+      hostIndices.push_back(value);
+    }
+
+    if (copyIntoBlock) {
+      Value loaded =
+          memref::LoadOp::create(builder, loc, hostView, hostIndices);
+      memref::StoreOp::create(builder, loc, loaded, blockPayload, blockIndices);
+      return;
+    }
+    Value loaded =
+        memref::LoadOp::create(builder, loc, blockPayload, blockIndices);
+    memref::StoreOp::create(builder, loc, loaded, hostView, hostIndices);
+    return;
+  }
+
+  Value zero = createZeroIndex(builder, loc);
+  Value one = createOneIndex(builder, loc);
+  auto loop = scf::ForOp::create(builder, loc, zero, copySizes[dim], one);
+
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(loop.getBody());
+  indices.push_back(loop.getInductionVar());
+  materializeHostBlockElementCopyNest(builder, loc, hostView, blockPayload,
+                                      copySizes, ownerOffset, ownerDim,
+                                      copyIntoBlock, indices);
+  indices.pop_back();
+}
+
+static inline FailureOr<Value>
+materializeCoarseHostDbForBlockArgument(OpBuilder &builder, Location loc,
+                                        BlockArgument blockArg) {
+  Value root = blockArg;
+  auto memrefType = dyn_cast<MemRefType>(root.getType());
+  if (!memrefType)
+    return failure();
+
+  Block *owner = blockArg.getOwner();
+  if (!owner)
+    return failure();
+
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(owner);
+
+  SmallVector<Value> elementSizes;
+  if (memrefType.getRank() == 0) {
+    elementSizes.push_back(createOneIndex(builder, loc));
+  } else {
+    elementSizes.reserve(memrefType.getRank());
+    for (int64_t dim = 0, rank = memrefType.getRank(); dim < rank; ++dim) {
+      if (memrefType.isDynamicDim(dim)) {
+        elementSizes.push_back(memref::DimOp::create(builder, loc, root, dim));
+        continue;
+      }
+      elementSizes.push_back(
+          createConstantIndex(builder, loc, memrefType.getDimSize(dim)));
+    }
+  }
+
+  SmallVector<Operation *> protectedOps;
+  for (Value size : elementSizes)
+    if (Operation *op = size.getDefiningOp())
+      protectedOps.push_back(op);
+
+  Value route = arts::createCurrentNodeRoute(builder, loc);
+  auto dbAlloc = arts::DbAllocOp::create(
+      builder, loc, arts::ArtsMode::inout, route, arts::DbAllocType::unknown,
+      arts::DbMode::write, memrefType.getElementType(), root,
+      SmallVector<Value>{createOneIndex(builder, loc)}, std::move(elementSizes),
+      arts::PartitionMode::coarse);
+  protectedOps.push_back(dbAlloc.getOperation());
+
+  Value replacement = materializeInnerPayload(builder, loc, dbAlloc.getPtr());
+  root.replaceUsesWithIf(replacement, [&](OpOperand &use) {
+    return !llvm::is_contained(protectedOps, use.getOwner());
+  });
+  return replacement;
+}
+
+static inline LogicalResult
+materializeHostBlockCopyLoop(OpBuilder &builder, Location loc, Value hostView,
+                             arts::DbAllocOp blockAlloc,
+                             codir::CodeletOp codelet, bool copyIntoBlock) {
+  auto hostType = dyn_cast<MemRefType>(hostView.getType());
+  if (!hostType || hostType.getRank() == 0)
+    return failure();
+
+  std::optional<unsigned> ownerDim = getSingleCodirTileOwnerDim(codelet);
+  if (!ownerDim || *ownerDim >= static_cast<unsigned>(hostType.getRank()))
+    return failure();
+  if (blockAlloc.getSizes().size() != 1 ||
+      blockAlloc.getElementSizes().size() !=
+          static_cast<size_t>(hostType.getRank()))
+    return failure();
+
+  SmallVector<Value> logicalSizes =
+      getBridgeLogicalElementSizes(builder, loc, hostView);
+  if (logicalSizes.size() != static_cast<size_t>(hostType.getRank()))
+    return failure();
+
+  Value zero = createZeroIndex(builder, loc);
+  Value one = createOneIndex(builder, loc);
+  Value blockCount = blockAlloc.getSizes().front();
+  Value ownerBlockSize = blockAlloc.getElementSizes()[*ownerDim];
+
+  auto loop = scf::ForOp::create(builder, loc, zero, blockCount, one);
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(loop.getBody());
+  Value blockIndex = loop.getInductionVar();
+  Value ownerOffset =
+      arith::MulIOp::create(builder, loc, blockIndex, ownerBlockSize);
+  Value ownerRemaining =
+      arith::SubIOp::create(builder, loc, logicalSizes[*ownerDim], ownerOffset);
+  Value ownerCopySize =
+      arith::MinUIOp::create(builder, loc, ownerBlockSize, ownerRemaining);
+
+  SmallVector<Value> copySizes;
+  copySizes.reserve(hostType.getRank());
+  for (int64_t dim = 0, rank = hostType.getRank(); dim < rank; ++dim) {
+    if (static_cast<unsigned>(dim) == *ownerDim) {
+      copySizes.push_back(ownerCopySize);
+    } else {
+      copySizes.push_back(logicalSizes[dim]);
+    }
+  }
+
+  Value blockPayload = arts::DbRefOp::create(builder, loc, blockAlloc.getPtr(),
+                                             SmallVector<Value>{blockIndex});
+  SmallVector<Value> indices;
+  materializeHostBlockElementCopyNest(builder, loc, hostView, blockPayload,
+                                      copySizes, ownerOffset, *ownerDim,
+                                      copyIntoBlock, indices);
+  return success();
+}
+
+static inline FailureOr<Value>
+materializeHostWholeToComputeBlockBridge(codir::CodeletOp codelet,
+                                         unsigned depIndex, Value hostView) {
+  if (!codelet || depIndex >= codelet.getDeps().size() || !hostView)
+    return failure();
+  if (!codirDepRequiresComputeBlockStorage(codelet, depIndex))
+    return failure();
+  if (!hasCodirTileOwnerSlicePlan(codelet) ||
+      !codirDepAccessesStayWithinSingleOwnerSlice(codelet, depIndex))
+    return failure();
+
+  std::optional<codir::CodirAccessMode> depMode =
+      getCodirDepAccessMode(codelet, depIndex);
+  if (!depMode)
+    return failure();
+
+  auto memrefType = dyn_cast<MemRefType>(hostView.getType());
+  if (!memrefType || memrefType.getRank() == 0 || isCodirViewDep(hostView))
+    return failure();
+
+  Operation *anchor = findCodirHostBridgeAnchor(codelet, hostView,
+                                                codirAccessMayWrite(*depMode));
+  if (!anchor)
+    return failure();
+
+  SmallVector<HostBridgeParticipant> participants;
+  FailureOr<SmallVector<HostBridgeParticipant>> collected =
+      collectHostBridgeParticipants(anchor, codelet, hostView);
+  if (succeeded(collected)) {
+    participants = std::move(*collected);
+  } else {
+    participants.push_back({codelet, depIndex, *depMode});
+  }
+
+  bool needsCopyIn = llvm::any_of(participants, [](const auto &participant) {
+    return codirAccessMayRead(participant.mode);
+  });
+  bool needsCopyOut = llvm::any_of(participants, [](const auto &participant) {
+    return codirAccessMayWrite(participant.mode);
+  });
+
+  OpBuilder builder(anchor);
+  Location loc = codelet.getLoc();
+  builder.setInsertionPoint(anchor);
+  SmallVector<Value> dynamicSizes;
+  SmallVector<Value> logicalSizes =
+      getBridgeLogicalElementSizes(builder, loc, hostView);
+  if (logicalSizes.size() != static_cast<size_t>(memrefType.getRank()))
+    return failure();
+  for (int64_t dim = 0, rank = memrefType.getRank(); dim < rank; ++dim) {
+    if (memrefType.isDynamicDim(dim))
+      dynamicSizes.push_back(logicalSizes[dim]);
+  }
+
+  Value blockView;
+  if (failed(createDbBackedMemref(builder, loc, memrefType, dynamicSizes,
+                                  blockView, codelet)))
+    return failure();
+  arts::DbAllocOp blockAlloc = findBackingDbAlloc(blockView);
+  if (!blockAlloc)
+    return failure();
+  blockAlloc->setAttr("arts.storage_bridge",
+                      builder.getStringAttr("host_whole_to_compute_block"));
+
+  if (needsCopyIn) {
+    if (failed(materializeHostBlockCopyLoop(builder, loc, hostView, blockAlloc,
+                                            codelet,
+                                            /*copyIntoBlock=*/true)))
+      return failure();
+  }
+
+  if (needsCopyOut) {
+    for (HostBridgeParticipant &participant : participants) {
+      if (codirAccessMayWrite(participant.mode))
+        participant.codelet.setCompletionBarrierAttr(
+            UnitAttr::get(participant.codelet->getContext()));
+    }
+    builder.setInsertionPointAfter(anchor);
+    if (failed(materializeHostBlockCopyLoop(builder, loc, hostView, blockAlloc,
+                                            codelet,
+                                            /*copyIntoBlock=*/false)))
+      return failure();
+  }
+
+  for (HostBridgeParticipant &participant : participants)
+    participant.codelet->setOperand(participant.depIndex, blockView);
+  return blockView;
+}
+
+static inline LogicalResult
+materializeExistingDbHostBridgeIfNeeded(codir::CodeletOp codelet,
+                                        unsigned depIndex) {
+  if (!codelet || depIndex >= codelet.getDeps().size())
+    return failure();
+
+  Value dep = codelet.getDeps()[depIndex];
+  arts::DbAllocOp hostAlloc = findBackingDbAlloc(dep);
+  if (!hostAlloc)
+    return success();
+  if (!codirDepRequiresComputeBlockStorage(codelet, depIndex))
+    return success();
+  if (!hasCodirTileOwnerSlicePlan(codelet) || isCodirViewDep(dep))
+    return success();
+  if (canUseCodirOwnerSliceForAlloc(codelet, hostAlloc))
+    return success();
+
+  std::optional<arts::PartitionMode> hostMode =
+      arts::getPartitionMode(hostAlloc.getOperation());
+  if (!hostMode || *hostMode != arts::PartitionMode::coarse)
+    return success();
+
+  FailureOr<Value> replacement =
+      materializeHostWholeToComputeBlockBridge(codelet, depIndex, dep);
+  return failed(replacement) ? failure() : success();
+}
+
+static inline bool
+canMaterializeRawCodirDependencyWithPlan(Value root,
+                                         codir::CodeletOp planSource) {
   if (!hasCodirTileOwnerSlicePlan(planSource))
     return false;
   std::optional<unsigned> depIndex =
       findCodirDependencyIndexForRoot(planSource, root);
   if (!depIndex)
     return false;
+  if (!codirDepAllowsComputeBlockStorage(planSource, *depIndex))
+    return false;
   return codirDepAccessesStayWithinSingleOwnerSlice(planSource, *depIndex);
 }
 
+static inline bool rawCodirDependencyNeedsHostBridge(Value root) {
+  if (!root)
+    return false;
+  if (isa<BlockArgument>(root))
+    return true;
+  return hasHostMemrefAccessOutsideSchedulingUnit(root);
+}
+
 static inline LogicalResult
-materializeRawCodirDependency(Value dep, codir::CodeletOp planSource) {
+materializeRawCodirDependency(Value dep, codir::CodeletOp planSource,
+                              unsigned depIndex) {
   if (findBackingDbAlloc(dep))
     return success();
 
@@ -702,8 +1267,25 @@ materializeRawCodirDependency(Value dep, codir::CodeletOp planSource) {
   Operation *def = root.getDefiningOp();
   OpBuilder builder(root.getContext());
   Value replacement;
-  bool usePlan =
-      canMaterializeRawCodirDependencyWithPlan(root, planSource);
+  bool usePlan = canMaterializeRawCodirDependencyWithPlan(root, planSource);
+  if (usePlan && codirDepRequiresComputeBlockStorage(planSource, depIndex) &&
+      rawCodirDependencyNeedsHostBridge(root)) {
+    if (auto blockArg = dyn_cast<BlockArgument>(root)) {
+      FailureOr<Value> hostView = materializeCoarseHostDbForBlockArgument(
+          builder, root.getLoc(), blockArg);
+      if (failed(hostView))
+        return failure();
+      FailureOr<Value> bridged = materializeHostWholeToComputeBlockBridge(
+          planSource, depIndex, *hostView);
+      return failed(bridged) ? failure() : success();
+    }
+
+    FailureOr<Value> bridged =
+        materializeHostWholeToComputeBlockBridge(planSource, depIndex, root);
+    if (failed(bridged))
+      return failure();
+    return success();
+  }
   if (!def) {
     auto blockArg = dyn_cast<BlockArgument>(root);
     if (!blockArg)

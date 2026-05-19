@@ -24,7 +24,9 @@ module {
 // CHECK: sde.mu_token
 // CHECK: memref.subview
 // CHECK-SAME: memref<8xi32> to memref<4xi32>
-// CHECK: codir.codelet deps(%{{.*}} : memref<4xi32>) params(%{{.*}} : i32) attributes {dep_modes = [#codir.access_mode<readwrite>]}
+// CHECK: codir.codelet deps(%{{.*}} : memref<4xi32>) params(%{{.*}} : i32)
+// CHECK-SAME: dep_modes = [#codir.access_mode<readwrite>]
+// CHECK-SAME: dep_storage_views = [#codir.storage_view<compute_block>]
 // CHECK: ^bb0(%{{.*}}: memref<4xi32>, %{{.*}}: i32):
 // CHECK: memref.load
 // CHECK: memref.store

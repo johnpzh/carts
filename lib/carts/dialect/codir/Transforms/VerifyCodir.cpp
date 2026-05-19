@@ -50,6 +50,26 @@ struct VerifyCodirPass
         }
       }
 
+      ArrayAttr depStorageViews = codelet.getDepStorageViewsAttr();
+      if (depStorageViews) {
+        if (depStorageViews.size() != codelet.getDeps().size()) {
+          codelet.emitOpError()
+              << "expects dep_storage_views entry count ("
+              << depStorageViews.size()
+              << ") to match dependency operand count ("
+              << codelet.getDeps().size() << ")";
+          failed = true;
+        }
+        for (auto [index, attr] : llvm::enumerate(depStorageViews)) {
+          if (isa<codir::CodirStorageViewKindAttr>(attr))
+            continue;
+          codelet.emitOpError()
+              << "dep_storage_views entry #" << index
+              << " must be a CODIR storage_view attribute, got " << attr;
+          failed = true;
+        }
+      }
+
       for (auto [index, dep] : llvm::enumerate(codelet.getDeps())) {
         if (codir::isCodirDependencyType(dep.getType()))
           continue;

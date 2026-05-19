@@ -21,9 +21,11 @@ struct ConvertSdeToCodirPass
     for (sde::SdeCuCodeletOp sdeCodelet : codelets) {
       SmallVector<Value> deps;
       SmallVector<Attribute> depModes;
+      SmallVector<Attribute> depStorageViews;
       SmallVector<SlicedTokenLocalIndexRewrite> localIndexRewrites;
       OpBuilder builder(sdeCodelet);
       if (failed(materializeCodirDeps(sdeCodelet, builder, deps, depModes,
+                                      depStorageViews,
                                       localIndexRewrites))) {
         signalPassFailure();
         return;
@@ -36,7 +38,9 @@ struct ConvertSdeToCodirPass
       appendDynamicCodirDepSliceParams(deps, params);
       auto codirCodelet =
           createCodirCodelet(builder, sdeCodelet.getLoc(),
-                             builder.getArrayAttr(depModes), deps, params);
+                             builder.getArrayAttr(depModes),
+                             builder.getArrayAttr(depStorageViews), deps,
+                             params);
       codirCodelet.getBody().takeBody(sdeCodelet.getBody());
       Block &body = codirCodelet.getBody().front();
       for (unsigned idx = originalParamCount, e = params.size(); idx < e; ++idx)

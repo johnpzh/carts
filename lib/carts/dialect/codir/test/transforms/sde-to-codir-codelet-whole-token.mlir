@@ -20,7 +20,9 @@ module {
 
 // CHECK-LABEL: func.func @sde_whole_token_to_codir
 // CHECK: sde.mu_token
-// CHECK: codir.codelet deps(%{{.*}} : memref<8xi32>) params(%{{.*}} : i32) attributes {dep_modes = [#codir.access_mode<readwrite>]}
+// CHECK: codir.codelet deps(%{{.*}} : memref<8xi32>) params(%{{.*}} : i32)
+// CHECK-SAME: dep_modes = [#codir.access_mode<readwrite>]
+// CHECK-SAME: dep_storage_views = [#codir.storage_view<host_whole>]
 // CHECK: ^bb0(%{{.*}}: memref<8xi32>, %{{.*}}: i32):
 // CHECK: memref.load
 // CHECK: memref.store

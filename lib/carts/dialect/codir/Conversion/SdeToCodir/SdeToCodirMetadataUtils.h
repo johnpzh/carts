@@ -27,6 +27,21 @@ inline CodirAccessMode convertAccessMode(sde::SdeAccessMode mode) {
   return CodirAccessMode::readwrite;
 }
 
+inline CodirStorageViewKind
+convertStorageViewKind(sde::SdeStorageViewKind view) {
+  switch (view) {
+  case sde::SdeStorageViewKind::host_whole:
+    return CodirStorageViewKind::host_whole;
+  case sde::SdeStorageViewKind::compute_block:
+    return CodirStorageViewKind::compute_block;
+  case sde::SdeStorageViewKind::replicated_read:
+    return CodirStorageViewKind::replicated_read;
+  case sde::SdeStorageViewKind::phase_redistributed:
+    return CodirStorageViewKind::phase_redistributed;
+  }
+  return CodirStorageViewKind::host_whole;
+}
+
 inline CodirPattern convertPattern(sde::SdePattern pattern) {
   switch (pattern) {
   case sde::SdePattern::uniform:

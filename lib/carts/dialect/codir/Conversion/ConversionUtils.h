@@ -34,6 +34,7 @@ namespace {
 
 using ::mlir::carts::codir::sde_to_codir::CodirCodeletMetadata;
 using ::mlir::carts::codir::sde_to_codir::convertAccessMode;
+using ::mlir::carts::codir::sde_to_codir::convertStorageViewKind;
 using ::mlir::carts::codir::sde_to_codir::getCodirMetadataFromSchedulingUnit;
 using ::mlir::carts::codir::sde_to_codir::getCodirMetadataFromTask;
 
@@ -44,18 +45,46 @@ mergeAccessMode(codir::CodirAccessMode lhs, codir::CodirAccessMode rhs) {
   return codir::CodirAccessMode::readwrite;
 }
 
+static inline codir::CodirStorageViewKind
+mergeStorageViewKind(codir::CodirStorageViewKind lhs,
+                     codir::CodirStorageViewKind rhs) {
+  if (lhs == rhs)
+    return lhs;
+  return codir::CodirStorageViewKind::phase_redistributed;
+}
+
+static inline SmallVector<Attribute>
+buildCodirAccessModeAttrs(MLIRContext *ctx,
+                          ArrayRef<codir::CodirAccessMode> modes) {
+  SmallVector<Attribute> attrs;
+  attrs.reserve(modes.size());
+  for (codir::CodirAccessMode mode : modes)
+    attrs.push_back(codir::CodirAccessModeAttr::get(ctx, mode));
+  return attrs;
+}
+
+static inline SmallVector<Attribute>
+buildCodirStorageViewAttrs(MLIRContext *ctx,
+                           ArrayRef<codir::CodirStorageViewKind> storageViews) {
+  SmallVector<Attribute> attrs;
+  attrs.reserve(storageViews.size());
+  for (codir::CodirStorageViewKind storageView : storageViews)
+    attrs.push_back(codir::CodirStorageViewKindAttr::get(ctx, storageView));
+  return attrs;
+}
+
 static inline codir::CodeletOp
 createCodirCodelet(OpBuilder &builder, Location loc, ArrayAttr depModes,
-                   ValueRange deps, ValueRange params,
-                   const CodirCodeletMetadata &metadata = {},
+                   ArrayAttr depStorageViews, ValueRange deps,
+                   ValueRange params, const CodirCodeletMetadata &metadata = {},
                    UnitAttr taskDepend = {}, UnitAttr orderedTaskDepend = {},
                    UnitAttr completionBarrier = {}) {
   return codir::CodeletOp::create(
-      builder, loc, depModes, taskDepend, orderedTaskDepend, completionBarrier,
-      metadata.pattern, metadata.distributionKind, metadata.iterationTopology,
-      metadata.repetitionStructure, metadata.asyncStrategy,
-      metadata.planOwnerDims, metadata.tileOwnerDims, metadata.tileShape,
-      metadata.logicalWorkerSlice, metadata.haloShape,
+      builder, loc, depModes, depStorageViews, taskDepend, orderedTaskDepend,
+      completionBarrier, metadata.pattern, metadata.distributionKind,
+      metadata.iterationTopology, metadata.repetitionStructure,
+      metadata.asyncStrategy, metadata.planOwnerDims, metadata.tileOwnerDims,
+      metadata.tileShape, metadata.logicalWorkerSlice, metadata.haloShape,
       metadata.accessMinOffsets, metadata.accessMaxOffsets,
       metadata.spatialDims, metadata.writeFootprint, metadata.inPlaceSafe,
       metadata.inPlaceSharedState, deps, params);
@@ -182,7 +211,10 @@ static inline bool canUseOwnerSliceBoundaryPlan(sde::SdeSuIterateOp source) {
   return false;
 }
 
-static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
+static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv,
+                                          llvm::SmallPtrSetImpl<Value> &seen) {
+  if (!index || !ownerIv || !seen.insert(index).second)
+    return false;
   if (::mlir::carts::ValueAnalysis::dependsOn(index, ownerIv))
     return true;
 
@@ -194,9 +226,13 @@ static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
   if (!loop || loop.getInductionVar() != index)
     return false;
 
-  return ::mlir::carts::ValueAnalysis::dependsOn(loop.getLowerBound(),
-                                                 ownerIv) ||
-         ::mlir::carts::ValueAnalysis::dependsOn(loop.getUpperBound(), ownerIv);
+  return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, seen) ||
+         indexSelectsOwnerSlice(loop.getUpperBound(), ownerIv, seen);
+}
+
+static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
+  llvm::SmallPtrSet<Value, 8> seen;
+  return indexSelectsOwnerSlice(index, ownerIv, seen);
 }
 
 static inline bool allRootAccessesUseOwnerFirstDim(sde::SdeSuIterateOp source,
@@ -298,29 +334,27 @@ getCodirMemoryAccessInfo(Operation *op) {
         op, load.getMemRef(),
         SmallVector<Value>(load.getIndices().begin(), load.getIndices().end())};
   if (auto store = dyn_cast<memref::StoreOp>(op))
-    return CodirMemoryAccessInfo{
-        op, store.getMemRef(),
-        SmallVector<Value>(store.getIndices().begin(),
-                           store.getIndices().end())};
+    return CodirMemoryAccessInfo{op, store.getMemRef(),
+                                 SmallVector<Value>(store.getIndices().begin(),
+                                                    store.getIndices().end())};
   if (auto load = dyn_cast<polygeist::DynLoadOp>(op))
     return CodirMemoryAccessInfo{
         op, load.getMemref(),
         SmallVector<Value>(load.getIndices().begin(), load.getIndices().end())};
   if (auto store = dyn_cast<polygeist::DynStoreOp>(op))
-    return CodirMemoryAccessInfo{
-        op, store.getMemref(),
-        SmallVector<Value>(store.getIndices().begin(),
-                           store.getIndices().end())};
+    return CodirMemoryAccessInfo{op, store.getMemref(),
+                                 SmallVector<Value>(store.getIndices().begin(),
+                                                    store.getIndices().end())};
   if (auto load = dyn_cast<affine::AffineLoadOp>(op))
-    return CodirMemoryAccessInfo{op, load.getMemRef(),
-                                 SmallVector<Value>(
-                                     load.getMapOperands().begin(),
-                                     load.getMapOperands().end())};
+    return CodirMemoryAccessInfo{
+        op, load.getMemRef(),
+        SmallVector<Value>(load.getMapOperands().begin(),
+                           load.getMapOperands().end())};
   if (auto store = dyn_cast<affine::AffineStoreOp>(op))
-    return CodirMemoryAccessInfo{op, store.getMemRef(),
-                                 SmallVector<Value>(
-                                     store.getMapOperands().begin(),
-                                     store.getMapOperands().end())};
+    return CodirMemoryAccessInfo{
+        op, store.getMemRef(),
+        SmallVector<Value>(store.getMapOperands().begin(),
+                           store.getMapOperands().end())};
   return std::nullopt;
 }
 
@@ -434,6 +468,20 @@ isSdeMuAllocMaterializedWithPlan(Value dep, sde::SdeSuIterateOp source) {
     return false;
 
   return *selected == source && hasSamePhysicalLayoutPlan(*selected, source);
+}
+
+static inline bool
+canBridgeSdeMuAllocHostWholeToComputeBlock(Value dep,
+                                           sde::SdeSuIterateOp source) {
+  Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(dep);
+  auto muAlloc = root ? root.getDefiningOp<sde::SdeMuAllocOp>() : nullptr;
+  if (!muAlloc || !source)
+    return false;
+  if (!hasHostMemrefAccessOutsideSchedulingUnit(root))
+    return false;
+  return hasSdePhysicalOwnerSlicePlan(source) &&
+         canUseOwnerSliceBoundaryPlan(source) &&
+         allRootAccessesUseOwnerFirstDim(source, root);
 }
 
 static inline void buildCodirSubviewMixedOperands(
@@ -882,11 +930,14 @@ hasConservativeReadWriteConflict(ArrayRef<Value> deps,
 static inline LogicalResult materializeCodirDeps(
     sde::SdeCuCodeletOp sdeCodelet, OpBuilder &builder,
     SmallVectorImpl<Value> &deps, SmallVectorImpl<Attribute> &modes,
+    SmallVectorImpl<Attribute> &storageViews,
     SmallVectorImpl<SlicedTokenLocalIndexRewrite> &localIndexRewrites) {
   deps.clear();
   deps.reserve(sdeCodelet.getTokens().size());
   modes.clear();
   modes.reserve(sdeCodelet.getTokens().size());
+  storageViews.clear();
+  storageViews.reserve(sdeCodelet.getTokens().size());
   localIndexRewrites.clear();
 
   for (auto [index, token] : llvm::enumerate(sdeCodelet.getTokens())) {
@@ -912,6 +963,12 @@ static inline LogicalResult materializeCodirDeps(
       deps.push_back(tokenOp.getSource());
       modes.push_back(codir::CodirAccessModeAttr::get(
           builder.getContext(), convertAccessMode(tokenOp.getMode())));
+      codir::CodirStorageViewKind view =
+          tokenOp.getStorageViewAttr()
+              ? convertStorageViewKind(tokenOp.getStorageViewAttr().getValue())
+              : codir::CodirStorageViewKind::host_whole;
+      storageViews.push_back(
+          codir::CodirStorageViewKindAttr::get(builder.getContext(), view));
       continue;
     }
 
@@ -928,6 +985,12 @@ static inline LogicalResult materializeCodirDeps(
     deps.push_back(subview.getResult());
     modes.push_back(codir::CodirAccessModeAttr::get(
         builder.getContext(), convertAccessMode(tokenOp.getMode())));
+    codir::CodirStorageViewKind view =
+        tokenOp.getStorageViewAttr()
+            ? convertStorageViewKind(tokenOp.getStorageViewAttr().getValue())
+            : codir::CodirStorageViewKind::compute_block;
+    storageViews.push_back(
+        codir::CodirStorageViewKindAttr::get(builder.getContext(), view));
 
     if (sliceType.getRank() > 0 &&
         tokenOp.getOffsets().size() ==
@@ -947,6 +1010,7 @@ static inline LogicalResult materializeCodirDeps(
 struct CodirTaskPlan {
   SmallVector<Value> deps;
   SmallVector<codir::CodirAccessMode> depModes;
+  SmallVector<codir::CodirStorageViewKind> depStorageViews;
   SmallVector<Value> params;
   SmallVector<Value> scalarMemrefParams;
   SmallVector<SlicedTokenLocalIndexRewrite> localIndexRewrites;
@@ -966,6 +1030,7 @@ static inline bool isDefinedInside(Value value, Region &region) {
 }
 
 static inline LogicalResult addTaskDep(Value dep, codir::CodirAccessMode mode,
+                                       codir::CodirStorageViewKind storageView,
                                        CodirTaskPlan &plan) {
   if (!isCodirDependencyType(dep.getType()))
     return failure();
@@ -974,12 +1039,20 @@ static inline LogicalResult addTaskDep(Value dep, codir::CodirAccessMode mode,
   if (inserted) {
     plan.deps.push_back(dep);
     plan.depModes.push_back(mode);
+    plan.depStorageViews.push_back(storageView);
     return success();
   }
 
   unsigned index = it->second;
   plan.depModes[index] = mergeAccessMode(plan.depModes[index], mode);
+  plan.depStorageViews[index] =
+      mergeStorageViewKind(plan.depStorageViews[index], storageView);
   return success();
+}
+
+static inline LogicalResult addTaskDep(Value dep, codir::CodirAccessMode mode,
+                                       CodirTaskPlan &plan) {
+  return addTaskDep(dep, mode, codir::CodirStorageViewKind::host_whole, plan);
 }
 
 static inline LogicalResult addTaskParam(Value param, CodirTaskPlan &plan) {
@@ -1251,7 +1324,13 @@ static inline LogicalResult buildCodirTaskPlan(sde::SdeCuTaskOp task,
       }
     }
 
-    if (failed(addTaskDep(codirDep, convertAccessMode(muDep.getMode()), plan)))
+    codir::CodirStorageViewKind storageView =
+        muDep.getStorageViewAttr()
+            ? convertStorageViewKind(muDep.getStorageViewAttr().getValue())
+            : (useTokenLocalView ? codir::CodirStorageViewKind::compute_block
+                                 : codir::CodirStorageViewKind::host_whole);
+    if (failed(addTaskDep(codirDep, convertAccessMode(muDep.getMode()),
+                          storageView, plan)))
       return muDep.emitOpError()
              << "source must be a memref for CODIR task dependency";
 
@@ -1389,15 +1468,15 @@ static inline LogicalResult convertCuTaskToCodir(sde::SdeCuTaskOp task) {
   appendSlicedTokenOffsetParams(plan.localIndexRewrites, plan.params);
   appendDynamicCodirDepSliceParams(plan.deps, plan.params);
 
-  SmallVector<Attribute> depModeAttrs;
-  depModeAttrs.reserve(plan.depModes.size());
-  for (codir::CodirAccessMode mode : plan.depModes)
-    depModeAttrs.push_back(
-        codir::CodirAccessModeAttr::get(task.getContext(), mode));
+  SmallVector<Attribute> depModeAttrs =
+      buildCodirAccessModeAttrs(task.getContext(), plan.depModes);
+  SmallVector<Attribute> depStorageViewAttrs =
+      buildCodirStorageViewAttrs(task.getContext(), plan.depStorageViews);
 
   auto codelet = createCodirCodelet(
-      builder, task.getLoc(), builder.getArrayAttr(depModeAttrs), plan.deps,
-      plan.params, getCodirMetadataFromTask(task));
+      builder, task.getLoc(), builder.getArrayAttr(depModeAttrs),
+      builder.getArrayAttr(depStorageViewAttrs), plan.deps, plan.params,
+      getCodirMetadataFromTask(task));
   if (!task.getDeps().empty())
     codelet.setTaskDependAttr(builder.getUnitAttr());
   bool hasSlicedTaskDepend =
@@ -1593,10 +1672,12 @@ static inline Value buildSuDispatchStepFromExtent(sde::SdeSuIterateOp source,
   if (stepConst) {
     if (*stepConst >= extent)
       return step;
-    return createConstantIndex(builder, loc, extent * (*stepConst));
+    int64_t dispatch = ((*stepConst + extent - 1) / *stepConst) * *stepConst;
+    return createConstantIndex(builder, loc, dispatch);
   }
   Value extentValue = createConstantIndex(builder, loc, extent);
-  return arith::MulIOp::create(builder, loc, extentValue, step);
+  Value chunks = arith::CeilDivUIOp::create(builder, loc, extentValue, step);
+  return arith::MulIOp::create(builder, loc, chunks, step);
 }
 
 static inline std::optional<unsigned>
@@ -1725,6 +1806,7 @@ buildSuOwnerTileDispatchStep(sde::SdeSuIterateOp source, unsigned dim,
 struct SuCodeletPlan {
   SmallVector<Value> deps;
   SmallVector<codir::CodirAccessMode> depModes;
+  SmallVector<codir::CodirStorageViewKind> depStorageViews;
   SmallVector<Value> params;
   llvm::SetVector<Value> cloneCaptures;
   llvm::SetVector<Value> localAllocaCaptures;
@@ -1734,17 +1816,25 @@ struct SuCodeletPlan {
 };
 
 static inline LogicalResult addSuDep(Value dep, codir::CodirAccessMode mode,
+                                     codir::CodirStorageViewKind storageView,
                                      SuCodeletPlan &plan) {
   CodirTaskPlan taskPlan;
   taskPlan.deps = plan.deps;
   taskPlan.depModes = plan.depModes;
+  taskPlan.depStorageViews = plan.depStorageViews;
   taskPlan.depIndex = plan.depIndex;
-  if (failed(addTaskDep(dep, mode, taskPlan)))
+  if (failed(addTaskDep(dep, mode, storageView, taskPlan)))
     return failure();
   plan.deps = std::move(taskPlan.deps);
   plan.depModes = std::move(taskPlan.depModes);
+  plan.depStorageViews = std::move(taskPlan.depStorageViews);
   plan.depIndex = std::move(taskPlan.depIndex);
   return success();
+}
+
+static inline LogicalResult addSuDep(Value dep, codir::CodirAccessMode mode,
+                                     SuCodeletPlan &plan) {
+  return addSuDep(dep, mode, codir::CodirStorageViewKind::host_whole, plan);
 }
 
 static inline bool canCloneSuScalarCapture(Value value,
@@ -1938,18 +2028,33 @@ static inline void appendSuOwnerSliceLocalRewrites(sde::SdeSuIterateOp source,
   for (auto [depIndex, dep] : llvm::enumerate(plan.deps)) {
     auto depType = dyn_cast<MemRefType>(dep.getType());
     if (!depType || depType.getRank() == 0 ||
-        !isSdeMuAllocMaterializedWithPlan(dep, source) ||
         !allRootAccessesUseOwnerFirstDim(source, dep))
       continue;
 
-    SmallVector<Value> offsets;
-    offsets.reserve(depType.getRank());
-    offsets.push_back(dispatchBase);
-    for (int64_t dim = 1, rank = depType.getRank(); dim < rank; ++dim)
-      offsets.push_back(createZeroIndex(builder, source.getLoc()));
+    Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(dep);
+    bool needsHostWholeBridge =
+        isa_and_nonnull<BlockArgument>(root) ||
+        canBridgeSdeMuAllocHostWholeToComputeBlock(dep, source);
 
-    plan.localIndexRewrites.push_back(
-        {static_cast<unsigned>(depIndex), std::move(offsets), {}});
+    if (!needsHostWholeBridge &&
+        isSdeMuAllocMaterializedWithPlan(dep, source)) {
+      SmallVector<Value> offsets;
+      offsets.reserve(depType.getRank());
+      offsets.push_back(dispatchBase);
+      for (int64_t dim = 1, rank = depType.getRank(); dim < rank; ++dim)
+        offsets.push_back(createZeroIndex(builder, source.getLoc()));
+
+      plan.localIndexRewrites.push_back(
+          {static_cast<unsigned>(depIndex), std::move(offsets), {}});
+      if (depIndex < plan.depStorageViews.size())
+        plan.depStorageViews[depIndex] =
+            codir::CodirStorageViewKind::compute_block;
+      continue;
+    }
+
+    if (needsHostWholeBridge && depIndex < plan.depStorageViews.size())
+      plan.depStorageViews[depIndex] =
+          codir::CodirStorageViewKind::compute_block;
   }
 }
 
@@ -2073,14 +2178,14 @@ convertSuOwnerTile2dToCodir(sde::SdeSuIterateOp source) {
     return source.emitOpError()
            << "failed to materialize owner-tile scheduling-unit base params";
 
-  SmallVector<Attribute> depModeAttrs;
-  depModeAttrs.reserve(plan.depModes.size());
-  for (codir::CodirAccessMode mode : plan.depModes)
-    depModeAttrs.push_back(
-        codir::CodirAccessModeAttr::get(source.getContext(), mode));
+  SmallVector<Attribute> depModeAttrs =
+      buildCodirAccessModeAttrs(source.getContext(), plan.depModes);
+  SmallVector<Attribute> depStorageViewAttrs =
+      buildCodirStorageViewAttrs(source.getContext(), plan.depStorageViews);
 
   auto codelet = createCodirCodelet(
-      builder, loc, builder.getArrayAttr(depModeAttrs), plan.deps, plan.params,
+      builder, loc, builder.getArrayAttr(depModeAttrs),
+      builder.getArrayAttr(depStorageViewAttrs), plan.deps, plan.params,
       getCodirMetadataFromSchedulingUnit(source));
   if (!source.getNowaitAttr())
     codelet.setCompletionBarrierAttr(builder.getUnitAttr());
@@ -2178,14 +2283,14 @@ convertSuIterateToCodir(sde::SdeSuIterateOp source) {
   appendSuOwnerSliceLocalRewrites(source, dispatchLoop.getInductionVar(),
                                   builder, plan);
 
-  SmallVector<Attribute> depModeAttrs;
-  depModeAttrs.reserve(plan.depModes.size());
-  for (codir::CodirAccessMode mode : plan.depModes)
-    depModeAttrs.push_back(
-        codir::CodirAccessModeAttr::get(source.getContext(), mode));
+  SmallVector<Attribute> depModeAttrs =
+      buildCodirAccessModeAttrs(source.getContext(), plan.depModes);
+  SmallVector<Attribute> depStorageViewAttrs =
+      buildCodirStorageViewAttrs(source.getContext(), plan.depStorageViews);
 
   auto codelet = createCodirCodelet(
-      builder, loc, builder.getArrayAttr(depModeAttrs), plan.deps, plan.params,
+      builder, loc, builder.getArrayAttr(depModeAttrs),
+      builder.getArrayAttr(depStorageViewAttrs), plan.deps, plan.params,
       getCodirMetadataFromSchedulingUnit(source));
   if (!source.getNowaitAttr())
     codelet.setCompletionBarrierAttr(builder.getUnitAttr());
