@@ -62,6 +62,7 @@ struct DbDistributedOwnershipPass
       if (eligibility.eligible) {
         ++markedDistributed;
         alloc->removeAttr(AttrNames::Operation::DistributedRejectReason);
+        alloc->removeAttr(AttrNames::Operation::LocalOnly);
         /// Stamp the distribution kind when the eligibility analysis specifies
         /// one (when a non-default distribution applies).
         if (eligibility.distributionKind)

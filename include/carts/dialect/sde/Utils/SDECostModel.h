@@ -116,13 +116,11 @@ public:
   }
 
   virtual int64_t getOwnerLocalPipelineTargetTaskWaves() const {
-    int64_t baseIterations = std::max<int64_t>(1, getMinIterationsPerWorker());
-    int64_t pipelineIterations =
-        std::max<int64_t>(baseIterations,
-                          getMinPipelineOwnerIterationsPerTask());
-    int64_t amortizationWaves = std::max<int64_t>(
-        1, (pipelineIterations + baseIterations - 1) / baseIterations);
-    return std::max(amortizationWaves, getInterLocalityTaskWaves());
+    // Owner-local pipelines already perform multiple local stages per owner
+    // slice. Additional launch waves increase EDT and DB-acquire pressure
+    // without exposing more machine concurrency: a single wave still provides
+    // one task per logical worker when the owner domain is large enough.
+    return 1;
   }
 };
 

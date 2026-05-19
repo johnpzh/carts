@@ -359,6 +359,162 @@ static inline bool canUseCodirOwnerSliceForAlloc(codir::CodeletOp codelet,
              codelet.getTileShapeAttr();
 }
 
+static inline std::optional<unsigned>
+getSingleCodirTileOwnerDim(codir::CodeletOp codelet) {
+  if (!hasCodirTileOwnerSlicePlan(codelet))
+    return std::nullopt;
+  std::optional<SmallVector<int64_t, 4>> ownerDims =
+      readI64ArrayAttr(codelet.getTileOwnerDimsAttr());
+  if (!ownerDims || ownerDims->size() != 1 || ownerDims->front() < 0)
+    return std::nullopt;
+  return static_cast<unsigned>(ownerDims->front());
+}
+
+static inline std::optional<int64_t>
+getSingleCodirTileOwnerBlockSize(codir::CodeletOp codelet,
+                                 unsigned memrefRank) {
+  std::optional<unsigned> ownerDim = getSingleCodirTileOwnerDim(codelet);
+  if (!ownerDim)
+    return std::nullopt;
+
+  std::optional<SmallVector<int64_t, 4>> tileShape =
+      readI64ArrayAttr(codelet.getTileShapeAttr());
+  if (!tileShape || tileShape->empty())
+    return std::nullopt;
+
+  std::optional<int64_t> blockSize;
+  if (tileShape->size() == memrefRank) {
+    if (*ownerDim >= tileShape->size())
+      return std::nullopt;
+    blockSize = (*tileShape)[*ownerDim];
+  } else {
+    // Compact owner-slot-shaped tile metadata stores the single owner block
+    // size at slot zero.
+    blockSize = tileShape->front();
+  }
+
+  if (!blockSize || *blockSize <= 0)
+    return std::nullopt;
+  return blockSize;
+}
+
+static inline Value getCodirOwnerBaseArgument(codir::CodeletOp codelet) {
+  if (!codelet || codelet.getBody().empty() || codelet.getParams().empty())
+    return {};
+
+  Block &body = codelet.getBody().front();
+  unsigned depCount = codelet.getDeps().size();
+  unsigned paramCount = codelet.getParams().size();
+  if (body.getNumArguments() < depCount + paramCount)
+    return {};
+  return body.getArgument(depCount + paramCount - 1);
+}
+
+static inline bool
+codirDepAccessesStayWithinSingleOwnerSlice(codir::CodeletOp codelet,
+                                           unsigned depIndex) {
+  std::optional<unsigned> ownerDim = getSingleCodirTileOwnerDim(codelet);
+  if (!ownerDim || !codelet || codelet.getBody().empty())
+    return false;
+
+  Block &body = codelet.getBody().front();
+  if (depIndex >= codelet.getDeps().size() || depIndex >= body.getNumArguments())
+    return false;
+
+  Value depArg = body.getArgument(depIndex);
+  auto depType = dyn_cast<MemRefType>(depArg.getType());
+  if (!depType || depType.getRank() == 0 || *ownerDim >= depType.getRank())
+    return false;
+
+  Value ownerBase = getCodirOwnerBaseArgument(codelet);
+  if (!ownerBase)
+    return false;
+
+  bool sawDirectRootAccess = false;
+  bool rejected = false;
+  body.walk([&](Operation *op) {
+    if (rejected)
+      return WalkResult::interrupt();
+
+    auto access = getCodirMemoryAccessInfo(op);
+    if (!access)
+      return WalkResult::advance();
+    if (access->memref != depArg)
+      return WalkResult::advance();
+
+    sawDirectRootAccess = true;
+    if (access->indices.size() <= *ownerDim ||
+        !indexSelectsOwnerSlice(access->indices[*ownerDim], ownerBase)) {
+      rejected = true;
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+
+  return sawDirectRootAccess && !rejected;
+}
+
+struct PlannedBlockLocalAccessRewrite {
+  Value localMemref;
+  unsigned ownerDim = 0;
+  Value ownerBase;
+};
+
+static inline FailureOr<Value>
+materializeBlockLocalIndex(OpBuilder &builder, Location loc, Value index,
+                           Value ownerBase) {
+  if (!index || !ownerBase)
+    return failure();
+  if (::mlir::carts::ValueAnalysis::sameValue(index, ownerBase))
+    return createZeroIndex(builder, loc);
+  if (!indexSelectsOwnerSlice(index, ownerBase))
+    return failure();
+  return arith::SubIOp::create(builder, loc, index, ownerBase).getResult();
+}
+
+static inline LogicalResult rewritePlannedBlockLocalAccesses(
+    arts::EdtOp task, ArrayRef<PlannedBlockLocalAccessRewrite> rewrites) {
+  if (rewrites.empty())
+    return success();
+
+  auto rewriteIndices = [&](Operation *op, Value memref,
+                            MutableOperandRange indices) -> WalkResult {
+    for (const PlannedBlockLocalAccessRewrite &rewrite : rewrites) {
+      if (memref != rewrite.localMemref)
+        continue;
+      if (indices.size() <= rewrite.ownerDim) {
+        op->emitError("planned block-local access is missing the owner "
+                      "dimension index");
+        return WalkResult::interrupt();
+      }
+
+      OpBuilder builder(op);
+      FailureOr<Value> localIndex = materializeBlockLocalIndex(
+          builder, op->getLoc(), indices[rewrite.ownerDim].get(),
+          rewrite.ownerBase);
+      if (failed(localIndex)) {
+        op->emitError("planned block-local access does not stay within the "
+                      "owner slice");
+        return WalkResult::interrupt();
+      }
+      indices[rewrite.ownerDim].set(*localIndex);
+      return WalkResult::advance();
+    }
+    return WalkResult::advance();
+  };
+
+  Block &body = task.getBody().front();
+  WalkResult result = body.walk([&](Operation *op) {
+    if (auto load = dyn_cast<memref::LoadOp>(op))
+      return rewriteIndices(op, load.getMemref(), load.getIndicesMutable());
+    if (auto store = dyn_cast<memref::StoreOp>(op))
+      return rewriteIndices(op, store.getMemref(), store.getIndicesMutable());
+    return WalkResult::advance();
+  });
+
+  return result.wasInterrupted() ? failure() : success();
+}
+
 static inline LogicalResult
 createDbBackedMemref(OpBuilder &builder, Location loc, MemRefType memrefType,
                      ValueRange dynamicSizes, Value &memref,
@@ -514,6 +670,25 @@ static inline arts::DbAllocOp findBackingDbAlloc(Value storage) {
   return nullptr;
 }
 
+static inline std::optional<unsigned>
+findCodirDependencyIndexForRoot(codir::CodeletOp codelet, Value root) {
+  for (auto [idx, dep] : llvm::enumerate(codelet.getDeps()))
+    if (stripCodirViewOps(dep) == root)
+      return static_cast<unsigned>(idx);
+  return std::nullopt;
+}
+
+static inline bool canMaterializeRawCodirDependencyWithPlan(
+    Value root, codir::CodeletOp planSource) {
+  if (!hasCodirTileOwnerSlicePlan(planSource))
+    return false;
+  std::optional<unsigned> depIndex =
+      findCodirDependencyIndexForRoot(planSource, root);
+  if (!depIndex)
+    return false;
+  return codirDepAccessesStayWithinSingleOwnerSlice(planSource, *depIndex);
+}
+
 static inline LogicalResult
 materializeRawCodirDependency(Value dep, codir::CodeletOp planSource) {
   if (findBackingDbAlloc(dep))
@@ -527,6 +702,8 @@ materializeRawCodirDependency(Value dep, codir::CodeletOp planSource) {
   Operation *def = root.getDefiningOp();
   OpBuilder builder(root.getContext());
   Value replacement;
+  bool usePlan =
+      canMaterializeRawCodirDependencyWithPlan(root, planSource);
   if (!def) {
     auto blockArg = dyn_cast<BlockArgument>(root);
     if (!blockArg)
@@ -538,14 +715,16 @@ materializeRawCodirDependency(Value dep, codir::CodeletOp planSource) {
     builder.setInsertionPointToStart(owner);
 
     SmallVector<Value> elementSizes;
+    SmallVector<Value> dynamicSizes;
     if (memrefType.getRank() == 0) {
       elementSizes.push_back(createOneIndex(builder, root.getLoc()));
     } else {
       elementSizes.reserve(memrefType.getRank());
       for (int64_t dim = 0, rank = memrefType.getRank(); dim < rank; ++dim) {
         if (memrefType.isDynamicDim(dim)) {
-          elementSizes.push_back(
-              memref::DimOp::create(builder, root.getLoc(), root, dim));
+          Value size = memref::DimOp::create(builder, root.getLoc(), root, dim);
+          elementSizes.push_back(size);
+          dynamicSizes.push_back(size);
         } else {
           elementSizes.push_back(createConstantIndex(
               builder, root.getLoc(), memrefType.getDimSize(dim)));
@@ -559,9 +738,9 @@ materializeRawCodirDependency(Value dep, codir::CodeletOp planSource) {
         dimOps.push_back(op);
 
     arts::DbAllocOp createdDbAlloc;
-    if (hasCodirTileOwnerSlicePlan(planSource)) {
+    if (usePlan) {
       if (failed(createDbBackedMemref(builder, root.getLoc(), memrefType,
-                                      ValueRange{}, replacement, planSource)))
+                                      dynamicSizes, replacement, planSource)))
         return failure();
     } else {
       Value route = arts::createCurrentNodeRoute(builder, root.getLoc());
@@ -587,7 +766,7 @@ materializeRawCodirDependency(Value dep, codir::CodeletOp planSource) {
 
   builder.setInsertionPointAfter(def);
   if (auto alloc = dyn_cast<memref::AllocOp>(def)) {
-    if (failed(hasCodirTileOwnerSlicePlan(planSource)
+    if (failed(usePlan
                    ? createDbBackedMemref(builder, alloc.getLoc(), memrefType,
                                           alloc.getDynamicSizes(), replacement,
                                           planSource)
@@ -596,7 +775,7 @@ materializeRawCodirDependency(Value dep, codir::CodeletOp planSource) {
                                           replacement)))
       return failure();
   } else if (auto alloca = dyn_cast<memref::AllocaOp>(def)) {
-    if (failed(hasCodirTileOwnerSlicePlan(planSource)
+    if (failed(usePlan
                    ? createDbBackedMemref(builder, alloca.getLoc(), memrefType,
                                           alloca.getDynamicSizes(), replacement,
                                           planSource)

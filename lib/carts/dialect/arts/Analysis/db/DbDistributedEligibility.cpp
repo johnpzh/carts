@@ -36,8 +36,14 @@ static bool hasMultipleAllocationBlocks(DbAllocOp alloc) {
 
 static bool hasSupportedAllocationShape(DbAllocOp alloc) {
   /// Distributed ownership currently targets matrix/tensor-style allocations.
-  /// Keep vectors/scalars local to avoid over-marking small or temporary DBs.
-  if (alloc.getElementSizes().size() < 2)
+  /// Keep scalars local to avoid over-marking small or temporary DBs. Rank-1
+  /// vectors are eligible only when SDE/CODIR authored an explicit block plan;
+  /// otherwise a large vector still looks like an undifferentiated aggregate.
+  if (alloc.getElementSizes().empty())
+    return false;
+  if (alloc.getElementSizes().size() == 1 &&
+      (!getPlanOwnerDimsAttr(alloc.getOperation()) ||
+       !getPlanPhysicalBlockShapeAttr(alloc.getOperation())))
     return false;
 
   auto isPositiveOrDynamic = [](Value value) -> bool {

@@ -31,9 +31,12 @@ struct ConvertCodirToArtsPass
     if (!hasCodirTileOwnerSlicePlan(codelet))
       return false;
 
-    for (Value dep : codelet.getDeps()) {
+    for (auto [idx, dep] : llvm::enumerate(codelet.getDeps())) {
       arts::DbAllocOp alloc = findBackingDbAlloc(dep);
       if (!canUseCodirOwnerSliceForAlloc(codelet, alloc))
+        return false;
+      if (!codirDepAccessesStayWithinSingleOwnerSlice(
+              codelet, static_cast<unsigned>(idx)))
         return false;
     }
     return true;
@@ -185,10 +188,12 @@ struct ConvertCodirToArtsPass
     SmallVector<Value> taskDeps;
     SmallVector<Type> blockArgTypes;
     SmallVector<CodirDepSlice, 4> depSlices;
+    SmallVector<std::optional<unsigned>, 4> plannedBlockOwnerDims;
     SmallVector<Operation *, 4> depViewCleanup;
     taskDeps.reserve(codelet.getDeps().size());
     blockArgTypes.reserve(codelet.getDeps().size());
     depSlices.reserve(codelet.getDeps().size());
+    plannedBlockOwnerDims.reserve(codelet.getDeps().size());
 
     for (auto [idx, dep] : llvm::enumerate(codelet.getDeps())) {
       if (isCodirViewDep(dep))
@@ -213,16 +218,22 @@ struct ConvertCodirToArtsPass
 
       SmallVector<Value> dbOffsets{createZeroIndex(builder, loc)};
       SmallVector<Value> dbSizes{createOneIndex(builder, loc)};
+      std::optional<unsigned> plannedBlockOwnerDim;
       if (canUseCodirOwnerSliceForAlloc(codelet, alloc) &&
+          codirDepAccessesStayWithinSingleOwnerSlice(
+              codelet, static_cast<unsigned>(idx)) &&
           !codelet.getParams().empty()) {
         if (std::optional<int64_t> blockSize =
-                getFirstPositiveI64(codelet.getTileShapeAttr())) {
+                getSingleCodirTileOwnerBlockSize(
+                    codelet,
+                    static_cast<unsigned>(alloc.getElementSizes().size()))) {
           Value blockSizeValue = createConstantIndex(builder, loc, *blockSize);
           Value base = codelet.getParams().back();
           Value blockIndex =
               arith::DivUIOp::create(builder, loc, base, blockSizeValue);
           dbOffsets.assign({blockIndex});
           dbSizes.assign({createOneIndex(builder, loc)});
+          plannedBlockOwnerDim = getSingleCodirTileOwnerDim(codelet);
         }
       }
       auto acquire = arts::DbAcquireOp::create(
@@ -238,6 +249,7 @@ struct ConvertCodirToArtsPass
       taskDeps.push_back(acquire.getPtr());
       blockArgTypes.push_back(acquire.getPtr().getType());
       depSlices.push_back(std::move(slice));
+      plannedBlockOwnerDims.push_back(plannedBlockOwnerDim);
     }
 
     SmallVector<Value> taskParams(codelet.getParams().begin(),
@@ -294,6 +306,7 @@ struct ConvertCodirToArtsPass
     IRMapping mapper;
     Block &codeletBlock = codelet.getBody().front();
     unsigned numDeps = codelet.getDeps().size();
+    SmallVector<PlannedBlockLocalAccessRewrite, 4> localAccessRewrites;
     for (unsigned idx = 0; idx < numDeps; ++idx) {
       Value payload =
           materializeInnerPayload(builder, loc, taskBlock.getArgument(idx));
@@ -322,6 +335,14 @@ struct ConvertCodirToArtsPass
           payload = memref::SubViewOp::create(builder, loc, resultType, payload,
                                               offsets, sizes, strides);
         }
+      } else if (plannedBlockOwnerDims[idx]) {
+        Value ownerBase = paramBlockArgs.lookup(codelet.getParams().back());
+        if (!ownerBase)
+          return codelet.emitOpError()
+                 << "failed to materialize owner-base parameter for planned "
+                    "block-local access rewrite";
+        localAccessRewrites.push_back(
+            {payload, *plannedBlockOwnerDims[idx], ownerBase});
       }
       mapper.map(codeletBlock.getArgument(idx), payload);
     }
@@ -334,6 +355,11 @@ struct ConvertCodirToArtsPass
 
     if (isReductionCodelet(codelet))
       lowerIntegerAddReductionsToAtomics(task.getBody(), sourceByBlockArgument);
+
+    if (failed(rewritePlannedBlockLocalAccesses(task, localAccessRewrites)))
+      return codelet.emitOpError()
+             << "failed to rewrite planned block dependency accesses to "
+                "block-local indices";
 
     arts::YieldOp::create(builder, loc);
 

@@ -61,6 +61,9 @@ static llvm::Statistic numAcquiresTightenedToOut{
 static llvm::Statistic numAllocModesAdjusted{
     "db_mode_tightening", "NumAllocModesAdjusted",
     "Number of alloc modes adjusted to match acquire patterns"};
+static llvm::Statistic numAllocDbModesAdjusted{
+    "db_mode_tightening", "NumAllocDbModesAdjusted",
+    "Number of alloc DB modes adjusted to match acquire patterns"};
 static llvm::Statistic numDbsMarkedLocalOnly{
     "db_mode_tightening", "NumDbsMarkedLocalOnly",
     "Number of DBs annotated as local-only"};
@@ -620,14 +623,24 @@ bool DbModeTighteningPass::adjustDbModes() {
       /// Update the alloc mode
       DbAllocOp allocOp = allocNode->getDbAllocOp();
       ArtsMode currentDbMode = allocOp.getMode();
-      if (currentDbMode == maxMode)
-        return;
-      ARTS_DEBUG("AllocOp: " << allocOp << " from " << currentDbMode << " to "
-                             << maxMode);
-      allocOp.setModeAttr(ArtsModeAttr::get(allocOp.getContext(), maxMode));
-      ++numAllocModesAdjusted;
+      if (currentDbMode != maxMode) {
+        ARTS_DEBUG("AllocOp: " << allocOp << " from " << currentDbMode
+                               << " to " << maxMode);
+        allocOp.setModeAttr(ArtsModeAttr::get(allocOp.getContext(), maxMode));
+        ++numAllocModesAdjusted;
+        changed = true;
+      }
 
-      changed = true;
+      DbMode targetDbMode = DbUtils::convertArtsModeToDbMode(maxMode);
+      if (allocOp.getDbMode() != targetDbMode) {
+        ARTS_DEBUG("AllocOp: " << allocOp << " dbMode from "
+                               << allocOp.getDbMode() << " to "
+                               << targetDbMode);
+        allocOp.setDbModeAttr(
+            DbModeAttr::get(allocOp.getContext(), targetDbMode));
+        ++numAllocDbModesAdjusted;
+        changed = true;
+      }
     });
   });
 
