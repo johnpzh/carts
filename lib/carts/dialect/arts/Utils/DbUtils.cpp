@@ -23,6 +23,8 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 
+#include <limits>
+
 #include "carts/utils/Debug.h"
 ARTS_DEBUG_SETUP(db_utils);
 
@@ -367,6 +369,55 @@ bool DbUtils::isI1DbPtrType(Type type) {
     return false;
   auto inner = dyn_cast<MemRefType>(outer.getElementType());
   return inner && inner.getElementType().isInteger(1);
+}
+
+std::optional<int64_t> DbUtils::getStaticElementCount(DbAllocOp alloc) {
+  if (!alloc)
+    return std::nullopt;
+
+  int64_t total = 1;
+  auto multiplyBy = [&](Value value) -> bool {
+    std::optional<int64_t> folded = ValueAnalysis::tryFoldConstantIndex(
+        ValueAnalysis::stripNumericCasts(value));
+    if (!folded || *folded < 0)
+      return false;
+    if (*folded != 0 &&
+        total > std::numeric_limits<int64_t>::max() / *folded)
+      return false;
+    total *= *folded;
+    return true;
+  };
+
+  for (Value size : alloc.getSizes())
+    if (!multiplyBy(size))
+      return std::nullopt;
+  for (Value size : alloc.getElementSizes())
+    if (!multiplyBy(size))
+      return std::nullopt;
+
+  return total;
+}
+
+bool DbUtils::isCoarseUserDataDb(DbAllocOp alloc) {
+  if (!alloc)
+    return false;
+  if (DbUtils::isI1DbPtrType(alloc.getPtr().getType()))
+    return false;
+  if (alloc.getElementSizes().empty())
+    return false;
+  if (llvm::all_of(alloc.getElementSizes(), ValueAnalysis::isOneLikeValue))
+    return false;
+
+  PartitionMode mode =
+      getPartitionMode(alloc.getOperation()).value_or(PartitionMode::coarse);
+  return mode == PartitionMode::coarse;
+}
+
+bool DbUtils::isSmallCoarseUserDataDb(DbAllocOp alloc, int64_t maxElements) {
+  if (maxElements <= 0 || !DbUtils::isCoarseUserDataDb(alloc))
+    return false;
+  std::optional<int64_t> elementCount = DbUtils::getStaticElementCount(alloc);
+  return elementCount && *elementCount <= maxElements;
 }
 
 DbMode DbUtils::convertArtsModeToDbMode(ArtsMode mode) {

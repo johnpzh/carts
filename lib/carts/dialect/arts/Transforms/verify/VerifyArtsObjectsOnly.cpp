@@ -5,10 +5,8 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/IR/ArtsDialect.h"
-#include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/sde/IR/SdeDialect.h"
-#include "carts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_VERIFYARTSOBJECTSONLY
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
@@ -32,20 +30,10 @@ static bool isInsideHostOpenMPIsland(Operation *op) {
   return false;
 }
 
-static bool isCoarseUserDataDb(DbAllocOp alloc) {
-  if (!alloc)
-    return false;
-  if (DbUtils::isI1DbPtrType(alloc.getPtr().getType()))
-    return false;
-  if (alloc.getElementSizes().empty())
-    return false;
-  if (llvm::all_of(alloc.getElementSizes(), ValueAnalysis::isOneLikeValue))
-    return false;
-  if (!DbAnalysis::isCoarseGrained(alloc))
-    return false;
-
-  PartitionMode mode = DbAnalysis::getPartitionModeFromStructure(alloc);
-  return mode == PartitionMode::coarse;
+static bool isSmallReadOnlyCoarseDep(Value dep, DbAllocOp alloc) {
+  auto acquire = dep.getDefiningOp<DbAcquireOp>();
+  return acquire && acquire.getMode() == ArtsMode::in &&
+         DbUtils::isSmallCoarseUserDataDb(alloc);
 }
 
 static void verifyDistributedDbDeps(EdtOp edt, bool &found) {
@@ -56,7 +44,9 @@ static void verifyDistributedDbDeps(EdtOp edt, bool &found) {
   for (Value dep : edt.getDependencies()) {
     auto alloc =
         dyn_cast_or_null<DbAllocOp>(DbUtils::getUnderlyingDbAlloc(dep));
-    if (!isCoarseUserDataDb(alloc))
+    if (!DbUtils::isCoarseUserDataDb(alloc))
+      continue;
+    if (isSmallReadOnlyCoarseDep(dep, alloc))
       continue;
     if (!reported.insert(alloc.getOperation()).second)
       continue;

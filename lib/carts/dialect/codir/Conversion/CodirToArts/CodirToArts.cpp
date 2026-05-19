@@ -23,6 +23,14 @@ struct ConvertCodirToArtsPass
            codelet.getLogicalWorkerSliceAttr() || codelet.getTileShapeAttr();
   }
 
+  bool isSmallReadOnlyCoarseDep(codir::CodeletOp codelet, unsigned depIndex,
+                                arts::DbAllocOp alloc) const {
+    std::optional<codir::CodirAccessMode> mode =
+        getCodirDepAccessMode(codelet, depIndex);
+    return mode && *mode == codir::CodirAccessMode::read &&
+           arts::DbUtils::isSmallCoarseUserDataDb(alloc);
+  }
+
   bool hasDistributedLaunchStoragePlan(codir::CodeletOp codelet) const {
     if (!hasGenericWorkerPlan(codelet))
       return false;
@@ -33,6 +41,8 @@ struct ConvertCodirToArtsPass
 
     for (auto [idx, dep] : llvm::enumerate(codelet.getDeps())) {
       arts::DbAllocOp alloc = findBackingDbAlloc(dep);
+      if (isSmallReadOnlyCoarseDep(codelet, static_cast<unsigned>(idx), alloc))
+        continue;
       if (!codirDepAllowsComputeBlockStorage(codelet,
                                              static_cast<unsigned>(idx)))
         return false;

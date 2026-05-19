@@ -38,6 +38,8 @@ ArtsMode combineAccessModes(ArtsMode mode1, ArtsMode mode2);
 /// Utility class for working with ARTS datablocks (DbAllocOp, DbAcquireOp).
 class DbUtils {
 public:
+  static constexpr int64_t kSmallCoarseReadOnlyElementLimit = 16 * 1024;
+
   enum class MemoryAccessKind { Read, Write };
 
   struct MemoryAccessInfo {
@@ -110,6 +112,20 @@ public:
   /// Return true for DB pointer wrappers whose element payload is i1. These
   /// are compiler control-token DBs, not user data.
   static bool isI1DbPtrType(Type type);
+
+  /// Return the static logical element count for a DB allocation when all
+  /// outer DB counts and payload element sizes fold to non-negative constants.
+  static std::optional<int64_t> getStaticElementCount(DbAllocOp alloc);
+
+  /// Return true for coarse, non-control user data DBs.
+  static bool isCoarseUserDataDb(DbAllocOp alloc);
+
+  /// Return true for small coarse user data DBs that are cheap enough to
+  /// transport read-only to distributed tasks instead of forcing the whole
+  /// task back to intranode execution.
+  static bool isSmallCoarseUserDataDb(
+      DbAllocOp alloc,
+      int64_t maxElements = kSmallCoarseReadOnlyElementLimit);
 
   /// Convert ArtsMode (in/out/inout) to DbMode (read/write).
   /// ArtsMode::in maps to DbMode::read; out and inout map to DbMode::write.
