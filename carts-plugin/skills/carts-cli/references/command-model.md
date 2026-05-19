@@ -19,9 +19,9 @@ Generated build/install artifacts resolve in this order:
    is the preferred shape)
 3. checkout root
 
-When `CARTS_HOME` or `carts.config` points outside the checkout, installed
-tools live under `<home>/.install` and builds under `<home>/build`. Keep
-`.dekk.toml` and agent resources portable; put machine-local paths only in
+Installed tools and libraries live under `<home>/.install/{carts,arts,polygeist,llvm}`.
+Build trees live under `<home>/build/{carts,arts,polygeist,llvm-project}`.
+Keep `.dekk.toml` and agent resources portable; put machine-local paths only in
 environment variables or `carts.config`.
 
 `tools/dekk-shims` is the only tracked PATH entry for CARTS-managed LLVM tools.

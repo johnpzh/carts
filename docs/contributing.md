@@ -57,8 +57,8 @@ dekk carts install                                        # setup + build
 dekk auto-detects the project, creates or syncs the conda environment from
 `environment.yml`, activates `.dekk.toml` paths/env vars, installs the
 bootstrap `clang`/`clang++` toolchain for the pinned LLVM/MLIR build, and
-builds the rest of the stack. Add `--wrap` to generate the optional project-local
-`./.install/carts` wrapper. Dekk does not modify your shell `PATH` as part of
+builds the rest of the stack. Add `--wrap` to generate the optional wrapper
+under the active install root. Dekk does not modify your shell `PATH` as part of
 `dekk carts install`.
 
 Agent skill configuration is managed through dekk:
@@ -119,7 +119,9 @@ Follow LLVM conventions:
 
 ## Environment Notes
 
-- Build tree is out-of-source (`build/` and `.install/`)
+- Build and install trees are out-of-source under the active artifact root:
+  `<CARTS_HOME>/build/{carts,arts,polygeist,llvm-project}` and
+  `<CARTS_HOME>/.install/{carts,arts,polygeist,llvm}`
 - Never edit generated files
 - Export `CARTS_VERBOSE=1` to debug wrapper invocations
 - Docker scripts mount shared workspace volume for clean builds

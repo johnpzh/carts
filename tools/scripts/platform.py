@@ -25,7 +25,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dekk import PlatformDetector, PlatformInfo
-from scripts.local_config import INSTALL_DIR_NAME, resolve_carts_home
+from scripts.local_config import (
+    discover_llvm_runtime_library_dirs,
+    managed_runtime_library_dirs,
+    resolve_build_dir,
+    resolve_carts_home,
+    resolve_install_dir,
+    resolve_subproject_build_dir,
+    resolve_subproject_install_dir,
+)
 
 
 @dataclass
@@ -45,7 +53,12 @@ class CartsConfig:
     # Project directories
     carts_dir: Path
     carts_home: Path
+    build_dir: Path
     install_dir: Path
+    llvm_build_dir: Path
+    polygeist_build_dir: Path
+    arts_build_dir: Path
+    carts_build_dir: Path
     llvm_install_dir: Path
     polygeist_install_dir: Path
     arts_install_dir: Path
@@ -84,24 +97,29 @@ class CartsConfig:
 
         info = PlatformDetector().detect()
 
-        installed_bin_marker = f"{INSTALL_DIR_NAME}/carts/bin"
-        if installed_bin_marker in str(script_dir):
+        if script_dir.name == "bin" and script_dir.parent.name == "carts":
             carts_dir = script_dir.parent.parent.parent
         else:
             carts_dir = script_dir.parent
 
         carts_home = resolve_carts_home(carts_dir)
-        install_dir = carts_home / INSTALL_DIR_NAME
+        build_dir = resolve_build_dir(carts_dir)
+        install_dir = resolve_install_dir(carts_dir)
 
         config = cls(
             info=info,
             carts_dir=carts_dir,
             carts_home=carts_home,
+            build_dir=build_dir,
             install_dir=install_dir,
-            llvm_install_dir=install_dir / "llvm",
-            polygeist_install_dir=install_dir / "polygeist",
-            arts_install_dir=install_dir / "arts",
-            carts_install_dir=install_dir / "carts",
+            llvm_build_dir=resolve_subproject_build_dir(carts_dir, "llvm-project"),
+            polygeist_build_dir=resolve_subproject_build_dir(carts_dir, "polygeist"),
+            arts_build_dir=resolve_subproject_build_dir(carts_dir, "arts"),
+            carts_build_dir=resolve_subproject_build_dir(carts_dir, "carts"),
+            llvm_install_dir=resolve_subproject_install_dir(carts_dir, "llvm"),
+            polygeist_install_dir=resolve_subproject_install_dir(carts_dir, "polygeist"),
+            arts_install_dir=resolve_subproject_install_dir(carts_dir, "arts"),
+            carts_install_dir=resolve_subproject_install_dir(carts_dir, "carts"),
         )
 
         config._setup_paths()
@@ -115,17 +133,12 @@ class CartsConfig:
     # Tool resolution
     # ------------------------------------------------------------------
 
-    def _resolve_tool(self, install_dir: Path, name: str, *,
-                      fallback_to_system: bool = False) -> Path:
+    def _resolve_tool(self, install_dir: Path, name: str) -> Path:
         installed = install_dir / "bin" / name
-        if installed.is_file() or not fallback_to_system:
-            return installed
-        system_path = shutil.which(name)
-        return Path(system_path) if system_path else installed
+        return installed
 
-    def get_llvm_tool(self, name: str, *, fallback_to_system: bool = False) -> Path:
-        return self._resolve_tool(self.llvm_install_dir, name,
-                                  fallback_to_system=fallback_to_system)
+    def get_llvm_tool(self, name: str) -> Path:
+        return self._resolve_tool(self.llvm_install_dir, name)
 
     def get_polygeist_tool(self, name: str) -> Path:
         return self._resolve_tool(self.polygeist_install_dir, name)
@@ -151,15 +164,12 @@ class CartsConfig:
         self.llvm_include_path = self.clang_version_dir / "include"
         self.llvm_cxx_include_path = self.llvm_install_dir / "include" / "c++" / "v1"
 
-        aarch64_path = self.llvm_install_dir / "lib" / "aarch64-unknown-linux-gnu"
-        x86_64_path = self.llvm_install_dir / "lib" / "x86_64-unknown-linux-gnu"
-
-        if aarch64_path.is_dir():
-            self.llvm_lib_path = aarch64_path
-        elif x86_64_path.is_dir():
-            self.llvm_lib_path = x86_64_path
-        else:
-            self.llvm_lib_path = self.llvm_install_dir / "lib"
+        llvm_runtime_dirs = discover_llvm_runtime_library_dirs(self.llvm_install_dir)
+        self.llvm_lib_path = (
+            llvm_runtime_dirs[0]
+            if llvm_runtime_dirs
+            else self.llvm_install_dir / "lib"
+        )
 
         self.macos_sdk_path = Path(
             "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
@@ -331,8 +341,8 @@ class CartsConfig:
 
         if self.info.is_linux or self.info.is_macos:
             if self.info.is_linux:
-                # Use DT_RUNPATH so Slurm jobs can select the per-artifact ARTS
-                # runtime snapshot through LD_LIBRARY_PATH without LD_PRELOAD.
+                # Use DT_RUNPATH so launcher-provided library paths can select
+                # the active CARTS install without LD_PRELOAD.
                 self.linker_flags.append("-Wl,--enable-new-dtags")
 
             rpaths = [
@@ -351,6 +361,14 @@ class CartsConfig:
                 if rpath_flag not in existing:
                     self.linker_flags.append(rpath_flag)
                     existing.add(rpath_flag)
+
+    def runtime_library_dirs(self, *, include_existing_env: bool = True) -> list[Path]:
+        """Return runtime library dirs for launching CARTS-built binaries."""
+        return managed_runtime_library_dirs(
+            self.carts_dir,
+            include_existing_env=include_existing_env,
+            platform_info=self.info,
+        )
 
 
 # ============================================================================

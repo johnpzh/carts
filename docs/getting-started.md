@@ -57,11 +57,18 @@ dekk carts install
    - Polygeist (C-to-MLIR frontend)
    - ARTS runtime
    - CARTS compiler
-`dekk carts install --wrap` additionally generates a project-local wrapper at
-`./.install/carts`. Add `./.install` to your `PATH` yourself if you want to use
+`dekk carts install --wrap` additionally generates a wrapper under the active
+install root. Add that install root to your `PATH` yourself if you want to use
 bare `carts ...` commands outside the dekk runner.
 
-The installed binaries go into `.install/{llvm,polygeist,arts,carts}/`.
+The active artifact root is resolved by dekk from `CARTS_HOME`, then the
+untracked `carts.config`, then the checkout root. Build and install outputs use
+one predictable layout:
+
+```text
+<CARTS_HOME>/build/{carts,arts,polygeist,llvm-project}
+<CARTS_HOME>/.install/{carts,arts,polygeist,llvm}
+```
 
 ## 3. Use CARTS
 
@@ -73,7 +80,8 @@ dekk carts test      # Run the full test suite
 ```
 
 If you generated the optional wrapper with `dekk carts install --wrap`, you can
-also run `./.install/carts ...` directly, or add `./.install` to `PATH`.
+also run the wrapper from the active install root directly, or add that root to
+`PATH`.
 
 ### If something fails
 
@@ -185,7 +193,7 @@ Run `dekk carts --help` for the full command list. Key commands:
 | Command | Description |
 |---------|-------------|
 | `dekk carts install` | Full project setup: environment, submodules, and build |
-| `dekk carts install --wrap` | Also generate `./.install/carts` |
+| `dekk carts install --wrap` | Also generate a wrapper under the active install root |
 | `dekk carts doctor` | System and toolchain diagnostics |
 | `dekk carts build` | Build components (`--arts`, `--llvm`, `--polygeist`) |
 | `dekk carts compile` | Compile C/C++/MLIR through the pipeline |

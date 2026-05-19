@@ -20,17 +20,11 @@ LLVM_DIR ?= ${POLYGEIST_DIR}/llvm-project
 
 # Output Directories
 #
-# By default CARTS keeps build/install artifacts in the project checkout for a
-# self-contained developer tree. Set CARTS_HOME to move every heavy generated
-# artifact to another filesystem while preserving the same source tree.
-ifeq ($(strip $(CARTS_HOME)),)
-CARTS_OUTPUT_HOME := ${CARTS_DIR}
-CARTS_BUILD_DIR ?= build
-ARTS_BUILD_DIR ?= $(ARTS_DIR)/build
-POLYGEIST_BUILD_DIR ?= $(POLYGEIST_DIR)/build
-LLVM_BUILD_DIR ?= $(LLVM_DIR)/build
-else
-CARTS_OUTPUT_HOME := $(abspath $(CARTS_HOME))
+# Dekk resolves CARTS_HOME from the environment or local carts.config.  All
+# generated build/install artifacts live under this one root:
+#   $(CARTS_OUTPUT_HOME)/build/{carts,arts,polygeist,llvm-project}
+#   $(CARTS_OUTPUT_HOME)/.install/{carts,arts,polygeist,llvm}
+CARTS_OUTPUT_HOME := $(if $(strip $(CARTS_HOME)),$(abspath $(CARTS_HOME)),$(CARTS_DIR))
 CARTS_BUILD_DIR ?= $(CARTS_OUTPUT_HOME)/build/carts
 ARTS_BUILD_DIR ?= $(CARTS_OUTPUT_HOME)/build/arts
 POLYGEIST_BUILD_DIR ?= $(CARTS_OUTPUT_HOME)/build/polygeist
@@ -39,7 +33,6 @@ CARTS_TMP_DIR ?= $(CARTS_OUTPUT_HOME)/tmp
 export TMPDIR ?= $(CARTS_TMP_DIR)
 export TMP ?= $(TMPDIR)
 export TEMP ?= $(TMPDIR)
-endif
 
 # Install Directories
 INSTALL_DIR ?= $(CARTS_OUTPUT_HOME)/.install
@@ -204,7 +197,7 @@ ARTS_CONFIG_HASH_FILE := $(ARTS_BUILD_DIR)/.arts-build-config
 COUNTER_CONFIG_HASH := $(shell md5sum "$(COUNTER_CONFIG_ABSPATH)" 2>/dev/null | cut -d' ' -f1 || echo "no-config")
 
 # Compute current configuration as a string for hashing
-ARTS_CONFIG_STRING := $(ARTS_BUILD_TYPE)|$(ARTS_USE_COUNTERS)|$(ARTS_USE_METRICS)|$(ARTS_LOG_LEVEL)|$(COUNTER_CONFIG_ABSPATH)|$(COUNTER_CONFIG_HASH)|$(CARTS_LINKER_PATH)|$(ARTS_USE_JEMALLOC)|$(ARTS_USE_RDMA)
+ARTS_CONFIG_STRING := $(ARTS_BUILD_TYPE)|$(ARTS_USE_COUNTERS)|$(ARTS_USE_METRICS)|$(ARTS_LOG_LEVEL)|$(COUNTER_CONFIG_ABSPATH)|$(COUNTER_CONFIG_HASH)|$(CARTS_LINKER_PATH)|$(ARTS_USE_JEMALLOC)|$(ARTS_USE_RDMA)|build-with-install-rpath
 
 arts-download:
 	@if [ ! -d "$(ARTS_DIR)/.git" ]; then \
@@ -244,6 +237,7 @@ arts:
 			-DARTS_BUILD_EXAMPLES=OFF \
 			-DCOUNTER_CONFIG_PATH="$(COUNTER_CONFIG_ABSPATH)" \
 			-DCMAKE_INSTALL_PREFIX=$(ARTS_INSTALL_DIR) \
+			-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
 			$(LLVM_RUNTIME_CMAKE_FLAGS) \
 			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON; \
 		echo "$$CURRENT_HASH" > "$(ARTS_CONFIG_HASH_FILE)"; \

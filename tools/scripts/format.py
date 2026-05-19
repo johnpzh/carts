@@ -69,8 +69,8 @@ def _collect_format_files_from_paths(paths: Iterable[Path]) -> List[Path]:
 
 
 def _resolve_clang_format(config: CartsConfig) -> Optional[Path]:
-    """Find clang-format in install tree first, then in PATH."""
-    tool = config.get_llvm_tool(TOOL_CLANG_FORMAT, fallback_to_system=True)
+    """Find clang-format in the active CARTS install tree."""
+    tool = config.get_llvm_tool(TOOL_CLANG_FORMAT)
     return tool if tool.is_file() else None
 
 
@@ -92,9 +92,9 @@ def format_sources(
     clang_format = _resolve_clang_format(config)
     if not clang_format:
         print_error(
-            f"clang-format not found in {config.llvm_install_dir / 'bin'} or PATH."
+            f"clang-format not found in {config.llvm_install_dir / 'bin'}."
         )
-        print_info("Run `dekk carts build` (or install clang-format) and retry.")
+        print_info("Run `dekk carts build` and retry.")
         raise Exit(1)
 
     selected_paths = paths or []

@@ -9,7 +9,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from local_config import INSTALL_DIR_NAME, resolve_carts_home
+from local_config import (
+    prepend_runtime_library_env,
+    resolve_install_dir,
+)
 
 
 LLVM_TOOLS = frozenset({
@@ -30,17 +33,12 @@ def main(argv: list[str]) -> int:
         return 2
 
     carts_dir = Path(__file__).resolve().parents[2]
-    tool_path = (
-        resolve_carts_home(carts_dir)
-        / INSTALL_DIR_NAME
-        / "llvm"
-        / "bin"
-        / tool_name
-    )
+    tool_path = resolve_install_dir(carts_dir) / "llvm" / "bin" / tool_name
     if not tool_path.is_file():
         print(f"CARTS-managed tool not found: {tool_path}", file=sys.stderr)
         return 127
 
+    prepend_runtime_library_env(carts_dir, include_existing_env=False)
     os.execv(str(tool_path), [str(tool_path), *argv[2:]])
     return 127
 

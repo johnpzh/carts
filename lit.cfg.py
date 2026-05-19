@@ -12,6 +12,7 @@ CMake's lit.site.cfg.py, paths come from CMake variables.
 """
 
 import os
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -39,7 +40,13 @@ tests_dir = os.path.join(project_root, "tests")
 tools_scripts_dir = os.path.join(project_root, "tools", "scripts")
 if tools_scripts_dir not in sys.path:
     sys.path.insert(0, tools_scripts_dir)
-from local_config import BUILD_DIR_NAME, INSTALL_DIR_NAME, resolve_carts_home
+from local_config import (
+    managed_runtime_library_dirs,
+    resolve_build_dir,
+    resolve_carts_home,
+    resolve_install_dir,
+    runtime_library_env_vars,
+)
 
 carts_home = str(resolve_carts_home(Path(project_root)))
 
@@ -47,9 +54,8 @@ carts_home = str(resolve_carts_home(Path(project_root)))
 config.test_source_root = project_root
 
 # Out-of-source test execution: avoids polluting source tree with Output/ dirs.
-build_dir = getattr(config, "carts_build_dir", None) or os.path.join(
-    carts_home, BUILD_DIR_NAME, "carts"
-)
+build_root = str(resolve_build_dir(Path(project_root)))
+build_dir = getattr(config, "carts_build_dir", None) or os.path.join(build_root, "carts")
 config.test_exec_root = os.path.join(build_dir, "tests", "lit-output")
 
 # Tell lit which subdirectories to scan for tests (IREE pattern).
@@ -85,7 +91,7 @@ for test_times_path in (
             time_file.writelines(cleaned_lines)
 
 # --- Tool paths ---
-install_root = os.path.join(carts_home, INSTALL_DIR_NAME)
+install_root = str(resolve_install_dir(Path(project_root)))
 carts_bin_dir = os.path.join(install_root, "carts", "bin")
 llvm_bin_dir = os.path.join(install_root, "llvm", "bin")
 llvm_lib_dir = os.path.join(install_root, "llvm", "lib")
@@ -116,13 +122,9 @@ for subst, tool in required_tools:
 
 carts_tool = getattr(config, "carts_tool", None)
 if not carts_tool:
-    carts_wrapper = os.path.join(install_root, "bin", "carts")
-    if os.path.exists(carts_wrapper):
-        carts_tool = carts_wrapper
-    else:
-        dekk_tool = shutil.which("dekk")
-        if dekk_tool:
-            carts_tool = f"{dekk_tool} carts"
+    dekk_tool = shutil.which("dekk")
+    if dekk_tool:
+        carts_tool = f"cd {shlex.quote(project_root)} && {shlex.quote(dekk_tool)} carts"
 
 if carts_tool:
     config.substitutions.append(("%carts", carts_tool))
@@ -149,15 +151,14 @@ config.environment["PATH"] = os.pathsep.join(
     [build_bin_dir, carts_bin_dir, llvm_bin_dir, config.environment.get("PATH", "")]
 )
 
-# macOS / Linux dyld search path. `carts-compile` is linked with
-# @rpath/libzstd.1.dylib pointing at the dekk-managed conda env's lib/;
-# propagate DYLD_LIBRARY_PATH / LD_LIBRARY_PATH from the outer shell (and
-# fall back to the env's lib/) so lit subprocesses can resolve it.
-_dekk_env_lib = os.path.join(project_root, ".dekk", "env", "lib")
-for _lib_var in ("DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"):
-    _inherited = os.environ.get(_lib_var, "")
-    _entries = [_dekk_env_lib] + ([_inherited] if _inherited else [])
-    config.environment[_lib_var] = os.pathsep.join(_entries)
+# Dynamic-library search path comes from the same CARTS_HOME-aware resolver
+# used by dekk-launched commands and generated Slurm jobs.
+_runtime_dirs = [
+    str(path)
+    for path in managed_runtime_library_dirs(Path(project_root), include_existing_env=True)
+]
+for _lib_var in runtime_library_env_vars():
+    config.environment[_lib_var] = os.pathsep.join(_runtime_dirs)
 
 # Directories that should not be treated as test directories.
 config.excludes = ["inputs", "snapshots", "Output", "counters"]

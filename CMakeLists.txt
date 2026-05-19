@@ -100,17 +100,14 @@ if(CARTS_ENABLE_TESTS)
   set(CARTS_TOOLS_DIR bin)
   get_filename_component(_CARTS_INSTALL_ROOT "${CMAKE_INSTALL_PREFIX}/.." ABSOLUTE)
 
-  # Locate LLVM test tools (llvm-lit and FileCheck) from common LLVM build/install dirs
+  # Locate LLVM test tools from the active build/install roots supplied by Dekk.
   set(_LLVM_TOOL_HINT_DIRS
       ${LLVM_TOOLS_BINARY_DIR}
       ${LLVM_RUNTIME_OUTPUT_INTDIR}
       ${LLVM_BINARY_DIR}
       ${LLVM_DIR}/../../bin
       ${LLVM_DIR}/../bin
-      ${POLYGEIST_DIR}/llvm-project/build/bin
-      ${POLYGEIST_DIR}/llvm-project/build/NATIVE/bin
-      ${_CARTS_INSTALL_ROOT}/llvm/bin
-      ${CMAKE_SOURCE_DIR}/.install/llvm/bin)
+      ${_CARTS_INSTALL_ROOT}/llvm/bin)
 
   find_program(LLVM_LIT_EXECUTABLE NAMES llvm-lit lit.py
                HINTS ${_LLVM_TOOL_HINT_DIRS}

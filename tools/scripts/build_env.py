@@ -26,11 +26,7 @@ def available_parallel_jobs() -> int:
 
 def configured_make_vars(config: Any) -> list[str]:
     """Return Makefile variables required by the active workspace config."""
-    make_vars: list[str] = []
-    if config.carts_home == config.carts_dir:
-        pass
-    else:
-        make_vars.append(f"{ENV_CARTS_HOME}={config.carts_home}")
+    make_vars: list[str] = [f"{ENV_CARTS_HOME}={config.carts_home}"]
 
     if getattr(config, "linker_path", None):
         make_vars.append(f"{MAKE_VAR_CARTS_LINKER_PATH}={config.linker_path}")

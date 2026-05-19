@@ -43,6 +43,7 @@ dekk carts benchmarks list
 - dekk creates the project-local conda environment from `environment.yml`
 - Build/install artifacts use `CARTS_HOME` first, then local untracked
   `carts.config`, then the checkout root
-- `dekk carts install --wrap` writes the wrapper under the active `.install`
-  root
-- `carts-compile` lives under the active `.install/carts/bin/`
+- `dekk carts install --wrap` writes the wrapper under the active install root
+- Build outputs live under `<CARTS_HOME>/build/{carts,arts,polygeist,llvm-project}`
+- Installed outputs live under `<CARTS_HOME>/.install/{carts,arts,polygeist,llvm}`
+- `carts-compile` lives under `<CARTS_HOME>/.install/carts/bin/`

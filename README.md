@@ -27,8 +27,8 @@ dekk carts test                                             # Run the test suite
 ```
 
 If you want a bare `carts ...` command, run `dekk carts install --wrap` and add
-`./.install` to your `PATH`. The wrapper is project-local; dekk does not edit
-your shell config automatically.
+the active install root to your `PATH`. The wrapper is project-local; dekk does
+not edit your shell config automatically.
 
 See **[Getting Started](docs/getting-started.md)** for the full walkthrough.
 
@@ -47,12 +47,27 @@ See **[Getting Started](docs/getting-started.md)** for the full walkthrough.
 | `docs/` | Architecture, pipeline, and developer documentation |
 | `docker/` | Container workflows for multi-node execution |
 
+## Managed Artifact Layout
+
+Dekk resolves the active artifact root from `CARTS_HOME`, then the untracked
+`carts.config`, then the checkout root. All generated build and install outputs
+live under that one root:
+
+```text
+<CARTS_HOME>/build/{carts,arts,polygeist,llvm-project}
+<CARTS_HOME>/.install/{carts,arts,polygeist,llvm}
+```
+
+Sources remain in the checkout (`external/arts`, `external/Polygeist`, etc.).
+Build scripts and benchmark jobs should use the Dekk-resolved paths instead of
+probing subproject-local build or install directories.
+
 ## CLI Commands
 
 | Command | Description |
 |---|---|
 | `dekk carts install` | Create the project environment, fetch submodules, and build the toolchain |
-| `dekk carts install --wrap` | Also generate a project-local `./.install/carts` wrapper |
+| `dekk carts install --wrap` | Also generate a wrapper under the active install root |
 | `dekk carts doctor` | Validate the toolchain and environment |
 | `dekk carts build` | Build CARTS (`--clean` for fresh, `--arts` for runtime) |
 | `dekk carts compile <file> [flags]` | Run the full compilation pipeline |

@@ -6,39 +6,16 @@ import os
 import sys
 
 from dekk import Context, Exit, Option, Typer, print_error
-from scripts.local_config import INSTALL_DIR_NAME, resolve_carts_home
-
-
-def _prepend_env_path(var_name: str, paths: list[Path]) -> None:
-    entries = [str(path) for path in paths if path.is_dir()]
-    if not entries:
-        return
-
-    existing = [entry for entry in os.environ.get(var_name, "").split(":") if entry]
-    merged: list[str] = []
-    seen: set[str] = set()
-    for entry in entries + existing:
-        if entry in seen:
-            continue
-        merged.append(entry)
-        seen.add(entry)
-    os.environ[var_name] = ":".join(merged)
+from scripts.local_config import (
+    prepend_runtime_library_env,
+    resolve_install_dir,
+)
 
 
 def _bootstrap_runtime_library_paths() -> None:
     carts_dir = Path(__file__).resolve().parent.parent
-    install_dir = resolve_carts_home(carts_dir) / INSTALL_DIR_NAME
-    lib_paths = [Path(sys.prefix) / "lib"]
-    if conda_prefix := os.environ.get("CONDA_PREFIX"):
-        lib_paths.append(Path(conda_prefix) / "lib")
-    lib_paths.extend([
-        install_dir / "carts" / "lib",
-        install_dir / "arts" / "lib",
-    ])
-
-    _prepend_env_path("DYLD_LIBRARY_PATH", lib_paths)
-    _prepend_env_path("LD_LIBRARY_PATH",
-                      lib_paths + [install_dir / "llvm" / "lib"])
+    install_dir = resolve_install_dir(carts_dir)
+    prepend_runtime_library_env(carts_dir, include_existing_env=False)
     llvm_symbolizer = install_dir / "llvm" / "bin" / "llvm-symbolizer"
     if llvm_symbolizer.is_file():
         os.environ["LLVM_SYMBOLIZER_PATH"] = str(llvm_symbolizer)
