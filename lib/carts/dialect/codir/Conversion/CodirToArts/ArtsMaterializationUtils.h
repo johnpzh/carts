@@ -924,6 +924,63 @@ static inline SmallVector<Operation *> filterHostBridgeReadSyncAnchors(
   return filtered;
 }
 
+static inline bool
+hostBridgeNeedsInitialCopyIn(Operation *anchor,
+                             ArrayRef<HostBridgeParticipant> participants) {
+  bool hasReadParticipant = llvm::any_of(
+      participants, [](const HostBridgeParticipant &participant) {
+        return codirAccessMayRead(participant.mode);
+      });
+  if (!hasReadParticipant)
+    return false;
+  if (!anchor)
+    return true;
+
+  struct Event {
+    Operation *eventOp = nullptr;
+    codir::CodirAccessMode mode = codir::CodirAccessMode::readwrite;
+    unsigned ordinal = 0;
+  };
+
+  SmallVector<Event> events;
+  unsigned ordinal = 0;
+  for (const HostBridgeParticipant &participant : participants) {
+    Operation *dispatchAnchor =
+        findCodirDispatchBridgeAnchor(participant.codelet);
+    Operation *event =
+        findHostBridgeEventUnderAnchor(anchor, dispatchAnchor);
+    if (!event)
+      return true;
+    events.push_back({event, participant.mode, ordinal++});
+  }
+
+  Block *eventBlock = nullptr;
+  for (const Event &event : events) {
+    if (!event.eventOp || !event.eventOp->getBlock())
+      return true;
+    if (!eventBlock) {
+      eventBlock = event.eventOp->getBlock();
+      continue;
+    }
+    if (eventBlock != event.eventOp->getBlock())
+      return true;
+  }
+
+  llvm::sort(events, [](const Event &lhs, const Event &rhs) {
+    if (lhs.eventOp == rhs.eventOp)
+      return lhs.ordinal < rhs.ordinal;
+    return lhs.eventOp->isBeforeInBlock(rhs.eventOp);
+  });
+
+  for (const Event &event : events) {
+    if (codirAccessMayRead(event.mode))
+      return true;
+    if (codirAccessMayWrite(event.mode))
+      return false;
+  }
+  return true;
+}
+
 static inline bool hasSameHostBridgePlan(codir::CodeletOp lhs,
                                          codir::CodeletOp rhs) {
   if (!lhs || !rhs)
@@ -1256,9 +1313,7 @@ materializeHostWholeToComputeBlockBridge(codir::CodeletOp codelet,
     participants.push_back({codelet, depIndex, *depMode});
   }
 
-  bool needsCopyIn = llvm::any_of(participants, [](const auto &participant) {
-    return codirAccessMayRead(participant.mode);
-  });
+  bool needsCopyIn = hostBridgeNeedsInitialCopyIn(anchor, participants);
   bool needsCopyOut = llvm::any_of(participants, [](const auto &participant) {
     return codirAccessMayWrite(participant.mode);
   });
