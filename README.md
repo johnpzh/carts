@@ -50,13 +50,27 @@ See **[Getting Started](docs/getting-started.md)** for the full walkthrough.
 ## Managed Artifact Layout
 
 Dekk resolves the active artifact root from `CARTS_HOME`, then the untracked
-`carts.config`, then the checkout root. All generated build and install outputs
-live under that one root:
+`carts.config`, then the checkout root. By default generated build and install
+outputs live under that one root:
 
 ```text
 <CARTS_HOME>/build/{carts,arts,polygeist,llvm-project}
 <CARTS_HOME>/.install/{carts,arts,polygeist,llvm}
 ```
+
+For machines where build and install trees need different filesystems, set
+explicit roots in the untracked local config:
+
+```toml
+[carts]
+home = ".carts"
+build = ".carts/build"
+install = ".carts/install"
+```
+
+The equivalent environment overrides are `CARTS_BUILD_ROOT` and
+`CARTS_INSTALL_ROOT`. Avoid using `CARTS_BUILD_DIR` or `CARTS_INSTALL_DIR` for
+root overrides; those names are Makefile subproject paths.
 
 Sources remain in the checkout (`external/arts`, `external/Polygeist`, etc.).
 Build scripts and benchmark jobs should use the Dekk-resolved paths instead of

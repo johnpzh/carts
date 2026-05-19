@@ -51,7 +51,7 @@ def _prepare_project_sources() -> None:
     for directory in [
         config.install_dir,
         config.install_dir / "bin",
-        config.carts_home / "build",
+        config.build_dir,
         project_root / "external",
     ]:
         directory.mkdir(parents=True, exist_ok=True)

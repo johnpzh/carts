@@ -20,10 +20,12 @@ LLVM_DIR ?= ${POLYGEIST_DIR}/llvm-project
 
 # Output Directories
 #
-# Dekk resolves CARTS_HOME from the environment or local carts.config.  All
-# generated build/install artifacts live under this one root:
+# Dekk resolves CARTS_HOME from the environment or local carts.config. By
+# default, generated build/install artifacts live under this one root:
 #   $(CARTS_OUTPUT_HOME)/build/{carts,arts,polygeist,llvm-project}
 #   $(CARTS_OUTPUT_HOME)/.install/{carts,arts,polygeist,llvm}
+# Dekk may also pass explicit build/install roots from local config; the
+# subproject variables below remain the Makefile-facing contract.
 CARTS_OUTPUT_HOME := $(if $(strip $(CARTS_HOME)),$(abspath $(CARTS_HOME)),$(CARTS_DIR))
 CARTS_BUILD_DIR ?= $(CARTS_OUTPUT_HOME)/build/carts
 ARTS_BUILD_DIR ?= $(CARTS_OUTPUT_HOME)/build/arts

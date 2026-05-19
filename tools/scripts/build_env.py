@@ -15,6 +15,15 @@ ENV_CMAKE_BUILD_PARALLEL_LEVEL = "CMAKE_BUILD_PARALLEL_LEVEL"
 MAKE_VAR_CARTS_LINKER_PATH = "CARTS_LINKER_PATH"
 MAKE_VAR_LLVM_GCC_INSTALL_PREFIX = "LLVM_GCC_INSTALL_PREFIX"
 MAKE_VAR_CMAKE = "CMAKE"
+MAKE_VAR_INSTALL_DIR = "INSTALL_DIR"
+MAKE_VAR_CARTS_BUILD_DIR = "CARTS_BUILD_DIR"
+MAKE_VAR_ARTS_BUILD_DIR = "ARTS_BUILD_DIR"
+MAKE_VAR_POLYGEIST_BUILD_DIR = "POLYGEIST_BUILD_DIR"
+MAKE_VAR_LLVM_BUILD_DIR = "LLVM_BUILD_DIR"
+MAKE_VAR_CARTS_INSTALL_DIR = "CARTS_INSTALL_DIR"
+MAKE_VAR_ARTS_INSTALL_DIR = "ARTS_INSTALL_DIR"
+MAKE_VAR_POLYGEIST_INSTALL_DIR = "POLYGEIST_INSTALL_DIR"
+MAKE_VAR_LLVM_INSTALL_DIR = "LLVM_INSTALL_DIR"
 
 
 def available_parallel_jobs() -> int:
@@ -26,7 +35,18 @@ def available_parallel_jobs() -> int:
 
 def configured_make_vars(config: Any) -> list[str]:
     """Return Makefile variables required by the active workspace config."""
-    make_vars: list[str] = [f"{ENV_CARTS_HOME}={config.carts_home}"]
+    make_vars: list[str] = [
+        f"{ENV_CARTS_HOME}={config.carts_home}",
+        f"{MAKE_VAR_INSTALL_DIR}={config.install_dir}",
+        f"{MAKE_VAR_CARTS_BUILD_DIR}={config.carts_build_dir}",
+        f"{MAKE_VAR_ARTS_BUILD_DIR}={config.arts_build_dir}",
+        f"{MAKE_VAR_POLYGEIST_BUILD_DIR}={config.polygeist_build_dir}",
+        f"{MAKE_VAR_LLVM_BUILD_DIR}={config.llvm_build_dir}",
+        f"{MAKE_VAR_CARTS_INSTALL_DIR}={config.carts_install_dir}",
+        f"{MAKE_VAR_ARTS_INSTALL_DIR}={config.arts_install_dir}",
+        f"{MAKE_VAR_POLYGEIST_INSTALL_DIR}={config.polygeist_install_dir}",
+        f"{MAKE_VAR_LLVM_INSTALL_DIR}={config.llvm_install_dir}",
+    ]
 
     if getattr(config, "linker_path", None):
         make_vars.append(f"{MAKE_VAR_CARTS_LINKER_PATH}={config.linker_path}")

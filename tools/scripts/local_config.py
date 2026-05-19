@@ -11,7 +11,9 @@ from typing import Any, Iterable
 
 
 ENV_CARTS_HOME = "CARTS_HOME"
+ENV_CARTS_BUILD_ROOT = "CARTS_BUILD_ROOT"
 ENV_CARTS_CONFIG = "CARTS_CONFIG"
+ENV_CARTS_INSTALL_ROOT = "CARTS_INSTALL_ROOT"
 LOCAL_CONFIG_FILE = "carts.config"
 INSTALL_DIR_NAME = ".install"
 BUILD_DIR_NAME = "build"
@@ -54,11 +56,27 @@ def resolve_carts_home(carts_dir: Path) -> Path:
 
 def resolve_install_dir(carts_dir: Path) -> Path:
     """Resolve the active CARTS install root for this checkout."""
+    raw_install = os.environ.get(ENV_CARTS_INSTALL_ROOT) or _read_config_path_value(
+        carts_dir,
+        "install",
+        "install_dir",
+        "install_root",
+    )
+    if raw_install:
+        return _resolve_workspace_path(carts_dir, raw_install)
     return resolve_carts_home(carts_dir) / INSTALL_DIR_NAME
 
 
 def resolve_build_dir(carts_dir: Path) -> Path:
     """Resolve the active CARTS build root for this checkout."""
+    raw_build = os.environ.get(ENV_CARTS_BUILD_ROOT) or _read_config_path_value(
+        carts_dir,
+        "build",
+        "build_dir",
+        "build_root",
+    )
+    if raw_build:
+        return _resolve_workspace_path(carts_dir, raw_build)
     return resolve_carts_home(carts_dir) / BUILD_DIR_NAME
 
 
@@ -246,6 +264,10 @@ def is_windows_platform(platform_info: Any | None = None) -> bool:
 
 
 def _read_config_home(carts_dir: Path) -> str | None:
+    return _read_config_path_value(carts_dir, "home", "carts_home")
+
+
+def _read_config_path_value(carts_dir: Path, *keys: str) -> str | None:
     config_path = _resolve_config_path(carts_dir)
     if not config_path.is_file():
         return None
@@ -253,27 +275,55 @@ def _read_config_home(carts_dir: Path) -> str | None:
     with config_path.open("rb") as handle:
         data = tomllib.load(handle)
 
-    value = _lookup_home_value(data)
+    value = _lookup_path_value(data, *keys)
     return str(value) if value else None
 
 
 def _lookup_home_value(data: dict[str, Any]) -> Any:
-    if ENV_CARTS_HOME in data:
-        return data[ENV_CARTS_HOME]
-    if "home" in data:
-        return data["home"]
-    if "carts_home" in data:
-        return data["carts_home"]
+    return _lookup_path_value(data, "home", "carts_home")
+
+
+def _lookup_path_value(data: dict[str, Any], *keys: str) -> Any:
+    env_aliases = {
+        "home": ENV_CARTS_HOME,
+        "carts_home": ENV_CARTS_HOME,
+        "build": ENV_CARTS_BUILD_ROOT,
+        "build_dir": ENV_CARTS_BUILD_ROOT,
+        "build_root": ENV_CARTS_BUILD_ROOT,
+        "install": ENV_CARTS_INSTALL_ROOT,
+        "install_dir": ENV_CARTS_INSTALL_ROOT,
+        "install_root": ENV_CARTS_INSTALL_ROOT,
+    }
+
+    for key in keys:
+        env_key = env_aliases.get(key)
+        if env_key and env_key in data:
+            return data[env_key]
+        if key in data:
+            return data[key]
 
     carts_section = data.get("carts")
     if isinstance(carts_section, dict):
-        return carts_section.get("home") or carts_section.get("carts_home")
+        for key in keys:
+            value = carts_section.get(key)
+            if value:
+                return value
 
     paths_section = data.get("paths")
     if isinstance(paths_section, dict):
-        return paths_section.get("home") or paths_section.get("carts_home")
+        for key in keys:
+            value = paths_section.get(key)
+            if value:
+                return value
 
     return None
+
+
+def _resolve_workspace_path(carts_dir: Path, raw_path: str) -> Path:
+    path = Path(raw_path).expanduser()
+    if not path.is_absolute():
+        path = carts_dir / path
+    return path.resolve()
 
 
 def _resolve_config_path(carts_dir: Path) -> Path:

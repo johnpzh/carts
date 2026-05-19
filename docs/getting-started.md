@@ -63,12 +63,26 @@ bare `carts ...` commands outside the dekk runner.
 
 The active artifact root is resolved by dekk from `CARTS_HOME`, then the
 untracked `carts.config`, then the checkout root. Build and install outputs use
-one predictable layout:
+one predictable layout by default:
 
 ```text
 <CARTS_HOME>/build/{carts,arts,polygeist,llvm-project}
 <CARTS_HOME>/.install/{carts,arts,polygeist,llvm}
 ```
+
+You can split build and install roots in the untracked local config when the
+install tree must be visible to other nodes:
+
+```toml
+[carts]
+home = ".carts"
+build = ".carts/build"
+install = ".carts/install"
+```
+
+The matching environment overrides are `CARTS_BUILD_ROOT` and
+`CARTS_INSTALL_ROOT`. `CARTS_BUILD_DIR` and `CARTS_INSTALL_DIR` are Makefile
+subproject paths, not artifact-root overrides.
 
 ## 3. Use CARTS
 

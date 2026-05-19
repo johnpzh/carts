@@ -16,11 +16,17 @@ Generated build/install artifacts resolve in this order:
 
 1. `CARTS_HOME` environment variable
 2. local untracked `carts.config` file (`[carts] home = "..."`
-   is the preferred shape)
+   is the preferred shape; `[carts] build = "..."` and
+   `[carts] install = "..."` may split roots)
 3. checkout root
 
 Installed tools and libraries live under `<home>/.install/{carts,arts,polygeist,llvm}`.
 Build trees live under `<home>/build/{carts,arts,polygeist,llvm-project}`.
+When explicit build/install roots are configured, those roots replace
+`<home>/build` and `<home>/.install` respectively.
+The matching environment overrides are `CARTS_BUILD_ROOT` and
+`CARTS_INSTALL_ROOT`; `CARTS_BUILD_DIR` and `CARTS_INSTALL_DIR` are Makefile
+subproject variables.
 Keep `.dekk.toml` and agent resources portable; put machine-local paths only in
 environment variables or `carts.config`.
 

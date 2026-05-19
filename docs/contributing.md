@@ -122,6 +122,11 @@ Follow LLVM conventions:
 - Build and install trees are out-of-source under the active artifact root:
   `<CARTS_HOME>/build/{carts,arts,polygeist,llvm-project}` and
   `<CARTS_HOME>/.install/{carts,arts,polygeist,llvm}`
+- Untracked `carts.config` may override build and install roots separately with
+  `[carts] build = "..."` and `[carts] install = "..."`
+- Environment overrides for split roots are `CARTS_BUILD_ROOT` and
+  `CARTS_INSTALL_ROOT`; `CARTS_BUILD_DIR` and `CARTS_INSTALL_DIR` are reserved
+  for Makefile subproject paths
 - Never edit generated files
 - Export `CARTS_VERBOSE=1` to debug wrapper invocations
 - Docker scripts mount shared workspace volume for clean builds
