@@ -746,6 +746,11 @@ struct HostBridgeParticipant {
   codir::CodirAccessMode mode = codir::CodirAccessMode::readwrite;
 };
 
+struct HostBridgeUseCollection {
+  SmallVector<HostBridgeParticipant> participants;
+  SmallVector<Operation *> readObservationAnchors;
+};
+
 static inline std::optional<unsigned>
 getCodeletDepOperandIndex(codir::CodeletOp codelet, OpOperand &use);
 
@@ -811,6 +816,114 @@ static inline bool hostBridgeValueMayBeWrittenInsideAnchor(Operation *anchor,
   return false;
 }
 
+static inline Operation *findHostBridgeReadObservationAnchor(OpOperand &use) {
+  Operation *owner = use.getOwner();
+  if (!owner)
+    return nullptr;
+  if (auto codelet = dyn_cast<codir::CodeletOp>(owner))
+    if (Operation *anchor = findCodirDispatchBridgeAnchor(codelet))
+      return anchor;
+  return owner;
+}
+
+static inline void
+appendUniqueHostBridgeReadObservation(Operation *anchor,
+                                      SmallVectorImpl<Operation *> &anchors) {
+  if (!anchor || llvm::is_contained(anchors, anchor))
+    return;
+  anchors.push_back(anchor);
+}
+
+static inline Operation *findHostBridgeEventUnderAnchor(Operation *anchor,
+                                                        Operation *op) {
+  if (!anchor || !op)
+    return nullptr;
+  if (anchor == op)
+    return op;
+
+  Operation *event = op;
+  while (event && event->getParentOp() != anchor) {
+    Operation *parent = event->getParentOp();
+    if (!parent)
+      return nullptr;
+    event = parent;
+  }
+  return event;
+}
+
+static inline SmallVector<Operation *> filterHostBridgeReadSyncAnchors(
+    Operation *anchor, ArrayRef<HostBridgeParticipant> participants,
+    ArrayRef<Operation *> readObservationAnchors) {
+  if (!anchor || readObservationAnchors.empty())
+    return SmallVector<Operation *>{readObservationAnchors.begin(),
+                                    readObservationAnchors.end()};
+
+  struct Event {
+    Operation *eventOp = nullptr;
+    Operation *syncAnchor = nullptr;
+    bool write = false;
+    bool readObservation = false;
+    unsigned ordinal = 0;
+  };
+
+  SmallVector<Event> events;
+  unsigned ordinal = 0;
+  for (const HostBridgeParticipant &participant : participants) {
+    if (!codirAccessMayWrite(participant.mode))
+      continue;
+    Operation *dispatchAnchor =
+        findCodirDispatchBridgeAnchor(participant.codelet);
+    Operation *event =
+        findHostBridgeEventUnderAnchor(anchor, dispatchAnchor);
+    if (!event)
+      return SmallVector<Operation *>{readObservationAnchors.begin(),
+                                      readObservationAnchors.end()};
+    events.push_back({event, nullptr, /*write=*/true,
+                      /*readObservation=*/false, ordinal++});
+  }
+
+  for (Operation *syncAnchor : readObservationAnchors) {
+    Operation *event = findHostBridgeEventUnderAnchor(anchor, syncAnchor);
+    if (!event)
+      return SmallVector<Operation *>{readObservationAnchors.begin(),
+                                      readObservationAnchors.end()};
+    events.push_back({event, syncAnchor, /*write=*/false,
+                      /*readObservation=*/true, ordinal++});
+  }
+
+  Block *eventBlock = nullptr;
+  for (const Event &event : events) {
+    if (!event.eventOp || !event.eventOp->getBlock())
+      return SmallVector<Operation *>{readObservationAnchors.begin(),
+                                      readObservationAnchors.end()};
+    if (!eventBlock) {
+      eventBlock = event.eventOp->getBlock();
+      continue;
+    }
+    if (eventBlock != event.eventOp->getBlock())
+      return SmallVector<Operation *>{readObservationAnchors.begin(),
+                                      readObservationAnchors.end()};
+  }
+
+  llvm::sort(events, [](const Event &lhs, const Event &rhs) {
+    if (lhs.eventOp == rhs.eventOp)
+      return lhs.ordinal < rhs.ordinal;
+    return lhs.eventOp->isBeforeInBlock(rhs.eventOp);
+  });
+
+  SmallVector<Operation *> filtered;
+  bool blockDirtyForHost = false;
+  for (const Event &event : events) {
+    if (event.write)
+      blockDirtyForHost = true;
+    if (event.readObservation && blockDirtyForHost) {
+      appendUniqueHostBridgeReadObservation(event.syncAnchor, filtered);
+      blockDirtyForHost = false;
+    }
+  }
+  return filtered;
+}
+
 static inline bool hasSameHostBridgePlan(codir::CodeletOp lhs,
                                          codir::CodeletOp rhs) {
   if (!lhs || !rhs)
@@ -843,67 +956,62 @@ static inline bool isCompatibleHostBridgeParticipant(codir::CodeletOp seed,
   return true;
 }
 
-static inline FailureOr<SmallVector<HostBridgeParticipant>>
+static inline FailureOr<HostBridgeUseCollection>
 collectHostBridgeParticipants(Operation *anchor, codir::CodeletOp seed,
                               Value hostView) {
   if (!anchor || !seed || !hostView)
     return failure();
 
-  SmallVector<HostBridgeParticipant> participants;
+  HostBridgeUseCollection collection;
   for (OpOperand &use : hostView.getUses()) {
     Operation *owner = use.getOwner();
     if (!isUseInsideAnchor(anchor, owner))
       continue;
 
     auto codelet = dyn_cast<codir::CodeletOp>(owner);
-    if (!codelet)
+    if (!codelet) {
+      if (!hostBridgeUseMayWrite(anchor, use)) {
+        appendUniqueHostBridgeReadObservation(
+            findHostBridgeReadObservationAnchor(use),
+            collection.readObservationAnchors);
+        continue;
+      }
       return failure();
+    }
 
     std::optional<unsigned> depIndex = getCodeletDepOperandIndex(codelet, use);
     if (!depIndex ||
-        !isCompatibleHostBridgeParticipant(seed, codelet, *depIndex))
+        !isCompatibleHostBridgeParticipant(seed, codelet, *depIndex)) {
+      if (!hostBridgeUseMayWrite(anchor, use)) {
+        appendUniqueHostBridgeReadObservation(
+            findHostBridgeReadObservationAnchor(use),
+            collection.readObservationAnchors);
+        continue;
+      }
       return failure();
+    }
 
     std::optional<codir::CodirAccessMode> mode =
         getCodirDepAccessMode(codelet, *depIndex);
     if (!mode)
       return failure();
-    participants.push_back({codelet, *depIndex, *mode});
+    collection.participants.push_back({codelet, *depIndex, *mode});
   }
 
-  if (participants.empty())
+  if (collection.participants.empty())
     return failure();
-  return participants;
+  return collection;
 }
 
 static inline bool canHoistHostBridgeAcrossLoop(scf::ForOp loop,
                                                 codir::CodeletOp codelet,
-                                                Value hostView,
-                                                bool seedMayWrite) {
+                                                Value hostView) {
   if (!loop || !codelet || !hostView)
     return false;
   if (containsValue(codelet.getParams(), loop.getInductionVar()))
     return false;
 
-  bool bridgeGroupMayWrite = seedMayWrite;
   Region &loopRegion = loop.getRegion();
-  for (OpOperand &use : hostView.getUses()) {
-    Operation *owner = use.getOwner();
-    if (!owner || !loopRegion.isAncestor(owner->getParentRegion()))
-      continue;
-    auto userCodelet = dyn_cast<codir::CodeletOp>(owner);
-    std::optional<unsigned> depIndex =
-        userCodelet ? getCodeletDepOperandIndex(userCodelet, use)
-                    : std::nullopt;
-    if (!depIndex ||
-        !isCompatibleHostBridgeParticipant(codelet, userCodelet, *depIndex))
-      continue;
-    std::optional<codir::CodirAccessMode> mode =
-        getCodirDepAccessMode(userCodelet, *depIndex);
-    if (!mode || codirAccessMayWrite(*mode))
-      bridgeGroupMayWrite = true;
-  }
-
   for (OpOperand &use : hostView.getUses()) {
     Operation *owner = use.getOwner();
     if (!owner || !loopRegion.isAncestor(owner->getParentRegion()))
@@ -915,8 +1023,7 @@ static inline bool canHoistHostBridgeAcrossLoop(scf::ForOp loop,
     if (depIndex &&
         isCompatibleHostBridgeParticipant(codelet, userCodelet, *depIndex))
       continue;
-    if (!bridgeGroupMayWrite &&
-        !hostBridgeUseMayWrite(loop.getOperation(), use))
+    if (!hostBridgeUseMayWrite(loop.getOperation(), use))
       continue;
     return false;
   }
@@ -924,8 +1031,7 @@ static inline bool canHoistHostBridgeAcrossLoop(scf::ForOp loop,
 }
 
 static inline Operation *findCodirHostBridgeAnchor(codir::CodeletOp codelet,
-                                                   Value hostView,
-                                                   bool seedMayWrite) {
+                                                   Value hostView) {
   Operation *anchor = findCodirDispatchBridgeAnchor(codelet);
   if (!anchor)
     return nullptr;
@@ -935,7 +1041,7 @@ static inline Operation *findCodirHostBridgeAnchor(codir::CodeletOp codelet,
     auto loop = dyn_cast<scf::ForOp>(parent);
     if (!loop)
       continue;
-    if (!canHoistHostBridgeAcrossLoop(loop, codelet, hostView, seedMayWrite))
+    if (!canHoistHostBridgeAcrossLoop(loop, codelet, hostView))
       break;
     anchor = loop.getOperation();
   }
@@ -1135,16 +1241,17 @@ materializeHostWholeToComputeBlockBridge(codir::CodeletOp codelet,
   if (!memrefType || memrefType.getRank() == 0 || isCodirViewDep(hostView))
     return failure();
 
-  Operation *anchor = findCodirHostBridgeAnchor(codelet, hostView,
-                                                codirAccessMayWrite(*depMode));
+  Operation *anchor = findCodirHostBridgeAnchor(codelet, hostView);
   if (!anchor)
     return failure();
 
   SmallVector<HostBridgeParticipant> participants;
-  FailureOr<SmallVector<HostBridgeParticipant>> collected =
+  SmallVector<Operation *> readObservationAnchors;
+  FailureOr<HostBridgeUseCollection> collected =
       collectHostBridgeParticipants(anchor, codelet, hostView);
   if (succeeded(collected)) {
-    participants = std::move(*collected);
+    participants = std::move(collected->participants);
+    readObservationAnchors = std::move(collected->readObservationAnchors);
   } else {
     participants.push_back({codelet, depIndex, *depMode});
   }
@@ -1191,6 +1298,18 @@ materializeHostWholeToComputeBlockBridge(codir::CodeletOp codelet,
       if (codirAccessMayWrite(participant.mode))
         participant.codelet.setCompletionBarrierAttr(
             UnitAttr::get(participant.codelet->getContext()));
+    }
+    SmallVector<Operation *> syncAnchors =
+        filterHostBridgeReadSyncAnchors(anchor, participants,
+                                        readObservationAnchors);
+    for (Operation *observationAnchor : syncAnchors) {
+      if (!observationAnchor || !isUseInsideAnchor(anchor, observationAnchor))
+        continue;
+      builder.setInsertionPoint(observationAnchor);
+      if (failed(materializeHostBlockCopyLoop(builder, loc, hostView,
+                                              blockAlloc, codelet,
+                                              /*copyIntoBlock=*/false)))
+        return failure();
     }
     builder.setInsertionPointAfter(anchor);
     if (failed(materializeHostBlockCopyLoop(builder, loc, hostView, blockAlloc,

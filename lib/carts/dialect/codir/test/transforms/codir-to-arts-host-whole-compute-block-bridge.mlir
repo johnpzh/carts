@@ -1,5 +1,5 @@
 // RUN: %carts-compile %s --pass-pipeline='builtin.module(verify-codir,convert-codir-to-arts)' \
-// RUN:   --arts-config %inputs_dir/arts_multinode_8x64.cfg | %FileCheck %s --check-prefixes=CHECK,WRITE,HOIST,SHARED,READONLY
+// RUN:   --arts-config %inputs_dir/arts_multinode_8x64.cfg | %FileCheck %s --check-prefixes=CHECK,WRITE,HOIST,SHARED,READONLY,PERSIST
 
 // A dependency with an explicit compute_block storage view can be backed by a
 // separate block DB even when host code still needs the original whole view.
@@ -218,6 +218,95 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
     memref.dealloc %A : memref<18x4xf32>
     return
   }
+
+  func.func @write_bridge_persists_across_read_only_host_phase() {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c2 = arith.constant 2 : index
+    %c8 = arith.constant 8 : index
+    %c18 = arith.constant 18 : index
+    %A = memref.alloc() : memref<18x4xf32>
+    %B = memref.alloc() : memref<18xf32>
+    %C = memref.alloc() : memref<18xf32>
+    scf.for %rep = %c0 to %c2 step %c1 {
+      scf.for %i = %c0 to %c18 step %c8 {
+        codir.codelet deps(%A : memref<18x4xf32>) params(%i : index)
+            attributes {dep_modes = [#codir.access_mode<readwrite>],
+                        dep_storage_views = [#codir.storage_view<compute_block>],
+                        distribution_kind = #codir.distribution_kind<blocked>,
+                        iteration_topology = #codir.iteration_topology<owner_strip>,
+                        logical_worker_slice = [8, 4],
+                        pattern = #codir.pattern<uniform>,
+                        tile_owner_dims = [0],
+                        tile_shape = [8, 4]} {
+        ^bb0(%arg0: memref<18x4xf32>, %base: index):
+          %inner_c0 = arith.constant 0 : index
+          %inner_cst = arith.constant 1.000000e+00 : f32
+          memref.store %inner_cst, %arg0[%base, %inner_c0] : memref<18x4xf32>
+          codir.yield
+        }
+      }
+      scf.for %j = %c0 to %c18 step %c8 {
+        codir.codelet deps(%A, %B : memref<18x4xf32>, memref<18xf32>) params(%j : index)
+            attributes {dep_modes = [#codir.access_mode<read>, #codir.access_mode<write>],
+                        dep_storage_views = [#codir.storage_view<host_whole>, #codir.storage_view<host_whole>],
+                        distribution_kind = #codir.distribution_kind<blocked>,
+                        iteration_topology = #codir.iteration_topology<owner_strip>,
+                        logical_worker_slice = [8, 4],
+                        pattern = #codir.pattern<uniform>,
+                        tile_owner_dims = [0],
+                        tile_shape = [8, 4]} {
+        ^bb0(%arg0: memref<18x4xf32>, %arg1: memref<18xf32>, %base: index):
+          %inner_c0 = arith.constant 0 : index
+          %value = memref.load %arg0[%base, %inner_c0] : memref<18x4xf32>
+          memref.store %value, %arg1[%base] : memref<18xf32>
+          codir.yield
+        }
+      }
+      scf.for %h = %c0 to %c18 step %c8 {
+        codir.codelet deps(%A, %C : memref<18x4xf32>, memref<18xf32>) params(%h : index)
+            attributes {dep_modes = [#codir.access_mode<read>, #codir.access_mode<write>],
+                        dep_storage_views = [#codir.storage_view<host_whole>, #codir.storage_view<host_whole>],
+                        distribution_kind = #codir.distribution_kind<blocked>,
+                        iteration_topology = #codir.iteration_topology<owner_strip>,
+                        logical_worker_slice = [8, 4],
+                        pattern = #codir.pattern<uniform>,
+                        tile_owner_dims = [0],
+                        tile_shape = [8, 4]} {
+        ^bb0(%arg0: memref<18x4xf32>, %arg1: memref<18xf32>, %base: index):
+          %inner_c0 = arith.constant 0 : index
+          %value = memref.load %arg0[%base, %inner_c0] : memref<18x4xf32>
+          memref.store %value, %arg1[%base] : memref<18xf32>
+          codir.yield
+        }
+      }
+      scf.for %k = %c0 to %c18 step %c8 {
+        codir.codelet deps(%A : memref<18x4xf32>) params(%k : index)
+            attributes {dep_modes = [#codir.access_mode<readwrite>],
+                        dep_storage_views = [#codir.storage_view<compute_block>],
+                        distribution_kind = #codir.distribution_kind<blocked>,
+                        iteration_topology = #codir.iteration_topology<owner_strip>,
+                        logical_worker_slice = [8, 4],
+                        pattern = #codir.pattern<uniform>,
+                        tile_owner_dims = [0],
+                        tile_shape = [8, 4]} {
+        ^bb0(%arg0: memref<18x4xf32>, %base: index):
+          %inner_c0 = arith.constant 0 : index
+          %inner_cst = arith.constant 1.000000e+00 : f32
+          %value = memref.load %arg0[%base, %inner_c0] : memref<18x4xf32>
+          %next = arith.addf %value, %inner_cst : f32
+          memref.store %next, %arg0[%base, %inner_c0] : memref<18x4xf32>
+          codir.yield
+        }
+      }
+    }
+    %result = memref.load %A[%c0, %c0] : memref<18x4xf32>
+    func.call @use(%result) : (f32) -> ()
+    memref.dealloc %C : memref<18xf32>
+    memref.dealloc %B : memref<18xf32>
+    memref.dealloc %A : memref<18x4xf32>
+    return
+  }
 }
 
 // CHECK-LABEL: func.func @host_whole_to_compute_block_bridge
@@ -281,3 +370,18 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // READONLY: arts.edt <task>
 // READONLY-NOT: arts.storage_bridge = "host_whole_to_compute_block"
 // READONLY: memref.load %[[HOST]]
+
+// PERSIST-LABEL: func.func @write_bridge_persists_across_read_only_host_phase
+// PERSIST: %[[HOST:.*]] = arts.db_ref
+// PERSIST-COUNT-1: arts.storage_bridge = "host_whole_to_compute_block"
+// PERSIST: memref.load %[[HOST]]
+// PERSIST: scf.for
+// PERSIST: arts.edt <task> <internode>
+// PERSIST: arts.barrier
+// PERSIST: memref.store {{.*}}%[[HOST]]
+// PERSIST: arts.edt <task> <intranode>
+// PERSIST-NOT: memref.store {{.*}}%[[HOST]]
+// PERSIST: arts.edt <task> <intranode>
+// PERSIST: arts.edt <task> <internode>
+// PERSIST: arts.barrier
+// PERSIST: memref.store {{.*}}%[[HOST]]
