@@ -18,11 +18,9 @@
 // CHECK-SAME: repetitionStructure = #sde.repetition_structure<full_timestep>
 // CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: func.func @timestep_pair
-// CHECK: arts.edt <task>
-// CHECK-SAME: planAsyncStrategy = #arts.plan_async_strategy<advance_edt>
+// CHECK: arts.edt <task>{{.*}}planAsyncStrategy = #arts.plan_async_strategy<advance_edt>
 // CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
-// CHECK: arts.edt <task>
-// CHECK-SAME: depPattern = #arts.dep_pattern<uniform>
+// CHECK: arts.edt <task>{{.*}}depPattern = #arts.dep_pattern<uniform>
 // CHECK-SAME: planAsyncStrategy = #arts.plan_async_strategy<advance_edt>
 // CHECK-SAME: planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
 // CHECK: arts.barrier

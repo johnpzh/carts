@@ -82,15 +82,28 @@ static bool indexSelectsOwnerSlice(Value index, Value ownerIv,
     return true;
 
   auto blockArg = dyn_cast<BlockArgument>(index);
-  if (!blockArg)
+  if (blockArg) {
+    auto loop =
+        dyn_cast_or_null<scf::ForOp>(blockArg.getOwner()->getParentOp());
+    if (!loop || loop.getInductionVar() != index)
+      return false;
+
+    return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, seen) ||
+           indexSelectsOwnerSlice(loop.getUpperBound(), ownerIv, seen);
+  }
+
+  Operation *def = index.getDefiningOp();
+  if (!isa_and_nonnull<arith::AddIOp, arith::SubIOp, arith::MulIOp,
+                       arith::DivSIOp, arith::DivUIOp, arith::RemSIOp,
+                       arith::RemUIOp, arith::IndexCastOp,
+                       arith::IndexCastUIOp, arith::ExtSIOp, arith::ExtUIOp,
+                       arith::TruncIOp, arith::MinSIOp, arith::MinUIOp,
+                       arith::MaxSIOp, arith::MaxUIOp>(def))
     return false;
 
-  auto loop = dyn_cast_or_null<scf::ForOp>(blockArg.getOwner()->getParentOp());
-  if (!loop || loop.getInductionVar() != index)
-    return false;
-
-  return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, seen) ||
-         indexSelectsOwnerSlice(loop.getUpperBound(), ownerIv, seen);
+  return llvm::any_of(def->getOperands(), [&](Value operand) {
+    return indexSelectsOwnerSlice(operand, ownerIv, seen);
+  });
 }
 
 static bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
@@ -286,6 +299,121 @@ static bool isPerDependencyRedistribution(codir::CodeletOp codelet,
   return depOwnerDim && codeletOwnerDim && *depOwnerDim != *codeletOwnerDim;
 }
 
+static std::optional<unsigned>
+getCodeletDepOperandIndex(codir::CodeletOp codelet, OpOperand &use) {
+  if (!codelet)
+    return std::nullopt;
+  unsigned operandIndex = use.getOperandNumber();
+  if (operandIndex >= codelet.getDeps().size())
+    return std::nullopt;
+  return operandIndex;
+}
+
+static std::optional<codir::CodirStorageViewKind>
+getDepStorageViewKind(codir::CodeletOp codelet, unsigned depIndex) {
+  ArrayAttr views = codelet ? codelet.getDepStorageViewsAttr() : ArrayAttr{};
+  if (!views || depIndex >= views.size())
+    return std::nullopt;
+  auto view = dyn_cast<codir::CodirStorageViewKindAttr>(views[depIndex]);
+  if (!view)
+    return std::nullopt;
+  return view.getValue();
+}
+
+static bool storageViewUsesComputeBlock(codir::CodirStorageViewKind view) {
+  return view == codir::CodirStorageViewKind::compute_block ||
+         view == codir::CodirStorageViewKind::phase_redistributed;
+}
+
+static bool hasSameBlockStoragePlan(codir::CodeletOp lhs,
+                                    unsigned lhsDepIndex,
+                                    codir::CodeletOp rhs,
+                                    unsigned rhsDepIndex) {
+  if (!lhs || !rhs)
+    return false;
+  std::optional<unsigned> lhsOwnerDim = getDepOwnerDim(lhs, lhsDepIndex);
+  std::optional<unsigned> rhsOwnerDim = getDepOwnerDim(rhs, rhsDepIndex);
+  return lhsOwnerDim && rhsOwnerDim && *lhsOwnerDim == *rhsOwnerDim &&
+         lhs.getTileShapeAttr() == rhs.getTileShapeAttr() &&
+         lhs.getLogicalWorkerSliceAttr() == rhs.getLogicalWorkerSliceAttr();
+}
+
+static bool isCompatibleBlockStorageParticipant(codir::CodeletOp seed,
+                                                unsigned seedDepIndex,
+                                                codir::CodeletOp candidate,
+                                                unsigned candidateDepIndex) {
+  if (!seed || !candidate ||
+      !hasSameBlockStoragePlan(seed, seedDepIndex, candidate,
+                               candidateDepIndex))
+    return false;
+  std::optional<codir::CodirStorageViewKind> view =
+      getDepStorageViewKind(candidate, candidateDepIndex);
+  if (view && !storageViewUsesComputeBlock(*view))
+    return false;
+  if (!hasTileOwnerSlicePlan(candidate) ||
+      !depAccessesStayWithinSingleOwnerSlice(candidate, candidateDepIndex))
+    return false;
+  return true;
+}
+
+static bool hasIncompatibleSharedStorageUse(codir::CodeletOp seed,
+                                            unsigned seedDepIndex, Value root) {
+  if (!seed || !root)
+    return false;
+
+  SmallVector<Value, 8> worklist{root};
+  llvm::SmallPtrSet<Value, 16> visited;
+  while (!worklist.empty()) {
+    Value current = worklist.pop_back_val();
+    if (!current || !visited.insert(current).second)
+      continue;
+
+    for (OpOperand &use : llvm::make_early_inc_range(current.getUses())) {
+      Operation *owner = use.getOwner();
+      if (!owner)
+        continue;
+      if (owner->getParentOfType<codir::CodeletOp>() &&
+          !isa<codir::CodeletOp>(owner))
+        continue;
+      if (isa<memref::DeallocOp, memref::DimOp>(owner))
+        continue;
+
+      if (auto codelet = dyn_cast<codir::CodeletOp>(owner)) {
+        std::optional<unsigned> depIndex =
+            getCodeletDepOperandIndex(codelet, use);
+        if (!depIndex)
+          return true;
+        if (codelet == seed && *depIndex == seedDepIndex)
+          continue;
+        if (!isCompatibleBlockStorageParticipant(seed, seedDepIndex, codelet,
+                                                 *depIndex))
+          return true;
+        continue;
+      }
+
+      if (isMemrefForwardingOp(owner)) {
+        for (Value result : owner->getResults())
+          if (isa<MemRefType>(result.getType()))
+            worklist.push_back(result);
+        continue;
+      }
+
+      if (isa<memref::LoadOp, memref::StoreOp>(owner))
+        return true;
+    }
+  }
+
+  return false;
+}
+
+static bool needsSharedRootRedistribution(codir::CodeletOp codelet,
+                                          unsigned depIndex, Value dep) {
+  Value root = stripStorageViews(dep);
+  if (!root)
+    return false;
+  return hasIncompatibleSharedStorageUse(codelet, depIndex, root);
+}
+
 static bool shouldDeferPhaseRedistribution(codir::CodeletOp codelet,
                                            unsigned depIndex, Value dep) {
   if (!isPerDependencyRedistribution(codelet, depIndex))
@@ -318,6 +446,12 @@ chooseStorageView(codir::CodeletOp codelet, unsigned depIndex,
     return codir::CodirStorageViewKind::host_whole;
 
   Value root = stripStorageViews(dep);
+  if (needsSharedRootRedistribution(codelet, depIndex, dep)) {
+    if (shouldDeferPhaseRedistribution(codelet, depIndex, dep))
+      return codir::CodirStorageViewKind::host_whole;
+    return codir::CodirStorageViewKind::phase_redistributed;
+  }
+
   bool needsHostBridge =
       isa_and_nonnull<BlockArgument>(root) ||
       hasHostMemrefAccessOutsideCodelet(root);

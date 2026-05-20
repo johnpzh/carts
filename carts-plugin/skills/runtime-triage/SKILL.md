@@ -34,7 +34,8 @@ Read these before changing code:
 1. Confirm the environment and rebuild the relevant bits.
    - `dekk carts doctor`
    - `dekk carts build`
-   - `dekk carts build --arts` if the runtime may be stale
+   - `dekk carts build --arts` if the runtime may be stale; this defaults to RDMA/RoCE
+   - `dekk carts build --arts --no-rdma` only when reproducing a TCP fallback run
 2. Classify the symptom.
    - crash / assertion / sanitizer
    - hang / deadlock / no progress

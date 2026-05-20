@@ -53,7 +53,7 @@
 // MNDB: memref.load
 // MNDB: memref.store
 // MNDB: arts.edt <task> <internode>
-// MNDB-SAME: planPhysicalBlockShape = [10, 64]
+// MNDB-SAME: planPhysicalBlockShape = [1, 64]
 // MNDB: arts.barrier
 // MNDB: scf.for
 // MNDB: memref.load

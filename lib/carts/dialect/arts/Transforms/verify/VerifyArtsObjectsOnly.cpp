@@ -30,12 +30,6 @@ static bool isInsideHostOpenMPIsland(Operation *op) {
   return false;
 }
 
-static bool isSmallReadOnlyCoarseDep(Value dep, DbAllocOp alloc) {
-  auto acquire = dep.getDefiningOp<DbAcquireOp>();
-  return acquire && acquire.getMode() == ArtsMode::in &&
-         DbUtils::isSmallCoarseUserDataDb(alloc);
-}
-
 static void verifyDistributedDbDeps(EdtOp edt, bool &found) {
   if (!edt || edt.getConcurrency() != EdtConcurrency::internode)
     return;
@@ -46,7 +40,7 @@ static void verifyDistributedDbDeps(EdtOp edt, bool &found) {
         dyn_cast_or_null<DbAllocOp>(DbUtils::getUnderlyingDbAlloc(dep));
     if (!DbUtils::isCoarseUserDataDb(alloc))
       continue;
-    if (isSmallReadOnlyCoarseDep(dep, alloc))
+    if (DbUtils::isAllowedSmallReadOnlyCoarseDep(dep, alloc))
       continue;
     if (!reported.insert(alloc.getOperation()).second)
       continue;

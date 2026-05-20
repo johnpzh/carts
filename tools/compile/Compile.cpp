@@ -276,9 +276,11 @@ static const std::array<llvm::StringLiteral, 14> kSdePlanningPasses = {
     "BarrierElimination",
     "VerifySdeCpsPlan",
     "MemoryUnitMaterialization"};
-static const std::array<llvm::StringLiteral, 3> kSdeToCodirPasses = {
-    "ConvertSdeToCodir", "CodirCodeletOpt", "VerifyCodir"};
-static const std::array<llvm::StringLiteral, 7> kCodirToArtsPasses = {
+static const std::array<llvm::StringLiteral, 4> kSdeToCodirPasses = {
+    "ConvertSdeToCodir", "CodirCodeletOpt", "ReductionPlanning",
+    "VerifyCodir"};
+static const std::array<llvm::StringLiteral, 8> kCodirToArtsPasses = {
+    "ReductionPlanning",
     "StoragePlanning",
     "ConvertCodirToArts",
     "VerifySdeLowered",
@@ -297,11 +299,13 @@ static const std::array<llvm::StringLiteral, 6> kCreateDbsPasses = {
     "SymbolDCE", "Mem2Reg", "PolygeistCanonicalize"};
 static const std::array<llvm::StringLiteral, 4> kDbOptPasses = {
     "DbModeTightening", "PolygeistCanonicalize", "CSE(arts.edt)", "Mem2Reg"};
-static const std::array<llvm::StringLiteral, 8> kPostDbRefinementPasses = {
+static const std::array<llvm::StringLiteral, 10> kPostDbRefinementPasses = {
     "DbModeTightening",
     "DbDistributedOwnership (conditional)",
     "EdtTransforms",
     "DbTransforms",
+    "PartialReductionSplitMaterialization",
+    "DistributedLaunchConsistency",
     "ContractValidation",
     "DbScratchElimination",
     "PolygeistCanonicalize",
@@ -678,6 +682,8 @@ void registerDialects(DialectRegistry &registry) {
   /// require the staged pipeline's AnalysisManager and cannot be constructed
   /// through textual pass registration with default arguments.
   registerDeadCodeElimination();
+  registerPartialReductionSplitMaterialization();
+  registerDistributedLaunchConsistency();
   registerVerifyArtsObjectsOnly();
   registerArtsRtPasses();
   sde::registerCartsSdePasses();
@@ -1189,12 +1195,14 @@ void buildSdePlanningPipeline(PassManager &pm,
 void buildSdeToCodirPipeline(PassManager &pm) {
   pm.addPass(codir::createConvertSdeToCodirPass());
   pm.addPass(codir::createCodirCodeletOptPass());
+  pm.addPass(codir::createReductionPlanningPass());
   pm.addPass(codir::createVerifyCodirPass());
 }
 
 /// CODIR-to-ARTS materialization. Every ARTS EDT must come from a CODIR
 /// codelet; any remaining SDE op is a boundary error.
 void buildCodirToArtsPipeline(PassManager &pm) {
+  pm.addPass(codir::createReductionPlanningPass());
   pm.addPass(codir::createStoragePlanningPass());
   pm.addPass(codir::createConvertCodirToArtsPass());
   pm.addPass(sde::createVerifySdeLoweredPass());
@@ -1243,6 +1251,8 @@ void buildPostDbRefinementPipeline(PassManager &pm, arts::AnalysisManager *AM,
   /// Re-run DB transforms after EDT dependency pruning so cleanup-only
   /// acquires and now-unreachable DB roots are removed in the DB layer.
   pm.addPass(arts::createDbTransformsPass(AM));
+  pm.addPass(arts::createPartialReductionSplitMaterializationPass());
+  pm.addPass(arts::createDistributedLaunchConsistencyPass());
   pm.addPass(arts::createContractValidationPass());
   pm.addPass(arts::createDbScratchEliminationPass());
   addCanonicalizeAndEdtLocalCSE(pm);

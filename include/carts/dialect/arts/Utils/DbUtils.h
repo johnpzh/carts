@@ -127,6 +127,22 @@ public:
       DbAllocOp alloc,
       int64_t maxElements = kSmallCoarseReadOnlyElementLimit);
 
+  /// Return true when distributed ownership rejected this allocation and it
+  /// therefore cannot be used as the storage anchor for an internode launch.
+  static bool isRejectedForDistributedOwnership(DbAllocOp alloc);
+
+  /// Return true when a dependency is a small read-only coarse DB that is cheap
+  /// enough to transport to an internode task without forcing local placement.
+  static bool isAllowedSmallReadOnlyCoarseDep(Value dep, DbAllocOp alloc);
+
+  /// Return true when this dependency forces an otherwise distributed task to
+  /// stay local because its root DB allocation was rejected for distributed
+  /// ownership.
+  static bool requiresLocalLaunchForDistributedDep(Value dep);
+
+  /// Return true when any dependency on the EDT prevents internode placement.
+  static bool hasLocalOnlyDistributedLaunchDependency(EdtOp edt);
+
   /// Convert ArtsMode (in/out/inout) to DbMode (read/write).
   /// ArtsMode::in maps to DbMode::read; out and inout map to DbMode::write.
   static DbMode convertArtsModeToDbMode(ArtsMode mode);

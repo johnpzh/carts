@@ -17,6 +17,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "polygeist/Ops.h"
 #include "llvm/ADT/STLExtras.h"
+#include <algorithm>
 
 namespace {
 
@@ -101,6 +102,16 @@ static inline unsigned lowerIntegerAddReductionsToAtomics(
   return lowered;
 }
 
+static inline bool shouldLowerReductionsToAtomics(codir::CodeletOp codelet) {
+  if (!isReductionCodelet(codelet))
+    return false;
+  if (codelet.getPartialReductionAttr())
+    return false;
+  auto strategy = codelet.getReductionStrategyAttr();
+  return !strategy ||
+         strategy.getValue() == codir::CodirReductionStrategy::atomic;
+}
+
 static inline arts::ArtsBarrierReason
 convertBarrierReason(sde::SdeBarrierReason reason) {
   switch (reason) {
@@ -145,9 +156,22 @@ static inline arts::ArtsDepPattern convertPattern(codir::CodirPattern pattern) {
   case codir::CodirPattern::elementwise_pipeline:
     return arts::ArtsDepPattern::elementwise_pipeline;
   case codir::CodirPattern::reduction:
-    return arts::ArtsDepPattern::uniform;
+    return arts::ArtsDepPattern::reduction;
   }
   return arts::ArtsDepPattern::unknown;
+}
+
+static inline arts::ArtsReductionStrategy
+convertReductionStrategy(codir::CodirReductionStrategy strategy) {
+  switch (strategy) {
+  case codir::CodirReductionStrategy::atomic:
+    return arts::ArtsReductionStrategy::atomic;
+  case codir::CodirReductionStrategy::tree:
+    return arts::ArtsReductionStrategy::tree;
+  case codir::CodirReductionStrategy::local_accumulate:
+    return arts::ArtsReductionStrategy::local_accumulate;
+  }
+  return arts::ArtsReductionStrategy::tree;
 }
 
 static inline arts::EdtDistributionKind
@@ -258,6 +282,28 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
         taskOp, arts::ArtsPlanAsyncStrategyAttr::get(
                     ctx, convertAsyncStrategy(async.getValue())));
   }
+  if (auto strategy = codelet.getReductionStrategyAttr())
+    task.setReductionStrategyAttr(arts::ArtsReductionStrategyAttr::get(
+        ctx, convertReductionStrategy(strategy.getValue())));
+  if (codelet.getPartialReductionAttr())
+    task.setPartialReductionAttr(UnitAttr::get(ctx));
+  if (auto dims = codelet.getPartialReductionDimsAttr())
+    task.setPartialReductionDimsAttr(dims);
+  if (auto ownerDims = codelet.getPartialReductionOwnerDimsAttr())
+    task.setPartialReductionOwnerDimsAttr(ownerDims);
+  if (auto depMaps = codelet.getPartialReductionDepResultDimMapsAttr())
+    task.setPartialReductionDepResultDimMapsAttr(depMaps);
+  if (codelet.getPartialReductionSplitRequiredAttr())
+    task.setPartialReductionSplitRequiredAttr(UnitAttr::get(ctx));
+  if (auto splitDims = codelet.getPartialReductionSplitDimsAttr())
+    task.setPartialReductionSplitDimsAttr(splitDims);
+  if (auto splitFactor = codelet.getPartialReductionSplitFactorAttr())
+    task.setPartialReductionSplitFactorAttr(splitFactor);
+  if (auto ownerTaskCount = codelet.getPartialReductionSplitOwnerTaskCountAttr())
+    task.setPartialReductionSplitOwnerTaskCountAttr(ownerTaskCount);
+  if (auto targetWorkerCount =
+          codelet.getPartialReductionSplitTargetWorkerCountAttr())
+    task.setPartialReductionSplitTargetWorkerCountAttr(targetWorkerCount);
   ArrayAttr tileShape = codelet.getTileShapeAttr();
   if (tileShape) {
     if (auto tileOwnerDims = codelet.getTileOwnerDimsAttr())
@@ -477,6 +523,13 @@ static inline bool canUseCodirOwnerSliceForAlloc(codir::CodeletOp codelet,
              codelet.getTileShapeAttr();
 }
 
+static inline std::optional<codir::CodirAccessMode>
+getCodirDepAccessMode(codir::CodeletOp codelet, unsigned depIndex);
+
+static inline bool codirAccessMayRead(codir::CodirAccessMode mode);
+
+static inline bool codirAccessMayWrite(codir::CodirAccessMode mode);
+
 static inline std::optional<int64_t>
 getSingleCodirTileOwnerBlockSize(codir::CodeletOp codelet,
                                  unsigned depIndex,
@@ -504,6 +557,141 @@ getSingleCodirTileOwnerBlockSize(codir::CodeletOp codelet,
   if (!blockSize || *blockSize <= 0)
     return std::nullopt;
   return blockSize;
+}
+
+static inline scf::ForOp findCodirOwnerDispatchLoop(codir::CodeletOp codelet) {
+  for (Operation *parent = codelet ? codelet->getParentOp() : nullptr; parent;
+       parent = parent->getParentOp()) {
+    auto loop = dyn_cast<scf::ForOp>(parent);
+    if (loop && containsValue(codelet.getParams(), loop.getInductionVar()))
+      return loop;
+  }
+  return {};
+}
+
+static inline Value getCodirOwnerDomainLower(codir::CodeletOp codelet) {
+  if (auto loop = findCodirOwnerDispatchLoop(codelet))
+    return loop.getLowerBound();
+  return {};
+}
+
+static inline Value getCodirOwnerDomainUpper(codir::CodeletOp codelet) {
+  if (auto loop = findCodirOwnerDispatchLoop(codelet))
+    return loop.getUpperBound();
+  return {};
+}
+
+struct CodirOwnerHaloWindow {
+  int64_t lower = 0;
+  int64_t upper = 0;
+
+  bool empty() const { return lower <= 0 && upper <= 0; }
+  int64_t width() const { return lower + upper; }
+};
+
+static inline std::optional<unsigned>
+getCodirOwnerDimSlot(codir::CodeletOp codelet, unsigned ownerDim) {
+  if (auto ownerDims = readI64ArrayAttr(codelet.getTileOwnerDimsAttr())) {
+    for (auto [slot, rawDim] : llvm::enumerate(*ownerDims))
+      if (rawDim >= 0 && static_cast<unsigned>(rawDim) == ownerDim)
+        return static_cast<unsigned>(slot);
+  }
+  return std::nullopt;
+}
+
+static inline std::optional<int64_t>
+getCodirOwnerDimValue(ArrayAttr attr, unsigned ownerDim,
+                      std::optional<unsigned> ownerSlot,
+                      unsigned memrefRank) {
+  std::optional<SmallVector<int64_t, 4>> values = readI64ArrayAttr(attr);
+  if (!values || values->empty())
+    return std::nullopt;
+  if (values->size() == memrefRank && ownerDim < values->size())
+    return (*values)[ownerDim];
+  if (ownerSlot && *ownerSlot < values->size())
+    return (*values)[*ownerSlot];
+  if (values->size() == 1)
+    return values->front();
+  return std::nullopt;
+}
+
+static inline CodirOwnerHaloWindow
+getCodirOwnerHaloWindow(codir::CodeletOp codelet, unsigned depIndex,
+                        unsigned memrefRank) {
+  std::optional<codir::CodirAccessMode> mode =
+      getCodirDepAccessMode(codelet, depIndex);
+  if (!mode || !codirAccessMayRead(*mode) || codirAccessMayWrite(*mode))
+    return {};
+
+  std::optional<unsigned> ownerDim = getCodirDepOwnerDim(codelet, depIndex);
+  if (!ownerDim || *ownerDim >= memrefRank)
+    return {};
+
+  std::optional<unsigned> ownerSlot = getCodirOwnerDimSlot(codelet, *ownerDim);
+  CodirOwnerHaloWindow window;
+
+  if (auto minOffset = getCodirOwnerDimValue(codelet.getAccessMinOffsetsAttr(),
+                                             *ownerDim, ownerSlot, memrefRank))
+    window.lower = std::max<int64_t>(0, -*minOffset);
+  if (auto maxOffset = getCodirOwnerDimValue(codelet.getAccessMaxOffsetsAttr(),
+                                             *ownerDim, ownerSlot, memrefRank))
+    window.upper = std::max<int64_t>(0, *maxOffset);
+
+  if (!window.empty())
+    return window;
+
+  if (auto halo = getCodirOwnerDimValue(codelet.getHaloShapeAttr(), *ownerDim,
+                                        ownerSlot, memrefRank)) {
+    int64_t radius = std::max<int64_t>(0, *halo);
+    window.lower = radius;
+    window.upper = radius;
+  }
+
+  return window;
+}
+
+static inline Value subtractClampZero(OpBuilder &builder, Location loc,
+                                      Value value, int64_t amount) {
+  if (amount <= 0)
+    return value;
+  Value offset = createConstantIndex(builder, loc, amount);
+  Value zero = createZeroIndex(builder, loc);
+  Value canSubtract = arith::CmpIOp::create(
+      builder, loc, arith::CmpIPredicate::uge, value, offset);
+  Value shifted = arith::SubIOp::create(builder, loc, value, offset);
+  return arith::SelectOp::create(builder, loc, canSubtract, shifted, zero);
+}
+
+static inline Value materializePositiveDifferenceOrZero(OpBuilder &builder,
+                                                        Location loc, Value end,
+                                                        Value start) {
+  Value zero = createZeroIndex(builder, loc);
+  Value hasPositiveExtent =
+      arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::ugt, end, start);
+  Value difference = arith::SubIOp::create(builder, loc, end, start);
+  return arith::SelectOp::create(builder, loc, hasPositiveExtent, difference,
+                                 zero);
+}
+
+static inline Value materializeCodirOwnerDomainBase(OpBuilder &builder,
+                                                    Location loc,
+                                                    codir::CodeletOp codelet) {
+  if (Value lower = getCodirOwnerDomainLower(codelet))
+    return lower;
+  return createZeroIndex(builder, loc);
+}
+
+static inline Value materializeCodirBlockLocalBase(OpBuilder &builder,
+                                                   Location loc,
+                                                   codir::CodeletOp codelet,
+                                                   unsigned depIndex,
+                                                   Value ownerBase,
+                                                   unsigned memrefRank) {
+  CodirOwnerHaloWindow halo =
+      getCodirOwnerHaloWindow(codelet, depIndex, memrefRank);
+  if (halo.empty())
+    return ownerBase;
+  return subtractClampZero(builder, loc, ownerBase, halo.lower);
 }
 
 static inline bool
@@ -555,19 +743,32 @@ struct PlannedBlockLocalAccessRewrite {
   Value localMemref;
   unsigned ownerDim = 0;
   Value ownerBase;
+  int64_t lowerHalo = 0;
 };
 
 static inline FailureOr<Value> materializeBlockLocalIndex(OpBuilder &builder,
                                                           Location loc,
                                                           Value index,
-                                                          Value ownerBase) {
+                                                          Value ownerBase,
+                                                          int64_t lowerHalo) {
   if (!index || !ownerBase)
     return failure();
-  if (::mlir::carts::ValueAnalysis::sameValue(index, ownerBase))
+  Value localOrigin = ownerBase;
+  if (lowerHalo > 0) {
+    Value halo = createConstantIndex(builder, loc, lowerHalo);
+    Value zero = createZeroIndex(builder, loc);
+    Value canSubtract =
+        arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::uge,
+                              ownerBase, halo);
+    Value shifted = arith::SubIOp::create(builder, loc, ownerBase, halo);
+    localOrigin =
+        arith::SelectOp::create(builder, loc, canSubtract, shifted, zero);
+  }
+  if (::mlir::carts::ValueAnalysis::sameValue(index, localOrigin))
     return createZeroIndex(builder, loc);
   if (!indexSelectsOwnerSlice(index, ownerBase))
     return failure();
-  return arith::SubIOp::create(builder, loc, index, ownerBase).getResult();
+  return arith::SubIOp::create(builder, loc, index, localOrigin).getResult();
 }
 
 static inline LogicalResult rewritePlannedBlockLocalAccesses(
@@ -589,7 +790,7 @@ static inline LogicalResult rewritePlannedBlockLocalAccesses(
       OpBuilder builder(op);
       FailureOr<Value> localIndex = materializeBlockLocalIndex(
           builder, op->getLoc(), indices[rewrite.ownerDim].get(),
-          rewrite.ownerBase);
+          rewrite.ownerBase, rewrite.lowerHalo);
       if (failed(localIndex)) {
         op->emitError("planned block-local access does not stay within the "
                       "owner slice");
@@ -696,6 +897,20 @@ createDbBackedMemref(OpBuilder &builder, Location loc, MemRefType memrefType,
   if (failed(physicalPlan))
     return failure();
 
+  CodirOwnerHaloWindow ownerHalo;
+  if (depIndex) {
+    ownerHalo = getCodirOwnerHaloWindow(
+        planSource, *depIndex, static_cast<unsigned>(memrefType.getRank()));
+    std::optional<unsigned> ownerDim =
+        getCodirDepOwnerDim(planSource, *depIndex);
+    if (!ownerHalo.empty() && ownerDim &&
+        *ownerDim < physicalPlan->innerSizes.size()) {
+      Value haloWidth = createConstantIndex(builder, loc, ownerHalo.width());
+      physicalPlan->innerSizes[*ownerDim] = arith::AddIOp::create(
+          builder, loc, physicalPlan->innerSizes[*ownerDim], haloWidth);
+    }
+  }
+
   Value route = arts::createCurrentNodeRoute(builder, loc);
   auto dbAlloc = arts::DbAllocOp::create(
       builder, loc, arts::ArtsMode::inout, route, arts::DbAllocType::heap,
@@ -712,6 +927,9 @@ createDbBackedMemref(OpBuilder &builder, Location loc, MemRefType memrefType,
     arts::setPlanLogicalWorkerSliceAttr(dbAlloc.getOperation(), workerSlice);
   if (auto haloShape = planSource.getHaloShapeAttr())
     arts::setPlanHaloShapeAttr(dbAlloc.getOperation(), haloShape);
+  if (!ownerHalo.empty())
+    dbAlloc->setAttr(dbAlloc.getStencilSupportedBlockHaloAttrName(),
+                     UnitAttr::get(dbAlloc.getContext()));
 
   memref = materializeInnerPayload(builder, loc, dbAlloc.getPtr());
   return success();
@@ -1344,6 +1562,80 @@ materializeCoarseHostDbForBlockArgument(OpBuilder &builder, Location loc,
   return replacement;
 }
 
+static inline FailureOr<Value>
+materializeCoarseHostDbForHostBridge(OpBuilder &builder, Location loc,
+                                     Value hostView) {
+  if (!hostView)
+    return failure();
+  if (findBackingDbAlloc(hostView))
+    return hostView;
+
+  Value root = stripCodirViewOps(hostView);
+  if (root != hostView)
+    return failure();
+
+  auto memrefType = dyn_cast<MemRefType>(root.getType());
+  if (!memrefType)
+    return failure();
+
+  if (auto blockArg = dyn_cast<BlockArgument>(root))
+    return materializeCoarseHostDbForBlockArgument(builder, loc, blockArg);
+
+  Operation *def = root.getDefiningOp();
+  if (!def)
+    return failure();
+
+  SmallVector<Value> dynamicSizes;
+  OpBuilder::InsertionGuard guard(builder);
+  if (auto alloc = dyn_cast<memref::AllocOp>(def)) {
+    dynamicSizes.assign(alloc.getDynamicSizes().begin(),
+                        alloc.getDynamicSizes().end());
+    builder.setInsertionPointAfter(alloc);
+  } else if (auto alloca = dyn_cast<memref::AllocaOp>(def)) {
+    dynamicSizes.assign(alloca.getDynamicSizes().begin(),
+                        alloca.getDynamicSizes().end());
+    builder.setInsertionPointAfter(alloca);
+  } else {
+    return failure();
+  }
+
+  SmallVector<memref::DeallocOp> deallocs;
+  for (Operation *user : llvm::make_early_inc_range(root.getUsers())) {
+    auto dealloc = dyn_cast<memref::DeallocOp>(user);
+    if (dealloc && dealloc.getMemref() == root)
+      deallocs.push_back(dealloc);
+  }
+
+  Value replacement;
+  if (failed(createDbBackedMemref(builder, root.getLoc(), memrefType,
+                                  dynamicSizes, replacement)))
+    return failure();
+
+  root.replaceAllUsesWith(replacement);
+  for (memref::DeallocOp dealloc : deallocs)
+    dealloc.erase();
+  if (def->use_empty())
+    def->erase();
+  return replacement;
+}
+
+static inline arts::DbAcquireOp materializeBridgeAcquire(
+    OpBuilder &builder, Location loc, arts::DbAllocOp alloc,
+    arts::ArtsMode mode, arts::PartitionMode partitionMode, Value offset,
+    Value size) {
+  return arts::DbAcquireOp::create(
+      builder, loc, mode, alloc.getGuid(), alloc.getPtr(), partitionMode,
+      /*indices=*/SmallVector<Value>{},
+      /*offsets=*/SmallVector<Value>{offset},
+      /*sizes=*/SmallVector<Value>{size},
+      /*partitionIndices=*/SmallVector<Value>{},
+      /*partitionOffsets=*/SmallVector<Value>{},
+      /*partitionSizes=*/SmallVector<Value>{},
+      /*boundsValid=*/Value{},
+      /*elementOffsets=*/SmallVector<Value>{},
+      /*elementSizes=*/SmallVector<Value>{});
+}
+
 static inline LogicalResult
 materializeHostBlockCopyLoop(OpBuilder &builder, Location loc, Value hostView,
                              arts::DbAllocOp blockAlloc,
@@ -1351,6 +1643,9 @@ materializeHostBlockCopyLoop(OpBuilder &builder, Location loc, Value hostView,
                              bool copyIntoBlock) {
   auto hostType = dyn_cast<MemRefType>(hostView.getType());
   if (!hostType || hostType.getRank() == 0)
+    return failure();
+  arts::DbAllocOp hostAlloc = findBackingDbAlloc(hostView);
+  if (!hostAlloc)
     return failure();
 
   std::optional<unsigned> ownerDim = getCodirDepOwnerDim(codelet, depIndex);
@@ -1369,18 +1664,39 @@ materializeHostBlockCopyLoop(OpBuilder &builder, Location loc, Value hostView,
   Value zero = createZeroIndex(builder, loc);
   Value one = createOneIndex(builder, loc);
   Value blockCount = blockAlloc.getSizes().front();
-  Value ownerBlockSize = blockAlloc.getElementSizes()[*ownerDim];
+  std::optional<int64_t> plannedBlockSize = getSingleCodirTileOwnerBlockSize(
+      codelet, depIndex, static_cast<unsigned>(hostType.getRank()));
+  Value ownerBlockSize =
+      plannedBlockSize
+          ? createConstantIndex(builder, loc, *plannedBlockSize)
+          : blockAlloc.getElementSizes()[*ownerDim];
+  CodirOwnerHaloWindow ownerHalo =
+      copyIntoBlock
+          ? getCodirOwnerHaloWindow(
+                codelet, depIndex, static_cast<unsigned>(hostType.getRank()))
+          : CodirOwnerHaloWindow{};
 
   auto loop = scf::ForOp::create(builder, loc, zero, blockCount, one);
   OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPointToStart(loop.getBody());
   Value blockIndex = loop.getInductionVar();
-  Value ownerOffset =
+  Value ownerDomainBase = materializeCodirOwnerDomainBase(builder, loc, codelet);
+  Value ownerBlockOffset =
       arith::MulIOp::create(builder, loc, blockIndex, ownerBlockSize);
-  Value ownerRemaining =
-      arith::SubIOp::create(builder, loc, logicalSizes[*ownerDim], ownerOffset);
-  Value ownerCopySize =
-      arith::MinUIOp::create(builder, loc, ownerBlockSize, ownerRemaining);
+  Value ownerOffset =
+      arith::AddIOp::create(builder, loc, ownerDomainBase, ownerBlockOffset);
+  Value ownerCopyStart =
+      subtractClampZero(builder, loc, ownerOffset, ownerHalo.lower);
+  Value requestedEnd =
+      arith::AddIOp::create(builder, loc, ownerOffset, ownerBlockSize);
+  if (ownerHalo.upper > 0)
+    requestedEnd = arith::AddIOp::create(
+        builder, loc, requestedEnd,
+        createConstantIndex(builder, loc, ownerHalo.upper));
+  Value ownerCopyEnd =
+      arith::MinUIOp::create(builder, loc, requestedEnd, logicalSizes[*ownerDim]);
+  Value ownerCopySize = materializePositiveDifferenceOrZero(
+      builder, loc, ownerCopyEnd, ownerCopyStart);
 
   SmallVector<Value> copySizes;
   copySizes.reserve(hostType.getRank());
@@ -1392,12 +1708,60 @@ materializeHostBlockCopyLoop(OpBuilder &builder, Location loc, Value hostView,
     }
   }
 
-  Value blockPayload = arts::DbRefOp::create(builder, loc, blockAlloc.getPtr(),
-                                             SmallVector<Value>{blockIndex});
-  SmallVector<Value> indices;
-  materializeHostBlockElementCopyNest(builder, loc, hostView, blockPayload,
-                                      copySizes, ownerOffset, *ownerDim,
-                                      copyIntoBlock, indices);
+  arts::ArtsMode hostMode =
+      copyIntoBlock ? arts::ArtsMode::in : arts::ArtsMode::inout;
+  arts::ArtsMode blockMode =
+      copyIntoBlock ? arts::ArtsMode::out : arts::ArtsMode::in;
+  auto hostAcquire = materializeBridgeAcquire(
+      builder, loc, hostAlloc, hostMode, arts::PartitionMode::coarse, zero,
+      one);
+  auto blockAcquire = materializeBridgeAcquire(
+      builder, loc, blockAlloc, blockMode, arts::PartitionMode::block,
+      blockIndex, one);
+
+  SmallVector<Value> deps{hostAcquire.getPtr(), blockAcquire.getPtr()};
+  SmallVector<Value> params;
+  params.reserve(copySizes.size() + 1);
+  params.push_back(ownerCopyStart);
+  params.append(copySizes.begin(), copySizes.end());
+
+  Value route = arts::createCurrentNodeRoute(builder, loc);
+  auto copyTask = arts::EdtOp::create(
+      builder, loc, arts::EdtType::task, arts::EdtConcurrency::intranode,
+      route, deps, params);
+  Block &body = copyTask.getBody().front();
+  for (Value dep : deps)
+    body.addArgument(dep.getType(), loc);
+  for (Value param : params)
+    body.addArgument(param.getType(), loc);
+
+  {
+    OpBuilder::InsertionGuard bodyGuard(builder);
+    builder.setInsertionPointToStart(&body);
+    Value bodyZero = createZeroIndex(builder, loc);
+    Value hostPayload = arts::DbRefOp::create(
+        builder, loc, body.getArgument(0), SmallVector<Value>{bodyZero});
+    Value blockPayload = arts::DbRefOp::create(
+        builder, loc, body.getArgument(1), SmallVector<Value>{bodyZero});
+    Value bodyOwnerOffset = body.getArgument(2);
+    SmallVector<Value> bodyCopySizes;
+    bodyCopySizes.reserve(copySizes.size());
+    for (size_t i = 0; i < copySizes.size(); ++i)
+      bodyCopySizes.push_back(body.getArgument(3 + i));
+    SmallVector<Value> indices;
+    materializeHostBlockElementCopyNest(builder, loc, hostPayload,
+                                        blockPayload, bodyCopySizes,
+                                        bodyOwnerOffset, *ownerDim,
+                                        copyIntoBlock, indices);
+    arts::YieldOp::create(builder, loc);
+  }
+
+  if (!copyIntoBlock) {
+    builder.setInsertionPointAfter(loop);
+    auto reason = arts::ArtsBarrierReasonAttr::get(
+        builder.getContext(), arts::ArtsBarrierReason::required_memory);
+    arts::BarrierOp::create(builder, loc, reason);
+  }
   return success();
 }
 
@@ -1443,6 +1807,12 @@ materializeHostWholeToComputeBlockBridge(codir::CodeletOp codelet,
 
   OpBuilder builder(anchor);
   Location loc = codelet.getLoc();
+  FailureOr<Value> materializedHostView =
+      materializeCoarseHostDbForHostBridge(builder, loc, hostView);
+  if (failed(materializedHostView))
+    return failure();
+  hostView = *materializedHostView;
+
   builder.setInsertionPoint(anchor);
   SmallVector<Value> dynamicSizes;
   SmallVector<Value> logicalSizes =

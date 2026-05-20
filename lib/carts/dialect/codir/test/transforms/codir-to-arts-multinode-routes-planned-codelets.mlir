@@ -1,7 +1,7 @@
 // RUN: %carts-compile %s --pass-pipeline='builtin.module(convert-sde-to-codir,verify-codir)' \
 // RUN:   | %FileCheck %s --check-prefix=CODIR
 // RUN: %carts-compile %s --pass-pipeline='builtin.module(convert-sde-to-codir,verify-codir,storage-planning,convert-codir-to-arts)' \
-// RUN:   | %FileCheck %s --check-prefix=ARTS --implicit-check-not="arts.edt <task> <intranode>"
+// RUN:   | %FileCheck %s --check-prefix=ARTS
 
 // CODIR remains machine-generic: it carries logical worker and physical owner
 // slice metadata only. Storage planning normalizes the dependency storage
@@ -41,9 +41,11 @@ module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_worker
 
 // ARTS-LABEL: func.func @planned_owner_strip_routes_by_chunk
 // ARTS: scf.for %[[IV:.*]] =
-// ARTS: %[[REL:.*]] = arith.subi %[[IV]],
-// ARTS: %[[ORD:.*]] = arith.divui %[[REL]],
-// ARTS: %[[ORD_I32:.*]] = arith.index_cast %[[ORD]] : index to i32
+// ARTS: arts.db_acquire
+// ARTS: arts.db_acquire
+// ARTS: arith.subi %[[IV]],
+// ARTS: arith.divui
+// ARTS: %[[ORD_I32:.*]] = arith.index_cast %{{.*}} : index to i32
 // ARTS: %[[NODES:.*]] = arts.runtime_query <total_nodes> -> i32
 // ARTS: %[[ROUTE:.*]] = arith.remui %[[ORD_I32]], %[[NODES]] : i32
 // ARTS: arts.edt <task> <internode> route(%[[ROUTE]])

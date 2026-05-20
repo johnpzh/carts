@@ -82,6 +82,38 @@ def DbTransforms : Pass<"db-transforms", "mlir::ModuleOp"> {
   let constructor = "mlir::carts::arts::createDbTransformsPass(nullptr)";
 }
 
+def PartialReductionSplitMaterialization
+    : Pass<"partial-reduction-split-materialization", "mlir::ModuleOp"> {
+  let summary = "Materialize partial-reduction split plans into ARTS objects";
+  let description = [{
+    Consumes `partialReductionSplitRequired` on supported ARTS partial
+    reduction EDTs by creating reduction-tile partial DBs, split worker EDTs,
+    and combine EDTs before ARTS-RT lowering.
+  }];
+  let dependentDialects =
+      ["::mlir::func::FuncDialect", "::mlir::scf::SCFDialect",
+       "::mlir::arith::ArithDialect", "::mlir::memref::MemRefDialect",
+       "::mlir::carts::arts::ArtsDialect"];
+  let constructor =
+      "mlir::carts::arts::createPartialReductionSplitMaterializationPass()";
+}
+
+def DistributedLaunchConsistency
+    : Pass<"distributed-launch-consistency", "mlir::ModuleOp"> {
+  let summary = "Keep distributed EDT placement consistent with DB ownership";
+  let description = [{
+    Reconciles ARTS EDT placement with distributed DB ownership decisions.
+    Internode EDTs that depend on DBs rejected for distributed ownership are
+    localized to intranode execution, except for small read-only coarse DBs
+    that are intentionally allowed to travel as cheap dependencies.
+  }];
+  let dependentDialects =
+      ["::mlir::func::FuncDialect", "::mlir::arith::ArithDialect",
+       "::mlir::memref::MemRefDialect", "::mlir::carts::arts::ArtsDialect"];
+  let constructor =
+      "mlir::carts::arts::createDistributedLaunchConsistencyPass()";
+}
+
 def CreateDbs : Pass<"create-dbs", "mlir::ModuleOp"> {
   let summary = "Identify Dbs in the program";
   let dependentDialects = [

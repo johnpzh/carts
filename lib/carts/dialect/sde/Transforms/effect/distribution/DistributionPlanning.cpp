@@ -348,8 +348,19 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
   if (outputPlan->shape.front() >= workers * 4LL * 1024LL * 1024LL)
     workers *= 2;
   SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
-  physicalBlockShape.front() = std::max<int64_t>(
-      1, llvm::divideCeil(outputPlan->shape.front(), workers));
+  bool ownerLocalPipeline =
+      classification &&
+      *classification == sde::SdeStructuredClassification::elementwise_pipeline &&
+      sde::isOwnerLocalPipelineReduction(op);
+  int64_t minOwnerIterations =
+      ownerLocalPipeline
+          ? 1
+          : std::max<int64_t>(1, costModel.getMinIterationsPerWorker());
+  int64_t balancedOwnerIterations =
+      sde::ceilDivPositive(outputPlan->shape.front(), workers);
+  physicalBlockShape.front() =
+      std::clamp(std::max(balancedOwnerIterations, minOwnerIterations),
+                 int64_t{1}, outputPlan->shape.front());
 
   if (!classification)
     op.setStructuredClassificationAttr(

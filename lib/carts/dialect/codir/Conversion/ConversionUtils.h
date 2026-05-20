@@ -81,7 +81,11 @@ createCodirCodelet(OpBuilder &builder, Location loc, ArrayAttr depModes,
                    UnitAttr completionBarrier = {}) {
   return codir::CodeletOp::create(
       builder, loc, depModes, depStorageViews, ArrayAttr{}, taskDepend,
-      orderedTaskDepend, completionBarrier, metadata.pattern, metadata.distributionKind,
+      orderedTaskDepend, completionBarrier, metadata.pattern,
+      metadata.reductionStrategy, metadata.partialReduction,
+      metadata.partialReductionDims, metadata.partialReductionOwnerDims,
+      metadata.partialReductionDepResultDimMaps, UnitAttr{}, ArrayAttr{},
+      IntegerAttr{}, IntegerAttr{}, IntegerAttr{}, metadata.distributionKind,
       metadata.iterationTopology, metadata.repetitionStructure,
       metadata.asyncStrategy, metadata.planOwnerDims, metadata.tileOwnerDims,
       metadata.tileShape, metadata.logicalWorkerSlice, metadata.haloShape,
@@ -219,15 +223,28 @@ static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv,
     return true;
 
   auto blockArg = dyn_cast<BlockArgument>(index);
-  if (!blockArg)
+  if (blockArg) {
+    auto loop =
+        dyn_cast_or_null<scf::ForOp>(blockArg.getOwner()->getParentOp());
+    if (!loop || loop.getInductionVar() != index)
+      return false;
+
+    return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, seen) ||
+           indexSelectsOwnerSlice(loop.getUpperBound(), ownerIv, seen);
+  }
+
+  Operation *def = index.getDefiningOp();
+  if (!isa_and_nonnull<arith::AddIOp, arith::SubIOp, arith::MulIOp,
+                       arith::DivSIOp, arith::DivUIOp, arith::RemSIOp,
+                       arith::RemUIOp, arith::IndexCastOp,
+                       arith::IndexCastUIOp, arith::ExtSIOp, arith::ExtUIOp,
+                       arith::TruncIOp, arith::MinSIOp, arith::MinUIOp,
+                       arith::MaxSIOp, arith::MaxUIOp>(def))
     return false;
 
-  auto loop = dyn_cast_or_null<scf::ForOp>(blockArg.getOwner()->getParentOp());
-  if (!loop || loop.getInductionVar() != index)
-    return false;
-
-  return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, seen) ||
-         indexSelectsOwnerSlice(loop.getUpperBound(), ownerIv, seen);
+  return llvm::any_of(def->getOperands(), [&](Value operand) {
+    return indexSelectsOwnerSlice(operand, ownerIv, seen);
+  });
 }
 
 static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
@@ -2052,6 +2069,9 @@ static inline void appendSuOwnerSliceLocalRewrites(sde::SdeSuIterateOp source,
   if (!ownerDims || ownerDims->size() != 1 || (*ownerDims)[0] < 0)
     return;
   unsigned plannedOwnerDim = static_cast<unsigned>((*ownerDims)[0]);
+  bool isStencil =
+      source.getStructuredClassification() ==
+      sde::SdeStructuredClassification::stencil;
 
   for (auto [depIndex, dep] : llvm::enumerate(plan.deps)) {
     auto depType = dyn_cast<MemRefType>(dep.getType());
@@ -2061,6 +2081,14 @@ static inline void appendSuOwnerSliceLocalRewrites(sde::SdeSuIterateOp source,
     Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(dep);
     std::optional<unsigned> accessOwnerDim =
         inferSingleOwnerAccessDim(source, root);
+    if (!accessOwnerDim && isStencil &&
+        plannedOwnerDim < static_cast<unsigned>(depType.getRank())) {
+      // Stencil read indices often carry halo offsets through casts and
+      // integer arithmetic. The physical stencil plan already selected the
+      // only storage owner dimension; let CODIR storage planning prove or
+      // reject the concrete dependency access window from here.
+      accessOwnerDim = plannedOwnerDim;
+    }
     if (!accessOwnerDim || *accessOwnerDim >= depType.getRank())
       continue;
 

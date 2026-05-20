@@ -23,10 +23,8 @@
 // CHECK-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // CHECK: func.func @jacobi_pair
 // CHECK: arts.edt <task>{{.*}}depPattern = #arts.dep_pattern<uniform>{{.*}}planAsyncStrategy = #arts.plan_async_strategy<advance_edt>{{.*}}planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
-// CHECK: arts.barrier
-// CHECK-SAME: barrierReason = #arts.barrier_reason<required_memory>
-// CHECK: arts.barrier
-// CHECK-SAME: barrierReason = #arts.barrier_reason<timestep_stage_boundary>
+// CHECK: arts.barrier {{.*}}barrierReason = #arts.barrier_reason<required_memory>
+// CHECK: arts.barrier {{.*}}barrierReason = #arts.barrier_reason<timestep_stage_boundary>
 // CHECK: arts.edt <task>{{.*}}depPattern = #arts.dep_pattern<jacobi_alternating_buffers>{{.*}}planAsyncStrategy = #arts.plan_async_strategy<advance_edt>{{.*}}planRepetitionStructure = #arts.plan_repetition_structure<full_timestep>
 // CHECK-NOT: sde.
 

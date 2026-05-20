@@ -38,6 +38,25 @@ def CodirCodeletOpt : Pass<"codir-codelet-opt", "mlir::ModuleOp"> {
   let constructor = "mlir::carts::codir::createCodirCodeletOptPass()";
 }
 
+def ReductionPlanning : Pass<"reduction-planning", "mlir::ModuleOp"> {
+  let summary = "Stamp CODIR partial-reduction dependency and split plans";
+  let description = [{
+    CODIR-owned reduction planning pass. It consumes SDE-authored
+    partial-reduction intent, records how each dependency's physical dimensions
+    map back to the reduction result dimensions, and stamps when owner-slice
+    parallelism underfills the runtime worker contract and needs an additional
+    reduction-dimension split plus combine tree. This keeps distributed
+    reduction and redistribution facts as codelet metadata instead of
+    rediscovering them in CODIR-to-ARTS conversion.
+  }];
+  let dependentDialects = [
+    "::mlir::carts::codir::CartsCodirDialect",
+    "::mlir::arith::ArithDialect",
+    "::mlir::memref::MemRefDialect"
+  ];
+  let constructor = "mlir::carts::codir::createReductionPlanningPass()";
+}
+
 def StoragePlanning : Pass<"storage-planning", "mlir::ModuleOp"> {
   let summary = "Normalize CODIR dependency storage plans before ARTS lowering";
   let description = [{

@@ -4,7 +4,9 @@
 /// Cost-model-backed SDE reduction strategy selection. The current
 /// implementation stays loop-uniform: it annotates eligible reduction-bearing
 /// sde.su_iterate ops with a single SDE-owned recommendation and leaves
-/// lowering behavior unchanged.
+/// lowering behavior unchanged. Owner-local partial reductions are marked as
+/// local accumulation so lower dialects do not rediscover that intent from
+/// memory accesses.
 ///==========================================================================///
 
 #include "carts/dialect/sde/Transforms/Passes.h"
@@ -84,6 +86,12 @@ struct ReductionStrategyPass
     getOperation().walk([&](sde::SdeSuIterateOp op) {
       if (op.getReductionStrategyAttr())
         return;
+
+      if (op.getPartialReductionAttr()) {
+        op.setReductionStrategyAttr(sde::SdeReductionStrategyAttr::get(
+            &getContext(), sde::SdeReductionStrategy::local_accumulate));
+        return;
+      }
 
       std::optional<SmallVector<sde::SdeReductionKind>> reductionKinds =
           getReductionKinds(op);

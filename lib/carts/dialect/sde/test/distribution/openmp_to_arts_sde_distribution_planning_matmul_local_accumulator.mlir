@@ -36,13 +36,11 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.edt <task>
-// ARTS-SAME: depPattern = #arts.dep_pattern<matmul>
+// ARTS: arts.edt <task>{{.*}}depPattern = #arts.dep_pattern<matmul>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<matmul>
 // ARTS-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_strip>
 // ARTS-SAME: planLogicalWorkerSlice = [1, 32]
-// ARTS: arts.edt <task>
-// ARTS-SAME: depPattern = #arts.dep_pattern<matmul>
+// ARTS: arts.edt <task>{{.*}}depPattern = #arts.dep_pattern<matmul>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<matmul>
 // ARTS-SAME: planIterationTopology = #arts.plan_iteration_topology<owner_strip>
 // ARTS-SAME: planLogicalWorkerSlice = [1, 32]

@@ -24,6 +24,8 @@ dekk carts install                      # Install prerequisites and build the to
 dekk carts install --wrap              # Also generate the optional project-local wrapper
 dekk carts build                       # Build CARTS
 dekk carts build --clean               # Clean build
+dekk carts build --arts                # ARTS release, RDMA/RoCE enabled
+dekk carts build --arts --no-rdma      # ARTS release, TCP fallback
 dekk carts build --arts --debug 0      # ARTS errors only
 dekk carts build --arts --debug 1      # ARTS warnings
 dekk carts build --arts --debug 2      # ARTS info
@@ -132,3 +134,7 @@ Follow LLVM conventions:
 - Docker scripts mount shared workspace volume for clean builds
 - Environment configuration lives in `.dekk.toml` at the repo root
 - Run `dekk carts doctor` to diagnose environment issues
+- ARTS builds default to RDMA/RoCE for production multinode runs; use
+  `dekk carts build --arts --no-rdma` for non-RDMA systems or TCP fallback
+  experiments. Benchmark single-node configs still use TCP and do not request
+  distributed DB ownership.

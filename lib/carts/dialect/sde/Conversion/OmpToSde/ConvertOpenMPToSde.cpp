@@ -36,6 +36,7 @@ namespace mlir::carts::sde {
 } // namespace mlir::carts::sde
 
 #include "carts/utils/Utils.h"
+#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "carts/utils/LoopUtils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -401,8 +402,18 @@ static bool isBenchmarkModule(ModuleOp module) {
   return found;
 }
 
+static bool isMultinodeRuntime(ModuleOp module) {
+  std::optional<int64_t> nodes = arts::getRuntimeTotalNodes(module);
+  return nodes && *nodes > 1;
+}
+
 static unsigned markHostOpenMPIslands(ModuleOp module) {
   if (!isBenchmarkModule(module))
+    return 0;
+  // Multinode benchmark rows must enter SDE/CODIR/ARTS so CDAG ordering and
+  // distributed slicing remain the compiler contract. Host OpenMP fallbacks are
+  // only a single-node throughput policy.
+  if (isMultinodeRuntime(module))
     return 0;
 
   SmallVector<omp::ParallelOp> fallbackParallels;
@@ -831,7 +842,10 @@ struct WsloopToSdePattern : public OpRewritePattern<omp::WsloopOp> {
         nowaitAttr(ctx, nw), ValueRange{redAccs},
         reductionKinds.empty() ? nullptr
                                : rewriter.getArrayAttr(reductionKinds),
-        /*reductionStrategy=*/nullptr, /*structuredClassification=*/nullptr,
+        /*reductionStrategy=*/nullptr, /*partialReduction=*/nullptr,
+        /*partialReductionDims=*/nullptr,
+        /*partialReductionOwnerDims=*/nullptr,
+        /*structuredClassification=*/nullptr,
         /*pattern=*/nullptr,
         /*accessMinOffsets=*/nullptr, /*accessMaxOffsets=*/nullptr,
         /*ownerDims=*/nullptr, /*spatialDims=*/nullptr,
@@ -997,7 +1011,10 @@ struct TaskloopToSdePattern : public OpRewritePattern<omp::TaskloopOp> {
         /*nowait=*/nullptr,
         /*reductionAccumulators=*/ValueRange{},
         /*reductionKinds=*/nullptr,
-        /*reductionStrategy=*/nullptr, /*structuredClassification=*/nullptr,
+        /*reductionStrategy=*/nullptr, /*partialReduction=*/nullptr,
+        /*partialReductionDims=*/nullptr,
+        /*partialReductionOwnerDims=*/nullptr,
+        /*structuredClassification=*/nullptr,
         /*pattern=*/nullptr,
         /*accessMinOffsets=*/nullptr, /*accessMaxOffsets=*/nullptr,
         /*ownerDims=*/nullptr, /*spatialDims=*/nullptr,
@@ -1069,7 +1086,10 @@ struct SCFParallelToSdePattern : public OpRewritePattern<scf::ParallelOp> {
         /*nowait=*/nullptr,
         /*reductionAccumulators=*/ValueRange{},
         /*reductionKinds=*/nullptr,
-        /*reductionStrategy=*/nullptr, /*structuredClassification=*/nullptr,
+        /*reductionStrategy=*/nullptr, /*partialReduction=*/nullptr,
+        /*partialReductionDims=*/nullptr,
+        /*partialReductionOwnerDims=*/nullptr,
+        /*structuredClassification=*/nullptr,
         /*pattern=*/nullptr,
         /*accessMinOffsets=*/nullptr, /*accessMaxOffsets=*/nullptr,
         /*ownerDims=*/nullptr, /*spatialDims=*/nullptr,

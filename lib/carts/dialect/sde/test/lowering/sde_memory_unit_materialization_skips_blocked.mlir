@@ -18,7 +18,8 @@
 // CHECK: arts.db_alloc
 // CHECK-SAME: elementSizes[%c75, %c4800{{(_[0-9]+)?}}]
 // CHECK-SAME: planPhysicalBlockShape = [75, 4800]
-// CHECK: arith.divui %arg0, %c75{{(_[0-9]+)?}} : index
+// CHECK: %[[REL:.*]] = arith.subi %arg0, %{{.*}} : index
+// CHECK: arith.divui %[[REL]], %c75{{(_[0-9]+)?}} : index
 // CHECK: arts.db_acquire
 // CHECK-SAME: partitioning(<block>)
 // CHECK: arts.edt <task> <intranode>

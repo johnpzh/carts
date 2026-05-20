@@ -170,6 +170,7 @@ static bool isStencilAcquire(DbAcquireNode *node, DbAnalysis &dbAnalysis) {
 struct EligibilityFacts {
   bool hasInternodeEdtUse = false;
   bool hasStencilReadInternodeUse = false;
+  bool hasInternodeWriteUse = false;
   bool allAcquiresReadOnly = true;
   bool isStencilFamily = false;
   bool allHaveEdtAcquireUsers = true;
@@ -216,6 +217,8 @@ collectEligibilityFacts(DbAllocOp alloc, DbAnalysis &dbAnalysis) {
     bool internode = edt && edt.getConcurrency() == EdtConcurrency::internode;
     if (internode)
       facts.hasInternodeEdtUse = true;
+    if (internode && !readOnly)
+      facts.hasInternodeWriteUse = true;
 
     /// hasStencilReadInternodeUse (existential)
     if (internode && readOnly && stencil)
@@ -227,6 +230,28 @@ collectEligibilityFacts(DbAllocOp alloc, DbAnalysis &dbAnalysis) {
 
 static bool hasReadOnlyAfterInitAttr(DbAllocOp alloc) {
   return alloc->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit);
+}
+
+static bool isHostWholeToComputeBlockBridge(DbAllocOp alloc) {
+  if (!alloc)
+    return false;
+  auto bridge = alloc->getAttrOfType<StringAttr>("arts.storage_bridge");
+  return bridge && bridge.getValue() == "host_whole_to_compute_block";
+}
+
+static bool hasBridgeHaloContract(DbAllocOp alloc) {
+  if (!alloc)
+    return false;
+  if (getPlanHaloShapeAttr(alloc.getOperation()))
+    return true;
+  return alloc->hasAttr(alloc.getStencilSupportedBlockHaloAttrName());
+}
+
+static bool isHaloBackedHostBridge(DbAllocOp alloc) {
+  if (!isHostWholeToComputeBlockBridge(alloc) || !hasBridgeHaloContract(alloc))
+    return false;
+  std::optional<PartitionMode> mode = getPartitionMode(alloc.getOperation());
+  return mode && (*mode == PartitionMode::block || *mode == PartitionMode::stencil);
 }
 
 } // namespace
@@ -298,6 +323,8 @@ mlir::carts::arts::evaluateDistributedDbEligibility(DbAllocOp alloc,
     if (readOnly && facts.isStencilFamily)
       return {true, DistributedDbEligibilityRejectReason::None,
               EdtDistributionKind::replicated};
+    if (!facts.hasInternodeWriteUse && isHaloBackedHostBridge(alloc))
+      return {true, DistributedDbEligibilityRejectReason::None};
     return {false,
             DistributedDbEligibilityRejectReason::StencilReadInternodeUse};
   }

@@ -18,11 +18,10 @@
 // CHECK: scf.for
 // CHECK: memref.load
 // CHECK: memref.store
-// CHECK: arts.db_acquire[<in>]
-// CHECK-SAME: partitioning(<block>)
-// CHECK: arts.db_acquire[<inout>]
-// CHECK-SAME: partitioning(<block>)
 // CHECK: arts.edt <task> <intranode>
+// CHECK: arts.db_acquire[<in>]{{.*}}partitioning(<block>)
+// CHECK: arts.db_acquire[<inout>]{{.*}}partitioning(<block>)
+// CHECK: arts.edt <task>{{.*}}planPhysicalBlockShape = [16, 64]
 // CHECK: arts.db_ref
 // CHECK: %[[LOCAL_IN:.*]] = arith.subi %arg{{[0-9]+}}, %arg{{[0-9]+}} : index
 // CHECK-NEXT: memref.load {{.*}}[%[[LOCAL_IN]],

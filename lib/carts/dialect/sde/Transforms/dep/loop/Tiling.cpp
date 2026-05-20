@@ -51,6 +51,25 @@ static bool usesOwnerLocalPipelineGrain(sde::SdeSuIterateOp op) {
          sde::isOwnerLocalPipelineReduction(op);
 }
 
+static Value buildRelaxedOwnerLocalPipelineMinIterations(
+    OpBuilder &builder, Location loc, sde::SdeSuIterateOp op,
+    Value clampedTripCount, Value targetTasks, int64_t minIterations) {
+  Value minValue =
+      getConstantIndex(builder, loc, std::max<int64_t>(1, minIterations));
+  if (!op || !clampedTripCount || !targetTasks ||
+      !usesOwnerLocalPipelineGrain(op) || minIterations <= 1)
+    return minValue;
+
+  Value one = getConstantIndex(builder, loc, 1);
+  Value relaxationThreshold =
+      arith::MulIOp::create(builder, loc, targetTasks, minValue);
+  Value underfilledOwnerDomain = arith::CmpIOp::create(
+      builder, loc, arith::CmpIPredicate::ult, clampedTripCount,
+      relaxationThreshold);
+  return arith::SelectOp::create(builder, loc, underfilledOwnerDomain, one,
+                                 minValue);
+}
+
 static int64_t getMinTileIterations(sde::SdeSuIterateOp op,
                                     sde::SDECostModel &costModel) {
   if (usesOwnerLocalPipelineGrain(op))
@@ -91,10 +110,10 @@ static Value buildTileIterationValue(OpBuilder &builder, Location loc,
     workerCountValue =
         arith::MulIOp::create(builder, loc, workerCountValue, waveCountValue);
   }
-  Value minIterationsValue =
-      getConstantIndex(builder, loc, getMinTileIterations(op, costModel));
-
   Value clampedTripCount = arith::MaxUIOp::create(builder, loc, tripCount, one);
+  Value minIterationsValue = buildRelaxedOwnerLocalPipelineMinIterations(
+      builder, loc, op, clampedTripCount, workerCountValue,
+      getMinTileIterations(op, costModel));
   Value balancedTile = arith::CeilDivUIOp::create(
       builder, loc, clampedTripCount, workerCountValue);
   Value preferredTile =
@@ -157,10 +176,10 @@ buildPerDimTileIterations(OpBuilder &builder, Location loc,
   for (unsigned d = 0; d < numDims; ++d) {
     Value one = getConstantIndex(builder, loc, 1);
     Value workersVal = getConstantIndex(builder, loc, workersPerDim);
-    Value minIterVal =
-        getConstantIndex(builder, loc, std::max<int64_t>(1, minIter));
     Value clampedTrip =
         arith::MaxUIOp::create(builder, loc, tripCounts[d], one);
+    Value minIterVal = buildRelaxedOwnerLocalPipelineMinIterations(
+        builder, loc, op, clampedTrip, workersVal, minIter);
     Value balanced =
         arith::CeilDivUIOp::create(builder, loc, clampedTrip, workersVal);
     Value preferred =
@@ -435,6 +454,20 @@ factorWorkersAcrossDims(int64_t workers, ArrayRef<int64_t> extents) {
   return grid;
 }
 
+static int64_t relaxOwnerLocalPipelineMinIterations(
+    sde::SdeSuIterateOp op, int64_t tripCount, int64_t targetTasks,
+    int64_t minIterations) {
+  if (!usesOwnerLocalPipelineGrain(op) || targetTasks <= 1 ||
+      minIterations <= 1)
+    return minIterations;
+
+  bool productOverflows =
+      targetTasks > std::numeric_limits<int64_t>::max() / minIterations;
+  if (productOverflows || tripCount < targetTasks * minIterations)
+    return 1;
+  return minIterations;
+}
+
 static std::optional<SmallVector<int64_t, 4>>
 computeStaticTileIterations(sde::SdeSuIterateOp op,
                             sde::SDECostModel &costModel) {
@@ -467,8 +500,10 @@ computeStaticTileIterations(sde::SdeSuIterateOp op,
     int64_t tripCount = tripCounts.front();
     if (tripCount <= 0)
       return std::nullopt;
-    int64_t balanced =
-        sde::ceilDivPositive(tripCount, getTargetTileTasks(op, costModel));
+    int64_t targetTasks = getTargetTileTasks(op, costModel);
+    minIter = relaxOwnerLocalPipelineMinIterations(op, tripCount, targetTasks,
+                                                   minIter);
+    int64_t balanced = sde::ceilDivPositive(tripCount, targetTasks);
     tileIterations.push_back(std::clamp(std::max<int64_t>(balanced, minIter),
                                         int64_t{1}, tripCount));
     return tileIterations;
@@ -884,11 +919,14 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
         Value tileIterations;
         if (std::optional<int64_t> tripCount =
                 getStaticTripCount(op.getOperation())) {
-          int64_t balancedTile =
-              llvm::divideCeil(*tripCount, getTargetTileTasks(op, *costModel));
+          int64_t targetTasks = getTargetTileTasks(op, *costModel);
+          int64_t minIterations =
+              relaxOwnerLocalPipelineMinIterations(
+                  op, *tripCount, targetTasks,
+                  getMinTileIterations(op, *costModel));
+          int64_t balancedTile = llvm::divideCeil(*tripCount, targetTasks);
           int64_t tileCount = std::clamp(
-              std::max<int64_t>(balancedTile,
-                                getMinTileIterations(op, *costModel)),
+              std::max<int64_t>(balancedTile, minIterations),
               int64_t{1}, *tripCount);
           if (tileCount <= 1)
             continue;
@@ -996,6 +1034,8 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
           op.getUpperBounds(), ValueRange{tiledSteps}, op.getScheduleAttr(),
           op.getChunkSize(), op.getNowaitAttr(), op.getReductionAccumulators(),
           op.getReductionKindsAttr(), op.getReductionStrategyAttr(),
+          op.getPartialReductionAttr(), op.getPartialReductionDimsAttr(),
+          op.getPartialReductionOwnerDimsAttr(),
           op.getStructuredClassificationAttr(), op.getPatternAttr(),
           op.getAccessMinOffsetsAttr(), op.getAccessMaxOffsetsAttr(),
           op.getOwnerDimsAttr(), op.getSpatialDimsAttr(),

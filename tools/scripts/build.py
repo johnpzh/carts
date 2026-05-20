@@ -62,8 +62,8 @@ def build(
         None, "--profile",
         help="Custom counter profile file path (overrides --counters)"),
     rdma: bool = Option(
-        False, "--rdma",
-        help="Build ARTS with RDMA RSockets transport (--arts only)"),
+        True, "--rdma/--no-rdma",
+        help="Build ARTS with RDMA RSockets transport by default; use --no-rdma for TCP fallback (--arts only)"),
     cc: Optional[str] = Option(
         None, "--cc",
         help="C compiler for LLVM bootstrap (default: clang; use gcc on systems without clang)"),
@@ -86,9 +86,6 @@ def build(
     selected_targets = sum((1 if arts else 0, 1 if polygeist else 0, 1 if llvm else 0))
     if selected_targets > 1:
         print_error("Choose only one target flag among --arts, --polygeist, --llvm.")
-        raise Exit(1)
-    if rdma and not arts:
-        print_error("--rdma is only valid with --arts.")
         raise Exit(1)
 
     # Determine build target
@@ -117,8 +114,7 @@ def build(
             make_vars.extend([
                 "ARTS_BUILD_TYPE=Debug",
             ])
-        if rdma:
-            make_vars.append("ARTS_USE_RDMA=ON")
+        make_vars.append(f"ARTS_USE_RDMA={'ON' if rdma else 'OFF'}")
 
     # Counter levels: 0=off, 1=artsid, 2=deep
     # Levels 1+ require USE_COUNTERS and USE_METRICS

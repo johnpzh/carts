@@ -121,6 +121,60 @@ static bool isMovableBarrierSegmentOp(Operation *op) {
   return op->getNumRegions() == 0 && isMemoryEffectFree(op);
 }
 
+static Operation *getAncestorInBlock(Operation *op, Block *block) {
+  while (op && op->getBlock() != block)
+    op = op->getParentOp();
+  return op;
+}
+
+static Operation *getInsertionAfter(Operation *op, Operation *barrier) {
+  if (!op || !barrier || op == barrier)
+    return barrier;
+  auto next = std::next(Block::iterator(op));
+  if (next == op->getBlock()->end() || &*next == barrier)
+    return barrier;
+  return &*next;
+}
+
+static Operation *adjustEpochInsertionForDominance(
+    Operation *insertionOp, Operation *barrier,
+    ArrayRef<Operation *> opsToMove,
+    const llvm::SmallDenseSet<Operation *, 8> &opsToMoveSet) {
+  if (!insertionOp || !barrier)
+    return insertionOp;
+
+  Block *block = barrier->getBlock();
+  if (!block)
+    return insertionOp;
+
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (Operation *moved : opsToMove) {
+      WalkResult result = moved->walk([&](Operation *nested) {
+        for (Value operand : nested->getOperands()) {
+          Operation *def = operand.getDefiningOp();
+          Operation *top = getAncestorInBlock(def, block);
+          if (!top || top == barrier || opsToMoveSet.count(top))
+            continue;
+          if (!top->isBeforeInBlock(barrier))
+            continue;
+          if (top == insertionOp || insertionOp->isBeforeInBlock(top)) {
+            insertionOp = getInsertionAfter(top, barrier);
+            changed = true;
+            return WalkResult::interrupt();
+          }
+        }
+        return WalkResult::advance();
+      });
+      if (result.wasInterrupted())
+        break;
+    }
+  }
+
+  return insertionOp;
+}
+
 static void processBarrierOp(BarrierOp barrier) {
   ARTS_DEBUG("Processing BarrierOp");
   Block *block = barrier->getBlock();
@@ -212,6 +266,8 @@ static void processBarrierOp(BarrierOp barrier) {
   // epoch block preserves source order.
   llvm::sort(opsToMove,
              [](Operation *a, Operation *b) { return a->isBeforeInBlock(b); });
+  epochInsertionOp = adjustEpochInsertionForDominance(
+      epochInsertionOp, barrier.getOperation(), opsToMove, opsToMoveSet);
 
   /// Create epoch and move operations into it
   Location loc = barrier.getLoc();

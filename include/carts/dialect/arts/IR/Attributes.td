@@ -117,6 +117,16 @@ def ArtsPlanAsyncStrategy
 def ArtsPlanAsyncStrategyAttr
     : Arts_I32EnumAttr<"plan_async_strategy", ArtsPlanAsyncStrategy>;
 
+def ArtsReductionStrategy
+    : Arts_I32Enum<"ArtsReductionStrategy",
+                   "ARTS reduction execution strategy", [
+      I32EnumAttrCase<"atomic", 0, "atomic">,
+      I32EnumAttrCase<"tree", 1, "tree">,
+      I32EnumAttrCase<"local_accumulate", 2, "local_accumulate">
+    ]>;
+def ArtsReductionStrategyAttr
+    : Arts_I32EnumAttr<"reduction_strategy", ArtsReductionStrategy>;
+
 def ArtsBarrierReason
     : Arts_I32Enum<"ArtsBarrierReason",
                    "ARTS barrier preservation or elimination reason", [
@@ -220,7 +230,8 @@ def ArtsDepPattern
       I32EnumAttrCase<"elementwise_pipeline", 7, "elementwise_pipeline">,
       I32EnumAttrCase<"stencil_tiling_nd", 8, "stencil_tiling_nd">,
       I32EnumAttrCase<"cross_dim_stencil_3d", 9, "cross_dim_stencil_3d">,
-      I32EnumAttrCase<"higher_order_stencil", 10, "higher_order_stencil">
+      I32EnumAttrCase<"higher_order_stencil", 10, "higher_order_stencil">,
+      I32EnumAttrCase<"reduction", 11, "reduction">
     ]>;
 def ArtsDepPatternAttr
     : Arts_I32EnumAttr<"dep_pattern", ArtsDepPattern>;

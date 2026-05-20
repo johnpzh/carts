@@ -24,7 +24,9 @@ runtime.
 
 - `dekk carts doctor` - validate the toolchain and environment.
 - `dekk carts build` - build the CARTS compiler.
-- `dekk carts build --arts` - rebuild ARTS runtime.
+- `dekk carts build --arts` - rebuild ARTS runtime with RDMA/RoCE enabled for
+  production multinode transport.
+- `dekk carts build --arts --no-rdma` - rebuild ARTS runtime for TCP fallback.
 - `dekk carts compile <file> -O3` - compile C/C++ to an ARTS executable.
 - `dekk carts pipeline --json` - inspect pipeline stage tokens.
 - `dekk carts test` - run default pass tests.

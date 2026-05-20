@@ -1,5 +1,6 @@
 add_mlir_dialect_library(MLIRCartsCodirTransforms
   CodirCodeletOpt.cpp
+  ReductionPlanning.cpp
   StoragePlanning.cpp
   VerifyCodir.cpp
 

@@ -23,3 +23,7 @@ module {}
 // MANIFEST: "VerifySdeLowered"
 // MANIFEST: "VerifyArtsObjectsOnly"
 // MANIFEST-SAME: "dependsOn": ["sde-to-codir"]
+// MANIFEST: "name": "post-db-refinement"
+// MANIFEST: "PartialReductionSplitMaterialization"
+// MANIFEST: "DistributedLaunchConsistency"
+// MANIFEST-SAME: "dependsOn": ["create-dbs"]

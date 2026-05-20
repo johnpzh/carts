@@ -59,8 +59,8 @@ static bool canMaterializePlannedOwnerSlices(sde::SdeSuIterateOp op) {
   case sde::SdeStructuredClassification::matmul:
   case sde::SdeStructuredClassification::elementwise:
   case sde::SdeStructuredClassification::elementwise_pipeline:
-    return true;
   case sde::SdeStructuredClassification::stencil:
+    return true;
   case sde::SdeStructuredClassification::reduction:
     return false;
   }

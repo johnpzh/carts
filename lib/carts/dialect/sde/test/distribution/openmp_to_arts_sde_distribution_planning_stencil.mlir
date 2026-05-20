@@ -29,15 +29,8 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.edt <task>
-// ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
-// ARTS-SAME: {{.*}}stencil_owner_dims = [0, 1]
-// ARTS-NOT: planPhysicalBlockShape
-// ARTS: arts.edt <task>
-// ARTS-SAME: arts.pattern_revision = 1 : i64
-// ARTS-SAME: {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>
-// ARTS-SAME: {{.*}}stencil_owner_dims = [0, 1]
-// ARTS-NOT: planPhysicalBlockShape
+// ARTS: arts.edt <task> {{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>{{.*}}planPhysicalBlockShape = [8, 16]{{.*}}stencil_owner_dims = [0, 1]
+// ARTS: arts.edt <task> {{.*}}arts.pattern_revision = 1 : i64{{.*}}depPattern = #arts.dep_pattern<stencil_tiling_nd>{{.*}}distribution_pattern = #arts.distribution_pattern<stencil>{{.*}}planPhysicalBlockShape = [8, 16]{{.*}}stencil_owner_dims = [0, 1]
 // ARTS-NOT: sde.
 
 // LOCAL-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //

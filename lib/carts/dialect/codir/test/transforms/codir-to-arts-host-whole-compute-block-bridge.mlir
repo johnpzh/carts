@@ -372,70 +372,86 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 }
 
 // CHECK-LABEL: func.func @host_whole_to_compute_block_bridge
-// CHECK: %[[HOST:.*]] = memref.alloc() : memref<18x4xf32>
+// CHECK: %[[HOST:.*]] = arts.db_ref
 // CHECK: arts.db_alloc
 // CHECK-SAME: <block>
 // CHECK-SAME: arts.storage_bridge = "host_whole_to_compute_block"
 // CHECK-SAME: planPhysicalBlockShape = [8, 4]
-// CHECK: scf.for
-// CHECK: arts.db_ref
-// CHECK: memref.load %[[HOST]]
-// CHECK: memref.store
+// CHECK: arts.db_acquire[<in>]
+// CHECK-SAME: partitioning(<coarse>)
+// CHECK: arts.db_acquire[<out>]
+// CHECK-SAME: partitioning(<block>)
+// CHECK: arts.edt <task> <intranode>
 // CHECK: arts.edt <task> <internode>
 // CHECK: arts.barrier
-// CHECK: scf.for
-// CHECK: memref.load
-// CHECK: memref.store {{.*}}%[[HOST]]
+// CHECK: arts.db_acquire[<inout>]
+// CHECK-SAME: partitioning(<coarse>)
+// CHECK: arts.db_acquire[<in>]
+// CHECK-SAME: partitioning(<block>)
+// CHECK: arts.edt <task> <intranode>
+// CHECK: arts.barrier
 // CHECK: memref.load %[[HOST]]
 
 // WRITE-LABEL: func.func @write_only_host_bridge_skips_copy_in
-// WRITE: %[[HOST:.*]] = memref.alloc() : memref<18x4xf32>
+// WRITE: %[[HOST:.*]] = arts.db_ref
 // WRITE: arts.db_alloc
 // WRITE-SAME: <block>
 // WRITE-SAME: arts.storage_bridge = "host_whole_to_compute_block"
-// WRITE-NOT: memref.load %[[HOST]]
+// WRITE-NOT: arts.db_acquire[<in>]
 // WRITE: arts.edt <task> <internode>
 // WRITE: arts.barrier
-// WRITE: memref.store {{.*}}%[[HOST]]
+// WRITE: arts.db_acquire[<inout>]
+// WRITE-SAME: partitioning(<coarse>)
+// WRITE: arts.edt <task> <intranode>
+// WRITE: arts.barrier
+// WRITE: memref.load %[[HOST]]
 
 // WRITEFIRST-LABEL: func.func @write_first_shared_bridge_skips_initial_copy_in
-// WRITEFIRST: %[[HOST:.*]] = memref.alloc() : memref<18x4xf32>
+// WRITEFIRST: %[[HOST:.*]] = arts.db_ref
 // WRITEFIRST-COUNT-1: arts.storage_bridge = "host_whole_to_compute_block"
-// WRITEFIRST-NOT: memref.load %[[HOST]]
+// WRITEFIRST-NOT: arts.db_acquire[<in>]
 // WRITEFIRST: arts.edt <task> <internode>
 // WRITEFIRST: arts.barrier
 // WRITEFIRST: arts.edt <task> <internode>
 // WRITEFIRST: arts.barrier
-// WRITEFIRST: memref.store {{.*}}%[[HOST]]
+// WRITEFIRST: arts.edt <task> <intranode>
+// WRITEFIRST: arts.barrier
+// WRITEFIRST: memref.load %[[HOST]]
 
 // HOIST-LABEL: func.func @host_bridge_hoists_across_repetition
-// HOIST: %[[HOST:.*]] = memref.alloc() : memref<18x4xf32>
+// HOIST: %[[HOST:.*]] = arts.db_ref
 // HOIST: arts.db_alloc
 // HOIST-SAME: <block>
 // HOIST-SAME: arts.storage_bridge = "host_whole_to_compute_block"
-// HOIST: memref.load %[[HOST]]
+// HOIST: arts.edt <task> <intranode>
 // HOIST: scf.for
 // HOIST: arts.edt <task> <internode>
 // HOIST: arts.barrier
-// HOIST: memref.store {{.*}}%[[HOST]]
+// HOIST: arts.edt <task> <intranode>
+// HOIST: arts.barrier
+// HOIST: memref.load %[[HOST]]
 
 // SHARED-LABEL: func.func @host_bridge_shared_across_phases
-// SHARED: %[[HOST:.*]] = memref.alloc() : memref<18x4xf32>
+// SHARED: %[[HOST:.*]] = arts.db_ref
 // SHARED-COUNT-1: arts.storage_bridge = "host_whole_to_compute_block"
-// SHARED: memref.load %[[HOST]]
+// SHARED: arts.edt <task> <intranode>
 // SHARED: scf.for
 // SHARED: arts.edt <task> <internode>
 // SHARED: arts.barrier
 // SHARED: arts.edt <task> <internode>
 // SHARED: arts.barrier
-// SHARED: memref.store {{.*}}%[[HOST]]
+// SHARED: arts.edt <task> <intranode>
+// SHARED: arts.barrier
+// SHARED: memref.load %[[HOST]]
 
 // READONLY-LABEL: func.func @read_only_bridge_hoists_past_host_read
 // READONLY: arts.db_alloc
 // READONLY-SAME: <coarse>
 // READONLY: %[[HOST:.*]] = arts.db_ref
 // READONLY: arts.db_alloc{{.*}}arts.storage_bridge = "host_whole_to_compute_block"
-// READONLY: memref.load %[[HOST]]
+// READONLY: arts.db_acquire[<in>]
+// READONLY-SAME: partitioning(<coarse>)
+// READONLY: arts.edt <task> <intranode>
 // READONLY: scf.for
 // READONLY-NOT: arts.storage_bridge = "host_whole_to_compute_block"
 // READONLY: arts.edt <task>
@@ -446,14 +462,16 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // PERSIST-LABEL: func.func @write_bridge_persists_across_read_only_host_phase
 // PERSIST: %[[HOST:.*]] = arts.db_ref
 // PERSIST-COUNT-1: arts.storage_bridge = "host_whole_to_compute_block"
-// PERSIST: memref.load %[[HOST]]
+// PERSIST: arts.edt <task> <intranode>
 // PERSIST: scf.for
 // PERSIST: arts.edt <task> <internode>
 // PERSIST: arts.barrier
-// PERSIST: memref.store {{.*}}%[[HOST]]
 // PERSIST: arts.edt <task> <intranode>
-// PERSIST-NOT: memref.store {{.*}}%[[HOST]]
+// PERSIST: arts.barrier
+// PERSIST: arts.edt <task> <intranode>
 // PERSIST: arts.edt <task> <intranode>
 // PERSIST: arts.edt <task> <internode>
 // PERSIST: arts.barrier
-// PERSIST: memref.store {{.*}}%[[HOST]]
+// PERSIST: arts.edt <task> <intranode>
+// PERSIST: arts.barrier
+// PERSIST: memref.load %[[HOST]]

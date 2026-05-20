@@ -2,8 +2,11 @@
 // RUN: %carts compile %s --all-pipelines -O3 --arts-config %arts_config -o %t.pipes
 // RUN: %FileCheck %s --input-file=%t.pipes/5_rt/stages/12_pre-lowering.mlir
 
+// A coarse pointer-table DB does not carry the trusted partitioned-write
+// contract required for unordered local DB_MODE_RW. Keep the dependency in
+// ordered EW mode so CDAG owns the dependency ordering on every target.
 // CHECK: arts_rt.rec_dep
-// CHECK-SAME: acquire_modes = array<i32: 3>
+// CHECK-SAME: acquire_modes = array<i32: 2>
 
 extern void *malloc(unsigned long);
 extern void free(void *);

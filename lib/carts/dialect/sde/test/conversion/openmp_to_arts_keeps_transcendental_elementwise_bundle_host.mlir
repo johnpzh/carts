@@ -1,17 +1,25 @@
 // RUN: %carts-compile %s --O3 --arts-config %arts_config --start-from sde-planning --pipeline sde-planning --mlir-print-ir-after-all 2>&1 \
 // RUN:   | awk '/IR Dump After ConvertOpenMPToSde/,/IR Dump After PatternAnalysis/' \
-// RUN:   | %FileCheck %s
+// RUN:   | %FileCheck %s --check-prefix=SINGLE
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from sde-planning --pipeline sde-planning --mlir-print-ir-after-all 2>&1 \
+// RUN:   | awk '/IR Dump After ConvertOpenMPToSde/,/IR Dump After PatternAnalysis/' \
+// RUN:   | %FileCheck %s --check-prefix=MULTI
 
 // A bundle of independent one-dimensional floating-point maps with repeated
-// transcendental work is kept as host OpenMP. The fused SDE elementwise path
-// would place cheap maps in the same hot loop as scalar libm work and lose the
-// source OpenMP schedule shape.
+// transcendental work is kept as host OpenMP for single-node benchmark runs.
+// Multinode runs must enter SDE/CODIR/ARTS so Slurm artifacts are true
+// distributed ARTS jobs.
 
-// CHECK-LABEL: // -----// IR Dump After ConvertOpenMPToSde (convert-openmp-to-sde) //----- //
-// CHECK: omp.parallel
-// CHECK: sde.keep_host_openmp
-// CHECK-NOT: sde.su_iterate
-// CHECK: func.func private @tanhf
+// SINGLE-LABEL: // -----// IR Dump After ConvertOpenMPToSde (convert-openmp-to-sde) //----- //
+// SINGLE: omp.parallel
+// SINGLE: sde.keep_host_openmp
+// SINGLE-NOT: sde.su_iterate
+// SINGLE: func.func private @tanhf
+
+// MULTI-LABEL: // -----// IR Dump After ConvertOpenMPToSde (convert-openmp-to-sde) //----- //
+// MULTI-NOT: sde.keep_host_openmp
+// MULTI: sde.su_iterate
+// MULTI: func.func private @tanhf
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i64:64-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<1024xf32>, %B: memref<1024xf32>, %C: memref<1024xf32>, %D: memref<1024xf32>, %E: memref<1024xf32>) {

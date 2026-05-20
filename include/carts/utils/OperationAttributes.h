@@ -742,6 +742,7 @@ inline bool isStencilFamilyDepPattern(ArtsDepPattern pattern) {
   case ArtsDepPattern::triangular:
   case ArtsDepPattern::matmul:
   case ArtsDepPattern::elementwise_pipeline:
+  case ArtsDepPattern::reduction:
     return false;
   }
 }
@@ -760,6 +761,7 @@ inline bool isStencilHaloDepPattern(ArtsDepPattern pattern) {
   case ArtsDepPattern::matmul:
   case ArtsDepPattern::elementwise_pipeline:
   case ArtsDepPattern::wavefront_2d:
+  case ArtsDepPattern::reduction:
     return false;
   }
 }
@@ -768,6 +770,7 @@ inline bool isUniformFamilyDepPattern(ArtsDepPattern pattern) {
   switch (pattern) {
   case ArtsDepPattern::uniform:
   case ArtsDepPattern::elementwise_pipeline:
+  case ArtsDepPattern::reduction:
     return true;
   case ArtsDepPattern::unknown:
   case ArtsDepPattern::stencil:
@@ -789,6 +792,7 @@ getDistributionPatternForDepPattern(ArtsDepPattern pattern) {
     return std::nullopt;
   case ArtsDepPattern::uniform:
   case ArtsDepPattern::elementwise_pipeline:
+  case ArtsDepPattern::reduction:
     return EdtDistributionPattern::uniform;
   case ArtsDepPattern::stencil:
   case ArtsDepPattern::stencil_tiling_nd:

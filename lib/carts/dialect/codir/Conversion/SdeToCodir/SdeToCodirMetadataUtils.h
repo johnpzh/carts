@@ -119,8 +119,26 @@ inline CodirAsyncStrategy convertAsyncStrategy(sde::SdeAsyncStrategy strategy) {
   return CodirAsyncStrategy::blocking;
 }
 
+inline CodirReductionStrategy
+convertReductionStrategy(sde::SdeReductionStrategy strategy) {
+  switch (strategy) {
+  case sde::SdeReductionStrategy::atomic:
+    return CodirReductionStrategy::atomic;
+  case sde::SdeReductionStrategy::tree:
+    return CodirReductionStrategy::tree;
+  case sde::SdeReductionStrategy::local_accumulate:
+    return CodirReductionStrategy::local_accumulate;
+  }
+  return CodirReductionStrategy::tree;
+}
+
 struct CodirCodeletMetadata {
   CodirPatternAttr pattern;
+  CodirReductionStrategyAttr reductionStrategy;
+  UnitAttr partialReduction;
+  ArrayAttr partialReductionDims;
+  ArrayAttr partialReductionOwnerDims;
+  ArrayAttr partialReductionDepResultDimMaps;
   CodirDistributionKindAttr distributionKind;
   CodirIterationTopologyAttr iterationTopology;
   CodirRepetitionStructureAttr repetitionStructure;
@@ -174,6 +192,14 @@ getCodirMetadataFromSchedulingUnit(sde::SdeSuIterateOp source) {
   if (auto async = source.getAsyncStrategyAttr())
     metadata.asyncStrategy = CodirAsyncStrategyAttr::get(
         ctx, convertAsyncStrategy(async.getValue()));
+  if (auto strategy = source.getReductionStrategyAttr())
+    metadata.reductionStrategy = CodirReductionStrategyAttr::get(
+        ctx, convertReductionStrategy(strategy.getValue()));
+  if (source.getPartialReductionAttr())
+    metadata.partialReduction = UnitAttr::get(ctx);
+  metadata.partialReductionDims = source.getPartialReductionDimsAttr();
+  metadata.partialReductionOwnerDims =
+      source.getPartialReductionOwnerDimsAttr();
   metadata.planOwnerDims = source.getOwnerDimsAttr();
   metadata.tileOwnerDims = source.getPhysicalOwnerDimsAttr();
   metadata.tileShape = source.getPhysicalBlockShapeAttr();

@@ -1,25 +1,25 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode_64x64.cfg --start-from sde-planning --pipeline sde-to-codir --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
 
 // Transposed-GEMV style loops reduce a nested dimension into an output slice
-// owned by the scheduling-unit IV.  SDE should expose more than one worker
-// wave of owner slices and stamp the existing owner-slice metadata so CODIR
-// and ARTS do not inherit one coarse reduction-shaped strip.
+// owned by the scheduling-unit IV. SDE should expose every owner slice when the
+// owner domain is smaller than the high-node worker contract; keeping the tile
+// at one avoids an artificial minimum-grain floor that would serialize
+// otherwise independent output reductions.
 
 // SDE-LABEL: // -----// IR Dump After Tiling (tiling) //----- //
 // SDE: func.func @main
 // SDE: sde.su_distribute <blocked> {
-// SDE: %[[STEP:.*]] = arith.muli %c1, %c12{{(_[0-9]+)?}} : index
-// SDE: sde.su_iterate (%c0) to (%c128) step (%[[STEP]]) classification(<elementwise_pipeline>)
+// SDE: sde.su_iterate (%c0) to (%c128) step (%c1) reduction_strategy(<local_accumulate>) classification(<elementwise_pipeline>)
 // SDE: iterationTopology = #sde.iteration_topology<owner_strip>
-// SDE-SAME: logicalWorkerSlice = [12]
-// SDE-SAME: physicalBlockShape = [12]
+// SDE-SAME: logicalWorkerSlice = [1]
+// SDE-SAME: physicalBlockShape = [1]
 // SDE-SAME: physicalOwnerDims = [0]
 // SDE-LABEL: // -----// IR Dump After ConvertSdeToCodir (convert-sde-to-codir) //----- //
 // SDE: func.func @main
 // SDE: codir.codelet
-// SDE-SAME: logical_worker_slice = [12]
+// SDE-SAME: logical_worker_slice = [1]
 // SDE-SAME: pattern = #codir.pattern<elementwise_pipeline>
-// SDE-SAME: tile_shape = [12]
+// SDE-SAME: tile_shape = [1]
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @main(%A: memref<128x128xf64>, %r: memref<128xf64>, %s: memref<128xf64>) {

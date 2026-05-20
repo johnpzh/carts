@@ -420,6 +420,35 @@ bool DbUtils::isSmallCoarseUserDataDb(DbAllocOp alloc, int64_t maxElements) {
   return elementCount && *elementCount <= maxElements;
 }
 
+bool DbUtils::isRejectedForDistributedOwnership(DbAllocOp alloc) {
+  if (!alloc || hasDistributedDbAllocation(alloc.getOperation()))
+    return false;
+  return alloc->hasAttr(AttrNames::Operation::DistributedRejectReason) ||
+         alloc->hasAttr(AttrNames::Operation::LocalOnly);
+}
+
+bool DbUtils::isAllowedSmallReadOnlyCoarseDep(Value dep, DbAllocOp alloc) {
+  auto acquire = dep.getDefiningOp<DbAcquireOp>();
+  return acquire && acquire.getMode() == ArtsMode::in &&
+         DbUtils::isSmallCoarseUserDataDb(alloc);
+}
+
+bool DbUtils::requiresLocalLaunchForDistributedDep(Value dep) {
+  auto alloc = dyn_cast_or_null<DbAllocOp>(DbUtils::getUnderlyingDbAlloc(dep));
+  if (!DbUtils::isRejectedForDistributedOwnership(alloc))
+    return false;
+  return !DbUtils::isAllowedSmallReadOnlyCoarseDep(dep, alloc);
+}
+
+bool DbUtils::hasLocalOnlyDistributedLaunchDependency(EdtOp edt) {
+  if (!edt)
+    return false;
+  for (Value dep : edt.getDependencies())
+    if (DbUtils::requiresLocalLaunchForDistributedDep(dep))
+      return true;
+  return false;
+}
+
 DbMode DbUtils::convertArtsModeToDbMode(ArtsMode mode) {
   return (mode == ArtsMode::in) ? DbMode::read : DbMode::write;
 }

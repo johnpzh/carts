@@ -16,6 +16,7 @@
 namespace mlir::carts::codir {
 
 std::unique_ptr<Pass> createCodirCodeletOptPass();
+std::unique_ptr<Pass> createReductionPlanningPass();
 std::unique_ptr<Pass> createStoragePlanningPass();
 std::unique_ptr<Pass> createVerifyCodirPass();
 

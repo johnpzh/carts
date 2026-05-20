@@ -27,20 +27,23 @@ Read these before patching anything:
 
 1. Confirm that single-node still works.
 2. Reproduce with explicit node/thread/config inputs.
-3. Check whether `--distributed-db` is actually active in the failing path.
-4. Inspect IR around:
+3. Confirm the requested transport. Single-node benchmark configs use TCP;
+   multinode configs default to RDMA/RoCE unless `--no-rdma` is set.
+4. Check whether `--distributed-db` is actually active in the failing path.
+   It is a multinode-only benchmark mode and is stripped from single-node rows.
+5. Inspect IR around:
    - `sde-planning`
    - `codir-to-arts`
    - `post-db-refinement`
    - `pre-lowering`
-5. Check ownership constraints:
+6. Check ownership constraints:
    - `distributed` marker present on eligible `DbAllocOp`
    - SDE planning contracts plus CODIR/ARTS materialization contracts are present when required
    - routed work and owner hints agree
-6. Inspect runtime artifacts:
+7. Inspect runtime artifacts:
    - `arts.log`, `omp.log`
    - `cluster.json`, `n0.json`, `n1.json`, ...
-7. If the bug reduces to wrong output rather than multi-node structure, hand off to `carts-miscompile-triage`.
+8. If the bug reduces to wrong output rather than multi-node structure, hand off to `carts-miscompile-triage`.
 
 ## Common Commands
 

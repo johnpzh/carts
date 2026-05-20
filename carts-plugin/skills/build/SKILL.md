@@ -17,7 +17,8 @@ Run `dekk carts build --help` for the latest options.
 Common workflows:
 - `dekk carts build` — rebuild CARTS compiler only (fastest, incremental)
 - `dekk carts build --clean` — full clean rebuild
-- `dekk carts build --arts` — rebuild ARTS runtime (release)
+- `dekk carts build --arts` — rebuild ARTS runtime (release, RDMA/RoCE enabled)
+- `dekk carts build --arts --no-rdma` — rebuild ARTS runtime for TCP fallback
 - `dekk carts build --arts --debug 3` — rebuild ARTS runtime with full debug logging
 - `dekk carts build --arts --counters 2` — rebuild ARTS with workload counters
 
@@ -35,7 +36,7 @@ with `dekk carts build --llvm`.
 | Flag | What it builds | When to use |
 |------|---------------|-------------|
 | (none) | CARTS compiler only | After changing `lib/carts/` or `include/carts/` |
-| `--arts` | ARTS runtime | After changing `external/arts/` |
+| `--arts` | ARTS runtime | After changing `external/arts/`; defaults to RDMA/RoCE |
 | `--polygeist` | Polygeist frontend | After changing `external/Polygeist/` |
 | `--llvm` | LLVM/MLIR | After changing `external/Polygeist/llvm-project/` |
 | `--clean` | Full clean rebuild | When incremental build fails or after branch switch |

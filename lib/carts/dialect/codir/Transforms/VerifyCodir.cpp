@@ -99,6 +99,80 @@ struct VerifyCodirPass
         }
       }
 
+      ArrayAttr depResultDimMaps =
+          codelet.getPartialReductionDepResultDimMapsAttr();
+      if (depResultDimMaps) {
+        if (depResultDimMaps.size() != codelet.getDeps().size()) {
+          codelet.emitOpError()
+              << "expects partial_reduction_dep_result_dim_maps entry count ("
+              << depResultDimMaps.size()
+              << ") to match dependency operand count ("
+              << codelet.getDeps().size() << ")";
+          failed = true;
+        }
+        for (auto [index, attr] : llvm::enumerate(depResultDimMaps)) {
+          auto dims = dyn_cast<ArrayAttr>(attr);
+          if (!dims) {
+            codelet.emitOpError()
+                << "partial_reduction_dep_result_dim_maps entry #" << index
+                << " must be an array attribute, got " << attr;
+            failed = true;
+            continue;
+          }
+          for (Attribute dim : dims) {
+            if (isa<IntegerAttr>(dim))
+              continue;
+            codelet.emitOpError()
+                << "partial_reduction_dep_result_dim_maps entry #" << index
+                << " must contain integer attributes, got " << dim;
+            failed = true;
+          }
+        }
+      }
+
+      auto verifyPositiveI64Attr = [&](IntegerAttr attr, StringRef name) {
+        if (!attr)
+          return;
+        if (attr.getInt() > 0)
+          return;
+        codelet.emitOpError() << name << " must be positive, got "
+                              << attr.getInt();
+        failed = true;
+      };
+
+      verifyPositiveI64Attr(codelet.getPartialReductionSplitFactorAttr(),
+                            "partial_reduction_split_factor");
+      verifyPositiveI64Attr(codelet.getPartialReductionSplitOwnerTaskCountAttr(),
+                            "partial_reduction_split_owner_task_count");
+      verifyPositiveI64Attr(
+          codelet.getPartialReductionSplitTargetWorkerCountAttr(),
+          "partial_reduction_split_target_worker_count");
+
+      if (codelet.getPartialReductionSplitRequiredAttr() &&
+          !codelet.getPartialReductionAttr()) {
+        codelet.emitOpError()
+            << "partial_reduction_split_required requires partial_reduction";
+        failed = true;
+      }
+      if (codelet.getPartialReductionSplitRequiredAttr() &&
+          !codelet.getPartialReductionSplitFactorAttr()) {
+        codelet.emitOpError()
+            << "partial_reduction_split_required requires "
+               "partial_reduction_split_factor";
+        failed = true;
+      }
+      if (ArrayAttr splitDims = codelet.getPartialReductionSplitDimsAttr()) {
+        for (Attribute dim : splitDims) {
+          if (isa<IntegerAttr>(dim))
+            continue;
+          codelet.emitOpError()
+              << "partial_reduction_split_dims must contain integer "
+                 "attributes, got "
+              << dim;
+          failed = true;
+        }
+      }
+
       for (auto [index, dep] : llvm::enumerate(codelet.getDeps())) {
         if (codir::isCodirDependencyType(dep.getType()))
           continue;

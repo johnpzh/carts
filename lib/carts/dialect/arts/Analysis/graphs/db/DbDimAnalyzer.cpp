@@ -192,6 +192,7 @@ inferMappedDimFromDepPattern(const DbAcquirePartitionFacts &facts) {
   case ArtsDepPattern::matmul:
   case ArtsDepPattern::triangular:
   case ArtsDepPattern::elementwise_pipeline:
+  case ArtsDepPattern::reduction:
     return std::nullopt;
   }
 }

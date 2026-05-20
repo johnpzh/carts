@@ -169,6 +169,7 @@ ContractKind LoweringContractInfo::getEffectiveKind() const {
     return ContractKind::Stencil;
   case ArtsDepPattern::uniform:
   case ArtsDepPattern::elementwise_pipeline:
+  case ArtsDepPattern::reduction:
     return ContractKind::Elementwise;
   case ArtsDepPattern::matmul:
     return ContractKind::Matmul;

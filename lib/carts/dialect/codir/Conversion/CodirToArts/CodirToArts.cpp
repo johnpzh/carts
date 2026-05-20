@@ -255,8 +255,15 @@ struct ConvertCodirToArtsPass
                     static_cast<unsigned>(alloc.getElementSizes().size()))) {
           Value blockSizeValue = createConstantIndex(builder, loc, *blockSize);
           Value base = codelet.getParams().back();
-          Value blockIndex =
-              arith::DivUIOp::create(builder, loc, base, blockSizeValue);
+          Value domainBase =
+              materializeCodirOwnerDomainBase(builder, loc, codelet);
+          Value relativeBase =
+              ::mlir::carts::ValueAnalysis::sameValue(base, domainBase)
+                  ? createZeroIndex(builder, loc)
+                  : arith::SubIOp::create(builder, loc, base, domainBase)
+                        .getResult();
+          Value blockIndex = arith::DivUIOp::create(builder, loc, relativeBase,
+                                                    blockSizeValue);
           dbOffsets.assign({blockIndex});
           dbSizes.assign({createOneIndex(builder, loc)});
           plannedBlockOwnerDim = getCodirDepOwnerDim(codelet, depIdx);
@@ -367,8 +374,14 @@ struct ConvertCodirToArtsPass
           return codelet.emitOpError()
                  << "failed to materialize owner-base parameter for planned "
                     "block-local access rewrite";
+        auto payloadType = dyn_cast<MemRefType>(payload.getType());
+        if (!payloadType)
+          return codelet.emitOpError()
+                 << "planned block-local dependency payload is not a memref";
+        CodirOwnerHaloWindow ownerHalo = getCodirOwnerHaloWindow(
+            codelet, idx, static_cast<unsigned>(payloadType.getRank()));
         localAccessRewrites.push_back(
-            {payload, *plannedBlockOwnerDims[idx], ownerBase});
+            {payload, *plannedBlockOwnerDims[idx], ownerBase, ownerHalo.lower});
       }
       mapper.map(codeletBlock.getArgument(idx), payload);
     }
@@ -379,7 +392,7 @@ struct ConvertCodirToArtsPass
     for (Operation &nested : codeletBlock.without_terminator())
       builder.insert(nested.clone(mapper));
 
-    if (isReductionCodelet(codelet))
+    if (shouldLowerReductionsToAtomics(codelet))
       lowerIntegerAddReductionsToAtomics(task.getBody(), sourceByBlockArgument);
 
     if (failed(rewritePlannedBlockLocalAccesses(task, localAccessRewrites)))

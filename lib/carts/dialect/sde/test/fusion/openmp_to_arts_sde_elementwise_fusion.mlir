@@ -21,8 +21,7 @@
 // ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // ARTS: func.func @main
 // ARTS: arts.edt <task>
-// ARTS: arts.edt <task>
-// ARTS-SAME: arts.pattern_revision = 1 : i64
+// ARTS: arts.edt <task>{{.*}}arts.pattern_revision = 1 : i64
 // ARTS-SAME: depPattern = #arts.dep_pattern<elementwise_pipeline>
 // ARTS: memref.load
 // ARTS: arith.addf

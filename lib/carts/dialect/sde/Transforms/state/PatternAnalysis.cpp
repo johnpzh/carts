@@ -253,6 +253,8 @@ static sde::SdeSuIterateOp promoteRank2OutOfPlaceStencilOwnerLoop(
       ValueRange(upperBounds), ValueRange(steps), op.getScheduleAttr(),
       op.getChunkSize(), op.getNowaitAttr(), op.getReductionAccumulators(),
       op.getReductionKindsAttr(), op.getReductionStrategyAttr(),
+      op.getPartialReductionAttr(), op.getPartialReductionDimsAttr(),
+      op.getPartialReductionOwnerDimsAttr(),
       op.getStructuredClassificationAttr(), op.getPatternAttr(),
       op.getAccessMinOffsetsAttr(), op.getAccessMaxOffsetsAttr(),
       op.getOwnerDimsAttr(), op.getSpatialDimsAttr(),
@@ -349,6 +351,53 @@ derivePattern(const sde::StructuredLoopSummary &summary,
   return sde::SdePattern::stencil_tiling_nd;
 }
 
+static void clearPartialReductionIntent(sde::SdeSuIterateOp op) {
+  op->removeAttr(op.getPartialReductionAttrName());
+  op->removeAttr(op.getPartialReductionDimsAttrName());
+  op->removeAttr(op.getPartialReductionOwnerDimsAttrName());
+}
+
+static void stampPartialReductionIntent(
+    sde::SdeSuIterateOp op, const sde::StructuredLoopSummary &summary,
+    sde::SdeStructuredClassification classification) {
+  clearPartialReductionIntent(op);
+
+  if (classification != sde::SdeStructuredClassification::elementwise_pipeline)
+    return;
+  if (!sde::isOwnerLocalPipelineReduction(op))
+    return;
+
+  SmallVector<int64_t, 4> reductionDims;
+  for (auto [dim, iteratorType] : llvm::enumerate(summary.iterTypes)) {
+    if (iteratorType == utils::IteratorType::reduction)
+      reductionDims.push_back(static_cast<int64_t>(dim));
+  }
+  if (reductionDims.empty())
+    return;
+
+  std::optional<sde::StructuredOutputLayoutPlan> outputPlan =
+      sde::findCompatibleOutputLayoutPlan(summary);
+  if (!outputPlan)
+    return;
+
+  SmallVector<int64_t, 4> ownerDims;
+  for (auto [physicalDim, loopDim] :
+       llvm::enumerate(outputPlan->physicalDimToLoopDim)) {
+    if (loopDim < 0 || static_cast<size_t>(loopDim) >= summary.iterTypes.size())
+      continue;
+    if (summary.iterTypes[loopDim] == utils::IteratorType::parallel)
+      ownerDims.push_back(static_cast<int64_t>(physicalDim));
+  }
+  if (ownerDims.empty())
+    return;
+
+  op.setPartialReductionAttr(UnitAttr::get(op.getContext()));
+  op.setPartialReductionDimsAttr(
+      buildI64ArrayAttr(op.getContext(), reductionDims));
+  op.setPartialReductionOwnerDimsAttr(
+      buildI64ArrayAttr(op.getContext(), ownerDims));
+}
+
 struct PatternAnalysisPass
     : public sde::impl::PatternAnalysisBase<PatternAnalysisPass> {
   using PatternAnalysisBase::PatternAnalysisBase;
@@ -362,6 +411,7 @@ struct PatternAnalysisPass
 
       op->removeAttr(op.getInPlaceSafeAttrName());
       op->removeAttr(op.getInPlaceSharedStateAttrName());
+      clearPartialReductionIntent(op);
 
       sde::SdeStructuredClassification classification = summary->classification;
       bool hasExplicitStencilContract = false;
@@ -396,6 +446,7 @@ struct PatternAnalysisPass
       op.setStructuredClassificationAttr(
           sde::SdeStructuredClassificationAttr::get(&getContext(),
                                                     classification));
+      stampPartialReductionIntent(op, *summary, classification);
 
       std::optional<sde::StructuredNeighborhoodInfo> neighborhoodSummary;
       if (classification == sde::SdeStructuredClassification::stencil) {

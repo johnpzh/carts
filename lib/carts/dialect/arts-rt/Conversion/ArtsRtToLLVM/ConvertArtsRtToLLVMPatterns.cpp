@@ -938,7 +938,7 @@ private:
     }
     Value zeroRoute = AC->createIntConstant(0, AC->Int32, loc);
     Value hintMemref = buildArtsHintMemref(AC, zeroRoute, artsIdValue, loc);
-    Value dbType = AC->createIntConstant(0, AC->Int32, loc);
+    Value dbType = AC->createIntConstant(ARTS_DB_DEFAULT, AC->Int32, loc);
     Value nullPtr = AC->create<LLVM::ZeroOp>(loc, AC->llvmPtr);
     Value nullData =
         AC->create<polygeist::Pointer2MemrefOp>(loc, AC->VoidPtr, nullPtr);

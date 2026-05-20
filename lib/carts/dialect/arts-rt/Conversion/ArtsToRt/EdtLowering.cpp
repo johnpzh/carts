@@ -228,12 +228,15 @@ static bool hasTrustedPartitionedWriteContract(DbAcquireOp acquire) {
 
 static bool canUseUnorderedLocalWrite(DbAcquireOp acquire, EdtOp edtOp,
                                       ModuleOp module) {
-  if (!acquire || !edtOp || acquire.getMode() != ArtsMode::out)
+  if (!acquire || !edtOp)
+    return false;
+  if (acquire.getMode() != ArtsMode::out &&
+      acquire.getMode() != ArtsMode::inout)
     return false;
   if (edtOp.getConcurrency() != EdtConcurrency::intranode)
     return false;
-  if (auto totalNodes = getRuntimeTotalNodes(module);
-      totalNodes && *totalNodes != 1)
+  auto totalNodes = getRuntimeTotalNodes(module);
+  if (!totalNodes || *totalNodes != 1)
     return false;
   return hasTrustedPartitionedWriteContract(acquire);
 }
@@ -358,6 +361,21 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
   OpBuilder::InsertionGuard IG(AC->getBuilder());
   AC->setInsertionPoint(edtOp);
   Location loc = edtOp.getLoc();
+  if (edtOp.getPartialReductionSplitRequiredAttr()) {
+    InFlightDiagnostic diag = edtOp.emitError()
+        << "partial-reduction split plan was not materialized before "
+           "ARTS-RT EDT lowering";
+    if (auto ownerCount = edtOp.getPartialReductionSplitOwnerTaskCountAttr())
+      diag << "; split owner task count: " << ownerCount.getInt();
+    if (auto targetCount = edtOp.getPartialReductionSplitTargetWorkerCountAttr())
+      diag << "; split target worker count: " << targetCount.getInt();
+    if (auto splitFactor = edtOp.getPartialReductionSplitFactorAttr())
+      diag << "; partial-reduction split factor: " << splitFactor.getInt();
+    diag << "; the ARTS layer must materialize reduction-tile partial DBs and "
+            "a combine tree before this runtime ABI pass";
+    return failure();
+  }
+
   /// Recompute the live capture environment from the current EDT body.
   /// EpochOpt and other structural passes can rewrite continuation captures
   /// late in the pipeline; lowering must follow the final IR contract, not a
@@ -1138,17 +1156,16 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
     if (dbAcquireOp)
       artsMode = dbAcquireOp.getMode();
 
-    /// Map ArtsMode to the runtime DB mode. Inout must stay RW; collapsing it
-    /// to write-only EW loses the dependency's read side and can expose stale
-    /// or uninitialized payload data to read-modify-write EDT bodies.
+    /// Map ArtsMode to the runtime DB mode. ARTS DB_MODE_EW is the ordered
+    /// exclusive-write acquire and still provides the current DB contents to
+    /// read-modify-write EDT bodies. DB_MODE_RW is explicitly a local-only,
+    /// unordered mode, so only use it for proven single-node local partitions.
     /// Preserve explicit READ acquisitions (e.g., aggregator reading partials)
     /// even if the underlying allocation is WRITE-only. The allocation mode is
     /// only used to narrow (not widen) the access when the arts mode is not
     /// already read.
     DbMode dbMode = RtDbUtils::convertArtsModeToDbMode(artsMode);
-    int32_t runtimeDbMode = artsMode == ArtsMode::inout
-                                ? kArtsRuntimeDbModeRw
-                                : static_cast<int32_t>(dbMode);
+    int32_t runtimeDbMode = static_cast<int32_t>(dbMode);
     if (allocForHint && dbMode != DbMode::read && artsMode != ArtsMode::inout) {
       DbMode allocMode = allocForHint.getDbMode();
       if (allocMode == DbMode::read || allocMode == DbMode::write)
@@ -1164,9 +1181,9 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
     acquireModes.push_back(runtimeDbMode);
 
     int32_t depFlagBits = 0;
-    if (allocForHint &&
-        hasDistributedDbAllocation(allocForHint.getOperation()) &&
-        dbMode == DbMode::read) {
+    if (allocForHint && dbMode == DbMode::read &&
+        (hasDistributedDbAllocation(allocForHint.getOperation()) ||
+         DbUtils::isSmallCoarseUserDataDb(allocForHint))) {
       bool duplicateSafe =
           allocForHint.getDbMode() == DbMode::read ||
           allocForHint->hasAttr(

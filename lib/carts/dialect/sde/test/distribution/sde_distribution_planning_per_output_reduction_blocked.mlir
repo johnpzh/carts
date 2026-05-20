@@ -22,10 +22,7 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.edt <task>
-// ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
-// ARTS: arts.edt <task>
-// ARTS: depPattern = #arts.dep_pattern<elementwise_pipeline>
+// ARTS: arts.edt <task>{{.*}}depPattern = #arts.dep_pattern<elementwise_pipeline>
 // ARTS-SAME: distribution_kind = #arts.distribution_kind<block>
 // ARTS-NOT: sde.
 

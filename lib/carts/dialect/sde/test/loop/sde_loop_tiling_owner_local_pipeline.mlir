@@ -25,15 +25,14 @@
 
 // MN64-LABEL: // -----// IR Dump After Tiling (tiling) //----- //
 // MN64: func.func @row_local_pipeline
-// MN64: %[[STEP:.*]] = arith.muli %c1, %c12{{(_[0-9]+)?}} : index
-// MN64: sde.su_iterate (%c0) to (%c1024) step (%[[STEP]]) classification(<elementwise_pipeline>) {
-// MN64: physicalBlockShape = [12, 256]
+// MN64: sde.su_iterate (%c0) to (%c1024) step (%c1) reduction_strategy(<local_accumulate>) classification(<elementwise_pipeline>) {
+// MN64: physicalBlockShape = [1, 256]
 // MN64-LABEL: // -----// IR Dump After ConvertSdeToCodir (convert-sde-to-codir) //----- //
 // MN64: func.func @row_local_pipeline
 // MN64: codir.codelet
-// MN64-SAME: logical_worker_slice = [12, 256]
+// MN64-SAME: logical_worker_slice = [1, 256]
 // MN64-SAME: pattern = #codir.pattern<elementwise_pipeline>
-// MN64-SAME: tile_shape = [12, 256]
+// MN64-SAME: tile_shape = [1, 256]
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @row_local_pipeline(%x: memref<1024x256xf32>, %gamma: memref<256xf32>, %beta: memref<256xf32>) {
