@@ -320,6 +320,17 @@ getDepStorageViewKind(codir::CodeletOp codelet, unsigned depIndex) {
   return view.getValue();
 }
 
+static std::optional<codir::CodirAccessMode>
+getDepAccessMode(codir::CodeletOp codelet, unsigned depIndex) {
+  ArrayAttr modes = codelet ? codelet.getDepModesAttr() : ArrayAttr{};
+  if (!modes || depIndex >= modes.size())
+    return std::nullopt;
+  auto mode = dyn_cast<codir::CodirAccessModeAttr>(modes[depIndex]);
+  if (!mode)
+    return std::nullopt;
+  return mode.getValue();
+}
+
 static bool storageViewUsesComputeBlock(codir::CodirStorageViewKind view) {
   return view == codir::CodirStorageViewKind::compute_block ||
          view == codir::CodirStorageViewKind::phase_redistributed;
@@ -423,6 +434,19 @@ static bool shouldDeferPhaseRedistribution(codir::CodeletOp codelet,
   return elements && *elements > kMaxPhaseRedistributionBridgeElements;
 }
 
+static bool shouldUseHostWholeReadOnlyDep(codir::CodeletOp codelet,
+                                          unsigned depIndex, Value dep) {
+  std::optional<codir::CodirAccessMode> mode =
+      getDepAccessMode(codelet, depIndex);
+  if (!mode || *mode != codir::CodirAccessMode::read)
+    return false;
+
+  constexpr int64_t kMaxSmallReadOnlyHostWholeElements = 64LL * 1024LL;
+  std::optional<int64_t> elements = getStaticLogicalElementCount(dep);
+  return elements && *elements > 0 &&
+         *elements <= kMaxSmallReadOnlyHostWholeElements;
+}
+
 static ArrayAttr buildOwnerDimsAttr(MLIRContext *ctx,
                                     std::optional<unsigned> ownerDim) {
   if (!ownerDim)
@@ -446,6 +470,9 @@ chooseStorageView(codir::CodeletOp codelet, unsigned depIndex,
     return codir::CodirStorageViewKind::host_whole;
 
   Value root = stripStorageViews(dep);
+  if (shouldUseHostWholeReadOnlyDep(codelet, depIndex, dep))
+    return codir::CodirStorageViewKind::host_whole;
+
   if (needsSharedRootRedistribution(codelet, depIndex, dep)) {
     if (shouldDeferPhaseRedistribution(codelet, depIndex, dep))
       return codir::CodirStorageViewKind::host_whole;

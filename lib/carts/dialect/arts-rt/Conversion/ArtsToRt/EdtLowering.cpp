@@ -43,11 +43,15 @@ namespace mlir::carts::arts_rt {
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
+#include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
@@ -241,6 +245,194 @@ static bool canUseUnorderedLocalWrite(DbAcquireOp acquire, EdtOp edtOp,
   return hasTrustedPartitionedWriteContract(acquire);
 }
 
+static bool valueDependsOn(Value value, Value root,
+                           DenseMap<Value, bool> &memo) {
+  if (!value)
+    return false;
+  if (value == root)
+    return true;
+  auto found = memo.find(value);
+  if (found != memo.end())
+    return found->second;
+
+  bool depends = false;
+  if (Operation *def = value.getDefiningOp()) {
+    for (Value operand : def->getOperands()) {
+      if (valueDependsOn(operand, root, memo)) {
+        depends = true;
+        break;
+      }
+    }
+  }
+  memo[value] = depends;
+  return depends;
+}
+
+static bool isPayloadReadSource(Value source, Value root) {
+  DenseMap<Value, bool> memo;
+  return source && valueDependsOn(source, root, memo);
+}
+
+static bool isAllowedWriteOrAddressUse(Operation *op) {
+  return isa<DbRefOp, DbGepOp, polygeist::Pointer2MemrefOp,
+             polygeist::SubIndexOp, memref::CastOp, memref::SubViewOp,
+             memref::ReinterpretCastOp, memref::DimOp, LLVM::GEPOp,
+             LLVM::BitcastOp, LLVM::AddrSpaceCastOp, memref::StoreOp,
+             polygeist::DynStoreOp, LLVM::StoreOp,
+             UnrealizedConversionCastOp>(op);
+}
+
+static bool edtDependencyPayloadMayRead(EdtOp edtOp, unsigned depIndex) {
+  if (!edtOp || edtOp.getBody().empty())
+    return true;
+  Block &entry = edtOp.getBody().front();
+  if (depIndex >= entry.getNumArguments())
+    return true;
+
+  Value depArg = entry.getArgument(depIndex);
+  bool mayRead = false;
+  edtOp.getBody().walk([&](Operation *op) {
+    if (mayRead)
+      return WalkResult::interrupt();
+
+    if (auto load = dyn_cast<memref::LoadOp>(op)) {
+      mayRead = isPayloadReadSource(load.getMemRef(), depArg);
+      return mayRead ? WalkResult::interrupt() : WalkResult::advance();
+    }
+
+    if (auto load = dyn_cast<LLVM::LoadOp>(op)) {
+      DenseMap<Value, bool> memo;
+      bool readsFromDepAddress = valueDependsOn(load.getAddr(), depArg, memo);
+      // Pointer-tree host-whole deps load the payload pointer from a local DB
+      // handle before storing through it. That is address rematerialization,
+      // not a read of the user payload protected by EW.
+      mayRead = readsFromDepAddress &&
+                !isa<LLVM::LLVMPointerType>(load.getResult().getType());
+      return mayRead ? WalkResult::interrupt() : WalkResult::advance();
+    }
+
+    if (auto load = dyn_cast<polygeist::DynLoadOp>(op)) {
+      mayRead = isPayloadReadSource(load.getMemref(), depArg);
+      return mayRead ? WalkResult::interrupt() : WalkResult::advance();
+    }
+
+    if (auto load = dyn_cast<affine::AffineLoadOp>(op)) {
+      mayRead = isPayloadReadSource(load.getMemRef(), depArg);
+      return mayRead ? WalkResult::interrupt() : WalkResult::advance();
+    }
+
+    if (auto read = dyn_cast<vector::TransferReadOp>(op)) {
+      mayRead = isPayloadReadSource(read.getBase(), depArg);
+      return mayRead ? WalkResult::interrupt() : WalkResult::advance();
+    }
+
+    if (isAllowedWriteOrAddressUse(op))
+      return WalkResult::advance();
+
+    DenseMap<Value, bool> memo;
+    for (Value operand : op->getOperands()) {
+      if (valueDependsOn(operand, depArg, memo)) {
+        mayRead = true;
+        return WalkResult::interrupt();
+      }
+    }
+    return WalkResult::advance();
+  });
+  return mayRead;
+}
+
+static bool canUsePlannedCoarseUnorderedOutWrite(DbAcquireOp acquire,
+                                                 EdtOp edtOp,
+                                                 ModuleOp module,
+                                                 unsigned depIndex,
+                                                 bool payloadMayRead) {
+  if (!acquire || !edtOp)
+    return false;
+  if (acquire.getMode() != ArtsMode::out &&
+      acquire.getMode() != ArtsMode::inout)
+    return false;
+  if (edtOp.getConcurrency() != EdtConcurrency::intranode)
+    return false;
+  auto totalNodes = getRuntimeTotalNodes(module);
+  if (!totalNodes || *totalNodes != 1)
+    return false;
+  if (acquire.getPartitionMode().value_or(PartitionMode::coarse) !=
+      PartitionMode::coarse)
+    return false;
+  auto alloc = dyn_cast_or_null<DbAllocOp>(
+      RtDbUtils::getUnderlyingDbAlloc(acquire.getSourcePtr()));
+  if (!alloc || !alloc->hasAttr(
+                    ::mlir::carts::arts::AttrNames::Operation::LocalOnly))
+    return false;
+  if (!edtOp.getPlanLogicalWorkerSliceAttr() ||
+      !edtOp.getPlanIterationTopologyAttr())
+    return false;
+  if (acquire.getMode() == ArtsMode::inout && payloadMayRead)
+    return false;
+  // SDE/CODIR authored this dependency as output-only. On a single node,
+  // DB_MODE_RW preserves the same pointer payload but skips the ARTS
+  // exclusive-write frontier, allowing independent output-only tasks to
+  // execute concurrently. In-place/read-modify-write dependencies remain
+  // inout and keep DB_MODE_EW.
+  return true;
+}
+
+static bool isInPlaceSafeUnorderedPattern(ArtsDepPattern pattern) {
+  switch (pattern) {
+  case ArtsDepPattern::matmul:
+  case ArtsDepPattern::uniform:
+  case ArtsDepPattern::elementwise_pipeline:
+    return true;
+  case ArtsDepPattern::unknown:
+  case ArtsDepPattern::stencil:
+  case ArtsDepPattern::triangular:
+  case ArtsDepPattern::wavefront_2d:
+  case ArtsDepPattern::jacobi_alternating_buffers:
+  case ArtsDepPattern::stencil_tiling_nd:
+  case ArtsDepPattern::cross_dim_stencil_3d:
+  case ArtsDepPattern::higher_order_stencil:
+  case ArtsDepPattern::reduction:
+    return false;
+  }
+  return false;
+}
+
+static bool canUseInPlaceSafeCoarseUnorderedWrite(DbAcquireOp acquire,
+                                                  EdtOp edtOp,
+                                                  ModuleOp module,
+                                                  unsigned depIndex) {
+  if (!acquire || !edtOp)
+    return false;
+  if (depIndex != 0)
+    return false;
+  if (acquire.getMode() != ArtsMode::out &&
+      acquire.getMode() != ArtsMode::inout)
+    return false;
+  if (edtOp.getConcurrency() != EdtConcurrency::intranode)
+    return false;
+  auto totalNodes = getRuntimeTotalNodes(module);
+  if (!totalNodes || *totalNodes != 1)
+    return false;
+  if (acquire.getPartitionMode().value_or(PartitionMode::coarse) !=
+      PartitionMode::coarse)
+    return false;
+  auto alloc = dyn_cast_or_null<DbAllocOp>(
+      RtDbUtils::getUnderlyingDbAlloc(acquire.getSourcePtr()));
+  if (!alloc || !alloc->hasAttr(
+                    ::mlir::carts::arts::AttrNames::Operation::LocalOnly))
+    return false;
+  auto depPattern = getDepPattern(edtOp.getOperation());
+  if (!depPattern || !isInPlaceSafeUnorderedPattern(*depPattern))
+    return false;
+  if (!edtOp.getInPlaceSafeAttr())
+    return false;
+
+  // In-place-safe uniform/elementwise/matmul EDTs own the first dependency's
+  // logical slice. They may read values from that slice inside the same EDT,
+  // but peer EDTs do not need the coarse DB frontier for ordering.
+  return true;
+}
+
 ///===----------------------------------------------------------------------===///
 /// EDT Lowering Pass Implementation
 ///===----------------------------------------------------------------------===///
@@ -285,7 +477,8 @@ private:
 
   /// Dep satisfaction
   LogicalResult insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
-                                    const SmallVector<Value> &deps);
+                                    const SmallVector<Value> &deps,
+                                    ArrayRef<bool> depPayloadMayRead);
 
   /// Attributes
   uint64_t idStride = IdRegistry::DefaultStride;
@@ -410,6 +603,11 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
     if (auto acquire = dep.getDefiningOp<DbAcquireOp>())
       if (auto contract = resolveAcquireContract(acquire))
         normalizeTaskDepSlice(AC, acquire, *contract);
+
+  SmallVector<bool, 8> depPayloadMayRead;
+  depPayloadMayRead.reserve(edtDeps.size());
+  for (auto [depIndex, dep] : llvm::enumerate(edtDeps))
+    depPayloadMayRead.push_back(edtDependencyPayloadMayRead(edtOp, depIndex));
 
   SmallVector<Type> packTypes;
   SmallVector<Value> packedValues;
@@ -547,7 +745,8 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
   Value edtGuid = outlineOp.getGuid();
   AC->setInsertionPointAfter(outlineOp);
   SmallVector<Value> depsVec(edtDeps.begin(), edtDeps.end());
-  if (failed(insertDepManagement(edtOp, loc, edtGuid, depsVec)))
+  if (failed(insertDepManagement(edtOp, loc, edtGuid, depsVec,
+                                 depPayloadMayRead)))
     return edtOp.emitError("Failed to insert dependency management");
 
   /// Replace all uses of EDT with the outlined function result.
@@ -982,14 +1181,15 @@ LogicalResult EdtLoweringPass::outlineRegionToFunction(
 ///===----------------------------------------------------------------------===///
 LogicalResult
 EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
-                                     const SmallVector<Value> &deps) {
+                                     const SmallVector<Value> &deps,
+                                     ArrayRef<bool> depPayloadMayRead) {
   if (deps.empty())
     return success();
 
   /// Determine access mode based on dependency sources
   /// If any dependency comes from DepDbAcquireOp, use from_depv mode
   DepAccessMode accessMode = DepAccessMode::direct;
-  for (Value dep : deps) {
+  for (auto [depIndex, dep] : llvm::enumerate(deps)) {
     if (dep.getDefiningOp<DepDbAcquireOp>()) {
       accessMode = DepAccessMode::from_depv;
       break;
@@ -1005,7 +1205,7 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
   bool hasDepFlags = false;
   DenseSet<Operation *> seenSources;
 
-  for (Value dep : deps) {
+  for (auto [depIndex, dep] : llvm::enumerate(deps)) {
     if (Operation *source = getCanonicalDependencySource(dep))
       if (!seenSources.insert(source).second)
         continue;
@@ -1172,8 +1372,15 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
         dbMode = allocMode;
       runtimeDbMode = static_cast<int32_t>(dbMode);
     }
+    bool payloadMayRead =
+        depIndex < depPayloadMayRead.size() ? depPayloadMayRead[depIndex]
+                                            : true;
     if (dbMode == DbMode::write &&
-        canUseUnorderedLocalWrite(dbAcquireOp, edtOp, module)) {
+        (canUseUnorderedLocalWrite(dbAcquireOp, edtOp, module) ||
+         canUsePlannedCoarseUnorderedOutWrite(dbAcquireOp, edtOp, module,
+                                              depIndex, payloadMayRead) ||
+         canUseInPlaceSafeCoarseUnorderedWrite(dbAcquireOp, edtOp, module,
+                                               depIndex))) {
       runtimeDbMode = kArtsRuntimeDbModeRw;
       ARTS_DEBUG("Using unordered local DB_MODE_RW for proven partitioned "
                  "out dependency");

@@ -441,6 +441,29 @@ tryFoldConstantIndexWithImpl(Value v, unsigned depth,
     return std::nullopt;
   }
 
+  if (auto div = v.getDefiningOp<arith::CeilDivUIOp>()) {
+    auto lhs = tryFoldConstantIndexWithImpl(div.getLhs(), depth + 1,
+                                            extraFolder);
+    auto rhs = tryFoldConstantIndexWithImpl(div.getRhs(), depth + 1,
+                                            extraFolder);
+    if (lhs && rhs && *lhs >= 0 && *rhs > 0) {
+      uint64_t ulhs = static_cast<uint64_t>(*lhs);
+      uint64_t urhs = static_cast<uint64_t>(*rhs);
+      return static_cast<int64_t>((ulhs / urhs) + (ulhs % urhs != 0));
+    }
+    return std::nullopt;
+  }
+
+  if (auto div = v.getDefiningOp<arith::CeilDivSIOp>()) {
+    auto lhs = tryFoldConstantIndexWithImpl(div.getLhs(), depth + 1,
+                                            extraFolder);
+    auto rhs = tryFoldConstantIndexWithImpl(div.getRhs(), depth + 1,
+                                            extraFolder);
+    if (lhs && rhs && *lhs >= 0 && *rhs > 0)
+      return (*lhs + *rhs - 1) / *rhs;
+    return std::nullopt;
+  }
+
   if (auto max = v.getDefiningOp<arith::MaxUIOp>()) {
     auto lhs = tryFoldConstantIndexWithImpl(max.getLhs(), depth + 1,
                                             extraFolder);

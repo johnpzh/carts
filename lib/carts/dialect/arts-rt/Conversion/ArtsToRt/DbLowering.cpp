@@ -240,6 +240,14 @@ void DbLoweringPass::convertDbAllocOps() {
         continue;
       newOp->setAttr(attr.getName(), attr.getValue());
     }
+    if (auto ownerDims = getPlanOwnerDimsAttr(oldOp))
+      setPlanOwnerDimsAttr(newOp.getOperation(), ownerDims);
+    if (auto blockShape = getPlanPhysicalBlockShapeAttr(oldOp))
+      setPlanPhysicalBlockShapeAttr(newOp.getOperation(), blockShape);
+    if (auto workerSlice = getPlanLogicalWorkerSliceAttr(oldOp))
+      setPlanLogicalWorkerSliceAttr(newOp.getOperation(), workerSlice);
+    if (auto haloShape = getPlanHaloShapeAttr(oldOp))
+      setPlanHaloShapeAttr(newOp.getOperation(), haloShape);
     /// Preserve non-arts distributed ownership marker so ConvertArtsRtToLLVM can
     /// route datablock reservation by node.
     if (hasDistributedDbAllocation(oldOp.getOperation()))

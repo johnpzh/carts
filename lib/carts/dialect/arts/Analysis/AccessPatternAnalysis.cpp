@@ -456,12 +456,16 @@ arts::analyzeAccessBoundsFromIndices(ArrayRef<AccessIndexInfo> accesses,
       continue;
     }
 
-    /// If we couldn't extract a constant offset but the index depends on
-    /// both loopIV and blockBase, it's a variable offset pattern.
-    /// This indicates indirect or complex affine access that we can't
-    /// statically analyze. Mark as variable and return early.
-    if (ValueAnalysis::dependsOn(idxForBounds, loopIV) &&
-        ValueAnalysis::dependsOn(idxForBounds, blockBase)) {
+    /// If the caller selected a specific partition dimension, every
+    /// non-constant access in that dimension must be proven relative to the
+    /// owner loop/base.  A different loop IV in the same dimension is a
+    /// cross-window read, not a zero-halo local slice.
+    int64_t unresolvedConst = 0;
+    bool unresolvedNonConstant =
+        !ValueAnalysis::getConstantIndex(idxForBounds, unresolvedConst);
+    if ((partitionDim && unresolvedNonConstant) ||
+        (ValueAnalysis::dependsOn(idxForBounds, loopIV) &&
+         ValueAnalysis::dependsOn(idxForBounds, blockBase))) {
       bounds.hasVariableOffset = true;
       return bounds;
     }

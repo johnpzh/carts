@@ -11,6 +11,7 @@
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -216,6 +217,13 @@ inline bool isOwnerDependentIndex(Value index,
     return true;
 
   Value normalized = ::mlir::carts::ValueAnalysis::stripNumericCasts(index);
+  if (auto blockArg = dyn_cast<BlockArgument>(normalized)) {
+    auto loop =
+        dyn_cast_or_null<scf::ForOp>(blockArg.getOwner()->getParentOp());
+    if (loop && loop.getInductionVar() == normalized)
+      return isOwnerDependentIndex(loop.getLowerBound(), ownerIndexValues) ||
+             isOwnerDependentIndex(loop.getUpperBound(), ownerIndexValues);
+  }
   for (Value ownerIndex : ownerIndexValues)
     if (::mlir::carts::ValueAnalysis::dependsOn(normalized, ownerIndex))
       return true;
@@ -227,7 +235,7 @@ collectExactOwnerIndexedPhysicalDims(OperandRange indices,
                                      ArrayRef<Value> ownerIndexValues) {
   SmallVector<int64_t, 4> ownerPhysicalDims;
   for (auto [idx, index] : llvm::enumerate(indices))
-    if (isExactOwnerIndex(index, ownerIndexValues))
+    if (isOwnerDependentIndex(index, ownerIndexValues))
       ownerPhysicalDims.push_back(static_cast<int64_t>(idx));
   return ownerPhysicalDims;
 }

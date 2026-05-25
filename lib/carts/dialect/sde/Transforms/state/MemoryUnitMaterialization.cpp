@@ -5,7 +5,9 @@
 ///==========================================================================///
 
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
+#include "carts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
+#include "carts/utils/ArrayAttrUtils.h"
 namespace mlir::carts::sde {
 #define GEN_PASS_DEF_MEMORYUNITMATERIALIZATION
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
@@ -43,8 +45,68 @@ static bool isMuMaterializableAllocation(Value root) {
   return false;
 }
 
+static bool isPrivateAllocationForSchedulingUnit(Value root,
+                                                 sde::SdeSuIterateOp op) {
+  if (!root || !op)
+    return false;
+  Operation *def = root.getDefiningOp();
+  if (!isa_and_nonnull<memref::AllocOp, memref::AllocaOp>(def))
+    return false;
+
+  bool sawUse = false;
+  for (Operation *user : root.getUsers()) {
+    if (user == def)
+      continue;
+    sawUse = true;
+    if (!op->isAncestor(user))
+      return false;
+  }
+  return sawUse;
+}
+
 static bool hasPhysicalOwnerSlicePlan(sde::SdeSuIterateOp op) {
   return op.getPhysicalBlockShapeAttr() || op.getPhysicalOwnerDimsAttr();
+}
+
+static bool hasSameI64Values(ArrayAttr attr, ArrayRef<int64_t> values) {
+  std::optional<SmallVector<int64_t, 4>> attrValues = readI64ArrayAttr(attr);
+  return attrValues && ArrayRef<int64_t>(*attrValues) == values;
+}
+
+static std::optional<sde::LoopIndexedOutputPlan>
+getUnclassifiedOutputOnlyOwnerSlicePlan(sde::SdeSuIterateOp op) {
+  if (!op || !hasPhysicalOwnerSlicePlan(op) ||
+      op.getStructuredClassificationAttr())
+    return std::nullopt;
+
+  std::optional<sde::LoopIndexedOutputPlan> outputPlan =
+      sde::findConsistentLoopIndexedOutputPlanWithOwnerDims(op);
+  if (!outputPlan || outputPlan->ownerPhysicalDims.empty())
+    return std::nullopt;
+  if (!hasSameI64Values(op.getPhysicalOwnerDimsAttr(),
+                        outputPlan->ownerPhysicalDims))
+    return std::nullopt;
+
+  sde::StructuredMemoryEffectSummary effects =
+      sde::collectStructuredMemoryEffects(op.getBody());
+  if (effects.hasUnknownEffects || effects.writes.empty())
+    return std::nullopt;
+
+  for (Value read : effects.reads) {
+    if (sde::isDefinedInside(op.getOperation(), read))
+      continue;
+    if (!effects.writes.contains(read))
+      return std::nullopt;
+  }
+
+  for (Value written : effects.writes) {
+    if (sde::isDefinedInside(op.getOperation(), written))
+      continue;
+    if (effects.reads.contains(written))
+      return std::nullopt;
+  }
+
+  return outputPlan;
 }
 
 static bool canMaterializePlannedOwnerSlices(sde::SdeSuIterateOp op) {
@@ -53,7 +115,7 @@ static bool canMaterializePlannedOwnerSlices(sde::SdeSuIterateOp op) {
 
   auto classification = op.getStructuredClassification();
   if (!classification)
-    return false;
+    return getUnclassifiedOutputOnlyOwnerSlicePlan(op).has_value();
 
   switch (*classification) {
   case sde::SdeStructuredClassification::matmul:
@@ -62,7 +124,8 @@ static bool canMaterializePlannedOwnerSlices(sde::SdeSuIterateOp op) {
   case sde::SdeStructuredClassification::stencil:
     return true;
   case sde::SdeStructuredClassification::reduction:
-    return false;
+    return op.getReductionAccumulators().empty() &&
+           sde::findLoopIndexedOutputPlan(op).has_value();
   }
   return false;
 }
@@ -85,9 +148,15 @@ static void collectSchedulingUnitMemrefRoots(sde::SdeSuIterateOp op,
   if (!op || !canMaterializePlannedOwnerSlices(op))
     return;
 
+  bool collectWritesOnly =
+      !op.getStructuredClassificationAttr() &&
+      getUnclassifiedOutputOnlyOwnerSlicePlan(op).has_value();
+
   op.getBody().walk([&](Operation *nested) {
     Value memref;
     if (auto load = dyn_cast<memref::LoadOp>(nested)) {
+      if (collectWritesOnly)
+        return;
       if (isa<MemRefType>(load.getResult().getType()))
         return;
       memref = load.getMemref();
@@ -101,6 +170,8 @@ static void collectSchedulingUnitMemrefRoots(sde::SdeSuIterateOp op,
 
     Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(memref);
     if (!root || sde::isDefinedInside(op.getOperation(), root))
+      return;
+    if (isPrivateAllocationForSchedulingUnit(root, op))
       return;
     if (isMuMaterializableAllocation(root))
       roots.insert(root);

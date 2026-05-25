@@ -766,6 +766,9 @@ static inline FailureOr<Value> materializeBlockLocalIndex(OpBuilder &builder,
   }
   if (::mlir::carts::ValueAnalysis::sameValue(index, localOrigin))
     return createZeroIndex(builder, loc);
+  if (auto sub = index.getDefiningOp<arith::SubIOp>())
+    if (::mlir::carts::ValueAnalysis::sameValue(sub.getRhs(), localOrigin))
+      return index;
   if (!indexSelectsOwnerSlice(index, ownerBase))
     return failure();
   return arith::SubIOp::create(builder, loc, index, localOrigin).getResult();
@@ -1263,8 +1266,16 @@ hostBridgeNeedsInitialCopyIn(Operation *anchor,
       participants, [](const HostBridgeParticipant &participant) {
         return codirAccessMayRead(participant.mode);
       });
-  if (!hasReadParticipant)
+  if (!hasReadParticipant) {
+    bool hasUnclassifiedWriter = llvm::any_of(
+        participants, [](HostBridgeParticipant participant) {
+          return codirAccessMayWrite(participant.mode) &&
+                 !participant.codelet.getPatternAttr();
+        });
+    if (hasUnclassifiedWriter)
+      return true;
     return false;
+  }
   if (!anchor)
     return true;
 
@@ -1405,6 +1416,76 @@ static inline bool canHoistHostBridgeAcrossLoop(scf::ForOp loop,
   if (!loop || !codelet || !hostView)
     return false;
   if (containsValue(codelet.getParams(), loop.getInductionVar()))
+    return false;
+
+  arts::DbAllocOp hostAlloc = findBackingDbAlloc(hostView);
+  if (hostAlloc) {
+    bool hasCoarseWriteToHost = false;
+    loop.walk([&](arts::DbAcquireOp acquire) {
+      if (hasCoarseWriteToHost)
+        return WalkResult::interrupt();
+      if (!arts::DbUtils::isWriterMode(acquire.getMode()))
+        return WalkResult::advance();
+      if (acquire.getSourcePtr() != hostAlloc.getPtr())
+        return WalkResult::advance();
+      if (Value sourceGuid = acquire.getSourceGuid();
+          sourceGuid && sourceGuid != hostAlloc.getGuid())
+        return WalkResult::advance();
+      if (acquire.getPartitionModeOr() != arts::PartitionMode::coarse)
+        return WalkResult::advance();
+      hasCoarseWriteToHost = true;
+      return WalkResult::interrupt();
+    });
+    if (hasCoarseWriteToHost)
+      return false;
+  }
+
+  bool hasExistingBridgeWriter = false;
+  loop.walk([&](codir::CodeletOp nestedCodelet) {
+    if (hasExistingBridgeWriter)
+      return WalkResult::interrupt();
+    if (nestedCodelet == codelet)
+      return WalkResult::advance();
+    for (auto [idx, dep] : llvm::enumerate(nestedCodelet.getDeps())) {
+      std::optional<codir::CodirAccessMode> mode =
+          getCodirDepAccessMode(nestedCodelet, static_cast<unsigned>(idx));
+      if (!mode || !codirAccessMayWrite(*mode))
+        continue;
+      arts::DbAllocOp alloc = findBackingDbAlloc(dep);
+      if (!alloc || !alloc->hasAttr("arts.storage_bridge"))
+        continue;
+      hasExistingBridgeWriter = true;
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  if (hasExistingBridgeWriter)
+    return false;
+
+  Value hostRoot = stripCodirViewOps(hostView);
+  bool hasPotentialSameRootWriter = false;
+  loop.walk([&](codir::CodeletOp nestedCodelet) {
+    if (hasPotentialSameRootWriter)
+      return WalkResult::interrupt();
+    if (nestedCodelet == codelet)
+      return WalkResult::advance();
+    for (auto [idx, dep] : llvm::enumerate(nestedCodelet.getDeps())) {
+      if (stripCodirViewOps(dep) != hostRoot)
+        continue;
+      std::optional<codir::CodirStorageViewKind> view =
+          getCodirDepStorageViewKind(nestedCodelet, static_cast<unsigned>(idx));
+      if (!view || !codirStorageViewUsesComputeBlock(*view))
+        continue;
+      std::optional<codir::CodirAccessMode> mode =
+          getCodirDepAccessMode(nestedCodelet, static_cast<unsigned>(idx));
+      if (!mode || !codirAccessMayWrite(*mode))
+        continue;
+      hasPotentialSameRootWriter = true;
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  if (hasPotentialSameRootWriter)
     return false;
 
   Region &loopRegion = loop.getRegion();

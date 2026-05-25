@@ -20,6 +20,7 @@ namespace mlir::carts::sde {
 #include "carts/dialect/sde/Utils/SDECostModel.h"
 #include "carts/utils/ArrayAttrUtils.h"
 #include "carts/utils/LoopUtils.h"
+#include "carts/utils/ValueAnalysis.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -178,6 +179,136 @@ static bool buildOwnerDimPlan(const sde::LoopIndexedOutputPlan &outputPlan,
   return true;
 }
 
+static SmallVector<Value, 4>
+collectAllSuLoopIndexValues(sde::SdeSuIterateOp op) {
+  SmallVector<Value, 4> ownerIndexValues;
+  if (!op || op.getBody().empty())
+    return ownerIndexValues;
+  auto ivs = op.getLoopInductionVars();
+  if (!ivs)
+    return ownerIndexValues;
+  ownerIndexValues.append(ivs->begin(), ivs->end());
+  return ownerIndexValues;
+}
+
+static bool allRootAccessesStayWithinOwnerTile(
+    sde::SdeSuIterateOp op, Value root, ArrayRef<int64_t> ownerDims) {
+  if (!op || !root || ownerDims.empty())
+    return false;
+
+  SmallVector<Value, 4> ownerIndexValues = collectAllSuLoopIndexValues(op);
+  if (ownerIndexValues.empty())
+    return false;
+
+  bool sawRootAccess = false;
+  auto checkIndices = [&](Value memref, OperandRange indices) {
+    Value base = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(memref);
+    if (base != root)
+      return WalkResult::advance();
+
+    sawRootAccess = true;
+    auto memRefType = dyn_cast<MemRefType>(base.getType());
+    if (!memRefType || memRefType.getRank() == 0 || indices.empty())
+      return WalkResult::interrupt();
+    for (int64_t rawDim : ownerDims) {
+      if (rawDim < 0 || static_cast<size_t>(rawDim) >= indices.size())
+        return WalkResult::interrupt();
+      if (!sde::isOwnerDependentIndex(indices[rawDim], ownerIndexValues))
+        return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  };
+
+  WalkResult result = op.getBody().walk([&](Operation *nested) {
+    if (auto loadOp = dyn_cast<memref::LoadOp>(nested)) {
+      if (isa<MemRefType>(loadOp.getResult().getType()))
+        return WalkResult::advance();
+      return checkIndices(loadOp.getMemref(), loadOp.getIndices());
+    }
+    if (auto storeOp = dyn_cast<memref::StoreOp>(nested)) {
+      if (isa<MemRefType>(storeOp.getValueToStore().getType()))
+        return WalkResult::advance();
+      return checkIndices(storeOp.getMemref(), storeOp.getIndices());
+    }
+    return WalkResult::advance();
+  });
+
+  return !result.wasInterrupted() && sawRootAccess;
+}
+
+static std::optional<sde::LoopIndexedOutputPlan>
+findConsistentMultiOwnerOutputPlan(sde::SdeSuIterateOp op) {
+  if (!op || op.getBody().empty())
+    return std::nullopt;
+
+  SmallVector<Value, 4> ownerIndexValues = collectAllSuLoopIndexValues(op);
+  if (ownerIndexValues.size() < 2)
+    return std::nullopt;
+
+  Block *computeBlock = sde::getSuIterateComputeBlock(op);
+  if (!computeBlock)
+    return std::nullopt;
+
+  bool rejected = false;
+  std::optional<sde::LoopIndexedOutputPlan> selectedPlan;
+  auto visitStore = [&](memref::StoreOp storeOp) {
+    Value base =
+        ::mlir::carts::ValueAnalysis::stripMemrefViewOps(storeOp.getMemref());
+    if (sde::isDefinedInside(op.getOperation(), base))
+      return WalkResult::advance();
+
+    auto memRefType = dyn_cast<MemRefType>(base.getType());
+    if (!memRefType || memRefType.getRank() == 0 ||
+        storeOp.getIndices().empty()) {
+      rejected = true;
+      return WalkResult::interrupt();
+    }
+
+    SmallVector<int64_t, 4> ownerPhysicalDims =
+        sde::collectExactOwnerIndexedPhysicalDims(storeOp.getIndices(),
+                                                  ownerIndexValues);
+    if (ownerPhysicalDims.size() < 2) {
+      rejected = true;
+      return WalkResult::interrupt();
+    }
+
+    SmallVector<int64_t, 4> shape;
+    shape.reserve(memRefType.getRank());
+    for (int64_t dim : memRefType.getShape()) {
+      if (dim == ShapedType::kDynamic) {
+        rejected = true;
+        return WalkResult::interrupt();
+      }
+      shape.push_back(dim);
+    }
+
+    sde::LoopIndexedOutputPlan candidate{base, std::move(shape),
+                                         std::move(ownerPhysicalDims)};
+    if (!selectedPlan) {
+      selectedPlan = std::move(candidate);
+      return WalkResult::advance();
+    }
+
+    if (candidate.root != selectedPlan->root ||
+        candidate.shape != selectedPlan->shape ||
+        candidate.ownerPhysicalDims != selectedPlan->ownerPhysicalDims) {
+      rejected = true;
+      return WalkResult::interrupt();
+    }
+
+    return WalkResult::advance();
+  };
+
+  for (Operation &nested : computeBlock->without_terminator()) {
+    if (nested.walk(visitStore).wasInterrupted())
+      break;
+  }
+
+  if (rejected)
+    return std::nullopt;
+  return selectedPlan;
+}
+
 static void applyPhysicalPlan(sde::SdeSuIterateOp op,
                               ArrayRef<int64_t> ownerDims,
                               ArrayRef<int64_t> physicalBlockShape,
@@ -193,6 +324,40 @@ static void applyPhysicalPlan(sde::SdeSuIterateOp op,
       op.getContext(), ownerDims.size() > 1
                            ? sde::SdeIterationTopology::owner_tile
                            : sde::SdeIterationTopology::owner_strip));
+}
+
+static std::optional<int64_t> getPositiveConstantIndex(Value value) {
+  int64_t constant = 0;
+  if (::mlir::carts::ValueAnalysis::getConstantIndex(value, constant) &&
+      constant > 0)
+    return constant;
+  std::optional<int64_t> folded =
+      ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(value);
+  if (folded && *folded > 0)
+    return folded;
+  return std::nullopt;
+}
+
+static void alignLateOwnerPlanToExistingStep(
+    sde::SdeSuIterateOp op, ArrayRef<int64_t> ownerDims,
+    MutableArrayRef<int64_t> physicalBlockShape) {
+  if (ownerDims.size() != 1 || op.getSteps().empty())
+    return;
+
+  int64_t ownerPhysicalDim = ownerDims.front();
+  if (ownerPhysicalDim < 0 ||
+      static_cast<size_t>(ownerPhysicalDim) >= physicalBlockShape.size())
+    return;
+
+  std::optional<int64_t> ownerStep = getPositiveConstantIndex(op.getSteps()[0]);
+  if (!ownerStep || *ownerStep <= physicalBlockShape[ownerPhysicalDim])
+    return;
+
+  // DistributionPlanning runs after SDE loop tiling. When it authors a physical
+  // owner plan late, the DB block for the owner dimension must cover the
+  // already-existing owner-loop step; otherwise a single EDT can index across
+  // multiple physical DB blocks after acquiring only one dependency.
+  physicalBlockShape[ownerPhysicalDim] = *ownerStep;
 }
 
 static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
@@ -280,6 +445,7 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
   if (!buildOwnerDimPlan(*secondaryPlan, workers, ownerDims,
                          physicalBlockShape))
     return;
+  alignLateOwnerPlanToExistingStep(op, ownerDims, physicalBlockShape);
   applyPhysicalPlan(op, ownerDims, physicalBlockShape);
 }
 
@@ -299,22 +465,79 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
   }
   std::optional<sde::LoopIndexedOutputPlan> outputPlan =
       sde::findLoopIndexedOutputPlan(op);
+  bool usedConsistentOwnerFallback = false;
+  if (!outputPlan) {
+    if (classification &&
+        *classification != sde::SdeStructuredClassification::elementwise &&
+        *classification !=
+            sde::SdeStructuredClassification::elementwise_pipeline)
+      return;
+    outputPlan = sde::findConsistentLoopIndexedOutputPlanWithOwnerDims(op);
+    if (outputPlan && outputPlan->ownerPhysicalDims.size() != 1)
+      outputPlan.reset();
+    usedConsistentOwnerFallback = outputPlan.has_value();
+  }
   if (!outputPlan || outputPlan->shape.empty() ||
-      outputPlan->shape.front() <= 0)
+      outputPlan->ownerPhysicalDims.empty())
     return;
-  if (!classification) {
+
+  if (classification &&
+      (*classification == sde::SdeStructuredClassification::elementwise ||
+       *classification ==
+           sde::SdeStructuredClassification::elementwise_pipeline)) {
+    std::optional<sde::LoopIndexedOutputPlan> multiOwnerPlan =
+        findConsistentMultiOwnerOutputPlan(op);
+    if (multiOwnerPlan && multiOwnerPlan->ownerPhysicalDims.size() == 2 &&
+        op.getLowerBounds().size() >= 2 && op.getUpperBounds().size() >= 2 &&
+        op.getSteps().size() >= 2) {
+      auto effects = sde::collectStructuredMemoryEffects(op.getBody());
+      if (!effects.hasUnknownEffects) {
+        bool ownerLocal = true;
+        for (Value written : effects.writes) {
+          if (sde::isDefinedInside(op.getOperation(), written))
+            continue;
+          if (!effects.reads.contains(written))
+            continue;
+          if (!allRootAccessesStayWithinOwnerTile(
+                  op, written, multiOwnerPlan->ownerPhysicalDims)) {
+            ownerLocal = false;
+            break;
+          }
+        }
+        if (ownerLocal) {
+          SmallVector<int64_t, 4> ownerDims;
+          SmallVector<int64_t, 4> physicalBlockShape;
+          int64_t workers =
+              std::max<int64_t>(1, getInterLocalityTargetWorkers(costModel));
+          if (buildOwnerDimPlan(*multiOwnerPlan, workers, ownerDims,
+                                physicalBlockShape)) {
+            applyPhysicalPlan(op, ownerDims, physicalBlockShape);
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  int64_t ownerPhysicalDim = outputPlan->ownerPhysicalDims.front();
+  if (ownerPhysicalDim < 0 ||
+      static_cast<size_t>(ownerPhysicalDim) >= outputPlan->shape.size() ||
+      outputPlan->shape[ownerPhysicalDim] <= 0)
+    return;
+  if (!classification || usedConsistentOwnerFallback) {
     auto effects = sde::collectStructuredMemoryEffects(op.getBody());
     bool selfRead = effects.reads.contains(outputPlan->root);
     bool ownerLocalSelfRead =
         selfRead &&
-        sde::allRootAccessesStayWithinOwnerSlice(op, outputPlan->root);
+        sde::allRootAccessesStayWithinOwnerSlice(
+            op, outputPlan->root, outputPlan->ownerPhysicalDims);
     if (effects.hasUnknownEffects || (selfRead && !ownerLocalSelfRead))
       return;
   }
 
   int64_t workers =
       std::max<int64_t>(1, getInterLocalityTargetWorkers(costModel));
-  if (outputPlan->shape.front() >= workers * 4LL * 1024LL * 1024LL)
+  if (outputPlan->shape[ownerPhysicalDim] >= workers * 4LL * 1024LL * 1024LL)
     workers *= 2;
   SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
   bool ownerLocalPipeline =
@@ -326,17 +549,19 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
           ? 1
           : std::max<int64_t>(1, costModel.getMinIterationsPerWorker());
   int64_t balancedOwnerIterations =
-      sde::ceilDivPositive(outputPlan->shape.front(), workers);
-  physicalBlockShape.front() =
+      sde::ceilDivPositive(outputPlan->shape[ownerPhysicalDim], workers);
+  physicalBlockShape[ownerPhysicalDim] =
       std::clamp(std::max(balancedOwnerIterations, minOwnerIterations),
-                 int64_t{1}, outputPlan->shape.front());
+                 int64_t{1}, outputPlan->shape[ownerPhysicalDim]);
+  alignLateOwnerPlanToExistingStep(op, outputPlan->ownerPhysicalDims,
+                                   physicalBlockShape);
 
   if (!classification)
     op.setStructuredClassificationAttr(
         sde::SdeStructuredClassificationAttr::get(
             op.getContext(), sde::SdeStructuredClassification::elementwise));
   op.setPhysicalOwnerDimsAttr(
-      buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{0}));
+      buildI64ArrayAttr(op.getContext(), outputPlan->ownerPhysicalDims));
   op.setPhysicalBlockShapeAttr(
       buildI64ArrayAttr(op.getContext(), physicalBlockShape));
   op.setLogicalWorkerSliceAttr(
@@ -390,8 +615,8 @@ static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
 
 static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
                                         sde::SDECostModel &costModel) {
-  if (op.getLogicalWorkerSliceAttr() ||
-      costModel.getLogicalWorkerCapacity() <= 1)
+  if (op.getLogicalWorkerSliceAttr() &&
+      (op.getPhysicalOwnerDimsAttr() || op.getPhysicalBlockShapeAttr()))
     return;
   auto classification = op.getStructuredClassification();
   if (!classification ||
@@ -417,12 +642,21 @@ static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
     if (outputPlan && !outputPlan->ownerPhysicalDims.empty() &&
         !outputPlan->shape.empty()) {
       SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
-      for (int64_t rawDim : outputPlan->ownerPhysicalDims) {
+      if (auto logicalSlice = readI64ArrayAttr(op.getLogicalWorkerSliceAttr());
+          logicalSlice && logicalSlice->size() == physicalBlockShape.size()) {
+        physicalBlockShape.assign(logicalSlice->begin(), logicalSlice->end());
+      } else {
+        for (int64_t rawDim : outputPlan->ownerPhysicalDims) {
+          if (rawDim < 0 ||
+              static_cast<size_t>(rawDim) >= physicalBlockShape.size())
+            return;
+          physicalBlockShape[rawDim] = slice;
+        }
+      }
+      for (int64_t rawDim : outputPlan->ownerPhysicalDims)
         if (rawDim < 0 ||
             static_cast<size_t>(rawDim) >= physicalBlockShape.size())
           return;
-        physicalBlockShape[rawDim] = slice;
-      }
       op.setPhysicalOwnerDimsAttr(
           buildI64ArrayAttr(op.getContext(), outputPlan->ownerPhysicalDims));
       op.setPhysicalBlockShapeAttr(

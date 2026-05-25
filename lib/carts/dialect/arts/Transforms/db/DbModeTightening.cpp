@@ -543,8 +543,16 @@ bool DbModeTighteningPass::adjustDbModes() {
           hasLoads && hasStores &&
           loadsAreSatisfiedByDominatingStores(acqNode, func);
 
+      ArtsMode originalMode = acqOp.getMode();
       ArtsMode newMode = ArtsMode::in;
-      if (hasStores && (!hasLoads || loadsCoveredByLocalStores))
+      if (originalMode == ArtsMode::out && hasStores) {
+        // An explicit out dependency is a scheduling contract established
+        // before later pointer/db-ref rewrites obscure the original structured
+        // memory facts. Do not widen it back to inout from conservative local
+        // access rediscovery; in-place/read-modify-write codelets enter this
+        // pass as readwrite/inout instead.
+        newMode = ArtsMode::out;
+      } else if (hasStores && (!hasLoads || loadsCoveredByLocalStores))
         newMode = ArtsMode::out;
       else if (hasLoads && hasStores)
         newMode = ArtsMode::inout;

@@ -1,5 +1,5 @@
 // RUN: %carts-compile %s --pass-pipeline='builtin.module(verify-codir,storage-planning,convert-codir-to-arts)' \
-// RUN:   --arts-config %inputs_dir/arts_multinode_8x64.cfg | %FileCheck %s --check-prefixes=CHECK,WRITE,WRITEFIRST,HOIST,SHARED,READONLY,PERSIST
+// RUN:   --arts-config %inputs_dir/arts_multinode_8x64.cfg | %FileCheck %s --check-prefixes=CHECK,WRITE,WRITEFIRST,HOIST,SHARED,READONLY,PERSIST,INCOMPAT
 
 // Storage planning turns an owner-local compute_block request into an explicit
 // phase_redistributed contract when host code still needs the original whole
@@ -236,11 +236,11 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
     %c2 = arith.constant 2 : index
     %c8 = arith.constant 8 : index
     %c18 = arith.constant 18 : index
-    %A = memref.alloc() : memref<18x4xf32>
+    %A = memref.alloc() : memref<131072x4xf32>
     %B = memref.alloc() : memref<18xf32>
     scf.for %rep = %c0 to %c2 step %c1 {
       scf.for %i = %c0 to %c18 step %c8 {
-        codir.codelet deps(%A, %B : memref<18x4xf32>, memref<18xf32>) params(%i : index)
+        codir.codelet deps(%A, %B : memref<131072x4xf32>, memref<18xf32>) params(%i : index)
             attributes {dep_modes = [#codir.access_mode<read>, #codir.access_mode<write>],
                         dep_storage_views = [#codir.storage_view<compute_block>, #codir.storage_view<host_whole>],
                         distribution_kind = #codir.distribution_kind<blocked>,
@@ -249,15 +249,15 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
                         pattern = #codir.pattern<uniform>,
                         tile_owner_dims = [0],
                         tile_shape = [8, 4]} {
-        ^bb0(%arg0: memref<18x4xf32>, %arg1: memref<18xf32>, %base: index):
+        ^bb0(%arg0: memref<131072x4xf32>, %arg1: memref<18xf32>, %base: index):
           %inner_c0 = arith.constant 0 : index
-          %value = memref.load %arg0[%base, %inner_c0] : memref<18x4xf32>
+          %value = memref.load %arg0[%base, %inner_c0] : memref<131072x4xf32>
           memref.store %value, %arg1[%base] : memref<18xf32>
           codir.yield
         }
       }
       scf.for %j = %c0 to %c18 step %c8 {
-        codir.codelet deps(%A, %B : memref<18x4xf32>, memref<18xf32>) params(%j : index)
+        codir.codelet deps(%A, %B : memref<131072x4xf32>, memref<18xf32>) params(%j : index)
             attributes {dep_modes = [#codir.access_mode<read>, #codir.access_mode<write>],
                         dep_storage_views = [#codir.storage_view<host_whole>, #codir.storage_view<host_whole>],
                         distribution_kind = #codir.distribution_kind<blocked>,
@@ -266,18 +266,18 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
                         pattern = #codir.pattern<uniform>,
                         tile_owner_dims = [0],
                         tile_shape = [8, 4]} {
-        ^bb0(%arg0: memref<18x4xf32>, %arg1: memref<18xf32>, %base: index):
+        ^bb0(%arg0: memref<131072x4xf32>, %arg1: memref<18xf32>, %base: index):
           %inner_c0 = arith.constant 0 : index
-          %value = memref.load %arg0[%base, %inner_c0] : memref<18x4xf32>
+          %value = memref.load %arg0[%base, %inner_c0] : memref<131072x4xf32>
           memref.store %value, %arg1[%base] : memref<18xf32>
           codir.yield
         }
       }
     }
-    %result = memref.load %A[%c0, %c0] : memref<18x4xf32>
+    %result = memref.load %A[%c0, %c0] : memref<131072x4xf32>
     func.call @use(%result) : (f32) -> ()
     memref.dealloc %B : memref<18xf32>
-    memref.dealloc %A : memref<18x4xf32>
+    memref.dealloc %A : memref<131072x4xf32>
     return
   }
 
@@ -367,6 +367,59 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
     memref.dealloc %C : memref<18xf32>
     memref.dealloc %B : memref<18xf32>
     memref.dealloc %A : memref<18x4xf32>
+    return
+  }
+
+  func.func @incompatible_bridge_plan_copyin_stays_inside_repetition() {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c2 = arith.constant 2 : index
+    %c8 = arith.constant 8 : index
+    %c18 = arith.constant 18 : index
+    %A = memref.alloc() : memref<131072xf32>
+    scf.for %rep = %c0 to %c2 step %c1 {
+      scf.for %i = %c0 to %c18 step %c8 {
+        codir.codelet deps(%A : memref<131072xf32>) params(%i : index)
+            attributes {dep_modes = [#codir.access_mode<readwrite>],
+                        dep_storage_views = [#codir.storage_view<compute_block>],
+                        distribution_kind = #codir.distribution_kind<blocked>,
+                        iteration_topology = #codir.iteration_topology<owner_strip>,
+                        logical_worker_slice = [8],
+                        pattern = #codir.pattern<uniform>,
+                        tile_owner_dims = [0],
+                        tile_shape = [8]} {
+        ^bb0(%arg0: memref<131072xf32>, %base: index):
+          %inner_c1 = arith.constant 1 : index
+          %inner_c8 = arith.constant 8 : index
+          %inner_c18 = arith.constant 18 : index
+          %inner_cst = arith.constant 1.000000e+00 : f32
+          %end_raw = arith.addi %base, %inner_c8 : index
+          %end = arith.minui %end_raw, %inner_c18 : index
+          scf.for %row = %base to %end step %inner_c1 {
+            memref.store %inner_cst, %arg0[%row] : memref<131072xf32>
+          }
+          codir.yield
+        }
+      }
+      scf.for %j = %c0 to %c18 step %c18 {
+        codir.codelet deps(%A : memref<131072xf32>) params(%j : index)
+            attributes {dep_modes = [#codir.access_mode<read>],
+                        dep_storage_views = [#codir.storage_view<compute_block>],
+                        distribution_kind = #codir.distribution_kind<blocked>,
+                        iteration_topology = #codir.iteration_topology<owner_strip>,
+                        logical_worker_slice = [18],
+                        pattern = #codir.pattern<uniform>,
+                        tile_owner_dims = [0],
+                        tile_shape = [18]} {
+        ^bb0(%arg0: memref<131072xf32>, %base: index):
+          %value = memref.load %arg0[%base] : memref<131072xf32>
+          codir.yield
+        }
+      }
+    }
+    %result = memref.load %A[%c0] : memref<131072xf32>
+    func.call @use(%result) : (f32) -> ()
+    memref.dealloc %A : memref<131072xf32>
     return
   }
 }
@@ -475,3 +528,18 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // PERSIST: arts.edt <task> <intranode>
 // PERSIST: arts.barrier
 // PERSIST: memref.load %[[HOST]]
+
+// INCOMPAT-LABEL: func.func @incompatible_bridge_plan_copyin_stays_inside_repetition
+// INCOMPAT: scf.for
+// INCOMPAT: arts.edt <task> <internode>
+// INCOMPAT: arts.barrier
+// INCOMPAT: arts.edt <task> <intranode>
+// INCOMPAT: arts.barrier
+// INCOMPAT: arts.db_alloc
+// INCOMPAT-SAME: arts.storage_bridge = "host_whole_to_compute_block"
+// INCOMPAT: arts.db_acquire[<in>]
+// INCOMPAT-SAME: partitioning(<coarse>)
+// INCOMPAT: arts.db_acquire[<out>]
+// INCOMPAT-SAME: partitioning(<block>)
+// INCOMPAT: arts.edt <task> <intranode>
+// INCOMPAT: arts.edt <task> <internode>
