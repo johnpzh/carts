@@ -10,6 +10,8 @@
 #include "carts/utils/ArrayAttrUtils.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/IRMapping.h"
+#include "llvm/Support/MathExtras.h"
+#include <algorithm>
 
 namespace mlir::carts::sde {
 #define GEN_PASS_DEF_PATTERNANALYSIS
@@ -142,40 +144,82 @@ static bool hasSingleExternalWriteRoot(sde::SdeSuIterateOp op,
   return selectedRoot != nullptr;
 }
 
-static scf::ForOp findSinglePromotableInnerFor(Block *computeBlock) {
-  if (!computeBlock)
-    return nullptr;
-
-  scf::ForOp innerFor;
-  bool seenInnerFor = false;
-  bool sawUnsupportedSibling = false;
-  for (Operation &op : computeBlock->without_terminator()) {
-    if (auto forOp = dyn_cast<scf::ForOp>(op)) {
-      if (seenInnerFor) {
-        sawUnsupportedSibling = true;
-        break;
-      }
-      innerFor = forOp;
-      seenInnerFor = true;
-      continue;
-    }
-
-    if (seenInnerFor || !isMemoryEffectFree(&op)) {
-      sawUnsupportedSibling = true;
-      break;
-    }
-  }
-
-  if (sawUnsupportedSibling)
-    return nullptr;
-  return innerFor;
+static std::optional<int64_t> getStaticTripCount(Value lowerBound,
+                                                 Value upperBound,
+                                                 Value step) {
+  int64_t lb = 0;
+  int64_t ub = 0;
+  int64_t stride = 0;
+  if (!::mlir::carts::ValueAnalysis::getConstantIndex(lowerBound, lb) ||
+      !::mlir::carts::ValueAnalysis::getConstantIndex(upperBound, ub) ||
+      !::mlir::carts::ValueAnalysis::getConstantIndex(step, stride) ||
+      stride <= 0)
+    return std::nullopt;
+  return llvm::divideCeil(std::max<int64_t>(0, ub - lb), stride);
 }
 
-static bool isSafeRank2OutOfPlaceStencilPromotion(
+static bool hasBoundedPromotedIterationVolume(
+    sde::SdeSuIterateOp op, ArrayRef<scf::ForOp> innerForChain) {
+  constexpr int64_t kMaxPromotedStaticIterations = 32LL * 1024LL * 1024LL;
+  std::optional<int64_t> outerTrip =
+      getStaticTripCount(op.getLowerBounds().front(),
+                         op.getUpperBounds().front(), op.getSteps().front());
+  if (!outerTrip)
+    return false;
+
+  int64_t volume = std::max<int64_t>(1, *outerTrip);
+  for (scf::ForOp innerFor : innerForChain) {
+    std::optional<int64_t> trip = getStaticTripCount(
+        innerFor.getLowerBound(), innerFor.getUpperBound(), innerFor.getStep());
+    if (!trip)
+      return false;
+    int64_t safeTrip = std::max<int64_t>(1, *trip);
+    if (volume > kMaxPromotedStaticIterations / safeTrip)
+      return false;
+    volume *= safeTrip;
+  }
+  return volume <= kMaxPromotedStaticIterations;
+}
+
+static SmallVector<scf::ForOp, 4>
+findPromotableInnerForChain(Block *computeBlock) {
+  SmallVector<scf::ForOp, 4> chain;
+  if (!computeBlock)
+    return chain;
+
+  Block *current = computeBlock;
+  while (current) {
+    scf::ForOp nestedFor;
+    for (Operation &op : current->without_terminator()) {
+      if (auto forOp = dyn_cast<scf::ForOp>(op)) {
+        if (nestedFor)
+          return {};
+        nestedFor = forOp;
+      }
+    }
+    if (!nestedFor)
+      return chain;
+
+    for (Operation &op : current->without_terminator()) {
+      if (&op == nestedFor.getOperation())
+        continue;
+      if (!op.isBeforeInBlock(nestedFor.getOperation()) ||
+          !isMemoryEffectFree(&op))
+        return {};
+    }
+
+    chain.push_back(nestedFor);
+    current = nestedFor.getBody();
+  }
+
+  return chain;
+}
+
+static bool isSafeOutOfPlaceStencilPromotion(
     sde::SdeSuIterateOp op, const sde::StructuredLoopSummary &summary,
     const sde::StructuredNeighborhoodInfo &neighborhood,
-    scf::ForOp innerFor) {
-  if (!op || !innerFor)
+    ArrayRef<scf::ForOp> innerForChain) {
+  if (!op || innerForChain.empty())
     return false;
   if (op.getLowerBounds().size() != 1 || op.getUpperBounds().size() != 1 ||
       op.getSteps().size() != 1)
@@ -185,14 +229,24 @@ static bool isSafeRank2OutOfPlaceStencilPromotion(
     return false;
   if (summary.classification != sde::SdeStructuredClassification::stencil)
     return false;
-  if (summary.nest.ivs.size() != 2 || summary.iterTypes.size() != 2)
+  unsigned promotedRank = 1 + innerForChain.size();
+  if (summary.nest.ivs.size() != promotedRank ||
+      summary.iterTypes.size() != promotedRank)
+    return false;
+  // Rank-3+ promotion is valuable for compact kernels, but on very large
+  // static domains the resulting tiled 3D loop nest can make LLVM backend
+  // optimization dominate benchmark build time. Keep large production stencils
+  // on the existing owner-strip path until CODIR/ARTS can represent nested
+  // owner dimensions without cloning them into SDE loop structure.
+  if (promotedRank > 2 &&
+      !hasBoundedPromotedIterationVolume(op, innerForChain))
     return false;
   if (!llvm::all_of(summary.iterTypes, [](utils::IteratorType iteratorType) {
         return iteratorType == utils::IteratorType::parallel;
       }))
     return false;
-  if (neighborhood.ownerDims.size() != 2 ||
-      neighborhood.spatialDims.size() < 2 ||
+  if (neighborhood.ownerDims.size() != promotedRank ||
+      neighborhood.spatialDims.size() < promotedRank ||
       !hasNonZeroHaloOnAllOwnerDims(neighborhood))
     return false;
   if (!sde::findCompatibleOutputLayoutPlan(summary))
@@ -213,20 +267,24 @@ static bool isSafeRank2OutOfPlaceStencilPromotion(
     if (!cuRegion.getIterArgs().empty() || cuRegion.getNumResults() != 0)
       return false;
 
-  if (!innerFor.getInitArgs().empty() || innerFor.getNumResults() != 0)
-    return false;
   Value outerIv = op.getBody().front().getArgument(0);
-  if (::mlir::carts::ValueAnalysis::dependsOn(innerFor.getLowerBound(), outerIv) ||
-      ::mlir::carts::ValueAnalysis::dependsOn(innerFor.getUpperBound(), outerIv) ||
-      ::mlir::carts::ValueAnalysis::dependsOn(innerFor.getStep(), outerIv))
-    return false;
+  SmallVector<Value, 4> previousIvs{outerIv};
+  for (scf::ForOp innerFor : innerForChain) {
+    if (!innerFor.getInitArgs().empty() || innerFor.getNumResults() != 0)
+      return false;
+    for (Value previousIv : previousIvs) {
+      if (::mlir::carts::ValueAnalysis::dependsOn(innerFor.getLowerBound(),
+                                                  previousIv) ||
+          ::mlir::carts::ValueAnalysis::dependsOn(innerFor.getUpperBound(),
+                                                  previousIv) ||
+          ::mlir::carts::ValueAnalysis::dependsOn(innerFor.getStep(),
+                                                  previousIv))
+        return false;
+    }
+    previousIvs.push_back(innerFor.getInductionVar());
+  }
 
-  bool nestedLoop = false;
-  innerFor.getBody()->walk([&](scf::ForOp nested) {
-    if (nested != innerFor)
-      nestedLoop = true;
-  });
-  return !nestedLoop;
+  return true;
 }
 
 static void removeStaleShapePlanAttrs(sde::SdeSuIterateOp op) {
@@ -238,15 +296,33 @@ static void removeStaleShapePlanAttrs(sde::SdeSuIterateOp op) {
   op.removeDistributionKindAttr();
 }
 
-static sde::SdeSuIterateOp promoteRank2OutOfPlaceStencilOwnerLoop(
-    sde::SdeSuIterateOp op, scf::ForOp innerFor) {
+static void clonePromotedBody(OpBuilder &builder, Block *sourceBlock,
+                              ArrayRef<scf::ForOp> innerForChain,
+                              unsigned depth, IRMapping &mapping) {
+  scf::ForOp nestedFor =
+      depth < innerForChain.size() ? innerForChain[depth] : scf::ForOp();
+  for (Operation &bodyOp : sourceBlock->without_terminator()) {
+    if (nestedFor && &bodyOp == nestedFor.getOperation()) {
+      clonePromotedBody(builder, nestedFor.getBody(), innerForChain, depth + 1,
+                        mapping);
+      return;
+    }
+    builder.clone(bodyOp, mapping);
+  }
+}
+
+static sde::SdeSuIterateOp promoteOutOfPlaceStencilOwnerLoop(
+    sde::SdeSuIterateOp op, ArrayRef<scf::ForOp> innerForChain) {
   OpBuilder builder(op);
   Location loc = op.getLoc();
-  SmallVector<Value, 2> lowerBounds{op.getLowerBounds().front(),
-                                    innerFor.getLowerBound()};
-  SmallVector<Value, 2> upperBounds{op.getUpperBounds().front(),
-                                    innerFor.getUpperBound()};
-  SmallVector<Value, 2> steps{op.getSteps().front(), innerFor.getStep()};
+  SmallVector<Value, 4> lowerBounds{op.getLowerBounds().front()};
+  SmallVector<Value, 4> upperBounds{op.getUpperBounds().front()};
+  SmallVector<Value, 4> steps{op.getSteps().front()};
+  for (scf::ForOp innerFor : innerForChain) {
+    lowerBounds.push_back(innerFor.getLowerBound());
+    upperBounds.push_back(innerFor.getUpperBound());
+    steps.push_back(innerFor.getStep());
+  }
 
   auto newOp = sde::SdeSuIterateOp::create(
       builder, loc, /*resultTypes=*/TypeRange{}, ValueRange(lowerBounds),
@@ -271,12 +347,15 @@ static sde::SdeSuIterateOp promoteRank2OutOfPlaceStencilOwnerLoop(
   removeStaleShapePlanAttrs(newOp);
 
   Block &newBody = sde::ensureBlock(newOp.getBody());
-  while (newBody.getNumArguments() < 2)
+  while (newBody.getNumArguments() < lowerBounds.size())
     newBody.addArgument(builder.getIndexType(), loc);
 
   IRMapping mapping;
   mapping.map(op.getBody().front().getArgument(0), newBody.getArgument(0));
-  mapping.map(innerFor.getInductionVar(), newBody.getArgument(1));
+  for (auto [idx, rawInnerFor] : llvm::enumerate(innerForChain)) {
+    scf::ForOp innerFor = rawInnerFor;
+    mapping.map(innerFor.getInductionVar(), newBody.getArgument(idx + 1));
+  }
 
   Block *oldComputeBlock = sde::getSuIterateComputeBlock(op);
   auto oldCuRegion =
@@ -293,13 +372,7 @@ static sde::SdeSuIterateOp promoteRank2OutOfPlaceStencilOwnerLoop(
     builder.setInsertionPointToStart(cloneBlock);
   }
 
-  for (Operation &bodyOp : oldComputeBlock->without_terminator()) {
-    if (&bodyOp == innerFor.getOperation())
-      break;
-    builder.clone(bodyOp, mapping);
-  }
-  for (Operation &bodyOp : innerFor.getBody()->without_terminator())
-    builder.clone(bodyOp, mapping);
+  clonePromotedBody(builder, oldComputeBlock, innerForChain, 0, mapping);
   sde::SdeYieldOp::create(builder, loc, ValueRange{});
 
   if (oldCuRegion) {
@@ -311,15 +384,16 @@ static sde::SdeSuIterateOp promoteRank2OutOfPlaceStencilOwnerLoop(
   return newOp;
 }
 
-static sde::SdeSuIterateOp tryPromoteRank2OutOfPlaceStencilOwnerLoop(
+static sde::SdeSuIterateOp tryPromoteOutOfPlaceStencilOwnerLoop(
     sde::SdeSuIterateOp op, const sde::StructuredLoopSummary &summary,
     const sde::StructuredNeighborhoodInfo &neighborhood) {
   Block *computeBlock = sde::getSuIterateComputeBlock(op);
-  scf::ForOp innerFor = findSinglePromotableInnerFor(computeBlock);
-  if (!isSafeRank2OutOfPlaceStencilPromotion(op, summary, neighborhood,
-                                             innerFor))
+  SmallVector<scf::ForOp, 4> innerForChain =
+      findPromotableInnerForChain(computeBlock);
+  if (!isSafeOutOfPlaceStencilPromotion(op, summary, neighborhood,
+                                        innerForChain))
     return op;
-  return promoteRank2OutOfPlaceStencilOwnerLoop(op, innerFor);
+  return promoteOutOfPlaceStencilOwnerLoop(op, innerForChain);
 }
 
 static sde::SdePattern
@@ -463,7 +537,7 @@ struct PatternAnalysisPass
 
         if (!hasExplicitStencilContract) {
           sde::SdeSuIterateOp promoted =
-              tryPromoteRank2OutOfPlaceStencilOwnerLoop(
+              tryPromoteOutOfPlaceStencilOwnerLoop(
                   op, *summary, *neighborhoodSummary);
           if (promoted != op) {
             op = promoted;

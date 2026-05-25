@@ -16,7 +16,8 @@ dekk carts install
 
 `dekk carts install` creates or synchronizes the project-local Conda
 environment from `environment.yml`, including the bootstrap `clang`/`clang++`
-toolchain used to build the pinned LLVM/MLIR toolchain.
+toolchain used to build the pinned LLVM/MLIR toolchain. It also regenerates
+the repo-managed agent resources, including MCP adapters, from `carts-plugin/`.
 
 Use the project through dekk's project runner:
 
@@ -80,7 +81,7 @@ probing subproject-local build or install directories.
 
 | Command | Description |
 |---|---|
-| `dekk carts install` | Create the project environment, fetch submodules, and build the toolchain |
+| `dekk carts install` | Create the project environment, sync agent/MCP resources, fetch submodules, and build the toolchain |
 | `dekk carts install --wrap` | Also generate a wrapper under the active install root |
 | `dekk carts doctor` | Validate the toolchain and environment |
 | `dekk carts build` | Build CARTS (`--clean` for fresh, `--arts` for runtime) |

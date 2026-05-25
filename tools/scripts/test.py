@@ -1,19 +1,21 @@
 """Test and lit commands for CARTS CLI."""
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
-import subprocess
-import os
 
 from dekk import Colors, Context, Exit, Option, console, print_error, print_info, print_success
 from scripts.platform import CartsConfig, get_config
 from scripts import (
     run_subprocess,
+    SUBMODULE_BENCHMARKS,
     TOOL_CARTS_COMPILE,
     TOOL_FILECHECK,
     TOOL_LLVM_LIT,
-    SUBMODULE_POLYGEIST,
     POLYGEIST_NESTED_SUBMODULES,
+    SUBMODULE_POLYGEIST,
 )
 
 
@@ -88,6 +90,8 @@ def _resolve_lit_targets(config: CartsConfig, suite: str) -> List[Path]:
         carts_dir / "tests" / "e2e",
     ]
 
+    if suite in ("benchmarks", "benchmark"):
+        return [carts_dir / SUBMODULE_BENCHMARKS / "tests"]
     if suite in ("contracts", "pass"):
         test_paths = [p for p in pass_test_dirs if p.is_dir()]
     elif suite == "e2e":
@@ -96,7 +100,7 @@ def _resolve_lit_targets(config: CartsConfig, suite: str) -> List[Path]:
         test_paths = [p for p in pass_test_dirs + e2e_test_dirs if p.is_dir()]
     else:
         print_error(f"Unknown test suite '{suite}'")
-        print_info("Available suites: pass, e2e, all, contracts")
+        print_info("Available suites: pass, e2e, all, contracts, benchmarks")
         raise Exit(1)
 
     if not test_paths:
@@ -104,6 +108,27 @@ def _resolve_lit_targets(config: CartsConfig, suite: str) -> List[Path]:
         raise Exit(1)
 
     return test_paths
+
+
+def _run_benchmark_pytests(test_paths: Sequence[Path], verbose_tests: bool) -> None:
+    """Run carts-benchmarks Python tests through the managed Dekk interpreter."""
+    print_info("Running CARTS benchmark harness tests...")
+    for path in test_paths:
+        console.print(f"Test path: [{Colors.DEBUG}]{path}[/{Colors.DEBUG}]")
+    console.print()
+
+    cmd = [sys.executable, "-m", "pytest"]
+    if verbose_tests:
+        cmd.append("-v")
+    cmd.extend(str(path) for path in test_paths)
+
+    result = run_subprocess(cmd, check=False)
+    console.print()
+    if result.returncode == 0:
+        print_success("CARTS benchmark tests completed successfully!")
+    else:
+        print_error(f"CARTS benchmark tests failed with exit code {result.returncode}")
+    raise Exit(result.returncode)
 
 
 def _ensure_lit_tools(config: CartsConfig) -> Tuple[Path, Path, Path]:
@@ -166,13 +191,16 @@ def _run_lit(
 
 def test(
     suite: str = Option("pass", "--suite", "-s",
-                              help="Test suite: pass (default), e2e, all"),
+                              help="Test suite: pass (default), e2e, all, benchmarks"),
     verbose_tests: bool = Option(
         False, "-v", help="Verbose test output"),
 ):
     """Run CARTS test suite using llvm-lit."""
     config = get_config()
     test_paths = _resolve_lit_targets(config, suite)
+    if suite in ("benchmarks", "benchmark"):
+        _run_benchmark_pytests(test_paths, verbose_tests)
+        return
     extra_args: List[str] = []
     if suite in ("e2e", "all"):
         # E2E samples bind a fixed runtime port (default_ports=34739). Run

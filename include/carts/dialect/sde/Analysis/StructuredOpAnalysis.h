@@ -83,6 +83,13 @@ findCompatibleOutputLayoutPlan(SdeSuIterateOp op);
 /// pipeline planning because no cross-owner reduction carrier is needed.
 bool isOwnerLocalPipelineReduction(SdeSuIterateOp op);
 
+/// Return true when a matmul-classified scheduling unit has separate external
+/// roots for the logical lhs and rhs input windows. Current owner-slice
+/// materialization has one physical dependency view per root, so self-Gram
+/// shapes such as correlation must stay on host-whole views until the boundary
+/// can represent both windows independently.
+bool hasDistinctExternalMatmulInputRoots(SdeSuIterateOp op);
+
 //===----------------------------------------------------------------------===//
 // Shared affine decomposition utilities
 //===----------------------------------------------------------------------===//

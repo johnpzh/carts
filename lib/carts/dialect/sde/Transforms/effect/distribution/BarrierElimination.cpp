@@ -14,7 +14,9 @@ namespace mlir::carts::sde {
 } // namespace mlir::carts::sde
 
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
+#include "carts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
+#include "carts/utils/ArrayAttrUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -163,7 +165,13 @@ static bool haveEquivalentOrTiledSteps(sde::SdeSuIterateOp lhs,
 
   for (auto [lhsStep, rhsStep] : llvm::zip(lhs.getSteps(), rhs.getSteps())) {
     if (::mlir::carts::ValueAnalysis::areValuesEquivalent(lhsStep,
-                                                                rhsStep))
+                                                          rhsStep))
+      continue;
+    std::optional<int64_t> lhsFolded =
+        ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(lhsStep);
+    std::optional<int64_t> rhsFolded =
+        ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(rhsStep);
+    if (lhsFolded && rhsFolded && *lhsFolded == *rhsFolded)
       continue;
     if (isTiledMultipleOfStep(lhsStep, rhsStep) ||
         isTiledMultipleOfStep(rhsStep, lhsStep))
@@ -449,6 +457,156 @@ static bool haveSdeApprovedTiledTimestepPlan(sde::SdeSuIterateOp lhs,
                           rhs.getLogicalWorkerSliceAttr()) &&
          sameSdeIterationTopology(lhs, rhs) &&
          haveEquivalentOrTiledSteps(lhs, rhs);
+}
+
+static bool isPipelineableStructuredClassification(sde::SdeSuIterateOp op) {
+  if (!op || !op.getReductionAccumulators().empty())
+    return false;
+  auto classification = op.getStructuredClassification();
+  if (!classification)
+    return false;
+  switch (*classification) {
+  case sde::SdeStructuredClassification::elementwise:
+  case sde::SdeStructuredClassification::elementwise_pipeline:
+  case sde::SdeStructuredClassification::matmul:
+    return true;
+  case sde::SdeStructuredClassification::stencil:
+  case sde::SdeStructuredClassification::reduction:
+    return false;
+  }
+  return false;
+}
+
+static std::optional<unsigned>
+getSinglePhysicalOwnerDim(sde::SdeSuIterateOp op) {
+  auto ownerDims =
+      ::mlir::carts::readI64ArrayAttr(op.getPhysicalOwnerDimsAttr());
+  if (!ownerDims || ownerDims->size() != 1 || (*ownerDims)[0] < 0)
+    return std::nullopt;
+  return static_cast<unsigned>((*ownerDims)[0]);
+}
+
+static bool loopIvSelectsOwnerSlice(Value iv, Value ownerIv,
+                                    llvm::SmallPtrSetImpl<Value> &seen) {
+  if (!iv || !ownerIv || !seen.insert(iv).second)
+    return false;
+  if (iv == ownerIv || ::mlir::carts::ValueAnalysis::dependsOn(iv, ownerIv))
+    return true;
+
+  auto blockArg = dyn_cast<BlockArgument>(iv);
+  if (!blockArg)
+    return false;
+
+  auto loop = dyn_cast_or_null<scf::ForOp>(blockArg.getOwner()->getParentOp());
+  if (!loop || loop.getInductionVar() != iv)
+    return false;
+
+  return loopIvSelectsOwnerSlice(loop.getLowerBound(), ownerIv, seen) ||
+         loopIvSelectsOwnerSlice(loop.getUpperBound(), ownerIv, seen);
+}
+
+static bool loopIvSelectsOwnerSlice(Value iv, Value ownerIv) {
+  llvm::SmallPtrSet<Value, 8> seen;
+  return loopIvSelectsOwnerSlice(iv, ownerIv, seen);
+}
+
+static bool accessMapUsesOwnerSliceAtPhysicalDim(AffineMap map,
+                                                 unsigned physicalDim,
+                                                 ArrayRef<Value> ivs,
+                                                 unsigned ownerLoopDim) {
+  if (!map || physicalDim >= map.getNumResults() || ownerLoopDim >= ivs.size())
+    return false;
+  std::optional<sde::AffineDimOffset> dimOffset =
+      sde::extractDimOffset(map.getResult(physicalDim));
+  if (!dimOffset || !dimOffset->dim || dimOffset->offset != 0 ||
+      *dimOffset->dim >= ivs.size())
+    return false;
+  return loopIvSelectsOwnerSlice(ivs[*dimOffset->dim], ivs[ownerLoopDim]);
+}
+
+static bool accessEntriesUseOwnerDimForRoot(
+    ArrayRef<sde::MemrefAccessEntry> accesses, ArrayRef<Value> ivs, Value root,
+    unsigned physicalDim, unsigned ownerLoopDim) {
+  bool sawRoot = false;
+  for (const sde::MemrefAccessEntry &access : accesses) {
+    Value accessRoot =
+        ::mlir::carts::ValueAnalysis::stripMemrefViewOps(access.memref);
+    if (accessRoot != root)
+      continue;
+    sawRoot = true;
+    if (!accessMapUsesOwnerSliceAtPhysicalDim(access.indexingMap, physicalDim,
+                                              ivs, ownerLoopDim))
+      return false;
+  }
+  return sawRoot;
+}
+
+static bool hasSingleWriteReadIntermediate(
+    const sde::StructuredMemoryEffectSummary &predEffects,
+    const sde::StructuredMemoryEffectSummary &succEffects, Value &root) {
+  if (predEffects.hasUnknownEffects || succEffects.hasUnknownEffects)
+    return false;
+  if (predEffects.writes.size() != 1)
+    return false;
+
+  Value candidate = *predEffects.writes.begin();
+  Value rootCandidate =
+      ::mlir::carts::ValueAnalysis::stripMemrefViewOps(candidate);
+  if (!rootCandidate || !rootCandidate.getDefiningOp<sde::SdeMuAllocOp>())
+    return false;
+  if (!succEffects.reads.contains(candidate))
+    return false;
+  if (succEffects.writes.contains(candidate))
+    return false;
+
+  for (Value written : succEffects.writes) {
+    if (predEffects.reads.contains(written) ||
+        predEffects.writes.contains(written))
+      return false;
+  }
+
+  root = candidate;
+  return true;
+}
+
+static bool canPipelineThroughTokenLocalMemoryDeps(
+    sde::SdeSuIterateOp predecessor, sde::SdeSuIterateOp successor,
+    const sde::StructuredMemoryEffectSummary &predEffects,
+    const sde::StructuredMemoryEffectSummary &succEffects) {
+  if (!isPipelineableStructuredClassification(predecessor) ||
+      !isPipelineableStructuredClassification(successor))
+    return false;
+  if (!haveSdeApprovedTiledTimestepPlan(predecessor, successor))
+    return false;
+
+  auto topology = predecessor.getIterationTopology();
+  if (!topology || *topology != sde::SdeIterationTopology::owner_strip ||
+      !sameSdeIterationTopology(predecessor, successor))
+    return false;
+
+  std::optional<unsigned> predOwnerDim = getSinglePhysicalOwnerDim(predecessor);
+  std::optional<unsigned> succOwnerDim = getSinglePhysicalOwnerDim(successor);
+  if (!predOwnerDim || !succOwnerDim || *predOwnerDim != *succOwnerDim)
+    return false;
+
+  Value intermediate;
+  if (!hasSingleWriteReadIntermediate(predEffects, succEffects, intermediate))
+    return false;
+
+  auto predSummary = sde::analyzeStructuredLoop(predecessor);
+  auto succSummary = sde::analyzeStructuredLoop(successor);
+  if (!predSummary || !succSummary)
+    return false;
+  if (predSummary->nest.ivs.empty() || succSummary->nest.ivs.empty())
+    return false;
+
+  constexpr unsigned ownerLoopDim = 0;
+  return accessEntriesUseOwnerDimForRoot(predSummary->writes,
+                                         predSummary->nest.ivs, intermediate,
+                                         *predOwnerDim, ownerLoopDim) &&
+         accessEntriesUseOwnerDimForRoot(succSummary->reads,
+                                         succSummary->nest.ivs, intermediate,
+                                         *succOwnerDim, ownerLoopDim);
 }
 
 static bool haveCompatibleTimestepIterationPlan(sde::SdeSuIterateOp lhs,
@@ -770,6 +928,16 @@ struct BarrierEliminationPass
       if (isWavefrontFrontierStage(predecessor) ||
           isWavefrontFrontierStage(successor)) {
         setBarrierReason(barrier, sde::SdeBarrierReason::wavefront_frontier);
+        return;
+      }
+
+      if (canPipelineThroughTokenLocalMemoryDeps(predecessor, successor,
+                                                predEffects, succEffects)) {
+        barrier.setBarrierEliminatedAttr(UnitAttr::get(barrier.getContext()));
+        setBarrierReason(barrier, sde::SdeBarrierReason::required_memory);
+        eliminated++;
+        ARTS_DEBUG("Eliminated required-memory barrier: token-local DB "
+                   "dependencies preserve the inter-phase order");
         return;
       }
 

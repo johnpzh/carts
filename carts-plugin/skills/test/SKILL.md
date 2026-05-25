@@ -3,7 +3,7 @@ name: carts-test
 description: Use when the user asks to test, run tests, validate, check, verify changes, run lit, or run a focused CARTS suite.
 user-invocable: true
 allowed-tools: Bash, Read, Grep, Glob
-argument-hint: [<test-file.mlir> | --suite contracts | -v]
+argument-hint: [<test-file.mlir> | --suite contracts | --suite benchmarks | -v]
 ---
 
 # CARTS Test
@@ -15,6 +15,7 @@ Run the CARTS test suite. Run `dekk carts test --help` and `dekk carts lit --hel
 ```bash
 dekk carts test                                     # Run contract tests
 dekk carts test --suite all -v                      # All tests, verbose
+dekk carts test --suite benchmarks                  # Benchmark harness pytest suite
 dekk carts lit lib/carts/dialect/arts/test/my_test.mlir  # Single test
 dekk carts lit -v lib/carts/dialect/sde/test/           # Directory, verbose
 dekk carts lit -- --filter=pattern lib/carts/dialect/    # Filter by pattern
@@ -28,6 +29,7 @@ dekk carts lit -- --filter=pattern lib/carts/dialect/    # Filter by pattern
 - `tests/cli/` — CLI flag tests
 - `tests/verify/` — Cross-dialect verifier tests
 - `samples/` — Integration tests (end-to-end compile + run)
+- `external/carts-benchmarks/tests/` — Benchmark harness pytest tests, run through `dekk carts test --suite benchmarks`
 
 ## Writing New Tests
 

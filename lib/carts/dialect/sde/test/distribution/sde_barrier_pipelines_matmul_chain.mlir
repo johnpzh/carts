@@ -1,0 +1,76 @@
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=SDE
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=CODIR
+// RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode.cfg --start-from sde-planning --pipeline codir-to-arts --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=ARTS
+
+// A matmul chain writes an intermediate row block in phase 1 and reads the same
+// row block in phase 2.  Function-argument intermediates still require the
+// coarse barrier because CODIR cannot materialize a token-local block ownership
+// plan for them safely.  The token-local positive case is covered by
+// codir/test/transforms/sde-to-codir-barrier-token-dep.mlir with an sde.mu_alloc
+// intermediate.
+
+// SDE-LABEL: // -----// IR Dump After BarrierElimination (barrier-elimination) //----- //
+// SDE: func.func @main
+// SDE: sde.su_iterate
+// SDE-SAME: classification(<matmul>)
+// SDE: sde.su_barrier {barrierReason = #sde.barrier_reason<required_memory>}
+// SDE: sde.su_iterate
+// SDE-SAME: classification(<matmul>)
+
+// CODIR-LABEL: // -----// IR Dump After ConvertSdeToCodir (convert-sde-to-codir) //----- //
+// CODIR: func.func @main
+// CODIR: codir.codelet
+// CODIR-SAME: completion_barrier
+// CODIR: codir.codelet
+// CODIR-SAME: completion_barrier
+
+// ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
+// ARTS: func.func @main
+// ARTS: arts.edt <task>
+// ARTS: arts.barrier
+// ARTS-SAME: barrierReason = #arts.barrier_reason<required_memory>
+// ARTS: arts.edt <task>
+// ARTS: arts.barrier
+// ARTS-SAME: barrierReason = #arts.barrier_reason<required_memory>
+
+module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f32, dense<32> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
+  func.func @main(%A: memref<32x32xf32>, %B: memref<32x32xf32>, %Tmp: memref<32x32xf32>, %C: memref<32x32xf32>, %D: memref<32x32xf32>) {
+    %c0 = arith.constant 0 : index
+    %c32 = arith.constant 32 : index
+    %c1 = arith.constant 1 : index
+    omp.parallel {
+      omp.wsloop {
+        omp.loop_nest (%i) : index = (%c0) to (%c32) step (%c1) {
+          scf.for %j = %c0 to %c32 step %c1 {
+            scf.for %k = %c0 to %c32 step %c1 {
+              %a = memref.load %A[%i, %k] : memref<32x32xf32>
+              %b = memref.load %B[%k, %j] : memref<32x32xf32>
+              %old = memref.load %Tmp[%i, %j] : memref<32x32xf32>
+              %prod = arith.mulf %a, %b : f32
+              %sum = arith.addf %old, %prod : f32
+              memref.store %sum, %Tmp[%i, %j] : memref<32x32xf32>
+            }
+          }
+          omp.yield
+        }
+      }
+      omp.wsloop {
+        omp.loop_nest (%i) : index = (%c0) to (%c32) step (%c1) {
+          scf.for %j = %c0 to %c32 step %c1 {
+            scf.for %k = %c0 to %c32 step %c1 {
+              %tmp = memref.load %Tmp[%i, %k] : memref<32x32xf32>
+              %c = memref.load %C[%k, %j] : memref<32x32xf32>
+              %old = memref.load %D[%i, %j] : memref<32x32xf32>
+              %prod = arith.mulf %tmp, %c : f32
+              %sum = arith.addf %old, %prod : f32
+              memref.store %sum, %D[%i, %j] : memref<32x32xf32>
+            }
+          }
+          omp.yield
+        }
+      }
+      omp.terminator
+    }
+    return
+  }
+}

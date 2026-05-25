@@ -37,7 +37,7 @@ submodules automatically with shallow clones to save bandwidth.
 
 The canonical install path is dekk-first. dekk creates the project-local conda
 environment, activates the `.dekk.toml` configuration, initializes submodules,
-builds the toolchain, and installs the `carts` wrapper. The Conda environment
+generates agent/MCP resources, and builds the toolchain. The Conda environment
 also provisions the bootstrap `clang` and `clang++` pair automatically; they
 are not separate system prerequisites for the dekk-first flow.
 
@@ -52,11 +52,14 @@ dekk carts install
    `environment.yml`, including the bootstrap `clang`/`clang++` toolchain used
    for the pinned LLVM/MLIR build
 2. **Initializes git submodules** -- ARTS, Polygeist, LLVM, carts-benchmarks
-3. **Builds the full toolchain** in order:
+3. **Generates agent resources** -- root instructions, skills, MCP adapters,
+   hooks, and editor configs from `carts-plugin/`
+4. **Builds the full toolchain** in order:
    - LLVM + MLIR + OpenMP (longest step, ~30-60 min)
    - Polygeist (C-to-MLIR frontend)
    - ARTS runtime
    - CARTS compiler
+
 `dekk carts install --wrap` additionally generates a wrapper under the active
 install root. Add that install root to your `PATH` yourself if you want to use
 bare `carts ...` commands outside the dekk runner.

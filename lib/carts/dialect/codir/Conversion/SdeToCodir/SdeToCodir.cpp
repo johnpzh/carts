@@ -64,11 +64,14 @@ struct ConvertSdeToCodirPass
       }
     }
 
+    SuBarrierTokenDepPlan barrierTokenDepPlan;
+    collectSuBarrierTokenDepPlans(getOperation(), barrierTokenDepPlan);
+
     SmallVector<sde::SdeSuIterateOp> iterates;
     getOperation().walk(
         [&](sde::SdeSuIterateOp iterate) { iterates.push_back(iterate); });
     for (sde::SdeSuIterateOp iterate : iterates) {
-      if (failed(convertSuIterateToCodir(iterate))) {
+      if (failed(convertSuIterateToCodir(iterate, &barrierTokenDepPlan))) {
         signalPassFailure();
         return;
       }

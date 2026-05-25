@@ -20,6 +20,7 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "polygeist/Ops.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -1859,6 +1860,239 @@ struct SuCodeletPlan {
   DenseMap<Value, unsigned> paramIndex;
 };
 
+struct SuBarrierTokenDepPlan {
+  DenseMap<Operation *, SmallVector<Value, 2>> tokenLocalRootsBySu;
+  DenseSet<Operation *> suppressCompletionBarrierForSu;
+
+  bool hasTokenLocalRoot(sde::SdeSuIterateOp source, Value root) const {
+    auto it = tokenLocalRootsBySu.find(source.getOperation());
+    if (it == tokenLocalRootsBySu.end())
+      return false;
+    return llvm::is_contained(it->second, root);
+  }
+
+  bool suppressCompletionBarrier(sde::SdeSuIterateOp source) const {
+    return suppressCompletionBarrierForSu.contains(source.getOperation());
+  }
+
+  void addTokenLocalRoot(sde::SdeSuIterateOp source, Value root) {
+    SmallVector<Value, 2> &roots = tokenLocalRootsBySu[source.getOperation()];
+    if (!llvm::is_contained(roots, root))
+      roots.push_back(root);
+  }
+};
+
+static inline bool sameIndexValue(Value lhs, Value rhs) {
+  if (lhs == rhs)
+    return true;
+  return ::mlir::carts::ValueAnalysis::sameValue(lhs, rhs);
+}
+
+static inline bool sameIndexValueRange(ValueRange lhs, ValueRange rhs) {
+  if (lhs.size() != rhs.size())
+    return false;
+  for (auto [lhsValue, rhsValue] : llvm::zip(lhs, rhs))
+    if (!sameIndexValue(lhsValue, rhsValue))
+      return false;
+  return true;
+}
+
+static inline bool
+hasEliminatedRequiredMemoryReason(sde::SdeSuBarrierOp barrier) {
+  if (!barrier || !barrier.getBarrierEliminatedAttr())
+    return false;
+  if (!barrier.getTokens().empty())
+    return false;
+  auto reason = barrier.getBarrierReason();
+  return reason && *reason == sde::SdeBarrierReason::required_memory;
+}
+
+static inline sde::SdeSuIterateOp findSingleSuIterateInContainer(Operation *op) {
+  if (!op)
+    return {};
+  if (auto iterate = dyn_cast<sde::SdeSuIterateOp>(op))
+    return iterate;
+
+  auto distribute = dyn_cast<sde::SdeSuDistributeOp>(op);
+  if (!distribute || distribute.getBody().empty())
+    return {};
+
+  sde::SdeSuIterateOp selected;
+  bool unsupportedWrapperOp = false;
+  for (Operation &nested : distribute.getBody().front()) {
+    if (nested.hasTrait<OpTrait::IsTerminator>() || isa<sde::SdeYieldOp>(nested))
+      continue;
+
+    if (auto iterate = dyn_cast<sde::SdeSuIterateOp>(nested)) {
+      if (selected && selected.getOperation() != iterate.getOperation()) {
+        unsupportedWrapperOp = true;
+        break;
+      }
+      selected = iterate;
+      continue;
+    }
+
+    if (!isMemoryEffectFree(&nested)) {
+      unsupportedWrapperOp = true;
+      break;
+    }
+  }
+  if (unsupportedWrapperOp)
+    return {};
+  return selected;
+}
+
+static inline sde::SdeSuIterateOp
+findPreviousSiblingSuIterate(sde::SdeSuBarrierOp barrier) {
+  Block *block = barrier ? barrier->getBlock() : nullptr;
+  if (!block)
+    return {};
+
+  for (auto it = Block::reverse_iterator(barrier->getIterator());
+       it != block->rend(); ++it) {
+    if (auto iterate = findSingleSuIterateInContainer(&*it))
+      return iterate;
+    if (!isMemoryEffectFree(&*it))
+      return {};
+  }
+  return {};
+}
+
+static inline sde::SdeSuIterateOp
+findNextSiblingSuIterate(sde::SdeSuBarrierOp barrier) {
+  Block *block = barrier ? barrier->getBlock() : nullptr;
+  if (!block)
+    return {};
+
+  for (auto it = std::next(barrier->getIterator()); it != block->end();
+       ++it) {
+    if (auto iterate = findSingleSuIterateInContainer(&*it))
+      return iterate;
+    if (!isMemoryEffectFree(&*it))
+      return {};
+  }
+  return {};
+}
+
+static inline std::optional<Value> getSingleWriteReadIntermediate(
+    const sde::StructuredMemoryEffectSummary &predEffects,
+    const sde::StructuredMemoryEffectSummary &succEffects) {
+  if (predEffects.hasUnknownEffects || succEffects.hasUnknownEffects)
+    return std::nullopt;
+  if (predEffects.writes.size() != 1)
+    return std::nullopt;
+
+  Value intermediate = *predEffects.writes.begin();
+  Value intermediateRoot =
+      ::mlir::carts::ValueAnalysis::stripMemrefViewOps(intermediate);
+  if (!intermediateRoot ||
+      !intermediateRoot.getDefiningOp<sde::SdeMuAllocOp>())
+    return std::nullopt;
+  if (!intermediate || !succEffects.reads.contains(intermediate))
+    return std::nullopt;
+  if (succEffects.writes.contains(intermediate))
+    return std::nullopt;
+
+  for (Value read : predEffects.reads)
+    if (succEffects.writes.contains(read))
+      return std::nullopt;
+
+  for (Value written : predEffects.writes)
+    if (succEffects.writes.contains(written))
+      return std::nullopt;
+
+  return intermediate;
+}
+
+static inline bool hasMatchingOneDimensionalIterationSpace(
+    sde::SdeSuIterateOp predecessor, sde::SdeSuIterateOp successor) {
+  if (!predecessor || !successor)
+    return false;
+  if (predecessor.getLowerBounds().size() != 1 ||
+      predecessor.getUpperBounds().size() != 1 ||
+      predecessor.getSteps().size() != 1 ||
+      successor.getLowerBounds().size() != 1 ||
+      successor.getUpperBounds().size() != 1 ||
+      successor.getSteps().size() != 1)
+    return false;
+
+  return sameIndexValueRange(predecessor.getLowerBounds(),
+                             successor.getLowerBounds()) &&
+         sameIndexValueRange(predecessor.getUpperBounds(),
+                             successor.getUpperBounds()) &&
+         sameIndexValueRange(predecessor.getSteps(), successor.getSteps());
+}
+
+static inline bool hasSingleLeadingPhysicalOwnerDim(sde::SdeSuIterateOp op) {
+  std::optional<SmallVector<int64_t, 4>> ownerDims =
+      ::mlir::carts::readI64ArrayAttr(op.getPhysicalOwnerDimsAttr());
+  return ownerDims && ownerDims->size() == 1 && (*ownerDims)[0] == 0;
+}
+
+static inline bool hasAlignedBarrierTokenAccessWindow(
+    sde::SdeSuIterateOp predecessor, sde::SdeSuIterateOp successor,
+    Value intermediateRoot) {
+  if (!intermediateRoot)
+    return false;
+  if (!hasMatchingOneDimensionalIterationSpace(predecessor, successor))
+    return false;
+  if (!hasSdePhysicalOwnerSlicePlan(predecessor) ||
+      !hasSdePhysicalOwnerSlicePlan(successor))
+    return false;
+  if (!hasSingleLeadingPhysicalOwnerDim(predecessor) ||
+      !hasSingleLeadingPhysicalOwnerDim(successor))
+    return false;
+  if (!canUseOwnerSliceBoundaryPlan(predecessor) ||
+      !canUseOwnerSliceBoundaryPlan(successor))
+    return false;
+  if (!hasSamePhysicalLayoutPlan(predecessor, successor))
+    return false;
+
+  return canAccessRootWithPlan(predecessor, intermediateRoot, predecessor) &&
+         canAccessRootWithPlan(successor, intermediateRoot, predecessor);
+}
+
+static inline void
+collectSuBarrierTokenDepPlans(ModuleOp module, SuBarrierTokenDepPlan &plan) {
+  SmallVector<sde::SdeSuBarrierOp> barriers;
+  module.walk([&](sde::SdeSuBarrierOp barrier) {
+    if (hasEliminatedRequiredMemoryReason(barrier))
+      barriers.push_back(barrier);
+  });
+
+  for (sde::SdeSuBarrierOp barrier : barriers) {
+    auto tryCollect = [&]() -> bool {
+      sde::SdeSuIterateOp predecessor = findPreviousSiblingSuIterate(barrier);
+      sde::SdeSuIterateOp successor = findNextSiblingSuIterate(barrier);
+      if (!predecessor || !successor)
+        return false;
+      if (!predecessor.getStructuredClassificationAttr() ||
+          !successor.getStructuredClassificationAttr())
+        return false;
+
+      auto predEffects =
+          sde::collectStructuredMemoryEffects(predecessor.getOperation());
+      auto succEffects =
+          sde::collectStructuredMemoryEffects(successor.getOperation());
+      std::optional<Value> intermediate =
+          getSingleWriteReadIntermediate(predEffects, succEffects);
+      if (!intermediate)
+        return false;
+      if (!hasAlignedBarrierTokenAccessWindow(predecessor, successor,
+                                              *intermediate))
+        return false;
+
+      plan.addTokenLocalRoot(predecessor, *intermediate);
+      plan.addTokenLocalRoot(successor, *intermediate);
+      plan.suppressCompletionBarrierForSu.insert(predecessor.getOperation());
+      return true;
+    };
+
+    if (!tryCollect())
+      barrier->removeAttr(barrier.getBarrierEliminatedAttrName());
+  }
+}
+
 static inline LogicalResult addSuDep(Value dep, codir::CodirAccessMode mode,
                                      codir::CodirStorageViewKind storageView,
                                      SuCodeletPlan &plan) {
@@ -2060,7 +2294,10 @@ static inline LogicalResult buildSuCodeletPlan(sde::SdeSuIterateOp source,
 static inline void appendSuOwnerSliceLocalRewrites(sde::SdeSuIterateOp source,
                                                    Value dispatchBase,
                                                    OpBuilder &builder,
-                                                   SuCodeletPlan &plan) {
+                                                   SuCodeletPlan &plan,
+                                                   const SuBarrierTokenDepPlan
+                                                       *barrierTokenDepPlan =
+                                                           nullptr) {
   if (!hasSdePhysicalOwnerSlicePlan(source))
     return;
 
@@ -2092,13 +2329,17 @@ static inline void appendSuOwnerSliceLocalRewrites(sde::SdeSuIterateOp source,
     if (!accessOwnerDim || *accessOwnerDim >= depType.getRank())
       continue;
 
+    bool hasBarrierTokenDepPlan =
+        barrierTokenDepPlan &&
+        barrierTokenDepPlan->hasTokenLocalRoot(source, root);
     bool needsHostWholeBridge =
         isa_and_nonnull<BlockArgument>(root) ||
         canBridgeSdeMuAllocHostWholeToComputeBlock(dep, source);
     bool matchesMaterializedPlan = *accessOwnerDim == plannedOwnerDim;
 
     if (!needsHostWholeBridge && matchesMaterializedPlan &&
-        isSdeMuAllocMaterializedWithPlan(dep, source)) {
+        (hasBarrierTokenDepPlan ||
+         isSdeMuAllocMaterializedWithPlan(dep, source))) {
       SmallVector<Value> offsets;
       offsets.reserve(depType.getRank());
       for (int64_t dim = 0, rank = depType.getRank(); dim < rank; ++dim) {
@@ -2208,8 +2449,19 @@ static inline bool hasSuOwnerTile2dDispatchPlan(sde::SdeSuIterateOp source) {
          getPositiveI64(source.getLogicalWorkerSliceAttr(), 1).has_value();
 }
 
+static inline bool
+requiresSuCompletionBarrier(sde::SdeSuIterateOp source,
+                            const SuBarrierTokenDepPlan *barrierTokenDepPlan =
+                                nullptr) {
+  return !source.getNowaitAttr() &&
+         !(barrierTokenDepPlan &&
+           barrierTokenDepPlan->suppressCompletionBarrier(source));
+}
+
 static inline LogicalResult
-convertSuOwnerTile2dToCodir(sde::SdeSuIterateOp source) {
+convertSuOwnerTile2dToCodir(
+    sde::SdeSuIterateOp source,
+    const SuBarrierTokenDepPlan *barrierTokenDepPlan = nullptr) {
   OpBuilder builder(source);
   FailureOr<Value> dispatchStep0 =
       buildSuOwnerTileDispatchStep(source, 0, builder);
@@ -2251,7 +2503,7 @@ convertSuOwnerTile2dToCodir(sde::SdeSuIterateOp source) {
       builder, loc, builder.getArrayAttr(depModeAttrs),
       builder.getArrayAttr(depStorageViewAttrs), plan.deps, plan.params,
       getCodirMetadataFromSchedulingUnit(source));
-  if (!source.getNowaitAttr())
+  if (requiresSuCompletionBarrier(source, barrierTokenDepPlan))
     codelet.setCompletionBarrierAttr(builder.getUnitAttr());
 
   Block *body = new Block();
@@ -2322,9 +2574,11 @@ convertSuOwnerTile2dToCodir(sde::SdeSuIterateOp source) {
 }
 
 static inline LogicalResult
-convertSuIterateToCodir(sde::SdeSuIterateOp source) {
+convertSuIterateToCodir(sde::SdeSuIterateOp source,
+                        const SuBarrierTokenDepPlan *barrierTokenDepPlan =
+                            nullptr) {
   if (hasSuOwnerTile2dDispatchPlan(source))
-    return convertSuOwnerTile2dToCodir(source);
+    return convertSuOwnerTile2dToCodir(source, barrierTokenDepPlan);
 
   OpBuilder builder(source);
   Value dispatchStep = buildSuDispatchStep(source, builder);
@@ -2345,7 +2599,7 @@ convertSuIterateToCodir(sde::SdeSuIterateOp source) {
     return source.emitOpError()
            << "failed to materialize scheduling-unit base param";
   appendSuOwnerSliceLocalRewrites(source, dispatchLoop.getInductionVar(),
-                                  builder, plan);
+                                  builder, plan, barrierTokenDepPlan);
 
   SmallVector<Attribute> depModeAttrs =
       buildCodirAccessModeAttrs(source.getContext(), plan.depModes);
@@ -2356,7 +2610,7 @@ convertSuIterateToCodir(sde::SdeSuIterateOp source) {
       builder, loc, builder.getArrayAttr(depModeAttrs),
       builder.getArrayAttr(depStorageViewAttrs), plan.deps, plan.params,
       getCodirMetadataFromSchedulingUnit(source));
-  if (!source.getNowaitAttr())
+  if (requiresSuCompletionBarrier(source, barrierTokenDepPlan))
     codelet.setCompletionBarrierAttr(builder.getUnitAttr());
 
   Block *body = new Block();

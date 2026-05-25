@@ -78,40 +78,6 @@ static bool isInPlaceSelfReadStencil(sde::SdeSuIterateOp op) {
   return !effects.hasUnknownEffects && sde::hasInPlaceSelfRead(effects);
 }
 
-static SmallVector<int64_t, 4>
-factorWorkersAcrossDims(int64_t workers, ArrayRef<int64_t> extents) {
-  SmallVector<int64_t, 4> grid(extents.size(), 1);
-  if (workers <= 1 || extents.empty())
-    return grid;
-
-  SmallVector<int64_t, 8> factors;
-  int64_t remaining = workers;
-  for (int64_t factor = 2; factor * factor <= remaining; ++factor) {
-    while (remaining % factor == 0) {
-      factors.push_back(factor);
-      remaining /= factor;
-    }
-  }
-  if (remaining > 1)
-    factors.push_back(remaining);
-  llvm::sort(factors, std::greater<int64_t>());
-
-  for (int64_t factor : factors) {
-    unsigned bestDim = 0;
-    int64_t bestSpan = -1;
-    for (auto [idx, extent] : llvm::enumerate(extents)) {
-      int64_t span = sde::ceilDivPositive(extent, grid[idx]);
-      if (span > bestSpan) {
-        bestSpan = span;
-        bestDim = static_cast<unsigned>(idx);
-      }
-    }
-    grid[bestDim] *= factor;
-  }
-
-  return grid;
-}
-
 static SmallVector<unsigned, 4>
 chooseMappedSdeOwnerLoopDims(sde::SdeSuIterateOp op,
                              const sde::StructuredOutputLayoutPlan &plan) {
@@ -170,8 +136,8 @@ static bool buildOwnerDimPlan(sde::SdeSuIterateOp op,
         std::max<int64_t>(0, readStencilHaloForOwnerDim(op, loopDim)));
   }
 
-  SmallVector<int64_t, 4> workerGrid =
-      factorWorkersAcrossDims(std::max<int64_t>(1, workers), ownerExtents);
+  SmallVector<int64_t, 4> workerGrid = sde::factorStencilWorkersAcrossDims(
+      std::max<int64_t>(1, workers), ownerExtents, haloShape);
   for (auto [idx, physicalDim] : llvm::enumerate(ownerPhysicalDims)) {
     physicalBlockShape[physicalDim] =
         sde::ceilDivPositive(outputPlan.shape[physicalDim], workerGrid[idx]);
@@ -203,7 +169,7 @@ static bool buildOwnerDimPlan(const sde::LoopIndexedOutputPlan &outputPlan,
   }
 
   SmallVector<int64_t, 4> workerGrid =
-      factorWorkersAcrossDims(std::max<int64_t>(1, workers), ownerExtents);
+      sde::factorWorkersAcrossDims(std::max<int64_t>(1, workers), ownerExtents);
   for (auto [idx, physicalDim] : llvm::enumerate(ownerPhysicalDims)) {
     physicalBlockShape[physicalDim] =
         sde::ceilDivPositive(outputPlan.shape[physicalDim], workerGrid[idx]);
@@ -327,6 +293,9 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
     if (*classification == sde::SdeStructuredClassification::stencil ||
         *classification == sde::SdeStructuredClassification::matmul)
       return;
+    if (*classification == sde::SdeStructuredClassification::reduction &&
+        !sde::isOwnerLocalPipelineReduction(op))
+      return;
   }
   std::optional<sde::LoopIndexedOutputPlan> outputPlan =
       sde::findLoopIndexedOutputPlan(op);
@@ -394,6 +363,8 @@ static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
   auto effects = sde::collectStructuredMemoryEffects(op.getBody());
   if (effects.hasUnknownEffects || !effects.writes.contains(outputPlan->root))
     return;
+  if (!sde::hasDistinctExternalMatmulInputRoots(op))
+    return;
 
   int64_t workers =
       std::max<int64_t>(1, getInterLocalityTargetWorkers(costModel));
@@ -401,7 +372,7 @@ static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
   SmallVector<int64_t, 4> ownerExtents{outputPlan->shape[0],
                                        outputPlan->shape[1]};
   SmallVector<int64_t, 4> workerGrid =
-      factorWorkersAcrossDims(workers, ownerExtents);
+      sde::factorWorkersAcrossDims(workers, ownerExtents);
   physicalBlockShape[0] =
       sde::ceilDivPositive(outputPlan->shape[0], workerGrid[0]);
   physicalBlockShape[1] =

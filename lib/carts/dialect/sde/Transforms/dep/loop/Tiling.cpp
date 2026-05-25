@@ -226,6 +226,9 @@ static std::optional<DirectMatmulTilePlan>
 buildDirectMatmulTilePlan(OpBuilder &builder, Location loc,
                           sde::SdeSuIterateOp op,
                           sde::SDECostModel &costModel) {
+  if (!sde::hasDistinctExternalMatmulInputRoots(op))
+    return std::nullopt;
+
   std::optional<sde::LoopIndexedOutputPlan> outputPlan =
       sde::findLoopIndexedOutputPlan(op);
   if (!outputPlan || outputPlan->shape.size() < 2)
@@ -421,39 +424,6 @@ getStencilHaloRadiiForOwnerDims(sde::SdeSuIterateOp op,
   return halos;
 }
 
-static SmallVector<int64_t, 4>
-factorWorkersAcrossDims(int64_t workers, ArrayRef<int64_t> extents) {
-  SmallVector<int64_t, 4> grid(extents.size(), 1);
-  if (workers <= 1 || extents.empty())
-    return grid;
-
-  SmallVector<int64_t, 8> factors;
-  int64_t remaining = workers;
-  for (int64_t factor = 2; factor * factor <= remaining; ++factor) {
-    while (remaining % factor == 0) {
-      factors.push_back(factor);
-      remaining /= factor;
-    }
-  }
-  if (remaining > 1)
-    factors.push_back(remaining);
-  llvm::sort(factors, std::greater<int64_t>());
-
-  for (int64_t factor : factors) {
-    unsigned bestDim = 0;
-    int64_t bestSpan = -1;
-    for (auto [idx, extent] : llvm::enumerate(extents)) {
-      int64_t span = sde::ceilDivPositive(extent, grid[idx]);
-      if (span > bestSpan) {
-        bestSpan = span;
-        bestDim = static_cast<unsigned>(idx);
-      }
-    }
-    grid[bestDim] *= factor;
-  }
-  return grid;
-}
-
 static int64_t relaxOwnerLocalPipelineMinIterations(
     sde::SdeSuIterateOp op, int64_t tripCount, int64_t targetTasks,
     int64_t minIterations) {
@@ -610,8 +580,8 @@ buildNdStencilPhysicalTilePlan(sde::SdeSuIterateOp op,
   if (effects.hasUnknownEffects || sde::hasInPlaceSelfRead(effects))
     return std::nullopt;
 
-  std::optional<sde::LoopIndexedOutputPlan> outputPlan =
-      sde::findLoopIndexedOutputPlan(op);
+  std::optional<sde::StructuredOutputLayoutPlan> outputPlan =
+      sde::findCompatibleOutputLayoutPlan(op);
   if (!outputPlan || outputPlan->shape.empty())
     return std::nullopt;
 
@@ -631,30 +601,40 @@ buildNdStencilPhysicalTilePlan(sde::SdeSuIterateOp op,
   plan.tileIterations.resize(op.getLowerBounds().size());
 
   SmallVector<int64_t, 4> ownerExtents;
-  for (auto [idx, rawDim] : llvm::enumerate(*ownerDims)) {
-    if (idx >= op.getLowerBounds().size() || rawDim < 0 ||
-        static_cast<size_t>(rawDim) >= outputPlan->shape.size() ||
+  SmallVector<unsigned, 4> ownerLoopDims;
+  for (auto [idx, rawLoopDim] : llvm::enumerate(*ownerDims)) {
+    if (rawLoopDim < 0 ||
+        static_cast<size_t>(rawLoopDim) >= op.getLowerBounds().size() ||
+        static_cast<size_t>(rawLoopDim) >=
+            outputPlan->loopDimToPhysicalDim.size() ||
         idx >= minOffsets->size())
+      continue;
+    int64_t physicalDim = outputPlan->loopDimToPhysicalDim[rawLoopDim];
+    if (physicalDim < 0 ||
+        static_cast<size_t>(physicalDim) >= outputPlan->shape.size())
       continue;
     int64_t halo =
         std::max<int64_t>(0, std::max(-(*minOffsets)[idx], (*maxOffsets)[idx]));
     if (halo == 0)
       continue;
-    plan.ownerPhysicalDims.push_back(rawDim);
+    ownerLoopDims.push_back(static_cast<unsigned>(rawLoopDim));
+    plan.ownerPhysicalDims.push_back(physicalDim);
     plan.haloShape.push_back(halo);
-    ownerExtents.push_back(outputPlan->shape[rawDim]);
+    ownerExtents.push_back(outputPlan->shape[physicalDim]);
   }
   if (plan.ownerPhysicalDims.empty())
     return std::nullopt;
 
-  SmallVector<int64_t, 4> grid = factorWorkersAcrossDims(
-      std::max<int64_t>(1, getTargetTileTasks(op, costModel)), ownerExtents);
+  SmallVector<int64_t, 4> grid = sde::factorStencilWorkersAcrossDims(
+      std::max<int64_t>(1, getTargetTileTasks(op, costModel)), ownerExtents,
+      plan.haloShape);
   for (auto [idx, physicalDim] : llvm::enumerate(plan.ownerPhysicalDims)) {
     int64_t tile =
         sde::ceilDivPositive(outputPlan->shape[physicalDim], grid[idx]);
     plan.blockShape[physicalDim] = tile;
-    if (static_cast<size_t>(physicalDim) < plan.tileIterations.size())
-      plan.tileIterations[physicalDim] = tile;
+    unsigned loopDim = ownerLoopDims[idx];
+    if (loopDim < plan.tileIterations.size())
+      plan.tileIterations[loopDim] = tile;
   }
 
   plan.topology = plan.ownerPhysicalDims.size() > 1
@@ -779,7 +759,12 @@ static bool isTilingCandidate(sde::SdeSuIterateOp op, Block &body) {
       return false;
     return isDirectMemoryMatmulCandidate(op, body);
   case sde::SdeStructuredClassification::reduction:
-    return false;
+    if (op.getReductionAccumulators().size() != 0)
+      return false;
+    if (!sde::isOwnerLocalPipelineReduction(op))
+      return false;
+    return isExecutableInnermostBody(body) ||
+           hasPerfectNestedScalarLoopNest(body, /*numLoops=*/2);
   }
   return false;
 }
