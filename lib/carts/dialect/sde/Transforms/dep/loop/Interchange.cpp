@@ -29,6 +29,7 @@ namespace mlir::carts::sde {
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+#include "carts/utils/ArrayAttrUtils.h"
 #include "carts/utils/Debug.h"
 #include "carts/utils/ValueAnalysis.h"
 ARTS_DEBUG_SETUP(loop_interchange);
@@ -732,8 +733,8 @@ static bool isDirectMemoryMatmulAccumulator(scf::ForOp jLoop, scf::ForOp kLoop,
 
     if (auto load = dyn_cast<memref::LoadOp>(op)) {
       if (load.getMemref() == output) {
-        if (!::mlir::carts::ValueAnalysis::areValueRangesIdentical(load.getIndices(),
-                                                    outputIndices))
+        if (!::mlir::carts::ValueAnalysis::areValueRangesIdentical(
+                load.getIndices(), outputIndices))
           return false;
         ++outputLoads;
       } else if (indicesContain(load.getIndices(), oldK) &&
@@ -746,21 +747,21 @@ static bool isDirectMemoryMatmulAccumulator(scf::ForOp jLoop, scf::ForOp kLoop,
     if (auto store = dyn_cast<memref::StoreOp>(op)) {
       if (store.getMemref() != output)
         return false;
-      if (!::mlir::carts::ValueAnalysis::areValueRangesIdentical(store.getIndices(),
-                                                  outputIndices))
+      if (!::mlir::carts::ValueAnalysis::areValueRangesIdentical(
+              store.getIndices(), outputIndices))
         return false;
       ++outputStores;
 
       if (auto add = store.getValueToStore().getDefiningOp<arith::AddFOp>()) {
         if (auto load = add.getLhs().getDefiningOp<memref::LoadOp>();
             load && load.getMemref() == output &&
-            ::mlir::carts::ValueAnalysis::areValueRangesIdentical(load.getIndices(),
-                                                   outputIndices))
+            ::mlir::carts::ValueAnalysis::areValueRangesIdentical(
+                load.getIndices(), outputIndices))
           hasAccumulatingStore = true;
         if (auto load = add.getRhs().getDefiningOp<memref::LoadOp>();
             load && load.getMemref() == output &&
-            ::mlir::carts::ValueAnalysis::areValueRangesIdentical(load.getIndices(),
-                                                   outputIndices))
+            ::mlir::carts::ValueAnalysis::areValueRangesIdentical(
+                load.getIndices(), outputIndices))
           hasAccumulatingStore = true;
       }
       continue;
@@ -782,6 +783,178 @@ static bool interchangeDirectMemoryMatmulAccumulator(Block &body) {
     return false;
 
   return interchangeLoops(jLoop, kLoop, initOps);
+}
+
+static bool isSameValue(Value lhs, Value rhs) {
+  return ::mlir::carts::ValueAnalysis::sameValue(lhs, rhs);
+}
+
+static bool isSameIndexPair(ValueRange indices, Value first, Value second) {
+  return indices.size() == 2 && isSameValue(indices[0], first) &&
+         isSameValue(indices[1], second);
+}
+
+static void stampRowOwnerPlan(sde::SdeSuIterateOp op, MemRefType outputType) {
+  if (!op || !outputType || outputType.getRank() < 2 ||
+      !outputType.hasStaticShape())
+    return;
+
+  SmallVector<int64_t, 4> blockShape(outputType.getShape().begin(),
+                                     outputType.getShape().end());
+  blockShape[0] = 1;
+
+  op.setPhysicalOwnerDimsAttr(
+      buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{0}));
+  op.setPhysicalBlockShapeAttr(buildI64ArrayAttr(op.getContext(), blockShape));
+  op.setLogicalWorkerSliceAttr(buildI64ArrayAttr(op.getContext(), blockShape));
+  op.setIterationTopologyAttr(sde::SdeIterationTopologyAttr::get(
+      op.getContext(), sde::SdeIterationTopology::owner_strip));
+}
+
+static sde::SdeSuIterateOp createSymmetricMirrorLoop(sde::SdeSuIterateOp source,
+                                                     Value output,
+                                                     Value diagonalValue) {
+  OpBuilder builder(source);
+  builder.setInsertionPointAfter(source);
+  Location loc = source.getLoc();
+  MLIRContext *ctx = source.getContext();
+  Value lowerBound = source.getLowerBounds().front();
+  Value upperBound = source.getUpperBounds().front();
+  Value step = source.getSteps().front();
+  Value singleIterationUpper =
+      arith::AddIOp::create(builder, loc, lowerBound, step);
+
+  // The mirror reads transposed rows of the same matrix it writes, so it is not
+  // owner-local in the row dimension. Keep it as one coarse scheduling unit and
+  // let the heavy upper-triangle dot-product phase own the row-blocked DBs.
+  auto mirror = sde::SdeSuIterateOp::create(
+      builder, loc, /*resultTypes=*/TypeRange{}, ValueRange{lowerBound},
+      ValueRange{singleIterationUpper}, ValueRange{step},
+      source.getScheduleAttr(),
+      /*chunkSize=*/nullptr, source.getNowaitAttr(),
+      /*reductionAccumulators=*/ValueRange{},
+      /*reductionKinds=*/nullptr, /*reductionStrategy=*/nullptr,
+      /*partialReduction=*/nullptr, /*partialReductionDims=*/nullptr,
+      /*partialReductionOwnerDims=*/nullptr,
+      /*structuredClassification=*/nullptr, /*pattern=*/nullptr,
+      /*accessMinOffsets=*/nullptr, /*accessMaxOffsets=*/nullptr,
+      /*ownerDims=*/nullptr, /*spatialDims=*/nullptr,
+      /*writeFootprint=*/nullptr, /*physicalOwnerDims=*/nullptr,
+      /*physicalBlockShape=*/nullptr, /*logicalWorkerSlice=*/nullptr,
+      /*physicalHaloShape=*/nullptr, /*iterationTopology=*/nullptr,
+      /*repetitionStructure=*/nullptr, /*asyncStrategy=*/nullptr,
+      /*cps_group_id=*/nullptr, /*cps_stage_index=*/nullptr,
+      /*cps_stage_count=*/nullptr, /*distributionKind=*/nullptr,
+      /*inPlaceSafe=*/nullptr, /*inPlaceSharedState=*/nullptr,
+      /*vectorizeWidth=*/nullptr, /*unrollFactor=*/nullptr,
+      /*interleaveCount=*/nullptr);
+
+  Block &mirrorBody = sde::ensureBlock(mirror.getBody());
+  while (mirrorBody.getNumArguments() < 1)
+    mirrorBody.addArgument(builder.getIndexType(), loc);
+
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(&mirrorBody);
+  auto cuRegion = sde::SdeCuRegionOp::create(
+      builder, loc, /*resultTypes=*/TypeRange{},
+      sde::SdeCuKindAttr::get(ctx, sde::SdeCuKind::parallel),
+      /*nowait=*/nullptr, /*iterArgs=*/ValueRange{});
+  Block &compute = sde::ensureBlock(cuRegion.getBody());
+  builder.setInsertionPointToStart(&compute);
+
+  scf::ForOp::create(
+      builder, loc, lowerBound, upperBound, step, ValueRange{},
+      [&](OpBuilder &rowBuilder, Location rowLoc, Value row, ValueRange) {
+        memref::StoreOp::create(rowBuilder, rowLoc, diagonalValue, output,
+                                ValueRange{row, row});
+        scf::ForOp::create(
+            rowBuilder, rowLoc, lowerBound, row, step, ValueRange{},
+            [&](OpBuilder &colBuilder, Location colLoc, Value col, ValueRange) {
+              Value mirrored = memref::LoadOp::create(
+                  colBuilder, colLoc, output, ValueRange{col, row});
+              memref::StoreOp::create(colBuilder, colLoc, mirrored, output,
+                                      ValueRange{row, col});
+              scf::YieldOp::create(colBuilder, colLoc);
+            });
+        scf::YieldOp::create(rowBuilder, rowLoc);
+      });
+  sde::SdeYieldOp::create(builder, loc, ValueRange{});
+
+  builder.setInsertionPointAfter(cuRegion);
+  sde::SdeYieldOp::create(builder, loc, ValueRange{});
+  return mirror;
+}
+
+static bool splitSymmetricSelfGramStores(sde::SdeSuIterateOp op, Block &body) {
+  auto classAttr = op.getStructuredClassificationAttr();
+  if (!classAttr ||
+      classAttr.getValue() != sde::SdeStructuredClassification::matmul ||
+      op.getLowerBounds().size() != 1 || op.getUpperBounds().size() != 1 ||
+      op.getSteps().size() != 1 || op.getBody().front().getNumArguments() < 1)
+    return false;
+
+  Value ownerIv = op.getBody().front().getArgument(0);
+  scf::ForOp pairLoop;
+  memref::StoreOp diagonalStore;
+  for (Operation &nested : body.without_terminator()) {
+    if (auto store = dyn_cast<memref::StoreOp>(nested)) {
+      if (isSameIndexPair(store.getIndices(), ownerIv, ownerIv))
+        diagonalStore = store;
+      continue;
+    }
+    if (auto loop = dyn_cast<scf::ForOp>(nested)) {
+      if (pairLoop)
+        return false;
+      pairLoop = loop;
+    }
+  }
+  if (!pairLoop || !diagonalStore)
+    return false;
+
+  Value pairIv = pairLoop.getInductionVar();
+  memref::StoreOp upperStore;
+  memref::StoreOp lowerStore;
+  scf::ForOp reductionLoop;
+  for (Operation &nested : pairLoop.getBody()->without_terminator()) {
+    if (auto loop = dyn_cast<scf::ForOp>(nested)) {
+      if (reductionLoop)
+        return false;
+      reductionLoop = loop;
+      continue;
+    }
+    auto store = dyn_cast<memref::StoreOp>(nested);
+    if (!store)
+      return false;
+    if (isSameIndexPair(store.getIndices(), ownerIv, pairIv)) {
+      upperStore = store;
+      continue;
+    }
+    if (isSameIndexPair(store.getIndices(), pairIv, ownerIv)) {
+      lowerStore = store;
+      continue;
+    }
+    return false;
+  }
+
+  if (!reductionLoop || reductionLoop.getNumResults() != 1 || !upperStore ||
+      !lowerStore || upperStore.getMemref() != lowerStore.getMemref() ||
+      upperStore.getMemref() != diagonalStore.getMemref() ||
+      upperStore.getValueToStore() != reductionLoop.getResult(0) ||
+      lowerStore.getValueToStore() != reductionLoop.getResult(0))
+    return false;
+
+  auto outputType = dyn_cast<MemRefType>(upperStore.getMemRefType());
+  if (!outputType || outputType.getRank() != 2 || !outputType.hasStaticShape())
+    return false;
+
+  Value output = upperStore.getMemref();
+  Value diagonalValue = diagonalStore.getValueToStore();
+  lowerStore.erase();
+  diagonalStore.erase();
+  createSymmetricMirrorLoop(op, output, diagonalValue);
+  stampRowOwnerPlan(op, outputType);
+  ARTS_INFO("LoopInterchange: split symmetric self-Gram lower-triangle store");
+  return true;
 }
 
 struct LoopInterchangePass
@@ -876,6 +1049,9 @@ struct LoopInterchangePass
       if (interchangePromotedScalarMatmulAccumulator(*body))
         ++interchangeCount;
       else if (interchangeDirectMemoryMatmulAccumulator(*body))
+        ++interchangeCount;
+
+      if (splitSymmetricSelfGramStores(op, *body))
         ++interchangeCount;
 
       auto classAttr = op.getStructuredClassificationAttr();

@@ -35,10 +35,10 @@ namespace mlir::carts::sde {
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::carts::sde
 
-#include "carts/utils/Utils.h"
-#include "carts/utils/OperationAttributes.h"
-#include "carts/utils/ValueAnalysis.h"
 #include "carts/utils/LoopUtils.h"
+#include "carts/utils/OperationAttributes.h"
+#include "carts/utils/Utils.h"
+#include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -150,14 +150,14 @@ static void collectLoopIvs(Operation *root, SmallPtrSetImpl<Value> &ivs) {
 }
 
 static bool isConstantAbsOne(Value value) {
-  std::optional<int64_t> folded =
-      ValueAnalysis::tryFoldConstantIndex(ValueAnalysis::stripNumericCasts(value));
+  std::optional<int64_t> folded = ValueAnalysis::tryFoldConstantIndex(
+      ValueAnalysis::stripNumericCasts(value));
   return folded && (*folded == 1 || *folded == -1);
 }
 
 static bool isConstantOne(Value value) {
-  std::optional<int64_t> folded =
-      ValueAnalysis::tryFoldConstantIndex(ValueAnalysis::stripNumericCasts(value));
+  std::optional<int64_t> folded = ValueAnalysis::tryFoldConstantIndex(
+      ValueAnalysis::stripNumericCasts(value));
   return folded && *folded == 1;
 }
 
@@ -232,12 +232,10 @@ static bool hasStencilLikeFloatingPointAccess(omp::WsloopOp wsloop) {
 
 static bool isTranscendentalMathOp(Operation *op) {
   StringRef opName = op->getName().getStringRef();
-  if (opName == "math.exp" || opName == "math.exp2" ||
-      opName == "math.log" || opName == "math.log2" ||
-      opName == "math.log10" || opName == "math.sin" ||
-      opName == "math.cos" || opName == "math.tan" ||
-      opName == "math.tanh" || opName == "math.erf" ||
-      opName == "math.powf")
+  if (opName == "math.exp" || opName == "math.exp2" || opName == "math.log" ||
+      opName == "math.log2" || opName == "math.log10" || opName == "math.sin" ||
+      opName == "math.cos" || opName == "math.tan" || opName == "math.tanh" ||
+      opName == "math.erf" || opName == "math.powf")
     return true;
 
   auto call = dyn_cast<func::CallOp>(op);
@@ -307,6 +305,69 @@ static bool hasOneDimensionalFloatingPointMap(omp::WsloopOp wsloop,
   });
 
   return hasFloatStore && !hasNeighborAccess;
+}
+
+static bool hasTriangularFloatingPointScatter(omp::WsloopOp wsloop) {
+  if (wsloop.getReductionSyms())
+    return false;
+
+  auto loopNest = dyn_cast_or_null<omp::LoopNestOp>(wsloop.getWrappedLoop());
+  if (!loopNest || loopNest.getRegion().empty())
+    return false;
+
+  SmallPtrSet<Value, 4> outerIvs;
+  for (BlockArgument arg : loopNest.getRegion().front().getArguments())
+    outerIvs.insert(arg);
+  if (outerIvs.size() != 1)
+    return false;
+  Value outerIv = *outerIvs.begin();
+
+  bool hasTriangularInnerLoop = false;
+  bool hasSymmetricSelfGramScatter = false;
+  unsigned floatingStores = 0;
+  SmallVector<memref::StoreOp, 4> stores;
+  loopNest.walk([&](Operation *op) {
+    if (auto loop = dyn_cast<scf::ForOp>(op)) {
+      if (isUnitOffsetFromLoopIv(loop.getLowerBound(), outerIvs))
+        hasTriangularInnerLoop = true;
+      return WalkResult::advance();
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(op)) {
+      if (isFloatMemref(store.getMemRef())) {
+        ++floatingStores;
+        stores.push_back(store);
+      }
+      return WalkResult::advance();
+    }
+    if (auto store = dyn_cast<affine::AffineStoreOp>(op)) {
+      if (isFloatMemref(store.getMemRef()))
+        ++floatingStores;
+      return WalkResult::advance();
+    }
+    return WalkResult::advance();
+  });
+
+  for (auto [lhsIndex, lhs] : llvm::enumerate(stores)) {
+    if (lhs.getIndices().size() != 2)
+      continue;
+    Value lhsFirst = ValueAnalysis::stripNumericCasts(lhs.getIndices()[0]);
+    Value lhsSecond = ValueAnalysis::stripNumericCasts(lhs.getIndices()[1]);
+    if (!ValueAnalysis::sameValue(lhsFirst, outerIv) &&
+        !ValueAnalysis::sameValue(lhsSecond, outerIv))
+      continue;
+    for (auto rhs : llvm::drop_begin(stores, lhsIndex + 1)) {
+      if (rhs.getMemRef() != lhs.getMemRef() || rhs.getIndices().size() != 2)
+        continue;
+      Value rhsFirst = ValueAnalysis::stripNumericCasts(rhs.getIndices()[0]);
+      Value rhsSecond = ValueAnalysis::stripNumericCasts(rhs.getIndices()[1]);
+      if (ValueAnalysis::sameValue(lhsFirst, rhsSecond) &&
+          ValueAnalysis::sameValue(lhsSecond, rhsFirst))
+        hasSymmetricSelfGramScatter = true;
+    }
+  }
+
+  return hasTriangularInnerLoop && floatingStores >= 2 &&
+         !hasSymmetricSelfGramScatter;
 }
 
 static bool shouldKeepHostOpenMP(omp::ParallelOp parallel) {
@@ -390,6 +451,21 @@ static void collectHostOpenMPRepeatedStreamingBundleParallels(
     parallels.append(candidateParallels.begin(), candidateParallels.end());
 }
 
+static void collectHostOpenMPTriangularScatterParallels(
+    ModuleOp module, SmallVectorImpl<omp::ParallelOp> &parallels) {
+  module.walk([&](omp::ParallelOp parallel) {
+    SmallVector<omp::WsloopOp, 2> loops;
+    parallel.walk([&](omp::WsloopOp wsloop) {
+      loops.push_back(wsloop);
+      return WalkResult::advance();
+    });
+    if (loops.size() != 1)
+      return;
+    if (hasTriangularFloatingPointScatter(loops.front()))
+      parallels.push_back(parallel);
+  });
+}
+
 static bool isBenchmarkModule(ModuleOp module) {
   bool found = false;
   module.walk([&](func::CallOp call) {
@@ -423,6 +499,7 @@ static unsigned markHostOpenMPIslands(ModuleOp module) {
   });
   collectHostOpenMPElementwiseBundleParallels(module, fallbackParallels);
   collectHostOpenMPRepeatedStreamingBundleParallels(module, fallbackParallels);
+  collectHostOpenMPTriangularScatterParallels(module, fallbackParallels);
   if (fallbackParallels.empty())
     return 0;
 
@@ -437,10 +514,10 @@ static unsigned markHostOpenMPIslands(ModuleOp module) {
     ++marked;
   };
 
-  // Host OpenMP fallback controls must execute outside the ARTS runtime. Running
-  // selected host OpenMP islands from an ARTS main EDT serializes/pins the OMP
-  // team on current benchmark hosts and turns STREAM-like controls into a
-  // false performance failure. Keep the whole benchmark module on the host
+  // Host OpenMP fallback controls must execute outside the ARTS runtime.
+  // Running selected host OpenMP islands from an ARTS main EDT serializes/pins
+  // the OMP team on current benchmark hosts and turns STREAM-like controls into
+  // a false performance failure. Keep the whole benchmark module on the host
   // until the owning SDE/CODIR plan can replace the fallback entirely.
   module.walk([&](Operation *op) { markIfOpenMP(op); });
   return marked;
@@ -622,8 +699,9 @@ static bool dependsOnAny(Value value, ArrayRef<Value> roots) {
 }
 
 static bool sameDependSource(Value lhs, Value rhs) {
-  return ::mlir::carts::ValueAnalysis::sameValue(::mlir::carts::ValueAnalysis::stripMemrefViewOps(lhs),
-                                  ::mlir::carts::ValueAnalysis::stripMemrefViewOps(rhs));
+  return ::mlir::carts::ValueAnalysis::sameValue(
+      ::mlir::carts::ValueAnalysis::stripMemrefViewOps(lhs),
+      ::mlir::carts::ValueAnalysis::stripMemrefViewOps(rhs));
 }
 
 static bool isElementDependSlice(const OmpDependSlice &slice) {
@@ -670,7 +748,7 @@ static bool isWavefrontTaskDependPattern(Operation *taskOp,
     if (!sameDependSource(read->slice.source, write->slice.source))
       return false;
     if (::mlir::carts::ValueAnalysis::sameValue(read->slice.offsets.front(),
-                                 write->slice.offsets.front()))
+                                                write->slice.offsets.front()))
       return false;
   }
 
@@ -941,7 +1019,8 @@ struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
         if (!depClause)
           continue;
 
-        auto depSlice = extractDependSlice(op.getDependVars()[i], rewriter, loc);
+        auto depSlice =
+            extractDependSlice(op.getDependVars()[i], rewriter, loc);
         if (!depSlice)
           continue;
 
@@ -971,8 +1050,7 @@ struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
 
     sde::SdePatternAttr pattern;
     if (isWavefrontTaskDependPattern(op.getOperation(), dependSpecs))
-      pattern =
-          sde::SdePatternAttr::get(ctx, sde::SdePattern::wavefront_2d);
+      pattern = sde::SdePatternAttr::get(ctx, sde::SdePattern::wavefront_2d);
 
     auto cuTask = sde::SdeCuTaskOp::create(rewriter, loc, deps, pattern);
     Block &blk = sde::ensureBlock(cuTask.getBody());
@@ -981,7 +1059,8 @@ struct TaskToSdePattern : public OpRewritePattern<omp::TaskOp> {
     blk.getOperations().splice(blk.end(), old.getOperations());
 
     rewriter.setInsertionPointAfter(cuTask);
-    sde::SdeControlTokenOp::create(rewriter, loc, sde::CompletionType::get(ctx));
+    sde::SdeControlTokenOp::create(rewriter, loc,
+                                   sde::CompletionType::get(ctx));
 
     ++numTasksConverted;
     rewriter.eraseOp(op);

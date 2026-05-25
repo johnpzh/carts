@@ -230,17 +230,16 @@ static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv,
     if (!loop || loop.getInductionVar() != index)
       return false;
 
-    return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, seen) ||
+    return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, seen) &&
            indexSelectsOwnerSlice(loop.getUpperBound(), ownerIv, seen);
   }
 
   Operation *def = index.getDefiningOp();
-  if (!isa_and_nonnull<arith::AddIOp, arith::SubIOp, arith::MulIOp,
-                       arith::DivSIOp, arith::DivUIOp, arith::RemSIOp,
-                       arith::RemUIOp, arith::IndexCastOp,
-                       arith::IndexCastUIOp, arith::ExtSIOp, arith::ExtUIOp,
-                       arith::TruncIOp, arith::MinSIOp, arith::MinUIOp,
-                       arith::MaxSIOp, arith::MaxUIOp>(def))
+  if (!isa_and_nonnull<
+          arith::AddIOp, arith::SubIOp, arith::MulIOp, arith::DivSIOp,
+          arith::DivUIOp, arith::RemSIOp, arith::RemUIOp, arith::IndexCastOp,
+          arith::IndexCastUIOp, arith::ExtSIOp, arith::ExtUIOp, arith::TruncIOp,
+          arith::MinSIOp, arith::MinUIOp, arith::MaxSIOp, arith::MaxUIOp>(def))
     return false;
 
   return llvm::any_of(def->getOperands(), [&](Value operand) {
@@ -320,8 +319,7 @@ inferSingleOwnerAccessDim(sde::SdeSuIterateOp source, Value root) {
 
 static inline bool allRootAccessesUseOwnerFirstDim(sde::SdeSuIterateOp source,
                                                    Value root) {
-  std::optional<unsigned> ownerDim =
-      inferSingleOwnerAccessDim(source, root);
+  std::optional<unsigned> ownerDim = inferSingleOwnerAccessDim(source, root);
   return ownerDim && *ownerDim == 0;
 }
 
@@ -1907,7 +1905,8 @@ hasEliminatedRequiredMemoryReason(sde::SdeSuBarrierOp barrier) {
   return reason && *reason == sde::SdeBarrierReason::required_memory;
 }
 
-static inline sde::SdeSuIterateOp findSingleSuIterateInContainer(Operation *op) {
+static inline sde::SdeSuIterateOp
+findSingleSuIterateInContainer(Operation *op) {
   if (!op)
     return {};
   if (auto iterate = dyn_cast<sde::SdeSuIterateOp>(op))
@@ -1920,7 +1919,8 @@ static inline sde::SdeSuIterateOp findSingleSuIterateInContainer(Operation *op) 
   sde::SdeSuIterateOp selected;
   bool unsupportedWrapperOp = false;
   for (Operation &nested : distribute.getBody().front()) {
-    if (nested.hasTrait<OpTrait::IsTerminator>() || isa<sde::SdeYieldOp>(nested))
+    if (nested.hasTrait<OpTrait::IsTerminator>() ||
+        isa<sde::SdeYieldOp>(nested))
       continue;
 
     if (auto iterate = dyn_cast<sde::SdeSuIterateOp>(nested)) {
@@ -1964,8 +1964,7 @@ findNextSiblingSuIterate(sde::SdeSuBarrierOp barrier) {
   if (!block)
     return {};
 
-  for (auto it = std::next(barrier->getIterator()); it != block->end();
-       ++it) {
+  for (auto it = std::next(barrier->getIterator()); it != block->end(); ++it) {
     if (auto iterate = findSingleSuIterateInContainer(&*it))
       return iterate;
     if (!isMemoryEffectFree(&*it))
@@ -1985,8 +1984,7 @@ static inline std::optional<Value> getSingleWriteReadIntermediate(
   Value intermediate = *predEffects.writes.begin();
   Value intermediateRoot =
       ::mlir::carts::ValueAnalysis::stripMemrefViewOps(intermediate);
-  if (!intermediateRoot ||
-      !intermediateRoot.getDefiningOp<sde::SdeMuAllocOp>())
+  if (!intermediateRoot || !intermediateRoot.getDefiningOp<sde::SdeMuAllocOp>())
     return std::nullopt;
   if (!intermediate || !succEffects.reads.contains(intermediate))
     return std::nullopt;
@@ -2004,8 +2002,9 @@ static inline std::optional<Value> getSingleWriteReadIntermediate(
   return intermediate;
 }
 
-static inline bool hasMatchingOneDimensionalIterationSpace(
-    sde::SdeSuIterateOp predecessor, sde::SdeSuIterateOp successor) {
+static inline bool
+hasMatchingOneDimensionalIterationSpace(sde::SdeSuIterateOp predecessor,
+                                        sde::SdeSuIterateOp successor) {
   if (!predecessor || !successor)
     return false;
   if (predecessor.getLowerBounds().size() != 1 ||
@@ -2029,9 +2028,10 @@ static inline bool hasSingleLeadingPhysicalOwnerDim(sde::SdeSuIterateOp op) {
   return ownerDims && ownerDims->size() == 1 && (*ownerDims)[0] == 0;
 }
 
-static inline bool hasAlignedBarrierTokenAccessWindow(
-    sde::SdeSuIterateOp predecessor, sde::SdeSuIterateOp successor,
-    Value intermediateRoot) {
+static inline bool
+hasAlignedBarrierTokenAccessWindow(sde::SdeSuIterateOp predecessor,
+                                   sde::SdeSuIterateOp successor,
+                                   Value intermediateRoot) {
   if (!intermediateRoot)
     return false;
   if (!hasMatchingOneDimensionalIterationSpace(predecessor, successor))
@@ -2052,8 +2052,8 @@ static inline bool hasAlignedBarrierTokenAccessWindow(
          canAccessRootWithPlan(successor, intermediateRoot, predecessor);
 }
 
-static inline void
-collectSuBarrierTokenDepPlans(ModuleOp module, SuBarrierTokenDepPlan &plan) {
+static inline void collectSuBarrierTokenDepPlans(ModuleOp module,
+                                                 SuBarrierTokenDepPlan &plan) {
   SmallVector<sde::SdeSuBarrierOp> barriers;
   module.walk([&](sde::SdeSuBarrierOp barrier) {
     if (hasEliminatedRequiredMemoryReason(barrier))
@@ -2291,13 +2291,10 @@ static inline LogicalResult buildSuCodeletPlan(sde::SdeSuIterateOp source,
   return result.wasInterrupted() ? failure() : success();
 }
 
-static inline void appendSuOwnerSliceLocalRewrites(sde::SdeSuIterateOp source,
-                                                   Value dispatchBase,
-                                                   OpBuilder &builder,
-                                                   SuCodeletPlan &plan,
-                                                   const SuBarrierTokenDepPlan
-                                                       *barrierTokenDepPlan =
-                                                           nullptr) {
+static inline void appendSuOwnerSliceLocalRewrites(
+    sde::SdeSuIterateOp source, Value dispatchBase, OpBuilder &builder,
+    SuCodeletPlan &plan,
+    const SuBarrierTokenDepPlan *barrierTokenDepPlan = nullptr) {
   if (!hasSdePhysicalOwnerSlicePlan(source))
     return;
 
@@ -2306,9 +2303,8 @@ static inline void appendSuOwnerSliceLocalRewrites(sde::SdeSuIterateOp source,
   if (!ownerDims || ownerDims->size() != 1 || (*ownerDims)[0] < 0)
     return;
   unsigned plannedOwnerDim = static_cast<unsigned>((*ownerDims)[0]);
-  bool isStencil =
-      source.getStructuredClassification() ==
-      sde::SdeStructuredClassification::stencil;
+  bool isStencil = source.getStructuredClassification() ==
+                   sde::SdeStructuredClassification::stencil;
 
   for (auto [depIndex, dep] : llvm::enumerate(plan.deps)) {
     auto depType = dyn_cast<MemRefType>(dep.getType());
@@ -2449,17 +2445,15 @@ static inline bool hasSuOwnerTile2dDispatchPlan(sde::SdeSuIterateOp source) {
          getPositiveI64(source.getLogicalWorkerSliceAttr(), 1).has_value();
 }
 
-static inline bool
-requiresSuCompletionBarrier(sde::SdeSuIterateOp source,
-                            const SuBarrierTokenDepPlan *barrierTokenDepPlan =
-                                nullptr) {
+static inline bool requiresSuCompletionBarrier(
+    sde::SdeSuIterateOp source,
+    const SuBarrierTokenDepPlan *barrierTokenDepPlan = nullptr) {
   return !source.getNowaitAttr() &&
          !(barrierTokenDepPlan &&
            barrierTokenDepPlan->suppressCompletionBarrier(source));
 }
 
-static inline LogicalResult
-convertSuOwnerTile2dToCodir(
+static inline LogicalResult convertSuOwnerTile2dToCodir(
     sde::SdeSuIterateOp source,
     const SuBarrierTokenDepPlan *barrierTokenDepPlan = nullptr) {
   OpBuilder builder(source);
@@ -2573,10 +2567,9 @@ convertSuOwnerTile2dToCodir(
   return success();
 }
 
-static inline LogicalResult
-convertSuIterateToCodir(sde::SdeSuIterateOp source,
-                        const SuBarrierTokenDepPlan *barrierTokenDepPlan =
-                            nullptr) {
+static inline LogicalResult convertSuIterateToCodir(
+    sde::SdeSuIterateOp source,
+    const SuBarrierTokenDepPlan *barrierTokenDepPlan = nullptr) {
   if (hasSuOwnerTile2dDispatchPlan(source))
     return convertSuOwnerTile2dToCodir(source, barrierTokenDepPlan);
 

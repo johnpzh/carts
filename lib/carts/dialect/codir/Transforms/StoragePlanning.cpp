@@ -60,17 +60,15 @@ static bool isStorageView(Value value) {
                                                   : nullptr);
 }
 
-static std::optional<MemoryAccessInfo>
-getMemoryAccessInfo(Operation *op) {
+static std::optional<MemoryAccessInfo> getMemoryAccessInfo(Operation *op) {
   if (auto load = dyn_cast_or_null<memref::LoadOp>(op))
     return MemoryAccessInfo{
         load.getMemRef(),
         SmallVector<Value>(load.getIndices().begin(), load.getIndices().end())};
   if (auto store = dyn_cast_or_null<memref::StoreOp>(op))
-    return MemoryAccessInfo{
-        store.getMemRef(),
-        SmallVector<Value>(store.getIndices().begin(),
-                           store.getIndices().end())};
+    return MemoryAccessInfo{store.getMemRef(),
+                            SmallVector<Value>(store.getIndices().begin(),
+                                               store.getIndices().end())};
   return std::nullopt;
 }
 
@@ -88,17 +86,16 @@ static bool indexSelectsOwnerSlice(Value index, Value ownerIv,
     if (!loop || loop.getInductionVar() != index)
       return false;
 
-    return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, seen) ||
+    return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, seen) &&
            indexSelectsOwnerSlice(loop.getUpperBound(), ownerIv, seen);
   }
 
   Operation *def = index.getDefiningOp();
-  if (!isa_and_nonnull<arith::AddIOp, arith::SubIOp, arith::MulIOp,
-                       arith::DivSIOp, arith::DivUIOp, arith::RemSIOp,
-                       arith::RemUIOp, arith::IndexCastOp,
-                       arith::IndexCastUIOp, arith::ExtSIOp, arith::ExtUIOp,
-                       arith::TruncIOp, arith::MinSIOp, arith::MinUIOp,
-                       arith::MaxSIOp, arith::MaxUIOp>(def))
+  if (!isa_and_nonnull<
+          arith::AddIOp, arith::SubIOp, arith::MulIOp, arith::DivSIOp,
+          arith::DivUIOp, arith::RemSIOp, arith::RemUIOp, arith::IndexCastOp,
+          arith::IndexCastUIOp, arith::ExtSIOp, arith::ExtUIOp, arith::TruncIOp,
+          arith::MinSIOp, arith::MinUIOp, arith::MaxSIOp, arith::MaxUIOp>(def))
     return false;
 
   return llvm::any_of(def->getOperands(), [&](Value operand) {
@@ -116,8 +113,7 @@ static bool hasTileOwnerSlicePlan(codir::CodeletOp codelet) {
          codelet.getTileOwnerDimsAttr();
 }
 
-static std::optional<unsigned>
-getSingleTileOwnerDim(codir::CodeletOp codelet) {
+static std::optional<unsigned> getSingleTileOwnerDim(codir::CodeletOp codelet) {
   if (!hasTileOwnerSlicePlan(codelet))
     return std::nullopt;
   std::optional<SmallVector<int64_t, 4>> ownerDims =
@@ -139,8 +135,8 @@ static Value getOwnerBaseArgument(codir::CodeletOp codelet) {
   return body.getArgument(depCount + paramCount - 1);
 }
 
-static std::optional<unsigned>
-inferDepOwnerAccessDim(codir::CodeletOp codelet, unsigned depIndex) {
+static std::optional<unsigned> inferDepOwnerAccessDim(codir::CodeletOp codelet,
+                                                      unsigned depIndex) {
   if (!codelet || codelet.getBody().empty() ||
       depIndex >= codelet.getDeps().size())
     return std::nullopt;
@@ -294,7 +290,8 @@ static std::optional<int64_t> getStaticLogicalElementCount(Value value) {
 
 static bool isPerDependencyRedistribution(codir::CodeletOp codelet,
                                           unsigned depIndex) {
-  std::optional<unsigned> depOwnerDim = inferDepOwnerAccessDim(codelet, depIndex);
+  std::optional<unsigned> depOwnerDim =
+      inferDepOwnerAccessDim(codelet, depIndex);
   std::optional<unsigned> codeletOwnerDim = getSingleTileOwnerDim(codelet);
   return depOwnerDim && codeletOwnerDim && *depOwnerDim != *codeletOwnerDim;
 }
@@ -336,8 +333,7 @@ static bool storageViewUsesComputeBlock(codir::CodirStorageViewKind view) {
          view == codir::CodirStorageViewKind::phase_redistributed;
 }
 
-static bool hasSameBlockStoragePlan(codir::CodeletOp lhs,
-                                    unsigned lhsDepIndex,
+static bool hasSameBlockStoragePlan(codir::CodeletOp lhs, unsigned lhsDepIndex,
                                     codir::CodeletOp rhs,
                                     unsigned rhsDepIndex) {
   if (!lhs || !rhs)
@@ -479,9 +475,8 @@ chooseStorageView(codir::CodeletOp codelet, unsigned depIndex,
     return codir::CodirStorageViewKind::phase_redistributed;
   }
 
-  bool needsHostBridge =
-      isa_and_nonnull<BlockArgument>(root) ||
-      hasHostMemrefAccessOutsideCodelet(root);
+  bool needsHostBridge = isa_and_nonnull<BlockArgument>(root) ||
+                         hasHostMemrefAccessOutsideCodelet(root);
   if (!needsHostBridge)
     return codir::CodirStorageViewKind::compute_block;
 
@@ -500,8 +495,8 @@ struct StoragePlanningPass
       SmallVector<Attribute> plannedOwnerDims;
       plannedViews.reserve(codelet.getDeps().size());
       plannedOwnerDims.reserve(codelet.getDeps().size());
-      bool changed = !storageViews ||
-                     storageViews.size() != codelet.getDeps().size();
+      bool changed =
+          !storageViews || storageViews.size() != codelet.getDeps().size();
       for (unsigned index = 0, e = codelet.getDeps().size(); index < e;
            ++index) {
         codir::CodirStorageViewKind requested =
@@ -530,15 +525,14 @@ struct StoragePlanningPass
           if (viewAttr && planned != viewAttr.getValue())
             changed = true;
         }
-        plannedViews.push_back(
-            codir::CodirStorageViewKindAttr::get(codelet.getContext(), planned));
+        plannedViews.push_back(codir::CodirStorageViewKindAttr::get(
+            codelet.getContext(), planned));
         plannedOwnerDims.push_back(buildOwnerDimsAttr(
             codelet.getContext(), getDepOwnerDim(codelet, index)));
       }
 
       if (storageViews && storageViews.size() > codelet.getDeps().size()) {
-        for (unsigned index = codelet.getDeps().size(),
-                      e = storageViews.size();
+        for (unsigned index = codelet.getDeps().size(), e = storageViews.size();
              index < e; ++index)
           plannedViews.push_back(storageViews[index]);
       }
