@@ -37,16 +37,13 @@ constexpr StringLiteral PreserveAccessMode = "preserve_access_mode";
 constexpr StringLiteral PreserveDepEdge = "preserve_dep_edge";
 
 /// Partition-related attributes (TableGen-generated names).
-/// `partition_mode` is owned by ArtsPartitionedOpInterface and `distributed`
-/// by ArtsDistributedDbOpInterface; their attr names are obtained from the
-/// implementing op rather than via a raw string.
+/// `partition_mode` is owned by ArtsPartitionedOpInterface, `distributed`
+/// by ArtsDistributedDbOpInterface, and the distribution family
+/// (`distribution_kind`, `distribution_pattern`, `distribution_version`,
+/// `depPattern`) by ArtsDistributedOpInterface; their attr names are
+/// obtained from the implementing op rather than via raw strings.
 constexpr StringLiteral DistributedRejectReason =
     "arts.distributed_reject_reason";
-constexpr StringLiteral DistributionKind = "distribution_kind";
-constexpr StringLiteral DistributionPattern = "distribution_pattern";
-/// ODS-generated attribute name for EdtOp dep pattern
-constexpr StringLiteral DepPatternAttr = "depPattern";
-constexpr StringLiteral DistributionVersion = "distribution_version";
 
 /// DB storage-type inference annotations (set by DbModeTighteningPass)
 constexpr StringLiteral LocalOnly = "arts.local_only";
@@ -542,20 +539,11 @@ inline std::optional<EdtDistributionKind>
 getEdtDistributionKind(Operation *op) {
   if (!op)
     return std::nullopt;
-  if (auto edtOp = dyn_cast<EdtOp>(op))
-    if (auto attr = edtOp.getDistributionKindAttr())
-      return attr.getValue();
-  if (auto epochOp = dyn_cast<EpochOp>(op))
-    if (auto attr = epochOp.getDistributionKindAttr())
-      return attr.getValue();
-  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
-    if (auto attr = dbAllocOp.getDistributionKindAttr())
-      return attr.getValue();
-  if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
-    if (auto attr = dbAcquireOp.getDistributionKindAttr())
-      return attr.getValue();
+  auto distributed = dyn_cast<ArtsDistributedOpInterface>(op);
+  if (!distributed)
+    return std::nullopt;
   if (auto attr = op->getAttrOfType<EdtDistributionKindAttr>(
-          AttrNames::Operation::DistributionKind))
+          distributed.getDistributionKindAttrName()))
     return attr.getValue();
   return std::nullopt;
 }
@@ -563,37 +551,22 @@ getEdtDistributionKind(Operation *op) {
 inline void setEdtDistributionKind(Operation *op, EdtDistributionKind kind) {
   if (!op)
     return;
-  auto attr = EdtDistributionKindAttr::get(op->getContext(), kind);
-  if (auto edtOp = dyn_cast<EdtOp>(op))
-    edtOp.setDistributionKindAttr(attr);
-  else if (auto epochOp = dyn_cast<EpochOp>(op))
-    epochOp.setDistributionKindAttr(attr);
-  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
-    dbAllocOp.setDistributionKindAttr(attr);
-  else if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
-    dbAcquireOp.setDistributionKindAttr(attr);
-  else
-    op->setAttr(AttrNames::Operation::DistributionKind, attr);
+  auto distributed = dyn_cast<ArtsDistributedOpInterface>(op);
+  if (!distributed)
+    return;
+  op->setAttr(distributed.getDistributionKindAttrName(),
+              EdtDistributionKindAttr::get(op->getContext(), kind));
 }
 
 inline std::optional<EdtDistributionPattern>
 getEdtDistributionPattern(Operation *op) {
   if (!op)
     return std::nullopt;
-  if (auto edtOp = dyn_cast<EdtOp>(op))
-    if (auto attr = edtOp.getDistributionPatternAttr())
-      return attr.getValue();
-  if (auto epochOp = dyn_cast<EpochOp>(op))
-    if (auto attr = epochOp.getDistributionPatternAttr())
-      return attr.getValue();
-  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
-    if (auto attr = dbAllocOp.getDistributionPatternAttr())
-      return attr.getValue();
-  if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
-    if (auto attr = dbAcquireOp.getDistributionPatternAttr())
-      return attr.getValue();
+  auto distributed = dyn_cast<ArtsDistributedOpInterface>(op);
+  if (!distributed)
+    return std::nullopt;
   if (auto attr = op->getAttrOfType<EdtDistributionPatternAttr>(
-          AttrNames::Operation::DistributionPattern))
+          distributed.getDistributionPatternAttrName()))
     return attr.getValue();
   return std::nullopt;
 }
@@ -602,36 +575,21 @@ inline void setEdtDistributionPattern(Operation *op,
                                       EdtDistributionPattern pattern) {
   if (!op)
     return;
-  auto attr = EdtDistributionPatternAttr::get(op->getContext(), pattern);
-  if (auto edtOp = dyn_cast<EdtOp>(op))
-    edtOp.setDistributionPatternAttr(attr);
-  else if (auto epochOp = dyn_cast<EpochOp>(op))
-    epochOp.setDistributionPatternAttr(attr);
-  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
-    dbAllocOp.setDistributionPatternAttr(attr);
-  else if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
-    dbAcquireOp.setDistributionPatternAttr(attr);
-  else
-    op->setAttr(AttrNames::Operation::DistributionPattern, attr);
+  auto distributed = dyn_cast<ArtsDistributedOpInterface>(op);
+  if (!distributed)
+    return;
+  op->setAttr(distributed.getDistributionPatternAttrName(),
+              EdtDistributionPatternAttr::get(op->getContext(), pattern));
 }
 
 inline std::optional<ArtsDepPattern> getDepPattern(Operation *op) {
   if (!op)
     return std::nullopt;
-  if (auto edtOp = dyn_cast<EdtOp>(op))
-    if (auto attr = edtOp.getDepPatternAttr())
-      return attr.getValue();
-  if (auto epochOp = dyn_cast<EpochOp>(op))
-    if (auto attr = epochOp.getDepPatternAttr())
-      return attr.getValue();
-  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
-    if (auto attr = dbAllocOp.getDepPatternAttr())
-      return attr.getValue();
-  if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
-    if (auto attr = dbAcquireOp.getDepPatternAttr())
-      return attr.getValue();
+  auto distributed = dyn_cast<ArtsDistributedOpInterface>(op);
+  if (!distributed)
+    return std::nullopt;
   if (auto attr = op->getAttrOfType<ArtsDepPatternAttr>(
-          AttrNames::Operation::DepPatternAttr))
+          distributed.getDepPatternAttrName()))
     return attr.getValue();
   return std::nullopt;
 }
@@ -639,58 +597,45 @@ inline std::optional<ArtsDepPattern> getDepPattern(Operation *op) {
 inline void setDepPattern(Operation *op, ArtsDepPattern pattern) {
   if (!op)
     return;
-  auto attr = ArtsDepPatternAttr::get(op->getContext(), pattern);
-  if (auto edtOp = dyn_cast<EdtOp>(op))
-    edtOp.setDepPatternAttr(attr);
-  else if (auto epochOp = dyn_cast<EpochOp>(op))
-    epochOp.setDepPatternAttr(attr);
-  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
-    dbAllocOp.setDepPatternAttr(attr);
-  else if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
-    dbAcquireOp.setDepPatternAttr(attr);
-  else
-    op->setAttr(AttrNames::Operation::DepPatternAttr, attr);
+  auto distributed = dyn_cast<ArtsDistributedOpInterface>(op);
+  if (!distributed)
+    return;
+  op->setAttr(distributed.getDepPatternAttrName(),
+              ArtsDepPatternAttr::get(op->getContext(), pattern));
 }
 
 inline IntegerAttr getDistributionVersionAttr(Operation *op) {
   if (!op)
     return nullptr;
-  if (auto edtOp = dyn_cast<EdtOp>(op))
-    return edtOp.getDistributionVersionAttr();
-  if (auto epochOp = dyn_cast<EpochOp>(op))
-    return epochOp.getDistributionVersionAttr();
-  if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
-    return dbAllocOp.getDistributionVersionAttr();
-  if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
-    return dbAcquireOp.getDistributionVersionAttr();
+  auto distributed = dyn_cast<ArtsDistributedOpInterface>(op);
+  if (!distributed)
+    return nullptr;
   return op->getAttrOfType<IntegerAttr>(
-      AttrNames::Operation::DistributionVersion);
+      distributed.getDistributionVersionAttrName());
 }
 
 inline void setDistributionVersionAttr(Operation *op, IntegerAttr attr) {
   if (!op)
     return;
+  auto distributed = dyn_cast<ArtsDistributedOpInterface>(op);
+  if (!distributed)
+    return;
+  auto name = distributed.getDistributionVersionAttrName();
   if (!attr) {
-    op->removeAttr(AttrNames::Operation::DistributionVersion);
+    op->removeAttr(name);
     return;
   }
-  if (auto edtOp = dyn_cast<EdtOp>(op))
-    edtOp.setDistributionVersionAttr(attr);
-  else if (auto epochOp = dyn_cast<EpochOp>(op))
-    epochOp.setDistributionVersionAttr(attr);
-  else if (auto dbAllocOp = dyn_cast<DbAllocOp>(op))
-    dbAllocOp.setDistributionVersionAttr(attr);
-  else if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
-    dbAcquireOp.setDistributionVersionAttr(attr);
-  else
-    op->setAttr(AttrNames::Operation::DistributionVersion, attr);
+  op->setAttr(name, attr);
 }
 
 inline void setDistributionVersion(Operation *op, int64_t version) {
   if (!op)
     return;
+  auto distributed = dyn_cast<ArtsDistributedOpInterface>(op);
+  if (!distributed)
+    return;
   if (version <= 0) {
-    op->removeAttr(AttrNames::Operation::DistributionVersion);
+    op->removeAttr(distributed.getDistributionVersionAttrName());
     return;
   }
   setDistributionVersionAttr(
@@ -810,10 +755,12 @@ inline void copyDepPatternAttrs(Operation *source, Operation *dest) {
   if (!source || !dest)
     return;
 
-  if (auto pattern = getDepPattern(source))
+  if (auto pattern = getDepPattern(source)) {
     setDepPattern(dest, *pattern);
-  else
-    dest->removeAttr(AttrNames::Operation::DepPatternAttr);
+    return;
+  }
+  if (auto distributed = dyn_cast<ArtsDistributedOpInterface>(dest))
+    dest->removeAttr(distributed.getDepPatternAttrName());
 }
 
 inline void inheritDepPatternAttrs(Operation *source, Operation *dest) {
@@ -832,20 +779,22 @@ inline void copyDistributionAttrs(Operation *source, Operation *dest) {
   if (!source || !dest)
     return;
 
+  auto destDistributed = dyn_cast<ArtsDistributedOpInterface>(dest);
+
   if (auto kind = getEdtDistributionKind(source))
     setEdtDistributionKind(dest, *kind);
-  else
-    dest->removeAttr(AttrNames::Operation::DistributionKind);
+  else if (destDistributed)
+    dest->removeAttr(destDistributed.getDistributionKindAttrName());
 
   if (auto pattern = getEdtDistributionPattern(source))
     setEdtDistributionPattern(dest, *pattern);
-  else
-    dest->removeAttr(AttrNames::Operation::DistributionPattern);
+  else if (destDistributed)
+    dest->removeAttr(destDistributed.getDistributionPatternAttrName());
 
   if (auto version = getDistributionVersionAttr(source))
     setDistributionVersionAttr(dest, version);
-  else
-    dest->removeAttr(AttrNames::Operation::DistributionVersion);
+  else if (destDistributed)
+    dest->removeAttr(destDistributed.getDistributionVersionAttrName());
 }
 
 inline void inheritDistributionAttrs(Operation *source, Operation *dest) {

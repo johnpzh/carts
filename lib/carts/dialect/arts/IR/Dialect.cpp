@@ -620,8 +620,7 @@ void DbAcquireOp::setDepPattern(ArtsDepPattern pattern) {
 }
 
 void DbAcquireOp::clearDepPattern() {
-  (*this)->removeAttr(
-      ::mlir::carts::arts::AttrNames::Operation::DepPatternAttr);
+  (*this)->removeAttr(getDepPatternAttrName());
 }
 
 void DbAcquireOp::copyPartitionSegmentsFrom(DbAcquireOp source) {

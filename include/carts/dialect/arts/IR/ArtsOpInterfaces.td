@@ -63,4 +63,58 @@ def ArtsDistributedDbOpInterface : OpInterface<"ArtsDistributedDbOpInterface"> {
   ];
 }
 
+///===----------------------------------------------------------------------===///
+/// ArtsDistributedOpInterface
+///
+/// Implemented by ARTS ops that carry the distribution attribute family:
+/// `distribution_kind`, `distribution_pattern`, `distribution_version`, and
+/// `depPattern`. Provides typed access to each ODS-generated attr name so
+/// passes can avoid raw `AttrNames::Operation::Distribution*`/`DepPatternAttr`
+/// lookups when dispatching on a generic `Operation *`.
+///===----------------------------------------------------------------------===///
+
+def ArtsDistributedOpInterface : OpInterface<"ArtsDistributedOpInterface"> {
+  let description = [{
+    Op interface for ARTS ops carrying the distribution attribute family
+    (`distribution_kind`, `distribution_pattern`, `distribution_version`,
+    `depPattern`).
+  }];
+  let cppNamespace = "::mlir::carts::arts";
+
+  let methods = [
+    InterfaceMethod<[{
+        Returns the ODS-generated attr name for `distribution_kind`.
+      }],
+      /*retTy=*/"::mlir::StringAttr",
+      /*methodName=*/"getDistributionKindAttrName",
+      /*args=*/(ins),
+      /*methodBody=*/[{ return $_op.getDistributionKindAttrName(); }]
+    >,
+    InterfaceMethod<[{
+        Returns the ODS-generated attr name for `distribution_pattern`.
+      }],
+      /*retTy=*/"::mlir::StringAttr",
+      /*methodName=*/"getDistributionPatternAttrName",
+      /*args=*/(ins),
+      /*methodBody=*/[{ return $_op.getDistributionPatternAttrName(); }]
+    >,
+    InterfaceMethod<[{
+        Returns the ODS-generated attr name for `distribution_version`.
+      }],
+      /*retTy=*/"::mlir::StringAttr",
+      /*methodName=*/"getDistributionVersionAttrName",
+      /*args=*/(ins),
+      /*methodBody=*/[{ return $_op.getDistributionVersionAttrName(); }]
+    >,
+    InterfaceMethod<[{
+        Returns the ODS-generated attr name for `depPattern`.
+      }],
+      /*retTy=*/"::mlir::StringAttr",
+      /*methodName=*/"getDepPatternAttrName",
+      /*args=*/(ins),
+      /*methodBody=*/[{ return $_op.getDepPatternAttrName(); }]
+    >,
+  ];
+}
+
 #endif // ARTS_OP_INTERFACES

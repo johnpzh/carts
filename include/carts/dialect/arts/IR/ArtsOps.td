@@ -83,7 +83,8 @@ def DbDimOp : Arts_Op<"db_dim", [Pure]> {
 def DbAllocOp : Arts_Op<"db_alloc",
                         [AttrSizedOperandSegments, MemoryEffects<[MemAlloc]>,
                          ArtsPartitionedOpInterface,
-                         ArtsDistributedDbOpInterface]> {
+                         ArtsDistributedDbOpInterface,
+                         ArtsDistributedOpInterface]> {
   let summary = "Allocate an ARTS DataBlock and get its pointer and GUID.";
   let description = [{
     This operation corresponds to the `artsDbCreate` runtime function.
@@ -205,7 +206,8 @@ def DbAllocOp : Arts_Op<"db_alloc",
 
 def DbAcquireOp : Arts_Op<"db_acquire",
                           [AttrSizedOperandSegments,
-                           ArtsPartitionedOpInterface]> {
+                           ArtsPartitionedOpInterface,
+                           ArtsDistributedOpInterface]> {
   let summary = "Acquires access to an ARTS DataBlock.";
   let description = [{
     This operation acquires a local view of the DataBlock for safe access within EDTs.
@@ -592,7 +594,8 @@ def DbNumElementsOp : Arts_Op<"db_num_elements", [Pure]> {
 def EdtOp : Arts_Op<"edt", [
   AttrSizedOperandSegments,
   DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
-  SingleBlockImplicitTerminator<"arts::YieldOp">, RecursiveMemoryEffects
+  SingleBlockImplicitTerminator<"arts::YieldOp">, RecursiveMemoryEffects,
+  ArtsDistributedOpInterface
 ]> {
   let summary = "Event-Driven Task in ARTS";
   let description = [{
@@ -753,7 +756,8 @@ def EdtOp : Arts_Op<"edt", [
 def EpochOp
     : Arts_Op<"epoch", [
       SingleBlockImplicitTerminator<"arts::YieldOp">,
-      RecursiveMemoryEffects
+      RecursiveMemoryEffects,
+      ArtsDistributedOpInterface
     ]> {
 
   let summary = "Epoch region in ARTS";
