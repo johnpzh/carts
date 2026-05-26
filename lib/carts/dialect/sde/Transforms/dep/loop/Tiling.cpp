@@ -18,6 +18,7 @@ namespace mlir::carts::sde {
 #include "carts/dialect/sde/Utils/SDECostModel.h"
 #include "carts/utils/ArrayAttrUtils.h"
 #include "carts/utils/LoopUtils.h"
+#include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -39,10 +40,6 @@ using namespace mlir::carts;
 
 namespace {
 
-static Value getConstantIndex(OpBuilder &builder, Location loc, int64_t value) {
-  return arith::ConstantIndexOp::create(builder, loc, value);
-}
-
 static bool usesOwnerLocalPipelineGrain(sde::SdeSuIterateOp op) {
   auto classification = op.getStructuredClassification();
   return classification &&
@@ -55,12 +52,12 @@ static Value buildRelaxedOwnerLocalPipelineMinIterations(
     OpBuilder &builder, Location loc, sde::SdeSuIterateOp op,
     Value clampedTripCount, Value targetTasks, int64_t minIterations) {
   Value minValue =
-      getConstantIndex(builder, loc, std::max<int64_t>(1, minIterations));
+      createConstantIndex(builder, loc, std::max<int64_t>(1, minIterations));
   if (!op || !clampedTripCount || !targetTasks ||
       !usesOwnerLocalPipelineGrain(op) || minIterations <= 1)
     return minValue;
 
-  Value one = getConstantIndex(builder, loc, 1);
+  Value one = createConstantIndex(builder, loc, 1);
   Value relaxationThreshold =
       arith::MulIOp::create(builder, loc, targetTasks, minValue);
   Value underfilledOwnerDomain =
@@ -102,11 +99,11 @@ static Value buildTileIterationValue(OpBuilder &builder, Location loc,
   if (!tripCount)
     return Value();
 
-  Value one = getConstantIndex(builder, loc, 1);
+  Value one = createConstantIndex(builder, loc, 1);
   Value workerCountValue = sde::buildLogicalWorkerCapacityValue(builder, loc);
   int64_t targetWaves = getTargetTaskWaves(op, costModel);
   if (targetWaves > 1) {
-    Value waveCountValue = getConstantIndex(builder, loc, targetWaves);
+    Value waveCountValue = createConstantIndex(builder, loc, targetWaves);
     workerCountValue =
         arith::MulIOp::create(builder, loc, workerCountValue, waveCountValue);
   }
@@ -131,8 +128,8 @@ static SmallVector<Value> buildPerDimTripCounts(OpBuilder &builder,
     Value lb = op.getLowerBounds()[d];
     Value ub = op.getUpperBounds()[d];
     Value step = op.getSteps()[d];
-    Value zero = getConstantIndex(builder, loc, 0);
-    Value one = getConstantIndex(builder, loc, 1);
+    Value zero = createConstantIndex(builder, loc, 0);
+    Value one = createConstantIndex(builder, loc, 1);
 
     Value span = arith::SubIOp::create(builder, loc, ub, lb);
 
@@ -174,8 +171,8 @@ buildPerDimTileIterations(OpBuilder &builder, Location loc,
 
   SmallVector<Value> tileIterations;
   for (unsigned d = 0; d < numDims; ++d) {
-    Value one = getConstantIndex(builder, loc, 1);
-    Value workersVal = getConstantIndex(builder, loc, workersPerDim);
+    Value one = createConstantIndex(builder, loc, 1);
+    Value workersVal = createConstantIndex(builder, loc, workersPerDim);
     Value clampedTrip =
         arith::MaxUIOp::create(builder, loc, tripCounts[d], one);
     Value minIterVal = buildRelaxedOwnerLocalPipelineMinIterations(
@@ -256,8 +253,8 @@ buildDirectMatmulTilePlan(OpBuilder &builder, Location loc,
   if (plan.rowTile <= 1 && plan.columnTile <= 1)
     return std::nullopt;
 
-  plan.rowTileValue = getConstantIndex(builder, loc, plan.rowTile);
-  plan.columnTileValue = getConstantIndex(builder, loc, plan.columnTile);
+  plan.rowTileValue = createConstantIndex(builder, loc, plan.rowTile);
+  plan.columnTileValue = createConstantIndex(builder, loc, plan.columnTile);
   return plan;
 }
 
@@ -913,7 +910,7 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
                          int64_t{1}, *tripCount);
           if (tileCount <= 1)
             continue;
-          tileIterations = getConstantIndex(rewriter, loc, tileCount);
+          tileIterations = createConstantIndex(rewriter, loc, tileCount);
         } else {
           tileIterations =
               buildTileIterationValue(rewriter, loc, op, *costModel);
@@ -934,7 +931,7 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
       if (physicalTilePlan) {
         perDimTileIter.clear();
         for (int64_t tile : physicalTilePlan->tileIterations)
-          perDimTileIter.push_back(getConstantIndex(rewriter, loc, tile));
+          perDimTileIter.push_back(createConstantIndex(rewriter, loc, tile));
       }
 
       if (!physicalTilePlan && !directMatmul &&
@@ -950,7 +947,7 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
           sde::SdeStructuredClassification::stencil) {
         SmallVector<int64_t> halos = getStencilHaloWidths(op);
         for (unsigned d = 0; d < numDims && d < halos.size(); ++d) {
-          Value haloVal = getConstantIndex(rewriter, loc, halos[d]);
+          Value haloVal = createConstantIndex(rewriter, loc, halos[d]);
           perDimTileIter[d] =
               arith::MaxUIOp::create(rewriter, loc, perDimTileIter[d], haloVal);
         }
@@ -967,7 +964,7 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
         int64_t l2Size = costModel->getL2CacheSize();
         int64_t cacheLineTile =
             l2Size / (elemSize * std::max<unsigned>(1, numDims));
-        Value cacheVal = getConstantIndex(rewriter, loc,
+        Value cacheVal = createConstantIndex(rewriter, loc,
                                           std::max<int64_t>(1, cacheLineTile));
         for (unsigned d = 0; d < numDims; ++d) {
           perDimTileIter[d] = arith::MinUIOp::create(

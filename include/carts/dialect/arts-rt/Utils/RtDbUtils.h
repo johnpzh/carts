@@ -4,6 +4,13 @@
 /// Runtime-dialect datablock provenance helpers. This extends the abstract
 /// ARTS DB utilities with ARTS-RT-only operations such as depv acquire handles
 /// and runtime DB pointer arithmetic.
+///
+/// Three-tier ValueAnalysis chain: canonical (`carts/utils/ValueAnalysis.h`)
+/// → ARTS (`carts/dialect/arts/Utils/ValueAnalysisUtils.h`) → ARTS-RT here.
+/// Each tier calls the lower tier first, then adds dialect-specific
+/// extensions (here: DepDbAcquireOp, DbGepOp, DbAcquireOp, DbRefOp, plus
+/// LLVM/Polygeist pointer ops). `tryFoldConstantIndex` collapses to a
+/// 2-tier chain — call the ARTS-tier helper directly.
 ///==========================================================================///
 #ifndef CARTS_DIALECT_ARTS_RT_UTILS_RTDBUTILS_H
 #define CARTS_DIALECT_ARTS_RT_UTILS_RTDBUTILS_H
@@ -38,8 +45,6 @@ public:
   static Operation *getUnderlyingOperation(Value value);
   static bool isDerivedFromPtr(Value value, Value source);
 
-  static std::optional<int64_t> tryFoldConstantIndex(Value value,
-                                                     unsigned depth = 0);
   static std::optional<int64_t> getConstantIndexStripped(Value value);
 
   static SmallVector<Value> getSizesFromDb(Operation *dbOp);

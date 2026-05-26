@@ -10,7 +10,7 @@
 /// Transform implementations live in BlockLoopStripMiningSupport.cpp.
 ///==========================================================================///
 
-#include "carts/dialect/arts/Transforms/BlockLoopStripMiningInternal.h"
+#include "BlockLoopStripMiningInternal.h"
 #define GEN_PASS_DEF_BLOCKLOOPSTRIPMINING
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"

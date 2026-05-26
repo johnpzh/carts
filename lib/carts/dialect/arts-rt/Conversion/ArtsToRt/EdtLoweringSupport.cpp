@@ -6,9 +6,9 @@
 /// are declared in EdtLoweringInternal.h.
 ///==========================================================================///
 
-#include "carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLoweringInternal.h"
+#include "EdtLoweringInternal.h"
 
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenInternal.h"
+#include "../ArtsRtToLLVM/CodegenInternal.h"
 #include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"

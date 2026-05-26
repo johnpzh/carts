@@ -31,8 +31,7 @@ dialect/                     MLIR dialects (one subdirectory per CARTS dialect)
     Utils/                   ARTS-specific utilities (DbUtils, EdtUtils,
                              LoweringContractUtils, PartitionPredicates,
                              BlockedAccessUtils, MetadataEnums, ARTSCostModel,
-                             LoopInvarianceUtils, RuntimeConfig,
-                             LocationMetadata)
+                             RuntimeConfig, LocationMetadata)
   arts-rt/                   ARTS-RT dialect — runtime ABI
     IR/                      arts_rt dialect (RtDialect.cpp, RtOps.cpp)
     Conversion/

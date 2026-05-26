@@ -1,4 +1,4 @@
-#include "TaskDepSliceUtils.h"
+#include "carts/dialect/codir/Utils/TaskDepSliceUtils.h"
 
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -10,24 +10,9 @@ using namespace mlir::carts;
 namespace mlir::carts::codir {
 namespace {
 
-static std::optional<int64_t> getConstantIndexValue(Value value) {
-  if (auto constant = value.getDefiningOp<arith::ConstantIndexOp>())
-    return constant.value();
-
-  if (auto constant = value.getDefiningOp<arith::ConstantOp>()) {
-    if (auto integer = dyn_cast<IntegerAttr>(constant.getValue()))
-      return integer.getInt();
-  }
-
-  APInt constant;
-  if (!matchPattern(value, m_ConstantInt(&constant)))
-    return std::nullopt;
-  return constant.getSExtValue();
-}
-
 static bool indexValuesMatch(Value actual, Value expected) {
-  std::optional<int64_t> actualConstant = getConstantIndexValue(actual);
-  std::optional<int64_t> expectedConstant = getConstantIndexValue(expected);
+  std::optional<int64_t> actualConstant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(actual);
+  std::optional<int64_t> expectedConstant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(expected);
   if (actualConstant && expectedConstant)
     return *actualConstant == *expectedConstant;
   return ::mlir::carts::ValueAnalysis::sameValue(actual, expected);
@@ -39,7 +24,7 @@ static bool opFoldResultMatchesValue(OpFoldResult actual, Value expected) {
 
   auto actualAttr = dyn_cast<Attribute>(actual);
   auto actualInteger = dyn_cast_if_present<IntegerAttr>(actualAttr);
-  std::optional<int64_t> expectedConstant = getConstantIndexValue(expected);
+  std::optional<int64_t> expectedConstant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(expected);
   return actualInteger && expectedConstant &&
          actualInteger.getInt() == *expectedConstant;
 }
@@ -51,12 +36,12 @@ static bool isOneIndexFoldResult(OpFoldResult value) {
   }
 
   auto valueOperand = dyn_cast<Value>(value);
-  std::optional<int64_t> constant = getConstantIndexValue(valueOperand);
+  std::optional<int64_t> constant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(valueOperand);
   return constant && *constant == 1;
 }
 
 static bool isConstantIndexValue(Value value, int64_t expected) {
-  std::optional<int64_t> constant = getConstantIndexValue(value);
+  std::optional<int64_t> constant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(value);
   return constant && *constant == expected;
 }
 
@@ -73,10 +58,10 @@ bool hasCompleteMuDepSlice(sde::SdeMuDepOp muDep) {
 bool hasOnlyStaticMuDepSliceBounds(sde::SdeMuDepOp muDep) {
   return llvm::all_of(muDep.getOffsets(),
                       [](Value value) {
-                        return getConstantIndexValue(value).has_value();
+                        return ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(value).has_value();
                       }) &&
          llvm::all_of(muDep.getSizes(), [](Value value) {
-           return getConstantIndexValue(value).has_value();
+           return ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(value).has_value();
          });
 }
 

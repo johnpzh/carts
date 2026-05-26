@@ -247,15 +247,10 @@ bool RtDbUtils::isDerivedFromPtr(Value value, Value source) {
   return isDerivedFromRtPtrImpl(value, source, visited, 0);
 }
 
-std::optional<int64_t> RtDbUtils::tryFoldConstantIndex(Value value,
-                                                       unsigned depth) {
-  return arts::tryFoldConstantIndex(value, depth);
-}
-
 std::optional<int64_t> RtDbUtils::getConstantIndexStripped(Value value) {
   if (!value)
     return std::nullopt;
-  return tryFoldConstantIndex(ValueAnalysis::stripNumericCasts(value));
+  return arts::tryFoldConstantIndex(ValueAnalysis::stripNumericCasts(value));
 }
 
 SmallVector<Value> RtDbUtils::getSizesFromDb(Operation *dbOp) {

@@ -19,8 +19,8 @@ Current utility groups:
   lowering.
 - `EdtUtils`, `ArtsOpUtils`, and `LoweringContractUtils` describe ARTS object
   structure and lowering contracts while the IR is still in the ARTS dialect.
-- `LoopInvarianceUtils`, `LoopStructureUtils`, and `ValueAnalysisUtils` provide
-  ARTS-aware analysis extensions over the shared `carts/utils` layer.
+- `LoopStructureUtils` and `ValueAnalysisUtils` provide ARTS-aware analysis
+  extensions over the shared `carts/utils` layer.
 - `RuntimeConfig`, `RuntimeOpUtils`, `LocationMetadata`, `MetadataEnums`, and
   `ARTSCostModel` carry ARTS-level configuration, query, metadata, and cost
   decisions.

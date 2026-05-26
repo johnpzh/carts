@@ -1,7 +1,12 @@
 ///==========================================================================///
 /// File: ValueAnalysisUtils.h
 ///
-/// ARTS-owned value analysis extensions.
+/// ARTS-owned value analysis extensions. Layered on top of the canonical
+/// ValueAnalysis helpers in `carts/utils/ValueAnalysis.h`: each function here
+/// invokes the canonical body first, then adds ARTS-specific extensions
+/// (DB/EDT/runtime-query folds, EdtOp block-arg tracing). The ARTS-RT tier
+/// (`carts/dialect/arts-rt/Utils/RtDbUtils.h`) layers further on top of this
+/// header. Do not duplicate canonical behavior here.
 ///==========================================================================///
 
 #ifndef CARTS_DIALECT_ARTS_UTILS_VALUEANALYSISUTILS_H

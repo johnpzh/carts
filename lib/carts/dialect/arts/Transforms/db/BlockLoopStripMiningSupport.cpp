@@ -4,7 +4,7 @@
 /// Shared local helpers for the split BlockLoopStripMining implementation.
 ///==========================================================================///
 
-#include "carts/dialect/arts/Transforms/BlockLoopStripMiningInternal.h"
+#include "BlockLoopStripMiningInternal.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
 #include "carts/utils/OperationAttributes.h"

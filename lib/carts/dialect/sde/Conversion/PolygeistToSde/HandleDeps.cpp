@@ -9,7 +9,7 @@
 ///===----------------------------------------------------------------------===///
 
 #define GEN_PASS_DEF_SDEHANDLEDEPS
-#include "PolygeistToSdeUtils.h"
+#include "carts/dialect/sde/Utils/PolygeistToSdeUtils.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
 namespace mlir::carts::sde {
 #include "carts/dialect/sde/Transforms/Passes.h.inc"

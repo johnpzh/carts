@@ -28,7 +28,7 @@ namespace mlir::carts::arts_rt {
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
 
-#include "carts/dialect/arts/Utils/LoopInvarianceUtils.h"
+#include "carts/utils/LoopUtils.h"
 #include "carts/utils/Debug.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/IR/Builders.h"

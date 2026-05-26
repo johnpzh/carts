@@ -19,7 +19,7 @@ namespace mlir::carts::arts_rt {
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
 #include "carts/dialect/arts-rt/Utils/RuntimeCallUtils.h"
-#include "carts/dialect/arts/Utils/LoopInvarianceUtils.h"
+#include "carts/utils/LoopUtils.h"
 #include "carts/passes/Passes.h"
 #include "carts/utils/Debug.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -33,7 +33,7 @@ using namespace mlir;
 using namespace mlir::carts;
 using namespace mlir::carts::arts_rt;
 using mlir::carts::debugStream;
-using mlir::carts::arts::findHoistTarget;
+using mlir::carts::findHoistTarget;
 
 namespace {
 

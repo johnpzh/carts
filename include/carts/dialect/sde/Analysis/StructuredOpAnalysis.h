@@ -6,6 +6,17 @@
 /// This analysis stays on the SDE side of the pipeline so semantic pattern
 /// classification can be shared by SDE-owned distribution and tiling planning
 /// without depending on target runtime IR.
+///
+/// Consumes post-LowerAffine IR: `sde.su_iterate` bodies containing
+/// `scf.for`, `memref.load`/`store`, and
+/// `arith.addi`/`subi`/`muli`/`index_cast`/`constant`. It does **not** match
+/// `affine.*` ops; those have been lowered by the `sde-input-normalization`
+/// and `initial-cleanup` stages registered in
+/// `tools/compile/Compile.cpp`. The `AffineMap` / `AffineExpr` types here
+/// come from `mlir/IR/AffineMap.h` (MLIR's IR-level math data structure for
+/// linear combinations of dims and symbols) and are reconstructed from
+/// post-lowering `arith` chains by `tryGetAffineExpr` and
+/// `tryBuildIndexingMap` in `StructuredOpAnalysis.cpp`.
 ///==========================================================================///
 
 #ifndef ARTS_DIALECT_SDE_ANALYSIS_STRUCTUREDMETHODANALYSIS_H

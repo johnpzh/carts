@@ -55,11 +55,6 @@ static bool isInEdtBody(EdtOp parent, Operation *op) {
   return enclosing == parent;
 }
 
-static Value createIndexConstant(OpBuilder &builder, Location loc,
-                                 int64_t value) {
-  return createConstantIndex(builder, loc, value);
-}
-
 static Value createScalarZero(OpBuilder &builder, Location loc, Type type) {
   if (auto floatType = dyn_cast<FloatType>(type))
     return arith::ConstantOp::create(builder, loc, type,
@@ -170,7 +165,7 @@ static Value createDistributedRoute(OpBuilder &builder, Location loc,
                                     scf::ForOp ownerLoop, Value ownerIndex,
                                     Value tileIndex, int64_t tileCount) {
   Value ownerOrdinal = createOwnerOrdinal(builder, loc, ownerLoop, ownerIndex);
-  Value tileCountValue = createIndexConstant(builder, loc, tileCount);
+  Value tileCountValue = createConstantIndex(builder, loc, tileCount);
   Value ownerBase =
       arith::MulIOp::create(builder, loc, ownerOrdinal, tileCountValue);
   Value linearIndex = arith::AddIOp::create(builder, loc, ownerBase, tileIndex);
@@ -493,9 +488,9 @@ static LogicalResult retileSplitWorkerLoop(EdtOp splitEdt,
 
   OpBuilder loopBuilder((*match).loop);
   Value one = createOneIndex(loopBuilder, loc);
-  Value splitFactor = createIndexConstant(loopBuilder, loc, plan.splitFactor);
+  Value splitFactor = createConstantIndex(loopBuilder, loc, plan.splitFactor);
   Value splitFactorMinusOne =
-      createIndexConstant(loopBuilder, loc, plan.splitFactor - 1);
+      createConstantIndex(loopBuilder, loc, plan.splitFactor - 1);
   Value range =
       arith::SubIOp::create(loopBuilder, loc, (*match).loop.getUpperBound(),
                             (*match).loop.getLowerBound());
@@ -704,8 +699,8 @@ static LogicalResult createIntermediateCombineEdt(
     DbAllocOp outputDb, Type resultDepType, Value ownerIndex, int64_t leftIndex,
     std::optional<int64_t> rightIndex, int64_t outputIndex, Type scalarType,
     Value elementCount, EdtConcurrency concurrency, Value route) {
-  Value leftTile = createIndexConstant(builder, loc, leftIndex);
-  Value outputTile = createIndexConstant(builder, loc, outputIndex);
+  Value leftTile = createConstantIndex(builder, loc, leftIndex);
+  Value outputTile = createConstantIndex(builder, loc, outputIndex);
   DbAcquireOp output = createTileAcquire(builder, loc, outputDb, ArtsMode::out,
                                          resultDepType, ownerIndex, outputTile);
   DbAcquireOp left = createTileAcquire(builder, loc, inputDb, ArtsMode::in,
@@ -713,7 +708,7 @@ static LogicalResult createIntermediateCombineEdt(
 
   SmallVector<Value> deps{output.getPtr(), left.getPtr()};
   if (rightIndex) {
-    Value rightTile = createIndexConstant(builder, loc, *rightIndex);
+    Value rightTile = createConstantIndex(builder, loc, *rightIndex);
     DbAcquireOp right = createTileAcquire(builder, loc, inputDb, ArtsMode::in,
                                           resultDepType, ownerIndex, rightTile);
     deps.push_back(right.getPtr());
@@ -793,17 +788,17 @@ static LogicalResult materializeSplitPlan(EdtOp edt, SplitPlan &plan) {
 
   builder.setInsertionPoint(ownerLoop);
   Value route = createCurrentNodeRoute(builder, loc);
-  Value ownerCount = createIndexConstant(builder, loc, plan.ownerTaskCount);
-  Value splitFactor = createIndexConstant(builder, loc, plan.splitFactor);
+  Value ownerCount = createConstantIndex(builder, loc, plan.ownerTaskCount);
+  Value splitFactor = createConstantIndex(builder, loc, plan.splitFactor);
   Value resultElementCount =
-      createIndexConstant(builder, loc, plan.resultElementCount);
+      createConstantIndex(builder, loc, plan.resultElementCount);
   DbAllocOp partialDb = createReductionBufferDb(
       builder, loc, route, ownerCount, splitFactor, resultElementCount,
       plan.resultElementCount, scalarType, distributedTopology);
   SmallVector<std::pair<DbAllocOp, int64_t>, 4> intermediateLevels;
   for (int64_t currentCount = plan.splitFactor; currentCount > 2;) {
     int64_t nextCount = (currentCount + 1) / 2;
-    Value nextCountValue = createIndexConstant(builder, loc, nextCount);
+    Value nextCountValue = createConstantIndex(builder, loc, nextCount);
     DbAllocOp nextDb = createReductionBufferDb(
         builder, loc, route, ownerCount, nextCountValue, resultElementCount,
         plan.resultElementCount, scalarType, distributedTopology);
@@ -826,7 +821,7 @@ static LogicalResult materializeSplitPlan(EdtOp edt, SplitPlan &plan) {
   Value ownerOrdinal = createOwnerOrdinal(builder, loc, ownerLoop, ownerIndex);
   Value zero = createZeroIndex(builder, loc);
   Value one = createOneIndex(builder, loc);
-  Value splitUpper = createIndexConstant(builder, loc, plan.splitFactor);
+  Value splitUpper = createConstantIndex(builder, loc, plan.splitFactor);
   auto splitLoop = scf::ForOp::create(builder, loc, zero, splitUpper, one);
 
   {
@@ -867,7 +862,7 @@ static LogicalResult materializeSplitPlan(EdtOp edt, SplitPlan &plan) {
       std::optional<int64_t> rightIndex;
       if (leftIndex + 1 < currentCount)
         rightIndex = leftIndex + 1;
-      Value outputTile = createIndexConstant(builder, loc, outputIndex);
+      Value outputTile = createConstantIndex(builder, loc, outputIndex);
       Value combineRoute =
           distributedTopology
               ? createDistributedRoute(builder, loc, ownerLoop, ownerIndex,

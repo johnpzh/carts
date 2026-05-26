@@ -30,8 +30,8 @@ namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_EDTLOWERING
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenInternal.h"
-#include "carts/dialect/arts-rt/Conversion/ArtsToRt/EdtLoweringInternal.h"
+#include "../ArtsRtToLLVM/CodegenInternal.h"
+#include "EdtLoweringInternal.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts-rt/Utils/IdRegistry.h"
 #include "carts/dialect/arts-rt/Utils/RtDbUtils.h"

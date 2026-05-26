@@ -28,13 +28,13 @@
 /// they don't alias with data stores.
 ///==========================================================================///
 
-#include "carts/dialect/arts-rt/Transforms/DataPtrHoistingInternal.h"
+#include "DataPtrHoistingInternal.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
 namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_DATAPTRHOISTING
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
-#include "carts/dialect/arts/Utils/LoopInvarianceUtils.h"
+#include "carts/utils/LoopUtils.h"
 #include "carts/passes/Passes.h"
 #include "carts/utils/LoopUtils.h"
 

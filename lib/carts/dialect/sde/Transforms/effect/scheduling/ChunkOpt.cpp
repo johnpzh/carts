@@ -15,6 +15,7 @@ namespace mlir::carts::sde {
 #include "carts/dialect/sde/Utils/IterationSizingUtils.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
 #include "carts/utils/LoopUtils.h"
+#include "carts/utils/Utils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -41,10 +42,6 @@ static bool isChunkOptimizableSchedule(sde::SdeScheduleKindAttr schedule) {
   }
 }
 
-static Value getConstantIndex(OpBuilder &builder, Location loc, int64_t value) {
-  return arith::ConstantIndexOp::create(builder, loc, value);
-}
-
 static Value buildSymbolicChunkValue(OpBuilder &builder, Location loc,
                                      sde::SdeSuIterateOp op,
                                      int64_t minIterations) {
@@ -52,10 +49,10 @@ static Value buildSymbolicChunkValue(OpBuilder &builder, Location loc,
   if (!tripCount)
     return Value();
 
-  Value one = getConstantIndex(builder, loc, 1);
+  Value one = createConstantIndex(builder, loc, 1);
   Value workerCountValue = sde::buildLogicalWorkerCapacityValue(builder, loc);
   Value minIterationsValue =
-      getConstantIndex(builder, loc, std::max<int64_t>(1, minIterations));
+      createConstantIndex(builder, loc, std::max<int64_t>(1, minIterations));
 
   Value clampedTripCount = arith::MaxUIOp::create(builder, loc, tripCount, one);
   Value balancedChunk = arith::CeilDivUIOp::create(
@@ -114,7 +111,7 @@ struct ChunkOptPass : public sde::impl::ChunkOptBase<ChunkOptPass> {
       Value chunkSize;
       if (rewrite.chunkSize) {
         chunkSize =
-            getConstantIndex(rewriter, rewrite.op.getLoc(), *rewrite.chunkSize);
+            createConstantIndex(rewriter, rewrite.op.getLoc(), *rewrite.chunkSize);
       } else {
         chunkSize = buildSymbolicChunkValue(
             rewriter, rewrite.op.getLoc(), rewrite.op,

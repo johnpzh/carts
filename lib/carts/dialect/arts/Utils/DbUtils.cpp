@@ -41,7 +41,7 @@ static void getAcquireDepSlice(DbAcquireOp acquire,
   offsetsOut.assign(acquire.getOffsets().begin(), acquire.getOffsets().end());
 }
 
-static bool isMemrefForwardingOp(Operation *op, Value source) {
+static bool isMemrefForwardingForSource(Operation *op, Value source) {
   if (!op || !source)
     return false;
 
@@ -72,7 +72,7 @@ static bool isCleanupTerminalOp(Operation *op, Value current) {
 }
 
 static bool isStructuralDbChainUser(Operation *op, Value current) {
-  if (isMemrefForwardingOp(op, current))
+  if (isMemrefForwardingForSource(op, current))
     return true;
 
   if (auto acquire = dyn_cast<DbAcquireOp>(op))
@@ -688,7 +688,7 @@ void DbUtils::forEachReachableMemoryAccess(
         continue;
       }
 
-      if (!isMemrefForwardingOp(user, current))
+      if (!isMemrefForwardingForSource(user, current))
         continue;
       if (user->getNumResults() == 0)
         continue;

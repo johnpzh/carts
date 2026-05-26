@@ -4,8 +4,8 @@
 /// Shared helpers for the Polygeist-to-SDE conversion passes.
 ///==========================================================================///
 
-#ifndef CARTS_DIALECT_SDE_CONVERSION_POLYGEISTTOSDE_UTILS_H
-#define CARTS_DIALECT_SDE_CONVERSION_POLYGEISTTOSDE_UTILS_H
+#ifndef CARTS_DIALECT_SDE_UTILS_POLYGEISTTOSDEUTILS_H
+#define CARTS_DIALECT_SDE_UTILS_POLYGEISTTOSDEUTILS_H
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Builders.h"
@@ -34,4 +34,4 @@ bool containsOmpOp(Operation *op);
 
 } // namespace mlir::carts::sde
 
-#endif // CARTS_DIALECT_SDE_CONVERSION_POLYGEISTTOSDE_UTILS_H
+#endif // CARTS_DIALECT_SDE_UTILS_POLYGEISTTOSDEUTILS_H

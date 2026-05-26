@@ -317,7 +317,7 @@ struct ConvertCodirToArtsPass
         continue;
       for (Value elementSize : alloc.getElementSizes()) {
         if (!isCodirScalarParamType(elementSize.getType()) ||
-            getConstantIndexValue(elementSize) ||
+            ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(elementSize) ||
             containsValue(taskParams, elementSize))
           continue;
         taskParams.push_back(elementSize);
@@ -373,7 +373,7 @@ struct ConvertCodirToArtsPass
           if (it != paramBlockArgs.end())
             subindex = it->second;
           else if (std::optional<int64_t> constant =
-                       getConstantIndexValue(subindex))
+                       ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(subindex))
             subindex = createConstantIndex(builder, loc, *constant);
           payload = polygeist::SubIndexOp::create(builder, loc, depType,
                                                   payload, subindex);

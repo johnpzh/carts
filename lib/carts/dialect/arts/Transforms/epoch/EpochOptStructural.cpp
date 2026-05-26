@@ -4,7 +4,7 @@
 /// Structural and local scheduling transforms used by EpochOpt.
 ///==========================================================================///
 
-#include "carts/dialect/arts/Transforms/EpochOptInternal.h"
+#include "EpochOptInternal.h"
 #include "carts/utils/Debug.h"
 #include "carts/utils/OperationAttributes.h"
 

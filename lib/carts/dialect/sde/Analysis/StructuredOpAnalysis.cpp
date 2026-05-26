@@ -75,22 +75,14 @@ static bool hasBaseMemrefType(Value value) {
   return value && isa<BaseMemRefType>(value.getType());
 }
 
-static Value stripMemrefViews(Value value) {
-  return ::mlir::carts::ValueAnalysis::stripMemrefViewOps(value);
-}
-
-static bool sameMemrefRoot(Value lhs, Value rhs) {
-  return stripMemrefViews(lhs) == stripMemrefViews(rhs);
-}
-
 static bool isLibcFreeCallUsing(func::CallOp call, Value root) {
   return call && isLibcFreeCallee(call.getCallee()) &&
          call->getNumOperands() == 1 && call.getNumResults() == 0 &&
-         sameMemrefRoot(call.getOperand(0), root);
+         ::mlir::carts::ValueAnalysis::sameMemrefRoot(call.getOperand(0), root);
 }
 
 static bool isLocalLibcAllocatorRoot(Value root, Block &scope) {
-  root = stripMemrefViews(root);
+  root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(root);
   if (!hasBaseMemrefType(root))
     return false;
 
@@ -100,7 +92,7 @@ static bool isLocalLibcAllocatorRoot(Value root, Block &scope) {
 }
 
 static bool hasLocalLibcFreeUse(Value root) {
-  root = stripMemrefViews(root);
+  root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(root);
   for (OpOperand &use : root.getUses())
     if (auto call = dyn_cast<func::CallOp>(use.getOwner()))
       if (isLibcFreeCallUsing(call, root))
@@ -130,7 +122,7 @@ static bool onlyUsedByRegionsOrLocalFree(Value value,
       return false;
 
     if (auto storeOp = dyn_cast<memref::StoreOp>(owner))
-      if (sameMemrefRoot(storeOp.getValueToStore(), root))
+      if (::mlir::carts::ValueAnalysis::sameMemrefRoot(storeOp.getValueToStore(), root))
         return false;
 
     if (auto call = dyn_cast<func::CallOp>(owner)) {
@@ -166,14 +158,14 @@ static bool onlyUsedByRegionsOrLocalFree(Value value,
 static bool onlyUsedByRegionsOrLocalFree(Value root,
                                          ArrayRef<Operation *> regions,
                                          Block &scope) {
-  root = stripMemrefViews(root);
+  root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(root);
   llvm::SmallPtrSet<Value, 8> seen;
   return onlyUsedByRegionsOrLocalFree(root, regions, scope, root, seen);
 }
 
 static bool isLocalLibcAllocatorScratch(Value root, Block &scope,
                                         ArrayRef<Operation *> regions) {
-  root = stripMemrefViews(root);
+  root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(root);
   return isLocalLibcAllocatorRoot(root, scope) &&
          isUsedInsideAny(regions, root) && hasLocalLibcFreeUse(root) &&
          onlyUsedByRegionsOrLocalFree(root, regions, scope);
@@ -196,10 +188,10 @@ static bool isLocalLibcFreeScratchCall(Operation *op, Block &scope,
                                        ArrayRef<Operation *> regions) {
   auto call = dyn_cast_or_null<func::CallOp>(op);
   if (!isLibcFreeCallUsing(call, call && call->getNumOperands() == 1
-                                     ? stripMemrefViews(call.getOperand(0))
+                                     ? ::mlir::carts::ValueAnalysis::stripMemrefViewOps(call.getOperand(0))
                                      : Value{}))
     return false;
-  Value root = stripMemrefViews(call.getOperand(0));
+  Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(call.getOperand(0));
   return isLocalLibcAllocatorScratch(root, scope, regions);
 }
 

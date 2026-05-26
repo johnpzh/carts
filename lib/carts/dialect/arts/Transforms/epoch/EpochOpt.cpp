@@ -8,7 +8,7 @@
 #define GEN_PASS_DEF_EPOCHOPT
 
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
-#include "carts/dialect/arts/Transforms/EpochOptInternal.h"
+#include "EpochOptInternal.h"
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
 #include "carts/utils/Debug.h"

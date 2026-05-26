@@ -570,18 +570,13 @@ static bool isDefinedInside(Operation *ancestor, Value value) {
   return def && ancestor && ancestor->isAncestor(def);
 }
 
-static Value getMemrefRoot(Value value) {
-  return ValueAnalysis::stripMemrefViewOps(value);
-}
-
-static bool sameIndex(Value lhs, Value rhs) {
-  return ValueAnalysis::sameValue(ValueAnalysis::stripNumericCasts(lhs),
-                                  ValueAnalysis::stripNumericCasts(rhs));
-}
-
 static bool matchesTwoDimAccess(ValueRange indices, Value first, Value second) {
-  return indices.size() == 2 && sameIndex(indices[0], first) &&
-         sameIndex(indices[1], second);
+  auto sameStripped = [](Value lhs, Value rhs) {
+    return ValueAnalysis::sameValue(ValueAnalysis::stripNumericCasts(lhs),
+                                    ValueAnalysis::stripNumericCasts(rhs));
+  };
+  return indices.size() == 2 && sameStripped(indices[0], first) &&
+         sameStripped(indices[1], second);
 }
 
 static bool hasCanonicalPrivateScratchMatmul(omp::WsloopOp wsloop) {
@@ -626,7 +621,7 @@ static bool hasCanonicalPrivateScratchMatmul(omp::WsloopOp wsloop) {
     if (!isFloatMemref(store.getMemRef()))
       return WalkResult::advance();
 
-    Value root = getMemrefRoot(store.getMemRef());
+    Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(store.getMemRef());
     if (!root || isDefinedInside(loopNest.getOperation(), root))
       return WalkResult::advance();
 
@@ -648,7 +643,7 @@ static bool hasCanonicalPrivateScratchMatmul(omp::WsloopOp wsloop) {
     if (!isFloatMemref(load.getMemRef()))
       return WalkResult::advance();
 
-    Value root = getMemrefRoot(load.getMemRef());
+    Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(load.getMemRef());
     if (!root || isDefinedInside(loopNest.getOperation(), root) ||
         outputRoots.contains(root))
       return WalkResult::advance();
@@ -1029,11 +1024,6 @@ static bool dependsOnAny(Value value, ArrayRef<Value> roots) {
   return false;
 }
 
-static bool sameDependSource(Value lhs, Value rhs) {
-  return ::mlir::carts::ValueAnalysis::sameValue(
-      ::mlir::carts::ValueAnalysis::stripMemrefViewOps(lhs),
-      ::mlir::carts::ValueAnalysis::stripMemrefViewOps(rhs));
-}
 
 static bool isElementDependSlice(const OmpDependSlice &slice) {
   if (slice.offsets.size() != 1)
@@ -1076,7 +1066,7 @@ static bool isWavefrontTaskDependPattern(Operation *taskOp,
     return false;
 
   for (const TaskDependSpec *read : reads) {
-    if (!sameDependSource(read->slice.source, write->slice.source))
+    if (!::mlir::carts::ValueAnalysis::sameMemrefRoot(read->slice.source, write->slice.source))
       return false;
     if (::mlir::carts::ValueAnalysis::sameValue(read->slice.offsets.front(),
                                                 write->slice.offsets.front()))

@@ -8,7 +8,7 @@
 #ifndef CARTS_DIALECT_CODIR_CONVERSION_CODIRTOARTS_ARTSMATERIALIZATIONUTILS_H
 #define CARTS_DIALECT_CODIR_CONVERSION_CODIRTOARTS_ARTSMATERIALIZATIONUTILS_H
 
-#include "../ConversionUtils.h"
+#include "carts/dialect/codir/Utils/CodirConversionUtils.h"
 #include "carts/dialect/arts/Utils/DbLayoutPlanUtils.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/LaunchPolicyUtils.h"
@@ -979,13 +979,13 @@ static inline LogicalResult lowerMuAlloc(sde::SdeMuAllocOp op) {
 
 static inline arts::DbAllocOp findBackingDbAlloc(Value storage) {
   return dyn_cast_or_null<arts::DbAllocOp>(
-      arts::DbUtils::getUnderlyingDbAlloc(stripCodirViewOps(storage)));
+      arts::DbUtils::getUnderlyingDbAlloc(::mlir::carts::ValueAnalysis::stripMemrefViewOps(storage)));
 }
 
 static inline std::optional<unsigned>
 findCodirDependencyIndexForRoot(codir::CodeletOp codelet, Value root) {
   for (auto [idx, dep] : llvm::enumerate(codelet.getDeps()))
-    if (stripCodirViewOps(dep) == root)
+    if (::mlir::carts::ValueAnalysis::stripMemrefViewOps(dep) == root)
       return static_cast<unsigned>(idx);
   return std::nullopt;
 }
@@ -1497,7 +1497,7 @@ static inline bool canHoistHostBridgeAcrossLoop(scf::ForOp loop,
   if (hasExistingBridgeWriter)
     return false;
 
-  Value hostRoot = stripCodirViewOps(hostView);
+  Value hostRoot = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(hostView);
   bool hasPotentialSameRootWriter = false;
   loop.walk([&](codir::CodeletOp nestedCodelet) {
     if (hasPotentialSameRootWriter)
@@ -1505,7 +1505,7 @@ static inline bool canHoistHostBridgeAcrossLoop(scf::ForOp loop,
     if (nestedCodelet == codelet)
       return WalkResult::advance();
     for (auto [idx, dep] : llvm::enumerate(nestedCodelet.getDeps())) {
-      if (stripCodirViewOps(dep) != hostRoot)
+      if (::mlir::carts::ValueAnalysis::stripMemrefViewOps(dep) != hostRoot)
         continue;
       std::optional<codir::CodirStorageViewKind> view =
           getCodirDepStorageViewKind(nestedCodelet, static_cast<unsigned>(idx));
@@ -1686,7 +1686,7 @@ materializeCoarseHostDbForHostBridge(OpBuilder &builder, Location loc,
   if (findBackingDbAlloc(hostView))
     return hostView;
 
-  Value root = stripCodirViewOps(hostView);
+  Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(hostView);
   if (root != hostView)
     return failure();
 
@@ -2030,7 +2030,7 @@ materializeExistingDbComputeBlockIfNeeded(codir::CodeletOp codelet,
     return success();
 
   Value dep = codelet.getDeps()[depIndex];
-  Value hostView = stripCodirViewOps(dep);
+  Value hostView = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(dep);
   arts::DbAllocOp sourceAlloc = findBackingDbAlloc(hostView);
   if (!sourceAlloc)
     return success();
@@ -2099,7 +2099,7 @@ materializeRawCodirDependency(Value dep, codir::CodeletOp planSource,
   if (findBackingDbAlloc(dep))
     return success();
 
-  Value root = stripCodirViewOps(dep);
+  Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(dep);
   auto memrefType = dyn_cast<MemRefType>(root.getType());
   if (!memrefType)
     return failure();

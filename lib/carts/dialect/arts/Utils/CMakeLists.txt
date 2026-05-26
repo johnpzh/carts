@@ -3,7 +3,6 @@ add_mlir_dialect_library(MLIRCartsArtsUtils
   DbUtils.cpp
   EdtUtils.cpp
   LocationMetadata.cpp
-  LoopInvarianceUtils.cpp
   LoopStructureUtils.cpp
   LoweringContractUtils.cpp
   RuntimeConfig.cpp

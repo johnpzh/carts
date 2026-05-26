@@ -5,10 +5,10 @@
 /// conversion passes. Keep pass entry points in SdeToCodir.cpp and
 /// CodirToArts.cpp so the source layout mirrors the compiler pipeline.
 ///==========================================================================///
-#ifndef CARTS_DIALECT_CODIR_CONVERSION_CONVERSIONUTILS_H
-#define CARTS_DIALECT_CODIR_CONVERSION_CONVERSIONUTILS_H
-#include "SdeToCodir/SdeToCodirMetadataUtils.h"
-#include "SdeToCodir/TaskDepSliceUtils.h"
+#ifndef CARTS_DIALECT_CODIR_UTILS_CODIRCONVERSIONUTILS_H
+#define CARTS_DIALECT_CODIR_UTILS_CODIRCONVERSIONUTILS_H
+#include "carts/dialect/codir/Utils/SdeToCodirMetadataUtils.h"
+#include "carts/dialect/codir/Utils/TaskDepSliceUtils.h"
 #include "carts/dialect/codir/Utils/CodeletABIUtils.h"
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/utils/ArrayAttrUtils.h"
@@ -104,32 +104,18 @@ static inline Value materializeIndexFoldResult(OpBuilder &builder, Location loc,
   return cast<Value>(value);
 }
 
-static inline std::optional<int64_t> getConstantIndexValue(Value value) {
-  if (auto constant = value.getDefiningOp<arith::ConstantIndexOp>())
-    return constant.value();
-
-  if (auto constant = value.getDefiningOp<arith::ConstantOp>()) {
-    if (auto integer = dyn_cast<IntegerAttr>(constant.getValue()))
-      return integer.getInt();
-  }
-
-  APInt constant;
-  if (!matchPattern(value, m_ConstantInt(&constant)))
-    return std::nullopt;
-  return constant.getSExtValue();
-}
 
 static inline bool
 isKnownZeroIndex(Value value,
                  const DenseMap<Value, Value> &sourceByBlockArgument) {
-  if (std::optional<int64_t> constant = getConstantIndexValue(value))
+  if (std::optional<int64_t> constant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(value))
     return *constant == 0;
 
   auto it = sourceByBlockArgument.find(value);
   if (it == sourceByBlockArgument.end())
     return false;
 
-  if (std::optional<int64_t> constant = getConstantIndexValue(it->second))
+  if (std::optional<int64_t> constant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(it->second))
     return *constant == 0;
   return false;
 }
@@ -137,7 +123,7 @@ isKnownZeroIndex(Value value,
 static inline OpFoldResult
 getStaticOrDynamicIndex(OpBuilder &builder, Value value, bool preferStatic) {
   if (preferStatic) {
-    if (std::optional<int64_t> constant = getConstantIndexValue(value))
+    if (std::optional<int64_t> constant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(value))
       return builder.getIndexAttr(*constant);
   }
   return value;
@@ -161,7 +147,7 @@ remapIndexFoldResult(OpBuilder &builder, Location loc, OpFoldResult value,
   Value oldValue = cast<Value>(value);
   auto it = mapping.find(oldValue);
   if (it == mapping.end()) {
-    if (std::optional<int64_t> constant = getConstantIndexValue(oldValue))
+    if (std::optional<int64_t> constant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(oldValue))
       return createConstantIndex(builder, loc, *constant);
     Operation *defOp = oldValue.getDefiningOp();
     if (defOp && defOp->hasTrait<OpTrait::ConstantLike>() &&
@@ -360,13 +346,6 @@ static inline bool canAccessRootWithPlan(sde::SdeSuIterateOp source, Value root,
   return allRootAccessesUseOwnerFirstDim(source, root);
 }
 
-static inline bool isMemrefForwardingOp(Operation *op) {
-  if (!op || op->getNumRegions() != 0)
-    return false;
-  return llvm::any_of(op->getResults(), [](Value result) {
-    return isa<MemRefType>(result.getType());
-  });
-}
 
 static inline sde::SdeSuIterateOp getEnclosingSuIterate(Operation *op) {
   for (Operation *cur = op ? op->getParentOp() : nullptr; cur;
@@ -598,7 +577,7 @@ appendSlicedTokenOffsetParams(ArrayRef<SlicedTokenLocalIndexRewrite> rewrites,
                               SmallVectorImpl<Value> &params) {
   for (const SlicedTokenLocalIndexRewrite &rewrite : rewrites) {
     for (Value offset : rewrite.sourceOffsets) {
-      if (!offset || getConstantIndexValue(offset))
+      if (!offset || ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(offset))
         continue;
       if (!containsValue(params, offset))
         params.push_back(offset);
@@ -612,7 +591,7 @@ appendDynamicIndexFoldResultParams(ArrayRef<OpFoldResult> values,
   for (OpFoldResult valueOrAttr : values) {
     auto value = dyn_cast<Value>(valueOrAttr);
     if (!value || !isCodirScalarParamType(value.getType()) ||
-        getConstantIndexValue(value) || containsValue(params, value))
+        ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(value) || containsValue(params, value))
       continue;
     params.push_back(value);
   }
@@ -632,11 +611,11 @@ appendDynamicCodirDepSliceParams(ArrayRef<Value> deps,
     if (auto subindex = dyn_cast_or_null<polygeist::SubIndexOp>(def)) {
       Value index = subindex.getIndex();
       if (isCodirScalarParamType(index.getType()) &&
-          !getConstantIndexValue(index) && !containsValue(params, index))
+          !::mlir::carts::ValueAnalysis::tryFoldConstantIndex(index) && !containsValue(params, index))
         params.push_back(index);
       for (Value size : subindex.getSizes()) {
         if (!isCodirScalarParamType(size.getType()) ||
-            getConstantIndexValue(size) || containsValue(params, size))
+            ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(size) || containsValue(params, size))
           continue;
         params.push_back(size);
       }
@@ -665,7 +644,7 @@ materializeCodeletOffset(codir::CodeletOp codelet, Value sourceOffset) {
   if (!sourceOffset)
     return failure();
 
-  if (std::optional<int64_t> constant = getConstantIndexValue(sourceOffset)) {
+  if (std::optional<int64_t> constant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(sourceOffset)) {
     Block &body = codelet.getBody().front();
     OpBuilder builder(&body, body.begin());
     return createConstantIndex(builder, sourceOffset.getLoc(), *constant);
@@ -745,13 +724,13 @@ rewriteTokenLocalAccesses(codir::CodeletOp codelet,
   auto rewriteIndexValue = [&](Operation *op, Value index, Value sourceOffset,
                                Value offset,
                                ValueRange ignoredParams) -> FailureOr<Value> {
-    if (std::optional<int64_t> constant = getConstantIndexValue(sourceOffset);
+    if (std::optional<int64_t> constant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(sourceOffset);
         constant && *constant == 0)
       return index;
 
     OpBuilder builder(op);
-    std::optional<int64_t> indexConstant = getConstantIndexValue(index);
-    std::optional<int64_t> offsetConstant = getConstantIndexValue(sourceOffset);
+    std::optional<int64_t> indexConstant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(index);
+    std::optional<int64_t> offsetConstant = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(sourceOffset);
     if (indexConstant && offsetConstant)
       return createConstantIndex(builder, op->getLoc(),
                                  *indexConstant - *offsetConstant);
@@ -833,7 +812,7 @@ rewriteTokenLocalAccesses(codir::CodeletOp codelet,
         if (auto attr = dyn_cast<Attribute>(mixedOffset)) {
           auto integerAttr = dyn_cast<IntegerAttr>(attr);
           std::optional<int64_t> sourceConstant =
-              getConstantIndexValue(sourceOffset);
+              ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(sourceOffset);
           if (integerAttr && sourceConstant && *sourceConstant != 0) {
             rewrittenOffsets.push_back(
                 OpFoldResult(OpBuilder(subview).getIndexAttr(
@@ -937,25 +916,6 @@ rewriteTokenLocalAccesses(codir::CodeletOp codelet,
   return result.wasInterrupted() ? failure() : success();
 }
 
-static inline Value stripCodirViewOps(Value value) {
-  for (;;) {
-    Operation *def = value ? value.getDefiningOp() : nullptr;
-    if (auto subview = dyn_cast_or_null<memref::SubViewOp>(def)) {
-      value = subview.getSource();
-      continue;
-    }
-    if (auto cast = dyn_cast_or_null<memref::CastOp>(def)) {
-      value = cast.getSource();
-      continue;
-    }
-    if (auto subindex = dyn_cast_or_null<polygeist::SubIndexOp>(def)) {
-      value = subindex.getSource();
-      continue;
-    }
-    return value;
-  }
-}
-
 static inline bool isCodirViewDep(Value value) {
   Operation *def = value ? value.getDefiningOp() : nullptr;
   return isa_and_nonnull<memref::SubViewOp, polygeist::SubIndexOp>(def);
@@ -972,7 +932,7 @@ hasConservativeReadWriteConflict(ArrayRef<Value> deps,
     if (mode == codir::CodirAccessMode::readwrite)
       return true;
 
-    Value root = stripCodirViewOps(dep);
+    Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(dep);
     auto [it, inserted] = rootModes.try_emplace(root, mode);
     if (!inserted) {
       codir::CodirAccessMode merged = mergeAccessMode(it->second, mode);
@@ -1177,7 +1137,7 @@ static inline bool hasOnlyScalarLoadsInTask(Value memref, Region &taskRegion) {
 
     if (load.getIndices().size() != 1)
       return false;
-    std::optional<int64_t> index = getConstantIndexValue(load.getIndices()[0]);
+    std::optional<int64_t> index = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(load.getIndices()[0]);
     if (!index || *index != 0)
       return false;
   }
@@ -1724,7 +1684,7 @@ static inline Value buildSuDispatchStepFromExtent(sde::SdeSuIterateOp source,
   if (extent == 1)
     return step;
   Location loc = source.getLoc();
-  std::optional<int64_t> stepConst = getConstantIndexValue(step);
+  std::optional<int64_t> stepConst = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(step);
   if (!stepConst)
     stepConst = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(step);
   if (stepConst) {
@@ -1895,21 +1855,6 @@ struct SuBarrierTokenDepPlan {
   }
 };
 
-static inline bool sameIndexValue(Value lhs, Value rhs) {
-  if (lhs == rhs)
-    return true;
-  return ::mlir::carts::ValueAnalysis::sameValue(lhs, rhs);
-}
-
-static inline bool sameIndexValueRange(ValueRange lhs, ValueRange rhs) {
-  if (lhs.size() != rhs.size())
-    return false;
-  for (auto [lhsValue, rhsValue] : llvm::zip(lhs, rhs))
-    if (!sameIndexValue(lhsValue, rhsValue))
-      return false;
-  return true;
-}
-
 static inline bool
 hasEliminatedRequiredMemoryReason(sde::SdeSuBarrierOp barrier) {
   if (!barrier || !barrier.getBarrierEliminatedAttr())
@@ -2030,11 +1975,12 @@ hasMatchingOneDimensionalIterationSpace(sde::SdeSuIterateOp predecessor,
       successor.getSteps().size() != 1)
     return false;
 
-  return sameIndexValueRange(predecessor.getLowerBounds(),
-                             successor.getLowerBounds()) &&
-         sameIndexValueRange(predecessor.getUpperBounds(),
-                             successor.getUpperBounds()) &&
-         sameIndexValueRange(predecessor.getSteps(), successor.getSteps());
+  return ::mlir::carts::ValueAnalysis::areValueRangesEquivalent(
+             predecessor.getLowerBounds(), successor.getLowerBounds()) &&
+         ::mlir::carts::ValueAnalysis::areValueRangesEquivalent(
+             predecessor.getUpperBounds(), successor.getUpperBounds()) &&
+         ::mlir::carts::ValueAnalysis::areValueRangesEquivalent(
+             predecessor.getSteps(), successor.getSteps());
 }
 
 static inline bool hasSingleLeadingPhysicalOwnerDim(sde::SdeSuIterateOp op) {
@@ -2720,4 +2666,4 @@ static inline void replaceSdeYieldWithCodirYield(codir::CodeletOp codelet) {
 }
 
 } // namespace
-#endif // CARTS_DIALECT_CODIR_CONVERSION_CONVERSIONUTILS_H
+#endif // CARTS_DIALECT_CODIR_UTILS_CODIRCONVERSIONUTILS_H

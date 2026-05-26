@@ -979,10 +979,26 @@ Value ValueAnalysis::stripMemrefViewOps(Value value) {
       value = reinterpretOp.getSource();
       continue;
     }
+    if (auto subIndexOp = value.getDefiningOp<polygeist::SubIndexOp>()) {
+      value = subIndexOp.getSource();
+      continue;
+    }
 
     break;
   }
   return value;
+}
+
+bool ValueAnalysis::sameMemrefRoot(Value lhs, Value rhs) {
+  return sameValue(stripMemrefViewOps(lhs), stripMemrefViewOps(rhs));
+}
+
+std::optional<unsigned> ValueAnalysis::getMemrefRank(Value value) {
+  auto type = value ? dyn_cast_if_present<MemRefType>(value.getType())
+                    : MemRefType();
+  if (!type || type.getRank() < 0)
+    return std::nullopt;
+  return static_cast<unsigned>(type.getRank());
 }
 
 Value ValueAnalysis::getUnderlyingValue(Value v) {

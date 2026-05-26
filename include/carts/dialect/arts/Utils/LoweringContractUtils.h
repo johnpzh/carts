@@ -1,5 +1,5 @@
-#ifndef CARTS_UTILS_LOWERINGCONTRACTUTILS_H
-#define CARTS_UTILS_LOWERINGCONTRACTUTILS_H
+#ifndef CARTS_DIALECT_ARTS_UTILS_LOWERINGCONTRACTUTILS_H
+#define CARTS_DIALECT_ARTS_UTILS_LOWERINGCONTRACTUTILS_H
 
 #include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "mlir/IR/Builders.h"
@@ -172,4 +172,4 @@ void moveValueContract(Value source, Value target, OpBuilder &builder,
 } // namespace carts::arts
 } // namespace mlir
 
-#endif // CARTS_UTILS_LOWERINGCONTRACTUTILS_H
+#endif // CARTS_DIALECT_ARTS_UTILS_LOWERINGCONTRACTUTILS_H

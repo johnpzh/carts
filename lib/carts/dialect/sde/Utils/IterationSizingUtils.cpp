@@ -7,6 +7,7 @@
 #include "carts/dialect/sde/Utils/IterationSizingUtils.h"
 
 #include "carts/utils/LoopUtils.h"
+#include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "llvm/ADT/STLExtras.h"
@@ -124,21 +125,18 @@ factorStencilWorkersAcrossDims(int64_t workers, ArrayRef<int64_t> extents,
   return grid;
 }
 
-static Value getConstantIndex(OpBuilder &builder, Location loc, int64_t value) {
-  return arith::ConstantIndexOp::create(builder, loc, value);
-}
 
 Value buildLogicalWorkerCapacityValue(OpBuilder &builder, Location loc) {
   Value logicalWorkers = SdeResourceQueryOp::create(
                              builder, loc, SdeResourceQueryKind::logicalWorkers)
                              .getResult();
   return arith::MaxUIOp::create(builder, loc, logicalWorkers,
-                                getConstantIndex(builder, loc, 1));
+                                createConstantIndex(builder, loc, 1));
 }
 
 Value buildTripCountValue(OpBuilder &builder, Location loc, SdeSuIterateOp op) {
   if (std::optional<int64_t> tripCount = getStaticTripCount(op.getOperation()))
-    return getConstantIndex(builder, loc, *tripCount);
+    return createConstantIndex(builder, loc, *tripCount);
 
   if (op.getLowerBounds().size() != 1 || op.getUpperBounds().size() != 1 ||
       op.getSteps().size() != 1)
@@ -147,8 +145,8 @@ Value buildTripCountValue(OpBuilder &builder, Location loc, SdeSuIterateOp op) {
   Value lowerBound = op.getLowerBounds().front();
   Value upperBound = op.getUpperBounds().front();
   Value step = op.getSteps().front();
-  Value zero = getConstantIndex(builder, loc, 0);
-  Value one = getConstantIndex(builder, loc, 1);
+  Value zero = createConstantIndex(builder, loc, 0);
+  Value one = createConstantIndex(builder, loc, 1);
 
   Value span = arith::SubIOp::create(builder, loc, upperBound, lowerBound);
 

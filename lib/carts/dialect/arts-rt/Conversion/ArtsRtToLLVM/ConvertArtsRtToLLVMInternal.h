@@ -9,7 +9,7 @@
 #ifndef CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_INTERNAL_H
 #define CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_INTERNAL_H
 
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenInternal.h"
+#include "CodegenInternal.h"
 #include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "mlir/Conversion/LLVMCommon/StructBuilder.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"

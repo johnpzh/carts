@@ -5,8 +5,8 @@
 /// These helpers carry source scheduling intent into CODIR without creating
 /// ARTS runtime/orchestration objects.
 ///==========================================================================///
-#ifndef CARTS_DIALECT_CODIR_CONVERSION_SDETOCODIR_METADATAUTILS_H
-#define CARTS_DIALECT_CODIR_CONVERSION_SDETOCODIR_METADATAUTILS_H
+#ifndef CARTS_DIALECT_CODIR_UTILS_SDETOCODIRMETADATAUTILS_H
+#define CARTS_DIALECT_CODIR_UTILS_SDETOCODIRMETADATAUTILS_H
 
 #include "carts/dialect/codir/IR/CodirDialect.h"
 #include "carts/dialect/sde/IR/SdeDialect.h"
@@ -218,4 +218,4 @@ getCodirMetadataFromSchedulingUnit(sde::SdeSuIterateOp source) {
 
 } // namespace mlir::carts::codir::sde_to_codir
 
-#endif // CARTS_DIALECT_CODIR_CONVERSION_SDETOCODIR_METADATAUTILS_H
+#endif // CARTS_DIALECT_CODIR_UTILS_SDETOCODIRMETADATAUTILS_H

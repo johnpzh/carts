@@ -6,9 +6,9 @@
 /// converts every runtime-facing operation to ARTS-RT first.
 ///==========================================================================///
 
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVMInternal.h"
+#include "ConvertArtsRtToLLVMInternal.h"
 
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenInternal.h"
+#include "CodegenInternal.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"

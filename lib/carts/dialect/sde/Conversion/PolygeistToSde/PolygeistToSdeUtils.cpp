@@ -4,7 +4,7 @@
 /// Shared helpers for the Polygeist-to-SDE conversion passes.
 ///==========================================================================///
 
-#include "PolygeistToSdeUtils.h"
+#include "carts/dialect/sde/Utils/PolygeistToSdeUtils.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "llvm/ADT/STLExtras.h"

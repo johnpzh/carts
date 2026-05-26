@@ -126,9 +126,18 @@ public:
   ///===----------------------------------------------------------------------===////
 
   /// Strip through memref view-like wrapper ops (CastOp, SubViewOp,
-  /// ReinterpretCastOp) without crossing dialect-owned ownership boundaries
-  /// or lower-level pointer wrappers.
+  /// ReinterpretCastOp, polygeist::SubIndexOp) without crossing dialect-owned
+  /// ownership boundaries or lower-level pointer wrappers.
   static Value stripMemrefViewOps(Value value);
+
+  /// True when two values resolve to the same memref root after
+  /// stripMemrefViewOps. Uses sameValue (cast/constant-equivalent) for the
+  /// root comparison, not raw SSA identity.
+  static bool sameMemrefRoot(Value lhs, Value rhs);
+
+  /// Return the rank of a memref-typed Value, or nullopt for non-memref or
+  /// unranked types.
+  static std::optional<unsigned> getMemrefRank(Value value);
 
   ///===----------------------------------------------------------------------===////
   /// Underlying Value Tracing

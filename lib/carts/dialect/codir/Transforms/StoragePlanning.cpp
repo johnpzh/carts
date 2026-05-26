@@ -6,6 +6,7 @@
 
 #include "carts/dialect/codir/Transforms/Passes.h"
 
+#include "carts/dialect/codir/Utils/CodeletABIUtils.h"
 #include "carts/utils/ArrayAttrUtils.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -40,14 +41,6 @@ struct AccessOwnerDims {
   AccessTraceStatus status = AccessTraceStatus::NotRooted;
   SmallVector<unsigned> ownerDims;
 };
-
-static bool isMemrefForwardingOp(Operation *op) {
-  if (!op || op->getNumRegions() != 0)
-    return false;
-  return llvm::any_of(op->getResults(), [](Value result) {
-    return isa<MemRefType>(result.getType());
-  });
-}
 
 static Value stripStorageViews(Value value) {
   for (;;) {
@@ -138,13 +131,6 @@ static bool indexSelectsOwnerSlice(OpFoldResult index, Value ownerIv) {
   return false;
 }
 
-static std::optional<unsigned> getMemrefRank(Value value) {
-  auto type = dyn_cast_if_present<MemRefType>(value.getType());
-  if (!type || type.getRank() < 0)
-    return std::nullopt;
-  return static_cast<unsigned>(type.getRank());
-}
-
 static void addUniqueDim(SmallVectorImpl<unsigned> &dims, unsigned dim) {
   if (!llvm::is_contained(dims, dim))
     dims.push_back(dim);
@@ -153,8 +139,8 @@ static void addUniqueDim(SmallVectorImpl<unsigned> &dims, unsigned dim) {
 static bool remapSubviewOwnerDims(memref::SubViewOp subview,
                                   SmallVectorImpl<unsigned> &selectedDims,
                                   Value ownerBase) {
-  std::optional<unsigned> sourceRank = getMemrefRank(subview.getSource());
-  std::optional<unsigned> resultRank = getMemrefRank(subview.getResult());
+  std::optional<unsigned> sourceRank = ::mlir::carts::ValueAnalysis::getMemrefRank(subview.getSource());
+  std::optional<unsigned> resultRank = ::mlir::carts::ValueAnalysis::getMemrefRank(subview.getResult());
   if (!sourceRank || !resultRank ||
       subview.getMixedOffsets().size() != *sourceRank)
     return false;
@@ -188,7 +174,7 @@ static bool remapSubviewOwnerDims(memref::SubViewOp subview,
 
 static AccessOwnerDims traceAccessToRoot(Value memref, ArrayRef<Value> indices,
                                          Value root, Value ownerBase) {
-  std::optional<unsigned> currentRank = getMemrefRank(memref);
+  std::optional<unsigned> currentRank = ::mlir::carts::ValueAnalysis::getMemrefRank(memref);
   bool unsupportedMapping = !currentRank || indices.size() != *currentRank;
   SmallVector<unsigned> selectedDims;
   if (!unsupportedMapping)
@@ -207,7 +193,7 @@ static AccessOwnerDims traceAccessToRoot(Value memref, ArrayRef<Value> indices,
       return {AccessTraceStatus::NotRooted, {}};
 
     if (auto cast = dyn_cast<memref::CastOp>(def)) {
-      std::optional<unsigned> sourceRank = getMemrefRank(cast.getSource());
+      std::optional<unsigned> sourceRank = ::mlir::carts::ValueAnalysis::getMemrefRank(cast.getSource());
       if (!sourceRank || !currentRank || *sourceRank != *currentRank)
         unsupportedMapping = true;
       current = cast.getSource();
@@ -216,7 +202,7 @@ static AccessOwnerDims traceAccessToRoot(Value memref, ArrayRef<Value> indices,
     }
 
     if (auto subview = dyn_cast<memref::SubViewOp>(def)) {
-      std::optional<unsigned> sourceRank = getMemrefRank(subview.getSource());
+      std::optional<unsigned> sourceRank = ::mlir::carts::ValueAnalysis::getMemrefRank(subview.getSource());
       if (!unsupportedMapping &&
           !remapSubviewOwnerDims(subview, selectedDims, ownerBase))
         unsupportedMapping = true;
@@ -226,7 +212,7 @@ static AccessOwnerDims traceAccessToRoot(Value memref, ArrayRef<Value> indices,
     }
 
     if (auto subindex = dyn_cast<polygeist::SubIndexOp>(def)) {
-      std::optional<unsigned> sourceRank = getMemrefRank(subindex.getSource());
+      std::optional<unsigned> sourceRank = ::mlir::carts::ValueAnalysis::getMemrefRank(subindex.getSource());
       if (!sourceRank || !currentRank || *sourceRank != *currentRank + 1) {
         unsupportedMapping = true;
         current = subindex.getSource();
@@ -248,7 +234,7 @@ static AccessOwnerDims traceAccessToRoot(Value memref, ArrayRef<Value> indices,
     return {AccessTraceStatus::NotRooted, {}};
   }
 
-  std::optional<unsigned> rootRank = getMemrefRank(root);
+  std::optional<unsigned> rootRank = ::mlir::carts::ValueAnalysis::getMemrefRank(root);
   if (!rootRank || !currentRank || *rootRank != *currentRank ||
       unsupportedMapping)
     return {AccessTraceStatus::Unsupported, {}};
@@ -419,7 +405,7 @@ static bool hasHostMemrefAccessOutsideCodelet(Value root) {
         continue;
       if (isa<memref::LoadOp, memref::StoreOp>(user))
         return true;
-      if (isMemrefForwardingOp(user))
+      if (codir::isMemrefForwardingOp(user))
         for (Value result : user->getResults())
           if (isa<MemRefType>(result.getType()))
             worklist.push_back(result);
@@ -478,17 +464,6 @@ getDepStorageViewKind(codir::CodeletOp codelet, unsigned depIndex) {
   if (!view)
     return std::nullopt;
   return view.getValue();
-}
-
-static std::optional<codir::CodirAccessMode>
-getDepAccessMode(codir::CodeletOp codelet, unsigned depIndex) {
-  ArrayAttr modes = codelet ? codelet.getDepModesAttr() : ArrayAttr{};
-  if (!modes || depIndex >= modes.size())
-    return std::nullopt;
-  auto mode = dyn_cast<codir::CodirAccessModeAttr>(modes[depIndex]);
-  if (!mode)
-    return std::nullopt;
-  return mode.getValue();
 }
 
 static bool storageViewUsesComputeBlock(codir::CodirStorageViewKind view) {
@@ -561,7 +536,7 @@ static bool hasIncompatibleSharedStorageUse(codir::CodeletOp seed,
         continue;
       }
 
-      if (isMemrefForwardingOp(owner)) {
+      if (codir::isMemrefForwardingOp(owner)) {
         for (Value result : owner->getResults())
           if (isa<MemRefType>(result.getType()))
             worklist.push_back(result);
