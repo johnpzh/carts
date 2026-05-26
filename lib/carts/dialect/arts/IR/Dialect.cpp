@@ -31,24 +31,24 @@ using namespace mlir::carts::arts;
 void ArtsDialect::initialize() {
   addOperations<
 #define GET_OP_LIST
-#include "carts/dialect/arts/IR/Ops.cpp.inc"
+#include "carts/dialect/arts/IR/ArtsOps.cpp.inc"
       >();
 
   addTypes<
 #define GET_TYPEDEF_LIST
-#include "carts/dialect/arts/IR/OpsTypes.cpp.inc"
+#include "carts/dialect/arts/IR/ArtsOpsTypes.cpp.inc"
       >();
 
   addAttributes<
 #define GET_ATTRDEF_LIST
-#include "carts/dialect/arts/IR/OpsAttributes.cpp.inc"
+#include "carts/dialect/arts/IR/ArtsOpsAttributes.cpp.inc"
       >();
 }
 
-#include "carts/dialect/arts/IR/OpsDialect.cpp.inc"
+#include "carts/dialect/arts/IR/ArtsOpsDialect.cpp.inc"
 
 #define GET_OP_CLASSES
-#include "carts/dialect/arts/IR/Ops.cpp.inc"
+#include "carts/dialect/arts/IR/ArtsOps.cpp.inc"
 
 namespace {
 struct FoldDbDimFromDbOps : public OpRewritePattern<DbDimOp> {
@@ -147,12 +147,12 @@ void RuntimeQueryOp::getCanonicalizationPatterns(RewritePatternSet &results,
 
 /// Arts Dialect Types
 #define GET_TYPEDEF_CLASSES
-#include "carts/dialect/arts/IR/OpsTypes.cpp.inc"
+#include "carts/dialect/arts/IR/ArtsOpsTypes.cpp.inc"
 
 #define GET_ATTRDEF_CLASSES
-#include "carts/dialect/arts/IR/OpsAttributes.cpp.inc"
+#include "carts/dialect/arts/IR/ArtsOpsAttributes.cpp.inc"
 
-#include "carts/dialect/arts/IR/OpsEnums.cpp.inc"
+#include "carts/dialect/arts/IR/ArtsOpsEnums.cpp.inc"
 
 SmallVector<Value> mlir::carts::arts::EdtOp::getDependenciesAsVector() {
   SmallVector<Value> deps(getDependencies().begin(), getDependencies().end());

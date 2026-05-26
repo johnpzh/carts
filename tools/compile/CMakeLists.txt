@@ -93,7 +93,7 @@ set(LIBS
 )
 
 target_link_libraries(carts-compile PRIVATE ${LIBS})
-add_dependencies(carts-compile MLIROpsIncGen MLIRRtOpsIncGen
+add_dependencies(carts-compile MLIRArtsOpsIncGen MLIRArtsRtOpsIncGen
                  MLIRSdeOpsIncGen MLIRCodirOpsIncGen MLIRCartsArtsPassIncGen
                  MLIRCartsCodirConversionPassIncGen
                  MLIRCartsCodirPassIncGen)

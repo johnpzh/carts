@@ -45,10 +45,10 @@ add_mlir_dialect_library(MLIRCartsSdeTransforms
   ${CARTS_SDE_VERIFY_SOURCE_FILES}
 
 DEPENDS
-  MLIROpsIncGen
+  MLIRArtsOpsIncGen
   MLIRCartsArtsPassIncGen
   MLIRCartsSdePassIncGen
-  MLIRRtOpsIncGen
+  MLIRArtsRtOpsIncGen
   MLIRSdeOpsIncGen
 
 LINK_LIBS PUBLIC
@@ -66,11 +66,11 @@ add_mlir_dialect_library(MLIRCartsArtsTransforms
   ${CARTS_UTILS_SOURCE_FILES}
 
 DEPENDS
-  MLIROpsIncGen
+  MLIRArtsOpsIncGen
   MLIRCartsArtsPassIncGen
   MLIRCartsArtsRtPassIncGen
   MLIRCartsSdePassIncGen
-  MLIRRtOpsIncGen
+  MLIRArtsRtOpsIncGen
   MLIRSdeOpsIncGen
 
 LINK_LIBS PUBLIC
@@ -87,9 +87,9 @@ add_mlir_dialect_library(MLIRCartsArtsRtTransforms
   ${CARTS_RT_TRANSFORMS_SOURCE_FILES}
 
 DEPENDS
-  MLIROpsIncGen
+  MLIRArtsOpsIncGen
   MLIRCartsArtsRtPassIncGen
-  MLIRRtOpsIncGen
+  MLIRArtsRtOpsIncGen
 
 LINK_LIBS PUBLIC
   ${_carts_common_link_libs}

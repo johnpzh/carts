@@ -20,8 +20,7 @@ using namespace mlir::carts;
 
 namespace {
 
-struct VerifyCodirPass
-    : public codir::impl::VerifyCodirBase<VerifyCodirPass> {
+struct VerifyCodirPass : public codir::impl::VerifyCodirBase<VerifyCodirPass> {
   void runOnOperation() override {
     bool failed = false;
     getOperation().walk([&](codir::CodeletOp codelet) {
@@ -53,11 +52,10 @@ struct VerifyCodirPass
       ArrayAttr depStorageViews = codelet.getDepStorageViewsAttr();
       if (depStorageViews) {
         if (depStorageViews.size() != codelet.getDeps().size()) {
-          codelet.emitOpError()
-              << "expects dep_storage_views entry count ("
-              << depStorageViews.size()
-              << ") to match dependency operand count ("
-              << codelet.getDeps().size() << ")";
+          codelet.emitOpError() << "expects dep_storage_views entry count ("
+                                << depStorageViews.size()
+                                << ") to match dependency operand count ("
+                                << codelet.getDeps().size() << ")";
           failed = true;
         }
         for (auto [index, attr] : llvm::enumerate(depStorageViews)) {
@@ -135,15 +133,16 @@ struct VerifyCodirPass
           return;
         if (attr.getInt() > 0)
           return;
-        codelet.emitOpError() << name << " must be positive, got "
-                              << attr.getInt();
+        codelet.emitOpError()
+            << name << " must be positive, got " << attr.getInt();
         failed = true;
       };
 
       verifyPositiveI64Attr(codelet.getPartialReductionSplitFactorAttr(),
                             "partial_reduction_split_factor");
-      verifyPositiveI64Attr(codelet.getPartialReductionSplitOwnerTaskCountAttr(),
-                            "partial_reduction_split_owner_task_count");
+      verifyPositiveI64Attr(
+          codelet.getPartialReductionSplitOwnerTaskCountAttr(),
+          "partial_reduction_split_owner_task_count");
       verifyPositiveI64Attr(
           codelet.getPartialReductionSplitTargetWorkerCountAttr(),
           "partial_reduction_split_target_worker_count");
@@ -156,9 +155,8 @@ struct VerifyCodirPass
       }
       if (codelet.getPartialReductionSplitRequiredAttr() &&
           !codelet.getPartialReductionSplitFactorAttr()) {
-        codelet.emitOpError()
-            << "partial_reduction_split_required requires "
-               "partial_reduction_split_factor";
+        codelet.emitOpError() << "partial_reduction_split_required requires "
+                                 "partial_reduction_split_factor";
         failed = true;
       }
       if (ArrayAttr splitDims = codelet.getPartialReductionSplitDimsAttr()) {
@@ -215,8 +213,7 @@ struct VerifyCodirPass
             continue;
           codelet.emitOpError()
               << "dep block argument #" << index << " type (" << argType
-              << ") does not match dep operand type (" << dep.getType()
-              << ")";
+              << ") does not match dep operand type (" << dep.getType() << ")";
           failed = true;
         }
 
@@ -257,7 +254,8 @@ struct VerifyCodirPass
 
         StringRef dialectNamespace = op->getName().getDialectNamespace();
         if (dialectNamespace == "arts" || dialectNamespace == "arts_rt") {
-          InFlightDiagnostic diag = op->emitOpError()
+          InFlightDiagnostic diag =
+              op->emitOpError()
               << "materialized " << dialectNamespace
               << " operation is not allowed inside codir.codelet";
           diag.attachNote(codelet.getLoc())
@@ -266,12 +264,14 @@ struct VerifyCodirPass
           failed = true;
         }
 
-        for (auto [operandIndex, operand] : llvm::enumerate(op->getOperands())) {
+        for (auto [operandIndex, operand] :
+             llvm::enumerate(op->getOperands())) {
           Region *operandRegion = operand.getParentRegion();
           if (operandRegion && bodyRegion.isAncestor(operandRegion))
             continue;
 
-          InFlightDiagnostic diag = op->emitOpError()
+          InFlightDiagnostic diag =
+              op->emitOpError()
               << "operand #" << operandIndex
               << " is an implicit above-capture of a value not declared in the "
                  "codir.codelet deps or params";

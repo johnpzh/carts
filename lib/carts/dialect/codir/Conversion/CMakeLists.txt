@@ -11,7 +11,7 @@ add_mlir_dialect_library(MLIRCartsSdeToCodirConversion
   DEPENDS
     MLIRCartsCodirConversionPassIncGen
     MLIRCodirOpsIncGen
-    MLIROpsIncGen
+    MLIRArtsOpsIncGen
     MLIRSdeOpsIncGen
 
   LINK_LIBS PUBLIC
@@ -41,7 +41,7 @@ add_mlir_dialect_library(MLIRCartsCodirToArtsConversion
   DEPENDS
     MLIRCartsCodirConversionPassIncGen
     MLIRCodirOpsIncGen
-    MLIROpsIncGen
+    MLIRArtsOpsIncGen
     MLIRSdeOpsIncGen
 
   LINK_LIBS PUBLIC

@@ -1,5 +1,5 @@
 ///==========================================================================///
-/// File: RtOps.td
+/// File: ArtsRtOps.td
 /// This file defines the runtime-only operations for the ARTS runtime dialect.
 ///==========================================================================///
 
@@ -10,7 +10,7 @@ include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
-include "carts/dialect/arts-rt/IR/RtDialect.td"
+include "carts/dialect/arts-rt/IR/ArtsRtDialect.td"
 
 class ArtsRt_I32Enum<string name, string description,
                      list<I32EnumAttrCase> cases>

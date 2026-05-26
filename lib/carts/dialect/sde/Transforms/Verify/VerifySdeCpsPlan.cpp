@@ -50,8 +50,7 @@ static bool isTimestepBarrier(sde::SdeSuBarrierOp barrier) {
   if (!barrier)
     return false;
   auto reason = barrier.getBarrierReason();
-  return reason &&
-         *reason == sde::SdeBarrierReason::timestep_stage_boundary;
+  return reason && *reason == sde::SdeBarrierReason::timestep_stage_boundary;
 }
 
 static LogicalResult verifyCandidateAttrSet(sde::SdeSuIterateOp op) {
@@ -179,8 +178,9 @@ static SmallVector<Operation *, 4> collectBlockAncestors(Operation *op) {
   return ancestors;
 }
 
-static CandidateBoundary findTimestepBarrierBetween(
-    sde::SdeSuIterateOp first, sde::SdeSuIterateOp second) {
+static CandidateBoundary
+findTimestepBarrierBetween(sde::SdeSuIterateOp first,
+                           sde::SdeSuIterateOp second) {
   SmallVector<Operation *, 4> firstAncestors =
       collectBlockAncestors(first.getOperation());
   SmallVector<Operation *, 4> secondAncestors =
@@ -241,10 +241,11 @@ static void verifyCandidateBarrierControlEdges(
         continue;
       }
 
-      bool hasControlEdge = llvm::any_of(
-          boundary.barrier.getTokens(), [&](Value token) {
+      bool hasControlEdge =
+          llvm::any_of(boundary.barrier.getTokens(), [&](Value token) {
             return isControlTokenProducedBetween(
-                token, boundary.firstContainer, boundary.barrier.getOperation());
+                token, boundary.firstContainer,
+                boundary.barrier.getOperation());
           });
       if (hasControlEdge)
         continue;

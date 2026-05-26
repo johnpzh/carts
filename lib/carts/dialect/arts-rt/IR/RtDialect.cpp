@@ -14,18 +14,18 @@ using namespace mlir::carts::arts_rt;
 void ArtsRtDialect::initialize() {
   addOperations<
 #define GET_OP_LIST
-#include "carts/dialect/arts-rt/IR/RtOps.cpp.inc"
+#include "carts/dialect/arts-rt/IR/ArtsRtOps.cpp.inc"
       >();
 
   addAttributes<
 #define GET_ATTRDEF_LIST
-#include "carts/dialect/arts-rt/IR/RtOpsAttributes.cpp.inc"
+#include "carts/dialect/arts-rt/IR/ArtsRtOpsAttributes.cpp.inc"
       >();
 }
 
-#include "carts/dialect/arts-rt/IR/RtOpsDialect.cpp.inc"
+#include "carts/dialect/arts-rt/IR/ArtsRtOpsDialect.cpp.inc"
 
 #define GET_ATTRDEF_CLASSES
-#include "carts/dialect/arts-rt/IR/RtOpsAttributes.cpp.inc"
+#include "carts/dialect/arts-rt/IR/ArtsRtOpsAttributes.cpp.inc"
 
-#include "carts/dialect/arts-rt/IR/RtOpsEnums.cpp.inc"
+#include "carts/dialect/arts-rt/IR/ArtsRtOpsEnums.cpp.inc"

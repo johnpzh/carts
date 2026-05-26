@@ -21,9 +21,8 @@ namespace {
 struct VerifySdeLoweredPass
     : public sde::impl::VerifySdeLoweredBase<VerifySdeLoweredPass> {
   void runOnOperation() override {
-    auto *sdeDialect = getOperation()
-                           ->getContext()
-                           ->getLoadedDialect<sde::CartsSdeDialect>();
+    auto *sdeDialect =
+        getOperation()->getContext()->getLoadedDialect<sde::CartsSdeDialect>();
     bool failed = false;
     getOperation().walk([&](Operation *op) {
       if (sdeDialect && op->getDialect() == sdeDialect) {

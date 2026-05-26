@@ -13,7 +13,7 @@ using namespace mlir::carts;
 using namespace mlir::carts::arts_rt;
 
 #define GET_OP_CLASSES
-#include "carts/dialect/arts-rt/IR/RtOps.cpp.inc"
+#include "carts/dialect/arts-rt/IR/ArtsRtOps.cpp.inc"
 
 namespace {
 Value createZeroI32(OpBuilder &builder, Location loc) {

@@ -6,8 +6,8 @@ add_mlir_dialect_library(MLIRCartsArtsRtUtils
     ${PROJECT_SOURCE_DIR}/include/carts/dialect/arts-rt/Utils
 
   DEPENDS
-    MLIROpsIncGen
-    MLIRRtOpsIncGen
+    MLIRArtsOpsIncGen
+    MLIRArtsRtOpsIncGen
 
   LINK_LIBS PUBLIC
     MLIRIR

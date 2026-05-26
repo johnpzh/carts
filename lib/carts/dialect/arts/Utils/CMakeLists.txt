@@ -13,7 +13,7 @@ add_mlir_dialect_library(MLIRCartsArtsUtils
     ${PROJECT_SOURCE_DIR}/include/carts/dialect/arts/Utils
 
   DEPENDS
-    MLIROpsIncGen
+    MLIRArtsOpsIncGen
     MLIRSdeOpsIncGen
 
   LINK_LIBS PUBLIC

@@ -1,5 +1,5 @@
 ///==========================================================================///
-/// File: Ops.td
+/// File: ArtsOps.td
 /// This file defines multiple operations for the ARTS Dialect.
 ///==========================================================================///
 
@@ -15,9 +15,9 @@ include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 
 /// ARTS Dialect
-include "Dialect.td"
-include "Attributes.td"
-include "Types.td"
+include "ArtsDialect.td"
+include "ArtsAttrs.td"
+include "ArtsTypes.td"
 
 ///===----------------------------------------------------------------------===///
 /// Custom Traits for ARTS

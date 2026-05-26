@@ -1,5 +1,5 @@
 ///==========================================================================///
-/// File: Types.td
+/// File: ArtsTypes.td
 /// This file declares the ARTS dialect types.
 ///==========================================================================///
 
@@ -7,7 +7,7 @@
 #define ARTS_TYPES
 
 include "mlir/IR/AttrTypeBase.td"
-include "Dialect.td"
+include "ArtsDialect.td"
 
 ///===----------------------------------------------------------------------===///
 /// ARTS Types

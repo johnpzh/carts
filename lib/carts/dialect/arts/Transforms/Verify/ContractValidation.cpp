@@ -19,9 +19,9 @@
 #include "carts/dialect/arts/IR/ArtsDialect.h"
 #define GEN_PASS_DEF_CONTRACTVALIDATION
 #include "carts/dialect/arts/Analysis/db/OwnershipProof.h"
+#include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
-#include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/StencilAttributes.h"
 #include "mlir/Pass/Pass.h"
@@ -195,7 +195,8 @@ struct ContractValidationPass
         }
 
         /// narrowable_dep without owner_dims
-        if (contract->hasAttr(::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep) &&
+        if (contract->hasAttr(::mlir::carts::arts::AttrNames::Operation::
+                                  Contract::NarrowableDep) &&
             (!ownerDims || ownerDims->empty())) {
           contract.emitWarning("proof gap: narrowable_dep without owner_dims");
           ++proofGapWarnings;

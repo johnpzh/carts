@@ -1,5 +1,5 @@
 ///==========================================================================///
-/// File: Attributes.td
+/// File: ArtsAttrs.td
 /// This file declares the ARTS dialect attributes.
 ///==========================================================================///
 
@@ -10,7 +10,7 @@ include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/BuiltinAttributes.td"
-include "Dialect.td"
+include "ArtsDialect.td"
 
 ///===----------------------------------------------------------------------===///
 // ARTS Enum Helpers

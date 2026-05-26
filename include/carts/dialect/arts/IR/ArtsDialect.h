@@ -24,14 +24,14 @@
 #include <optional>
 
 /// ARTS Dialect
-#include "carts/dialect/arts/IR/OpsDialect.h.inc"
+#include "carts/dialect/arts/IR/ArtsOpsDialect.h.inc"
 
 /// ARTS Dialect Types
 #define GET_TYPEDEF_CLASSES
-#include "carts/dialect/arts/IR/OpsTypes.h.inc"
+#include "carts/dialect/arts/IR/ArtsOpsTypes.h.inc"
 
 /// ARTS Dialect Enums
-#include "carts/dialect/arts/IR/OpsEnums.h.inc"
+#include "carts/dialect/arts/IR/ArtsOpsEnums.h.inc"
 
 namespace mlir {
 namespace carts::arts {
@@ -66,10 +66,10 @@ struct PartitionInfo {
 
 /// ARTS Dialect Attributes
 #define GET_ATTRDEF_CLASSES
-#include "carts/dialect/arts/IR/OpsAttributes.h.inc"
+#include "carts/dialect/arts/IR/ArtsOpsAttributes.h.inc"
 
 /// ARTS Dialect Operations
 #define GET_OP_CLASSES
-#include "carts/dialect/arts/IR/Ops.h.inc"
+#include "carts/dialect/arts/IR/ArtsOps.h.inc"
 
 #endif // CARTS_DIALECT_ARTS_IR_ARTSDIALECT_H

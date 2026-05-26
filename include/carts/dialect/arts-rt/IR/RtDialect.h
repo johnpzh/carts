@@ -15,16 +15,16 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
-#include "carts/dialect/arts-rt/IR/RtOpsDialect.h.inc"
+#include "carts/dialect/arts-rt/IR/ArtsRtOpsDialect.h.inc"
 
 namespace mlir::carts::arts_rt {} // namespace mlir::carts::arts_rt
 
-#include "carts/dialect/arts-rt/IR/RtOpsEnums.h.inc"
+#include "carts/dialect/arts-rt/IR/ArtsRtOpsEnums.h.inc"
 
 #define GET_ATTRDEF_CLASSES
-#include "carts/dialect/arts-rt/IR/RtOpsAttributes.h.inc"
+#include "carts/dialect/arts-rt/IR/ArtsRtOpsAttributes.h.inc"
 
 #define GET_OP_CLASSES
-#include "carts/dialect/arts-rt/IR/RtOps.h.inc"
+#include "carts/dialect/arts-rt/IR/ArtsRtOps.h.inc"
 
 #endif // ARTS_RT_DIALECT_H
