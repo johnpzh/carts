@@ -67,6 +67,7 @@ config.test_subdirs = [
     os.path.join("tests", "cli"),
     os.path.join("tests", "verify"),
     os.path.join("tests", "attrs"),
+    os.path.join("tests", "boundaries"),
 ]
 
 # Keep llvm-lit resilient to interrupted writes or stray blank lines in the

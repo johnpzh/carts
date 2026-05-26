@@ -38,6 +38,11 @@ carts_lit_test(NAME carts-attrs-tests
   LABELS pass
   DEPENDS carts-compile)
 
+carts_lit_test(NAME carts-boundaries-tests
+  TEST_DIR ${CMAKE_SOURCE_DIR}/tests/boundaries
+  LABELS pass
+  DEPENDS carts-compile)
+
 # E2E tests: compile + run samples.
 carts_lit_test(NAME carts-e2e-tests
   TEST_DIR ${CMAKE_SOURCE_DIR}/tests/e2e
