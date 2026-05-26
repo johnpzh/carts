@@ -423,7 +423,7 @@ bool DbUtils::isSmallCoarseUserDataDb(DbAllocOp alloc, int64_t maxElements) {
 bool DbUtils::isRejectedForDistributedOwnership(DbAllocOp alloc) {
   if (!alloc || hasDistributedDbAllocation(alloc.getOperation()))
     return false;
-  return alloc->hasAttr(AttrNames::Operation::DistributedRejectReason) ||
+  return alloc.getDistributedRejectReasonAttr() ||
          alloc.getLocalOnly().value_or(false);
 }
 

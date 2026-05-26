@@ -43,8 +43,11 @@ using namespace llvm;
 /// (`distribution_kind`, `distribution_pattern`, `distribution_version`,
 /// `depPattern`) by ArtsDistributedOpInterface; their attr names are
 /// obtained from the implementing op rather than via raw strings.
-constexpr StringLiteral DistributedRejectReason =
-    "arts.distributed_reject_reason";
+// `distributed_reject_reason` is an ODS-declared OptionalAttr<StrAttr> on
+// arts.db_alloc (stamped by DbDistributedOwnershipPass); consumers must use
+// the generated getDistributedRejectReasonAttr() /
+// setDistributedRejectReason(StringRef) /
+// removeDistributedRejectReasonAttr() accessors.
 
 // `local_only` and `read_only_after_init` are ODS-declared UnitAttrs on
 // arts.db_alloc (set by DbModeTighteningPass); consumers must use the

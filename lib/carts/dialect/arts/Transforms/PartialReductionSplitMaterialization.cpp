@@ -593,7 +593,7 @@ static DbAllocOp createReductionBufferDb(OpBuilder &builder, Location loc,
   if (distributed) {
     setDistributedDbAllocation(db.getOperation(), /*enabled=*/true);
     db.removeLocalOnlyAttr();
-    db->removeAttr(AttrNames::Operation::DistributedRejectReason);
+    db.removeDistributedRejectReasonAttr();
   }
   return db;
 }

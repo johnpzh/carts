@@ -137,7 +137,8 @@ def DbAllocOp : Arts_Op<"db_alloc",
     OptionalAttr<I64Attr>:$planCostRelaunchAmortization,
     OptionalAttr<StorageBridgeAttr>:$storage_bridge,
     OptionalAttr<UnitAttr>:$local_only,
-    OptionalAttr<UnitAttr>:$read_only_after_init
+    OptionalAttr<UnitAttr>:$read_only_after_init,
+    OptionalAttr<StrAttr>:$distributed_reject_reason
   );
   let results = (outs MemRefOf<[I64]> : $guid, AnyMemRef : $ptr);
   let assemblyFormat = [{
