@@ -84,6 +84,7 @@ def _resolve_lit_targets(config: CartsConfig, suite: str) -> List[Path]:
         carts_dir / "lib" / "carts" / "dialect" / "arts-rt" / "test",
         carts_dir / "tests" / "cli",
         carts_dir / "tests" / "verify",
+        carts_dir / "tests" / "attrs",
     ]
 
     e2e_test_dirs = [

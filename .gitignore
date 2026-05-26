@@ -62,6 +62,12 @@ external/*/cmake_install.cmake
 !lib/arts/dialect/*/test/**/*.mlir
 !lib/carts/dialect/*/test/*.mlir
 !lib/carts/dialect/*/test/**/*.mlir
+!tests/attrs/*.mlir
+!tests/attrs/**/*.mlir
+!tests/boundaries/*.mlir
+!tests/boundaries/**/*.mlir
+!lib/carts/utils/test/*.mlir
+!lib/carts/utils/test/**/*.mlir
 
 # CARTS generated executables
 *_arts

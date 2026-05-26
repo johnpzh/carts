@@ -66,6 +66,7 @@ config.test_subdirs = [
     os.path.join("lib", "carts", "dialect", "arts-rt", "test"),
     os.path.join("tests", "cli"),
     os.path.join("tests", "verify"),
+    os.path.join("tests", "attrs"),
 ]
 
 # Keep llvm-lit resilient to interrupted writes or stray blank lines in the
