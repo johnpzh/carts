@@ -73,8 +73,9 @@ constexpr StringLiteral ContractKindKey = "contract_kind";
 // RelaunchStateSoundness) live in
 // carts/dialect/arts/Utils/ArtsAttrNames.h.
 
-/// Persistent structured region attribute.
-constexpr llvm::StringLiteral PersistentRegion = "arts.persistent_region";
+// `persistent_region` is an ODS-declared UnitAttr on arts.epoch and
+// arts_rt.create_epoch; consumers must use the generated
+// op.getPersistentRegion() / op.setPersistentRegion(...) accessors.
 
 // RT-facing loop execution hints (Rt::VectorizeWidth/UnrollFactor/
 // InterleaveCount) live in carts/dialect/arts-rt/Utils/ArtsRtAttrNames.h.

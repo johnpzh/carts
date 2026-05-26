@@ -43,7 +43,8 @@ def CreateEpochOp
     signals the given dependency slot of the finish EDT on completion instead
     of requiring an explicit wait operation.
   }];
-  let arguments = (ins Optional<I64>:$finishEdtGuid, Optional<I32>:$finishSlot);
+  let arguments = (ins Optional<I64>:$finishEdtGuid, Optional<I32>:$finishSlot,
+                       OptionalAttr<UnitAttr>:$persistent_region);
   let results = (outs I64:$epochGuid);
   let assemblyFormat = [{
     (`finish` `(` $finishEdtGuid^ `:` type($finishEdtGuid) `,`

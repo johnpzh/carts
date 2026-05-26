@@ -439,7 +439,7 @@ void EpochOp::build(OpBuilder &builder, OperationState &state, Type epochGuid) {
         ArrayAttr{}, ArrayAttr{}, UnitAttr{}, ArrayAttr{}, ArrayAttr{},
         ArrayAttr{}, ArrayAttr{}, ArtsPlanIterationTopologyAttr{},
         ArtsPlanRepetitionStructureAttr{}, ArtsPlanAsyncStrategyAttr{},
-        IntegerAttr{}, IntegerAttr{}, IntegerAttr{}, IntegerAttr{});
+        IntegerAttr{}, IntegerAttr{}, IntegerAttr{}, IntegerAttr{}, UnitAttr{});
 }
 
 /// Helper to compute GUID type from sizes

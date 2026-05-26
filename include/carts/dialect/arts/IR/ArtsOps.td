@@ -789,7 +789,8 @@ def EpochOp
     OptionalAttr<I64Attr>:$planCostSchedulerOverhead,
     OptionalAttr<I64Attr>:$planCostSliceWideningPressure,
     OptionalAttr<I64Attr>:$planCostExpectedLocalWork,
-    OptionalAttr<I64Attr>:$planCostRelaunchAmortization
+    OptionalAttr<I64Attr>:$planCostRelaunchAmortization,
+    OptionalAttr<UnitAttr>:$persistent_region
   );
   let regions = (region SizedRegion<1> : $body);
   let results = (outs I64 : $epochGuid);
