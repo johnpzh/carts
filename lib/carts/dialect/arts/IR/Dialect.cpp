@@ -597,8 +597,7 @@ void DbAcquireOp::setPreserveAccessMode(bool preserve) {
     setPreserveAccessModeAttr(PreserveAccessModeAttr::get(getContext()));
     return;
   }
-  (*this)->removeAttr(
-      ::mlir::carts::arts::AttrNames::Operation::PreserveAccessMode);
+  (*this)->removeAttr(getPreserveAccessModeAttrName());
 }
 
 void DbAcquireOp::setPreserveDepEdge(bool preserve) {
@@ -606,8 +605,7 @@ void DbAcquireOp::setPreserveDepEdge(bool preserve) {
     setPreserveDepEdgeAttr(PreserveDepEdgeAttr::get(getContext()));
     return;
   }
-  (*this)->removeAttr(
-      ::mlir::carts::arts::AttrNames::Operation::PreserveDepEdge);
+  (*this)->removeAttr(getPreserveDepEdgeAttrName());
 }
 
 void DbAcquireOp::setExplicitDepContract(bool preserve) {

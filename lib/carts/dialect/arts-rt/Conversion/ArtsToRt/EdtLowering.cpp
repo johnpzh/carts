@@ -523,7 +523,7 @@ void EdtLoweringPass::gatherLowerableTaskEdts(
       ARTS_DEBUG("Demoting non-task EDT to task: " << edtOp);
       ++numEdtsDemotedToTask;
       edtOp.setType(EdtType::task);
-      setNowait(edtOp, false);
+      edtOp.removeNowaitAttr();
     }
     taskEdts.push_back(edtOp);
   });

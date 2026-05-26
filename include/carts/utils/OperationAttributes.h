@@ -31,10 +31,11 @@ using namespace llvm;
 // ReadyLocalLaunch and NoStartEpoch live in
 // carts/dialect/arts-rt/Utils/ArtsRtAttrNames.h.
 
-/// Common ARTS attributes
-constexpr StringLiteral Nowait = "nowait";
-constexpr StringLiteral PreserveAccessMode = "preserve_access_mode";
-constexpr StringLiteral PreserveDepEdge = "preserve_dep_edge";
+// `nowait`, `preserve_access_mode`, and `preserve_dep_edge` are ODS-declared
+// attributes on their owning ops (arts.edt, sde.* loop/region ops, and
+// arts.db_acquire respectively); consumers must use the generated
+// `op.get<Name>AttrName()` / `op.get<Name>()` / `op.remove<Name>Attr()`
+// accessors rather than raw strings.
 
 /// Partition-related attributes (TableGen-generated names).
 /// `partition_mode` is owned by ArtsPartitionedOpInterface, `distributed`
@@ -488,16 +489,6 @@ inline void setOutlinedFunc(Operation *op, StringRef name) {
   }
   op->setAttr(AttrNames::Operation::OutlinedFunc,
               StringAttr::get(op->getContext(), name));
-}
-
-inline void setNowait(Operation *op, bool enabled = true) {
-  if (!op)
-    return;
-  if (enabled) {
-    op->setAttr(AttrNames::Operation::Nowait, UnitAttr::get(op->getContext()));
-    return;
-  }
-  op->removeAttr(AttrNames::Operation::Nowait);
 }
 
 inline std::optional<PartitionMode> getPartitionMode(Operation *op) {
