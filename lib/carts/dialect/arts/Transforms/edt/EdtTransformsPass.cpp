@@ -385,7 +385,7 @@ static void markDepNarrowable(DbAcquireOp acquire, Value ptr,
                               ArrayRef<int64_t> haloFootprint = {}) {
   if (contractOp) {
     contractOp->setAttr(
-        ::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep,
+        ::mlir::carts::arts::AttrNames::Contract::NarrowableDep,
         UnitAttr::get(contractOp.getContext()));
   } else {
     /// No existing contract -- create one with the marker.
@@ -398,7 +398,7 @@ static void markDepNarrowable(DbAcquireOp acquire, Value ptr,
         upsertLoweringContract(builder, acquire.getLoc(), ptr, newInfo);
     if (newContractOp) {
       newContractOp->setAttr(
-          ::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep,
+          ::mlir::carts::arts::AttrNames::Contract::NarrowableDep,
           UnitAttr::get(newContractOp.getContext()));
     }
   }

@@ -54,25 +54,17 @@ using namespace llvm;
 // generated getLocalOnly()/setLocalOnly(...)/removeLocalOnlyAttr() and the
 // matching ReadOnlyAfterInit accessors rather than raw strings.
 
-/// LoweringContractOp attribute names.
-///
-/// `owner_dims`, `supported_block_halo`, `stencil_independent_dims`,
-/// `post_db_refined`, and `spatial_dims` had zero in-tree consumers and were
-/// dropped. `critical_path_distance` is an ODS-declared OptionalAttr<I64Attr>
-/// on arts.edt (set by EdtTransformsPass ET-6 and read through the
-/// LoweringContractOp::getCriticalPathDistance() helper which still consults
-/// the encapsulated ContractAttr).
-///
-/// TODO(phase-d5-wave-2b): `narrowable_dep` and `contract_kind` remain as
-/// discardable string keys because copySemanticContractAttrs propagates them
-/// across dialect boundaries (e.g. memref.alloc) where ODS accessors are not
-/// available. Migrating them requires either a cross-dialect carrier op or a
-/// trait/interface; do not introduce raw fallbacks.
-namespace Contract {
-using namespace llvm;
-constexpr StringLiteral NarrowableDep = "narrowable_dep";
-constexpr StringLiteral ContractKindKey = "contract_kind";
-} // namespace Contract
+// LoweringContractOp attribute names.
+//
+// `owner_dims`, `supported_block_halo`, `stencil_independent_dims`,
+// `post_db_refined`, and `spatial_dims` had zero in-tree consumers and were
+// dropped. `critical_path_distance` is an ODS-declared OptionalAttr<I64Attr>
+// on arts.edt (set by EdtTransformsPass ET-6 and read through the
+// LoweringContractOp::getCriticalPathDistance() helper which still consults
+// the encapsulated ContractAttr). `narrowable_dep` and `contract_kind` are
+// cross-dialect discardable keys (propagated via copySemanticContractAttrs
+// onto non-ARTS source ops like memref.alloc); they live in
+// carts/dialect/arts/Utils/ArtsAttrNames.h under the Contract namespace.
 
 // LaunchState::StateSchema and LaunchState::DepSchema live in
 // carts/dialect/arts-rt/Utils/ArtsRtAttrNames.h. The
@@ -870,16 +862,15 @@ inline void copySemanticContractAttrs(Operation *source, Operation *dest) {
   copyPatternAttrs(source, dest);
   copyStencilContractAttrs(source, dest);
   if (auto contractKind = source->getAttrOfType<IntegerAttr>(
-          AttrNames::Operation::Contract::ContractKindKey))
-    dest->setAttr(AttrNames::Operation::Contract::ContractKindKey,
-                  contractKind);
+          AttrNames::Contract::ContractKindKey))
+    dest->setAttr(AttrNames::Contract::ContractKindKey, contractKind);
   else
-    dest->removeAttr(AttrNames::Operation::Contract::ContractKindKey);
-  if (source->hasAttr(AttrNames::Operation::Contract::NarrowableDep))
-    dest->setAttr(AttrNames::Operation::Contract::NarrowableDep,
+    dest->removeAttr(AttrNames::Contract::ContractKindKey);
+  if (source->hasAttr(AttrNames::Contract::NarrowableDep))
+    dest->setAttr(AttrNames::Contract::NarrowableDep,
                   UnitAttr::get(dest->getContext()));
   else
-    dest->removeAttr(AttrNames::Operation::Contract::NarrowableDep);
+    dest->removeAttr(AttrNames::Contract::NarrowableDep);
 }
 
 } // namespace carts::arts

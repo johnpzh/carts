@@ -196,8 +196,8 @@ struct ContractValidationPass
         }
 
         /// narrowable_dep without owner_dims
-        if (contract->hasAttr(::mlir::carts::arts::AttrNames::Operation::
-                                  Contract::NarrowableDep) &&
+        if (contract->hasAttr(
+                ::mlir::carts::arts::AttrNames::Contract::NarrowableDep) &&
             (!ownerDims || ownerDims->empty())) {
           contract.emitWarning("proof gap: narrowable_dep without owner_dims");
           ++proofGapWarnings;

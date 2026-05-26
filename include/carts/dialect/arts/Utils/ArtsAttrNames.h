@@ -73,6 +73,22 @@ inline constexpr llvm::StringLiteral RelaunchStateSoundness =
 
 } // namespace Proof
 
+/// Contract marker keys propagated through copySemanticContractAttrs across
+/// dialect boundaries. The source op is often non-ARTS (e.g. memref.alloc),
+/// so these cannot be inherent ODS attributes on a CARTS op; the constants
+/// live here as the single source of truth shared by every producer and
+/// consumer.
+namespace Contract {
+
+/// Marker stamped on dependency sources that the contract layer can narrow.
+inline constexpr llvm::StringLiteral NarrowableDep = "narrowable_dep";
+
+/// Discriminator carried by typed LoweringContractAttr payloads, copied
+/// through cross-dialect attribute propagation.
+inline constexpr llvm::StringLiteral ContractKindKey = "contract_kind";
+
+} // namespace Contract
+
 } // namespace mlir::carts::arts::AttrNames
 
 #endif /// CARTS_DIALECT_ARTS_UTILS_ARTSATTRNAMES_H
