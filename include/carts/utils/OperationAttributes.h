@@ -46,9 +46,10 @@ using namespace llvm;
 constexpr StringLiteral DistributedRejectReason =
     "arts.distributed_reject_reason";
 
-/// DB storage-type inference annotations (set by DbModeTighteningPass)
-constexpr StringLiteral LocalOnly = "arts.local_only";
-constexpr StringLiteral ReadOnlyAfterInit = "arts.read_only_after_init";
+// `local_only` and `read_only_after_init` are ODS-declared UnitAttrs on
+// arts.db_alloc (set by DbModeTighteningPass); consumers must use the
+// generated getLocalOnly()/setLocalOnly(...)/removeLocalOnlyAttr() and the
+// matching ReadOnlyAfterInit accessors rather than raw strings.
 
 /// LoweringContractOp attribute names (used in Dialect.cpp build method)
 namespace Contract {

@@ -10,12 +10,12 @@ module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_worker
     %route = arith.constant -1 : i32
     %result_guid, %result_ptr = arts.db_alloc[<inout>, <heap>, <write>, <block>]
       route(%route : i32) sizes[%c4] elementType(f32) elementSizes[%c1]
-      {arts.distributed_reject_reason = "unsupported_ptr_users", arts.local_only,
+      {arts.distributed_reject_reason = "unsupported_ptr_users", local_only,
        planLogicalWorkerSlice = [1], planOwnerDims = [0], planPhysicalBlockShape = [1]}
       : (memref<?xi64>, memref<?xmemref<?xf32>>)
     %input_guid, %input_ptr = arts.db_alloc[<in>, <heap>, <read>, <block>]
       route(%route : i32) sizes[%c4] elementType(f32) elementSizes[%c1, %c8]
-      {arts.distributed_reject_reason = "unsupported_ptr_users", arts.local_only,
+      {arts.distributed_reject_reason = "unsupported_ptr_users", local_only,
        planLogicalWorkerSlice = [1], planOwnerDims = [0], planPhysicalBlockShape = [1]}
       : (memref<?xi64>, memref<?xmemref<?x?xf32>>)
     scf.for %owner = %c0 to %c4 step %c1 {
@@ -65,12 +65,12 @@ module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_worker
     %route = arith.constant -1 : i32
     %result_guid, %result_ptr = arts.db_alloc[<inout>, <heap>, <write>, <block>]
       route(%route : i32) sizes[%c2] elementType(f32) elementSizes[%c1]
-      {arts.distributed_reject_reason = "unsupported_ptr_users", arts.local_only,
+      {arts.distributed_reject_reason = "unsupported_ptr_users", local_only,
        planLogicalWorkerSlice = [1], planOwnerDims = [0], planPhysicalBlockShape = [1]}
       : (memref<?xi64>, memref<?xmemref<?xf32>>)
     %input_guid, %input_ptr = arts.db_alloc[<in>, <heap>, <read>, <block>]
       route(%route : i32) sizes[%c2] elementType(f32) elementSizes[%c1, %c8]
-      {arts.distributed_reject_reason = "unsupported_ptr_users", arts.local_only,
+      {arts.distributed_reject_reason = "unsupported_ptr_users", local_only,
        planLogicalWorkerSlice = [1], planOwnerDims = [0], planPhysicalBlockShape = [1]}
       : (memref<?xi64>, memref<?xmemref<?x?xf32>>)
     scf.for %owner = %c0 to %c2 step %c1 {

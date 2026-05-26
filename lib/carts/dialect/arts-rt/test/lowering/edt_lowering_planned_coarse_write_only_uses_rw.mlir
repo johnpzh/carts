@@ -25,7 +25,7 @@ module attributes {
     %c64 = arith.constant 64 : index
     %value = arith.constant 1.0 : f32
 
-    %guid, %ptr = arts.db_alloc[<inout>, <heap>, <write>, <coarse>] route(%route : i32) sizes[%c1] elementType(f32) elementSizes[%c64] {arts.local_only} : (memref<?xi64>, memref<?xmemref<?xf32>>)
+    %guid, %ptr = arts.db_alloc[<inout>, <heap>, <write>, <coarse>] route(%route : i32) sizes[%c1] elementType(f32) elementSizes[%c64] {local_only} : (memref<?xi64>, memref<?xmemref<?xf32>>)
     %acq_guid, %acq_ptr = arts.db_acquire[<inout>] (%guid : memref<?xi64>, %ptr : memref<?xmemref<?xf32>>) partitioning(<coarse>), indices[], offsets[%c0], sizes[%c1] -> (memref<?xi64>, memref<?xmemref<?xf32>>)
 
     arts.edt <task> <intranode> route(%route) (%acq_ptr) : memref<?xmemref<?xf32>> params(%c0 : index) attributes {planIterationTopology = #arts.plan_iteration_topology<owner_strip>, planLogicalWorkerSlice = [16]} {
@@ -45,7 +45,7 @@ module attributes {
     %c1 = arith.constant 1 : index
     %c64 = arith.constant 64 : index
 
-    %guid, %ptr = arts.db_alloc[<inout>, <heap>, <write>, <coarse>] route(%route : i32) sizes[%c1] elementType(f32) elementSizes[%c64] {arts.local_only} : (memref<?xi64>, memref<?xmemref<?xf32>>)
+    %guid, %ptr = arts.db_alloc[<inout>, <heap>, <write>, <coarse>] route(%route : i32) sizes[%c1] elementType(f32) elementSizes[%c64] {local_only} : (memref<?xi64>, memref<?xmemref<?xf32>>)
     %acq_guid, %acq_ptr = arts.db_acquire[<inout>] (%guid : memref<?xi64>, %ptr : memref<?xmemref<?xf32>>) partitioning(<coarse>), indices[], offsets[%c0], sizes[%c1] -> (memref<?xi64>, memref<?xmemref<?xf32>>)
 
     arts.edt <task> <intranode> route(%route) (%acq_ptr) : memref<?xmemref<?xf32>> params(%c0 : index) attributes {planIterationTopology = #arts.plan_iteration_topology<owner_strip>, planLogicalWorkerSlice = [16]} {

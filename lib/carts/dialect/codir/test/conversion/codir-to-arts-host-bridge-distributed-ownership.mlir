@@ -52,7 +52,7 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // CHECK-LABEL: func.func @write_only_bridge_distributed_after_copy_tasks
 // CHECK: arts.db_alloc
 // CHECK-SAME: <coarse>
-// CHECK-SAME: arts.local_only
+// CHECK-SAME: local_only
 // CHECK: %[[BGUID:.*]], %[[BPTR:.*]] = arts.db_alloc
 // CHECK-SAME: <block>
 // CHECK-SAME: distributed

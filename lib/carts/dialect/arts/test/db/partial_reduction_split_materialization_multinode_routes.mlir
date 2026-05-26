@@ -1,5 +1,5 @@
 // RUN: %carts-compile %s --pass-pipeline='builtin.module(partial-reduction-split-materialization)' \
-// RUN:   | %FileCheck %s --implicit-check-not=partialReductionSplitRequired --implicit-check-not=arts.local_only
+// RUN:   | %FileCheck %s --implicit-check-not=partialReductionSplitRequired --implicit-check-not=local_only
 
 module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_workers = 12 : i64} {
   func.func @partial_reduction_split_materialization_multinode_routes() {

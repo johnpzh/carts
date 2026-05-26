@@ -7,7 +7,7 @@ module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_worker
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
-    %guid, %ptr = arts.db_alloc[<inout>, <heap>, <write>, <block>] route(%route : i32) sizes[%c4] elementType(f64) elementSizes[%c1] {arts.distributed_reject_reason = "unsupported_ptr_users", arts.local_only, planOwnerDims = [0], planPhysicalBlockShape = [1]} : (memref<?xi64>, memref<?xmemref<?xf64>>)
+    %guid, %ptr = arts.db_alloc[<inout>, <heap>, <write>, <block>] route(%route : i32) sizes[%c4] elementType(f64) elementSizes[%c1] {arts.distributed_reject_reason = "unsupported_ptr_users", local_only, planOwnerDims = [0], planPhysicalBlockShape = [1]} : (memref<?xi64>, memref<?xmemref<?xf64>>)
     %acq_guid, %acq_ptr = arts.db_acquire[<inout>] (%guid : memref<?xi64>, %ptr : memref<?xmemref<?xf64>>) partitioning(<block>), indices[], offsets[%c0], sizes[%c1] -> (memref<?xi64>, memref<?xmemref<?xf64>>)
     arts.edt <task> <internode> route(%route) (%acq_ptr) : memref<?xmemref<?xf64>> {
     ^bb0(%arg0: memref<?xmemref<?xf64>>):

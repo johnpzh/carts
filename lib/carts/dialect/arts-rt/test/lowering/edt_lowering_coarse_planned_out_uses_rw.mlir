@@ -24,7 +24,7 @@ module attributes {
     %c4 = arith.constant 4 : index
     %value = arith.constant 1.0 : f64
 
-    %guid, %ptr = arts.db_alloc[<out>, <heap>, <write>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4] {arts.local_only} : (memref<?xi64>, memref<?xmemref<?xf64>>)
+    %guid, %ptr = arts.db_alloc[<out>, <heap>, <write>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4] {local_only} : (memref<?xi64>, memref<?xmemref<?xf64>>)
     %acq_guid, %acq_ptr = arts.db_acquire[<out>] (%guid : memref<?xi64>, %ptr : memref<?xmemref<?xf64>>) partitioning(<coarse>), indices[], offsets[%c0], sizes[%c1] -> (memref<?xi64>, memref<?xmemref<?xf64>>)
 
     arts.edt <task> <intranode> route(%route) (%acq_ptr) : memref<?xmemref<?xf64>> attributes {planIterationTopology = #arts.plan_iteration_topology<owner_strip>, planLogicalWorkerSlice = [4]} {

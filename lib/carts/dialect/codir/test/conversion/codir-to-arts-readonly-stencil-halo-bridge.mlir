@@ -56,7 +56,7 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 
 // CHECK-LABEL: func.func @read_only_stencil_halo_bridge
 // CHECK: arts.db_alloc{{.*}}<coarse>
-// CHECK-SAME: arts.local_only
+// CHECK-SAME: local_only
 // CHECK: arts.db_alloc{{.*}}<block>
 // CHECK-SAME: elementSizes[%c10{{(_[0-9]+)?}}, %c4{{(_[0-9]+)?}}]
 // CHECK-SAME: distributed

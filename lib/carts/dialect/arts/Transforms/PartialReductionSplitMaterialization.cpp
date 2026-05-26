@@ -180,7 +180,7 @@ static Value createDistributedRoute(OpBuilder &builder, Location loc,
 static void markDistributedRemoteUse(Value dep) {
   Operation *underlying = DbUtils::getUnderlyingDbAlloc(dep);
   if (auto alloc = dyn_cast_or_null<DbAllocOp>(underlying))
-    alloc->removeAttr(AttrNames::Operation::LocalOnly);
+    alloc.removeLocalOnlyAttr();
 }
 
 static void markMaterializedReductionDistribution(Operation *op,
@@ -592,7 +592,7 @@ static DbAllocOp createReductionBufferDb(OpBuilder &builder, Location loc,
   markMaterializedReductionDistribution(db.getOperation(), distributed);
   if (distributed) {
     setDistributedDbAllocation(db.getOperation(), /*enabled=*/true);
-    db->removeAttr(AttrNames::Operation::LocalOnly);
+    db.removeLocalOnlyAttr();
     db->removeAttr(AttrNames::Operation::DistributedRejectReason);
   }
   return db;

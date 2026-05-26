@@ -1,4 +1,4 @@
-// RUN: %carts-compile %s --pipeline post-db-refinement --start-from post-db-refinement --arts-config %inputs_dir/arts_multinode.cfg --distributed-db | %FileCheck %s --implicit-check-not=arts.local_only --implicit-check-not=arts.distributed_reject_reason
+// RUN: %carts-compile %s --pipeline post-db-refinement --start-from post-db-refinement --arts-config %inputs_dir/arts_multinode.cfg --distributed-db | %FileCheck %s --implicit-check-not=local_only --implicit-check-not=arts.distributed_reject_reason
 
 // Rank-1 block-planned DBs are valid distributed storage for vector outputs and
 // intermediates. They are common in ATAX/BiCG and normalization kernels, so the

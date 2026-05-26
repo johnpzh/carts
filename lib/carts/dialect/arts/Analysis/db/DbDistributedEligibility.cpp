@@ -229,8 +229,7 @@ collectEligibilityFacts(DbAllocOp alloc, DbAnalysis &dbAnalysis) {
 }
 
 static bool hasReadOnlyAfterInitAttr(DbAllocOp alloc) {
-  return alloc->hasAttr(
-      ::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit);
+  return alloc.getReadOnlyAfterInit().value_or(false);
 }
 
 static bool isHostWholeToComputeBlockBridge(DbAllocOp alloc) {

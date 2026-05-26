@@ -424,7 +424,7 @@ bool DbUtils::isRejectedForDistributedOwnership(DbAllocOp alloc) {
   if (!alloc || hasDistributedDbAllocation(alloc.getOperation()))
     return false;
   return alloc->hasAttr(AttrNames::Operation::DistributedRejectReason) ||
-         alloc->hasAttr(AttrNames::Operation::LocalOnly);
+         alloc.getLocalOnly().value_or(false);
 }
 
 bool DbUtils::isAllowedSmallReadOnlyCoarseDep(Value dep, DbAllocOp alloc) {

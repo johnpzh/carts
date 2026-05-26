@@ -15,7 +15,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %c1 = arith.constant 1 : index
     %c128 = arith.constant 128 : index
     %route = arith.constant -1 : i32
-    %guid, %ptr = arts.db_alloc[<inout>, <heap>, <write>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c128] {arts.read_only_after_init} : (memref<?xi64>, memref<?xmemref<?xf64>>)
+    %guid, %ptr = arts.db_alloc[<inout>, <heap>, <write>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c128] {read_only_after_init} : (memref<?xi64>, memref<?xmemref<?xf64>>)
     %acq_guid, %acq_ptr = arts.db_acquire[<in>] (%guid : memref<?xi64>, %ptr : memref<?xmemref<?xf64>>) partitioning(<coarse>), indices[], offsets[%c0], sizes[%c1] -> (memref<?xi64>, memref<?xmemref<?xf64>>)
     arts.edt <task> <internode> route(%route) (%acq_ptr) : memref<?xmemref<?xf64>> {
     ^bb0(%dep: memref<?xmemref<?xf64>>):

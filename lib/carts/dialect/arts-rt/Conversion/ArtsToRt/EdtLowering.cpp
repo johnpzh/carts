@@ -358,8 +358,7 @@ static bool canUsePlannedCoarseUnorderedOutWrite(DbAcquireOp acquire,
     return false;
   auto alloc = dyn_cast_or_null<DbAllocOp>(
       RtDbUtils::getUnderlyingDbAlloc(acquire.getSourcePtr()));
-  if (!alloc ||
-      !alloc->hasAttr(::mlir::carts::arts::AttrNames::Operation::LocalOnly))
+  if (!alloc || !alloc.getLocalOnly().value_or(false))
     return false;
   if (!edtOp.getPlanLogicalWorkerSliceAttr() ||
       !edtOp.getPlanIterationTopologyAttr())
@@ -414,8 +413,7 @@ static bool canUseInPlaceSafeCoarseUnorderedWrite(DbAcquireOp acquire,
     return false;
   auto alloc = dyn_cast_or_null<DbAllocOp>(
       RtDbUtils::getUnderlyingDbAlloc(acquire.getSourcePtr()));
-  if (!alloc ||
-      !alloc->hasAttr(::mlir::carts::arts::AttrNames::Operation::LocalOnly))
+  if (!alloc || !alloc.getLocalOnly().value_or(false))
     return false;
   auto depPattern = getDepPattern(edtOp.getOperation());
   if (!depPattern || !isInPlaceSafeUnorderedPattern(*depPattern))
@@ -1394,8 +1392,7 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
          DbUtils::isSmallCoarseUserDataDb(allocForHint) || duplicateReadDep)) {
       bool duplicateSafe =
           allocForHint.getDbMode() == DbMode::read ||
-          allocForHint->hasAttr(
-              ::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit) ||
+          allocForHint.getReadOnlyAfterInit().value_or(false) ||
           duplicateReadDep;
       if (duplicateSafe) {
         depFlagBits |= kArtsDepFlagPreferDuplicate;

@@ -27,9 +27,9 @@ module attributes {
     %c4 = arith.constant 4 : index
     %zero = arith.constant 0.0 : f64
 
-    %out_guid, %out_ptr = arts.db_alloc[<inout>, <heap>, <write>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4, %c4] {arts.local_only} : (memref<?xi64>, memref<?xmemref<?x?xf64>>)
-    %lhs_guid, %lhs_ptr = arts.db_alloc[<in>, <heap>, <read>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4, %c4] {arts.local_only} : (memref<?xi64>, memref<?xmemref<?x?xf64>>)
-    %rhs_guid, %rhs_ptr = arts.db_alloc[<in>, <heap>, <read>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4, %c4] {arts.local_only} : (memref<?xi64>, memref<?xmemref<?x?xf64>>)
+    %out_guid, %out_ptr = arts.db_alloc[<inout>, <heap>, <write>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4, %c4] {local_only} : (memref<?xi64>, memref<?xmemref<?x?xf64>>)
+    %lhs_guid, %lhs_ptr = arts.db_alloc[<in>, <heap>, <read>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4, %c4] {local_only} : (memref<?xi64>, memref<?xmemref<?x?xf64>>)
+    %rhs_guid, %rhs_ptr = arts.db_alloc[<in>, <heap>, <read>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4, %c4] {local_only} : (memref<?xi64>, memref<?xmemref<?x?xf64>>)
 
     %out_acq_guid, %out_acq_ptr = arts.db_acquire[<inout>] (%out_guid : memref<?xi64>, %out_ptr : memref<?xmemref<?x?xf64>>) partitioning(<coarse>), indices[], offsets[%c0], sizes[%c1] -> (memref<?xi64>, memref<?xmemref<?x?xf64>>)
     %lhs_acq_guid, %lhs_acq_ptr = arts.db_acquire[<in>] (%lhs_guid : memref<?xi64>, %lhs_ptr : memref<?xmemref<?x?xf64>>) partitioning(<coarse>), indices[], offsets[%c0], sizes[%c1] -> (memref<?xi64>, memref<?xmemref<?x?xf64>>)
@@ -62,8 +62,8 @@ module attributes {
     %c1 = arith.constant 1 : index
     %c4 = arith.constant 4 : index
 
-    %out_guid, %out_ptr = arts.db_alloc[<inout>, <heap>, <write>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4] {arts.local_only} : (memref<?xi64>, memref<?xmemref<?xf64>>)
-    %in_guid, %in_ptr = arts.db_alloc[<in>, <heap>, <read>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4] {arts.local_only} : (memref<?xi64>, memref<?xmemref<?xf64>>)
+    %out_guid, %out_ptr = arts.db_alloc[<inout>, <heap>, <write>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4] {local_only} : (memref<?xi64>, memref<?xmemref<?xf64>>)
+    %in_guid, %in_ptr = arts.db_alloc[<in>, <heap>, <read>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4] {local_only} : (memref<?xi64>, memref<?xmemref<?xf64>>)
 
     %out_acq_guid, %out_acq_ptr = arts.db_acquire[<inout>] (%out_guid : memref<?xi64>, %out_ptr : memref<?xmemref<?xf64>>) partitioning(<coarse>), indices[], offsets[%c0], sizes[%c1] -> (memref<?xi64>, memref<?xmemref<?xf64>>)
     %in_acq_guid, %in_acq_ptr = arts.db_acquire[<in>] (%in_guid : memref<?xi64>, %in_ptr : memref<?xmemref<?xf64>>) partitioning(<coarse>), indices[], offsets[%c0], sizes[%c1] -> (memref<?xi64>, memref<?xmemref<?xf64>>)
