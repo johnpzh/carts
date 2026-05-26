@@ -8,7 +8,7 @@
 
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVMInternal.h"
 
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenInternal.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"

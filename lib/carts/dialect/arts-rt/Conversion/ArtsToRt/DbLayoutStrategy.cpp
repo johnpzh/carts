@@ -13,7 +13,7 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/DbLayoutStrategy.h"
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenInternal.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/utils/OperationAttributes.h"

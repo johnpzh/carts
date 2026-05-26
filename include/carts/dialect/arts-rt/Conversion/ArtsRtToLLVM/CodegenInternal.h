@@ -1,12 +1,12 @@
 ///==========================================================================///
-/// File: Codegen.h
+/// File: CodegenInternal.h
 ///
 /// This file defines ArtsCodegen, the runtime ABI codegen helper used by
 /// ARTS-RT lowering.
 ///==========================================================================///
 
-#ifndef CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_CODEGENSUPPORT_H
-#define CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_CODEGENSUPPORT_H
+#ifndef CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_CODEGENINTERNAL_H
+#define CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_CODEGENINTERNAL_H
 
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Types.h"
 #include "carts/dialect/arts/IR/ArtsDialect.h"
@@ -243,4 +243,4 @@ private:
 } // namespace carts::arts_rt
 } // namespace mlir
 
-#endif // CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_CODEGENSUPPORT_H
+#endif // CARTS_DIALECT_ARTS_RT_CONVERSION_ARTSRTTOLLVM_CODEGENINTERNAL_H

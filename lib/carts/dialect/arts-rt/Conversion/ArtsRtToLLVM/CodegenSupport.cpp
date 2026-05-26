@@ -2,7 +2,7 @@
 /// File: Codegen.cpp
 ///==========================================================================///
 
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenInternal.h"
 
 /// Other dialects
 #include "mlir/Dialect/Arith/IR/Arith.h"

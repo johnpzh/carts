@@ -18,7 +18,7 @@
 ///     (users rewritten to the lowered pointer representation)
 ///==========================================================================///
 
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenInternal.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/DbLayoutStrategy.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
 #include "carts/dialect/arts/IR/ArtsDialect.h"

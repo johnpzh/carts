@@ -28,7 +28,7 @@
 /// - else: keep per-iteration reserve semantics
 ///==========================================================================///
 
-#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
+#include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenInternal.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Types.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
 #include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
