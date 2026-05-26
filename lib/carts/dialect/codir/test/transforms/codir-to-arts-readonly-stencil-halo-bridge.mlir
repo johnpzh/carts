@@ -59,9 +59,9 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // CHECK-SAME: arts.local_only
 // CHECK: arts.db_alloc{{.*}}<block>
 // CHECK-SAME: elementSizes[%c10{{(_[0-9]+)?}}, %c4{{(_[0-9]+)?}}]
-// CHECK-SAME: arts.storage_bridge = "host_whole_to_compute_block"
 // CHECK-SAME: distributed
 // CHECK-SAME: planHaloShape = [1]
 // CHECK-SAME: planPhysicalBlockShape = [8, 4]
 // CHECK-SAME: stencil_supported_block_halo
+// CHECK-SAME: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // CHECK: arts.edt <task> <internode>

@@ -428,8 +428,8 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // CHECK: %[[HOST:.*]] = arts.db_ref
 // CHECK: arts.db_alloc
 // CHECK-SAME: <block>
-// CHECK-SAME: arts.storage_bridge = "host_whole_to_compute_block"
 // CHECK-SAME: planPhysicalBlockShape = [8, 4]
+// CHECK-SAME: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // CHECK: arts.db_acquire[<in>]
 // CHECK-SAME: partitioning(<coarse>)
 // CHECK: arts.db_acquire[<out>]
@@ -451,7 +451,7 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // WRITE: %[[HOST:.*]] = arts.db_ref
 // WRITE: arts.db_alloc
 // WRITE-SAME: <block>
-// WRITE-SAME: arts.storage_bridge = "host_whole_to_compute_block"
+// WRITE-SAME: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // WRITE-NOT: arts.db_acquire[<in>]
 // WRITE: arts.edt <task> <internode>
 // WRITE: arts.barrier
@@ -464,7 +464,7 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 
 // WRITEFIRST-LABEL: func.func @write_first_shared_bridge_skips_initial_copy_in
 // WRITEFIRST: %[[HOST:.*]] = arts.db_ref
-// WRITEFIRST-COUNT-1: arts.storage_bridge = "host_whole_to_compute_block"
+// WRITEFIRST-COUNT-1: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // WRITEFIRST-NOT: arts.db_acquire[<in>]
 // WRITEFIRST: arts.edt <task> <internode>
 // WRITEFIRST: arts.barrier
@@ -479,7 +479,7 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // HOIST: %[[HOST:.*]] = arts.db_ref
 // HOIST: arts.db_alloc
 // HOIST-SAME: <block>
-// HOIST-SAME: arts.storage_bridge = "host_whole_to_compute_block"
+// HOIST-SAME: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // HOIST: arts.edt <task> <internode>
 // HOIST-SAME: storageBridgeCopy
 // HOIST: scf.for
@@ -492,7 +492,7 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 
 // SHARED-LABEL: func.func @host_bridge_shared_across_phases
 // SHARED: %[[HOST:.*]] = arts.db_ref
-// SHARED-COUNT-1: arts.storage_bridge = "host_whole_to_compute_block"
+// SHARED-COUNT-1: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // SHARED: arts.edt <task> <internode>
 // SHARED-SAME: storageBridgeCopy
 // SHARED: scf.for
@@ -509,21 +509,21 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // READONLY: arts.db_alloc
 // READONLY-SAME: <coarse>
 // READONLY: %[[HOST:.*]] = arts.db_ref
-// READONLY: arts.db_alloc{{.*}}arts.storage_bridge = "host_whole_to_compute_block"
+// READONLY: arts.db_alloc{{.*}}storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // READONLY: arts.db_acquire[<in>]
 // READONLY-SAME: partitioning(<coarse>)
 // READONLY: arts.edt <task> <internode>
 // READONLY-SAME: storageBridgeCopy
 // READONLY: scf.for
-// READONLY-NOT: arts.storage_bridge = "host_whole_to_compute_block"
+// READONLY-NOT: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // READONLY: arts.edt <task>
 // READONLY: arts.edt <task>
-// READONLY-NOT: arts.storage_bridge = "host_whole_to_compute_block"
+// READONLY-NOT: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // READONLY: memref.load %[[HOST]]
 
 // PERSIST-LABEL: func.func @write_bridge_persists_across_read_only_host_phase
 // PERSIST: %[[HOST:.*]] = arts.db_ref
-// PERSIST-COUNT-1: arts.storage_bridge = "host_whole_to_compute_block"
+// PERSIST-COUNT-1: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // PERSIST: arts.edt <task> <internode>
 // PERSIST-SAME: storageBridgeCopy
 // PERSIST: scf.for
@@ -551,7 +551,7 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // INCOMPAT-SAME: storageBridgeCopy
 // INCOMPAT: arts.barrier
 // INCOMPAT: arts.db_alloc
-// INCOMPAT-SAME: arts.storage_bridge = "host_whole_to_compute_block"
+// INCOMPAT-SAME: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // INCOMPAT: arts.db_acquire[<in>]
 // INCOMPAT-SAME: partitioning(<coarse>)
 // INCOMPAT: arts.db_acquire[<out>]

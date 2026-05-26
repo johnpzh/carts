@@ -9,7 +9,7 @@
 // CHECK: %[[HOST:.*]] = arts.db_ref
 // CHECK: arts.db_alloc
 // CHECK-SAME: <block>
-// CHECK-SAME: arts.storage_bridge = "host_whole_to_compute_block"
+// CHECK-SAME: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // CHECK: arts.db_acquire[<in>]
 // CHECK-SAME: partitioning(<coarse>)
 // CHECK: arts.db_acquire[<out>]

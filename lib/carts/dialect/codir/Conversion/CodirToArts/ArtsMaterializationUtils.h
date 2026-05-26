@@ -1451,7 +1451,7 @@ static inline bool canHoistHostBridgeAcrossLoop(scf::ForOp loop,
       if (!mode || !codirAccessMayWrite(*mode))
         continue;
       arts::DbAllocOp alloc = findBackingDbAlloc(dep);
-      if (!alloc || !alloc->hasAttr("arts.storage_bridge"))
+      if (!alloc || !alloc.getStorageBridgeAttr())
         continue;
       hasExistingBridgeWriter = true;
       return WalkResult::interrupt();
@@ -1916,8 +1916,8 @@ materializeHostWholeToComputeBlockBridge(codir::CodeletOp codelet,
   arts::DbAllocOp blockAlloc = findBackingDbAlloc(blockView);
   if (!blockAlloc)
     return failure();
-  blockAlloc->setAttr("arts.storage_bridge",
-                      builder.getStringAttr("host_whole_to_compute_block"));
+  blockAlloc.setStorageBridgeAttr(arts::StorageBridgeAttr::get(
+      builder.getContext(), arts::StorageBridge::host_whole_to_compute_block));
 
   if (needsCopyIn) {
     if (failed(materializeHostBlockCopyLoop(builder, loc, hostView, blockAlloc,

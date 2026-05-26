@@ -55,8 +55,8 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // CHECK-SAME: arts.local_only
 // CHECK: %[[BGUID:.*]], %[[BPTR:.*]] = arts.db_alloc
 // CHECK-SAME: <block>
-// CHECK-SAME: arts.storage_bridge = "host_whole_to_compute_block"
 // CHECK-SAME: distributed
+// CHECK-SAME: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // CHECK: arts.edt <task> <internode>
 // CHECK: arts.db_acquire[<inout>] (%{{.*}} : {{.*}}, %{{.*}} : {{.*}}) partitioning(<coarse>)
 // CHECK: arts.db_acquire[<in>] (%[[BGUID]] : {{.*}}, %[[BPTR]] : {{.*}}) partitioning(<block>)

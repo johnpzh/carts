@@ -60,6 +60,6 @@ module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_worker
 }
 
 // CHECK-LABEL: func.func @matmul_large_read_rhs_allows_internode
-// CHECK-COUNT-2: arts.storage_bridge = "host_whole_to_compute_block"
+// CHECK-COUNT-2: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // CHECK: arts.db_acquire[<in>] {{.*}} {replicatedRead}
 // CHECK: arts.edt <task> <internode>

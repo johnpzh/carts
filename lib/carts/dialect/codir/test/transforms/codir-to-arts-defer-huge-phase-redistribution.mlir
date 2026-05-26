@@ -1,6 +1,6 @@
 // RUN: %carts-compile %s --pass-pipeline='builtin.module(verify-codir,storage-planning,convert-codir-to-arts,verify-arts-objects-only)' \
 // RUN:   --arts-config %inputs_dir/arts_multinode_4x16.cfg | %FileCheck %s \
-// RUN:   --implicit-check-not='arts.storage_bridge = "host_whole_to_compute_block"' \
+// RUN:   --implicit-check-not='storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>' \
 // RUN:   --implicit-check-not='arts.edt <task> <internode>'
 
 // A read-only host tensor whose codelet owner maps to a non-leading physical

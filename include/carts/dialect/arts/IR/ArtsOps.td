@@ -130,7 +130,8 @@ def DbAllocOp : Arts_Op<"db_alloc",
     OptionalAttr<I64Attr>:$planCostSchedulerOverhead,
     OptionalAttr<I64Attr>:$planCostSliceWideningPressure,
     OptionalAttr<I64Attr>:$planCostExpectedLocalWork,
-    OptionalAttr<I64Attr>:$planCostRelaunchAmortization
+    OptionalAttr<I64Attr>:$planCostRelaunchAmortization,
+    OptionalAttr<StorageBridgeAttr>:$storage_bridge
   );
   let results = (outs MemRefOf<[I64]> : $guid, AnyMemRef : $ptr);
   let assemblyFormat = [{

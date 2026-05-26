@@ -85,6 +85,16 @@ def DbReleaseType : Arts_I32Enum<"DbReleaseType", "ARTS DB release type", [
 /// Enum attribute for DB release types
 def DbReleaseTypeAttr : Arts_I32EnumAttr<"release_type", DbReleaseType>;
 
+/// Enum info for storage-bridge tags on `arts.db_alloc`. Marks an allocation
+/// as a bridge between two storage views in the CODIR->ARTS lowering.
+def StorageBridge : Arts_I32Enum<"StorageBridge", "ARTS storage-bridge tag", [
+  I32EnumAttrCase<"host_whole_to_compute_block", 0,
+                  "host_whole_to_compute_block">
+]>;
+
+/// Enum attribute for storage-bridge tags on `arts.db_alloc`.
+def StorageBridgeAttr : Arts_I32EnumAttr<"storage_bridge", StorageBridge>;
+
 def ArtsPlanIterationTopology
     : Arts_I32Enum<"ArtsPlanIterationTopology",
                    "ARTS physical iteration topology", [

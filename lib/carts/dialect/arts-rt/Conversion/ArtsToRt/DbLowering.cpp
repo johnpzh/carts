@@ -240,6 +240,8 @@ void DbLoweringPass::convertDbAllocOps() {
         continue;
       newOp->setAttr(attr.getName(), attr.getValue());
     }
+    if (auto bridge = oldOp.getStorageBridgeAttr())
+      newOp.setStorageBridgeAttr(bridge);
     if (auto ownerDims = getPlanOwnerDimsAttr(oldOp))
       setPlanOwnerDimsAttr(newOp.getOperation(), ownerDims);
     if (auto blockShape = getPlanPhysicalBlockShapeAttr(oldOp))

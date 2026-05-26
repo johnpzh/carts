@@ -26,7 +26,7 @@
 // DB-SAME: <coarse>
 // DB: arts.db_alloc
 // DB-SAME: <block>
-// DB-SAME: arts.storage_bridge = "host_whole_to_compute_block"
+// DB-SAME: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // DB: scf.for
 // DB: arts.db_acquire[<inout>]
 // DB-SAME: partitioning(<block>)
@@ -45,7 +45,7 @@
 // MNDB-SAME: <coarse>
 // MNDB: arts.db_alloc
 // MNDB-SAME: <block>
-// MNDB-SAME: arts.storage_bridge = "host_whole_to_compute_block"
+// MNDB-SAME: storage_bridge = #arts.storage_bridge<host_whole_to_compute_block>
 // MNDB: scf.for
 // MNDB: memref.load
 // MNDB: memref.store

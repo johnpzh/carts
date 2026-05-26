@@ -446,8 +446,9 @@ bool DbUtils::isAllowedReadOnlyCoarseDep(Value dep, DbAllocOp alloc) {
 static bool isHostWholeToComputeBlockBridgeDb(DbAllocOp alloc) {
   if (!alloc)
     return false;
-  auto bridge = alloc->getAttrOfType<StringAttr>("arts.storage_bridge");
-  return bridge && bridge.getValue() == "host_whole_to_compute_block";
+  auto bridge = alloc.getStorageBridgeAttr();
+  return bridge &&
+         bridge.getValue() == StorageBridge::host_whole_to_compute_block;
 }
 
 bool DbUtils::isHostWholeToComputeBlockBridgeMovement(EdtOp edt) {

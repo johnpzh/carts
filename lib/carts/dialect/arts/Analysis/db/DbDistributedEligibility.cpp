@@ -236,8 +236,9 @@ static bool hasReadOnlyAfterInitAttr(DbAllocOp alloc) {
 static bool isHostWholeToComputeBlockBridge(DbAllocOp alloc) {
   if (!alloc)
     return false;
-  auto bridge = alloc->getAttrOfType<StringAttr>("arts.storage_bridge");
-  return bridge && bridge.getValue() == "host_whole_to_compute_block";
+  auto bridge = alloc.getStorageBridgeAttr();
+  return bridge &&
+         bridge.getValue() == StorageBridge::host_whole_to_compute_block;
 }
 
 static bool hasBridgeHaloContract(DbAllocOp alloc) {
