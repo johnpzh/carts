@@ -298,14 +298,11 @@ unsigned EdtTransformsPass::estimateTaskGranularity() {
 ///===----------------------------------------------------------------------===///
 unsigned EdtTransformsPass::analyzeCriticalPath(func::FuncOp func,
                                                 EdtGraph &edtGraph) {
-  auto i64Type = IntegerType::get(func.getContext(), 64);
   auto annotateNode = [&](EdtNode *node, int64_t dist, unsigned &annotated) {
     EdtOp edt = node->getEdtOp();
 
     /// Set critical_path_distance directly on the EdtOp.
-    edt->setAttr(::mlir::carts::arts::AttrNames::Operation::Contract::
-                     CriticalPathDistance,
-                 IntegerAttr::get(i64Type, dist));
+    edt.setCriticalPathDistance(dist);
 
     /// Also update LoweringContractOps on the EDT's dependency acquires.
     annotateEdtDepContracts(edt, [&](DbAcquireOp /*acquire*/, Value /*ptr*/,

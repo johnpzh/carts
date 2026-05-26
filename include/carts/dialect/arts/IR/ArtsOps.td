@@ -708,6 +708,7 @@ def EdtOp : Arts_Op<"edt", [
     OptionalAttr<I64Attr>:$planCostSliceWideningPressure,
     OptionalAttr<I64Attr>:$planCostExpectedLocalWork,
     OptionalAttr<I64Attr>:$planCostRelaunchAmortization,
+    OptionalAttr<I64Attr>:$critical_path_distance,
     Variadic<AnyMemRef>:$dependencies,
     Variadic<AnyType>:$params
   );

@@ -54,15 +54,22 @@ using namespace llvm;
 // generated getLocalOnly()/setLocalOnly(...)/removeLocalOnlyAttr() and the
 // matching ReadOnlyAfterInit accessors rather than raw strings.
 
-/// LoweringContractOp attribute names (used in Dialect.cpp build method)
+/// LoweringContractOp attribute names.
+///
+/// `owner_dims`, `supported_block_halo`, `stencil_independent_dims`,
+/// `post_db_refined`, and `spatial_dims` had zero in-tree consumers and were
+/// dropped. `critical_path_distance` is an ODS-declared OptionalAttr<I64Attr>
+/// on arts.edt (set by EdtTransformsPass ET-6 and read through the
+/// LoweringContractOp::getCriticalPathDistance() helper which still consults
+/// the encapsulated ContractAttr).
+///
+/// TODO(phase-d5-wave-2b): `narrowable_dep` and `contract_kind` remain as
+/// discardable string keys because copySemanticContractAttrs propagates them
+/// across dialect boundaries (e.g. memref.alloc) where ODS accessors are not
+/// available. Migrating them requires either a cross-dialect carrier op or a
+/// trait/interface; do not introduce raw fallbacks.
 namespace Contract {
 using namespace llvm;
-constexpr StringLiteral OwnerDims = "owner_dims";
-constexpr StringLiteral SupportedBlockHalo = "supported_block_halo";
-constexpr StringLiteral StencilIndependentDims = "stencil_independent_dims";
-constexpr StringLiteral PostDbRefined = "post_db_refined";
-constexpr StringLiteral CriticalPathDistance = "critical_path_distance";
-constexpr StringLiteral SpatialDims = "spatial_dims";
 constexpr StringLiteral NarrowableDep = "narrowable_dep";
 constexpr StringLiteral ContractKindKey = "contract_kind";
 } // namespace Contract
