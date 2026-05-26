@@ -221,13 +221,11 @@ static bool hasTrustedPartitionedWriteContract(DbAcquireOp acquire) {
     return false;
 
   Operation *contract = contractOp.getOperation();
-  return getBoolAttr(contract, ::mlir::carts::arts::AttrNames::Operation::
-                                   Proof::OwnerDimReachability) &&
-         getBoolAttr(contract, ::mlir::carts::arts::AttrNames::Operation::
-                                   Proof::PartitionAccessMapping) &&
+  return getBoolAttr(contract, ::mlir::carts::arts::AttrNames::Proof::OwnerDimReachability) &&
+         getBoolAttr(contract, ::mlir::carts::arts::AttrNames::Proof::PartitionAccessMapping) &&
          getBoolAttr(
              contract,
-             ::mlir::carts::arts::AttrNames::Operation::Proof::HaloLegality);
+             ::mlir::carts::arts::AttrNames::Proof::HaloLegality);
 }
 
 static bool canUseUnorderedLocalWrite(DbAcquireOp acquire, EdtOp edtOp,

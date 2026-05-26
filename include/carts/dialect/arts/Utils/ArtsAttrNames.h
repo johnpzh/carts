@@ -54,6 +54,25 @@ inline constexpr llvm::StringLiteral StripMiningGenerated =
 
 } // namespace Operation
 
+/// Proof-driven ownership annotations stamped by OwnershipProof and consumed
+/// by downstream lowering / verifier passes. These are operation-level
+/// marker attrs attached to non-ARTS host ops (e.g. the outlined launch
+/// site), so they live alongside the other ARTS markers rather than as
+/// inherent ODS attributes on a CARTS op.
+namespace Proof {
+
+inline constexpr llvm::StringLiteral OwnerDimReachability =
+    "arts.proof.owner_dim_reachability";
+inline constexpr llvm::StringLiteral PartitionAccessMapping =
+    "arts.proof.partition_access_mapping";
+inline constexpr llvm::StringLiteral HaloLegality = "arts.proof.halo_legality";
+inline constexpr llvm::StringLiteral DepSliceSoundness =
+    "arts.proof.dep_slice_soundness";
+inline constexpr llvm::StringLiteral RelaunchStateSoundness =
+    "arts.proof.relaunch_state_soundness";
+
+} // namespace Proof
+
 } // namespace mlir::carts::arts::AttrNames
 
 #endif /// CARTS_DIALECT_ARTS_UTILS_ARTSATTRNAMES_H

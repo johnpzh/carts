@@ -78,18 +78,10 @@ constexpr StringLiteral WaveCount = "arts.orch.wave_count";
 // arts.launch.state_schema_version / arts.launch.dep_schema_version
 // constants had zero in-tree consumers and were dropped during the move.
 
-/// Proof-driven ownership attributes.
-namespace Proof {
-using namespace llvm;
-constexpr StringLiteral OwnerDimReachability =
-    "arts.proof.owner_dim_reachability";
-constexpr StringLiteral PartitionAccessMapping =
-    "arts.proof.partition_access_mapping";
-constexpr StringLiteral HaloLegality = "arts.proof.halo_legality";
-constexpr StringLiteral DepSliceSoundness = "arts.proof.dep_slice_soundness";
-constexpr StringLiteral RelaunchStateSoundness =
-    "arts.proof.relaunch_state_soundness";
-} // namespace Proof
+// Proof-driven ownership attributes (Proof::OwnerDimReachability,
+// PartitionAccessMapping, HaloLegality, DepSliceSoundness,
+// RelaunchStateSoundness) live in
+// carts/dialect/arts/Utils/ArtsAttrNames.h.
 
 /// Persistent structured region attribute.
 constexpr llvm::StringLiteral PersistentRegion = "arts.persistent_region";

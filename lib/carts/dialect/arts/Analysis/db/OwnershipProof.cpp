@@ -102,19 +102,19 @@ void mlir::carts::arts::stampOwnershipProof(LoweringContractOp contractOp,
     return;
   auto *ctx = contractOp->getContext();
   contractOp->setAttr(
-      ::mlir::carts::arts::AttrNames::Operation::Proof::OwnerDimReachability,
+      ::mlir::carts::arts::AttrNames::Proof::OwnerDimReachability,
       BoolAttr::get(ctx, proof.ownerDimReachability));
   contractOp->setAttr(
-      ::mlir::carts::arts::AttrNames::Operation::Proof::PartitionAccessMapping,
+      ::mlir::carts::arts::AttrNames::Proof::PartitionAccessMapping,
       BoolAttr::get(ctx, proof.partitionAccessMapping));
   contractOp->setAttr(
-      ::mlir::carts::arts::AttrNames::Operation::Proof::HaloLegality,
+      ::mlir::carts::arts::AttrNames::Proof::HaloLegality,
       BoolAttr::get(ctx, proof.haloLegality));
   contractOp->setAttr(
-      ::mlir::carts::arts::AttrNames::Operation::Proof::DepSliceSoundness,
+      ::mlir::carts::arts::AttrNames::Proof::DepSliceSoundness,
       BoolAttr::get(ctx, proof.depSliceSoundness));
   contractOp->setAttr(
-      ::mlir::carts::arts::AttrNames::Operation::Proof::RelaunchStateSoundness,
+      ::mlir::carts::arts::AttrNames::Proof::RelaunchStateSoundness,
       BoolAttr::get(ctx, proof.relaunchStateSoundness));
 }
 
@@ -123,22 +123,19 @@ OwnershipProof mlir::carts::arts::readOwnershipProof(Operation *op) {
   if (!op)
     return proof;
   if (auto attr = op->getAttrOfType<BoolAttr>(
-          ::mlir::carts::arts::AttrNames::Operation::Proof::
-              OwnerDimReachability))
+          ::mlir::carts::arts::AttrNames::Proof::OwnerDimReachability))
     proof.ownerDimReachability = attr.getValue();
   if (auto attr = op->getAttrOfType<BoolAttr>(
-          ::mlir::carts::arts::AttrNames::Operation::Proof::
-              PartitionAccessMapping))
+          ::mlir::carts::arts::AttrNames::Proof::PartitionAccessMapping))
     proof.partitionAccessMapping = attr.getValue();
   if (auto attr = op->getAttrOfType<BoolAttr>(
-          ::mlir::carts::arts::AttrNames::Operation::Proof::HaloLegality))
+          ::mlir::carts::arts::AttrNames::Proof::HaloLegality))
     proof.haloLegality = attr.getValue();
   if (auto attr = op->getAttrOfType<BoolAttr>(
-          ::mlir::carts::arts::AttrNames::Operation::Proof::DepSliceSoundness))
+          ::mlir::carts::arts::AttrNames::Proof::DepSliceSoundness))
     proof.depSliceSoundness = attr.getValue();
   if (auto attr = op->getAttrOfType<BoolAttr>(
-          ::mlir::carts::arts::AttrNames::Operation::Proof::
-              RelaunchStateSoundness))
+          ::mlir::carts::arts::AttrNames::Proof::RelaunchStateSoundness))
     proof.relaunchStateSoundness = attr.getValue();
   return proof;
 }
