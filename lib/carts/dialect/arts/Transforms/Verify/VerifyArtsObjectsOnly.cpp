@@ -7,6 +7,7 @@
 #include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/sde/IR/SdeDialect.h"
+#include "carts/dialect/sde/Utils/SdeAttrNames.h"
 #define GEN_PASS_DEF_VERIFYARTSOBJECTSONLY
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
@@ -21,11 +22,9 @@ using namespace mlir::carts::arts;
 
 namespace {
 
-constexpr llvm::StringLiteral kKeepHostOpenMP = "sde.keep_host_openmp";
-
 static bool isInsideHostOpenMPIsland(Operation *op) {
   for (Operation *cur = op; cur; cur = cur->getParentOp())
-    if (cur->hasAttr(kKeepHostOpenMP))
+    if (cur->hasAttr(sde::AttrNames::KeepHostOpenMP))
       return true;
   return false;
 }

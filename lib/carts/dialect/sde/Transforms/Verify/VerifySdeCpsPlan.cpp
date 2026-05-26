@@ -4,6 +4,7 @@
 
 #include "carts/dialect/sde/IR/SdeDialect.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
+#include "carts/dialect/sde/Utils/SdeAttrNames.h"
 namespace mlir::carts::sde {
 #define GEN_PASS_DEF_VERIFYSDECPSPLAN
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
@@ -20,13 +21,10 @@ using namespace mlir::carts;
 
 namespace {
 
-constexpr llvm::StringLiteral kCpsCandidateGroupId = "cps_candidate_group_id";
-constexpr llvm::StringLiteral kCpsCandidateStageIndex =
-    "cps_candidate_stage_index";
-constexpr llvm::StringLiteral kCpsCandidateStageCount =
-    "cps_candidate_stage_count";
-constexpr llvm::StringLiteral kCpsCandidateRequiresTokenizedDataflow =
-    "cps_candidate_requires_tokenized_dataflow";
+using sde::AttrNames::CpsCandidateGroupId;
+using sde::AttrNames::CpsCandidateRequiresTokenizedDataflow;
+using sde::AttrNames::CpsCandidateStageCount;
+using sde::AttrNames::CpsCandidateStageIndex;
 
 struct CpsGroupInfo {
   int64_t expectedCount = -1;
@@ -40,10 +38,10 @@ struct CandidateBoundary {
 };
 
 static bool hasCandidateAttr(sde::SdeSuIterateOp op) {
-  return op->hasAttr(kCpsCandidateGroupId) ||
-         op->hasAttr(kCpsCandidateStageIndex) ||
-         op->hasAttr(kCpsCandidateStageCount) ||
-         op->hasAttr(kCpsCandidateRequiresTokenizedDataflow);
+  return op->hasAttr(CpsCandidateGroupId) ||
+         op->hasAttr(CpsCandidateStageIndex) ||
+         op->hasAttr(CpsCandidateStageCount) ||
+         op->hasAttr(CpsCandidateRequiresTokenizedDataflow);
 }
 
 static bool isTimestepBarrier(sde::SdeSuBarrierOp barrier) {
@@ -54,11 +52,11 @@ static bool isTimestepBarrier(sde::SdeSuBarrierOp barrier) {
 }
 
 static LogicalResult verifyCandidateAttrSet(sde::SdeSuIterateOp op) {
-  bool hasGroup = op->hasAttr(kCpsCandidateGroupId);
-  bool hasIndex = op->hasAttr(kCpsCandidateStageIndex);
-  bool hasCount = op->hasAttr(kCpsCandidateStageCount);
+  bool hasGroup = op->hasAttr(CpsCandidateGroupId);
+  bool hasIndex = op->hasAttr(CpsCandidateStageIndex);
+  bool hasCount = op->hasAttr(CpsCandidateStageCount);
   bool hasRequiresTokenizedDataflow =
-      op->hasAttr(kCpsCandidateRequiresTokenizedDataflow);
+      op->hasAttr(CpsCandidateRequiresTokenizedDataflow);
 
   if (hasGroup || hasIndex || hasCount || hasRequiresTokenizedDataflow) {
     if (!hasGroup || !hasIndex || !hasCount || !hasRequiresTokenizedDataflow)
@@ -68,7 +66,7 @@ static LogicalResult verifyCandidateAttrSet(sde::SdeSuIterateOp op) {
                 "sde.cps_candidate_stage_index, "
                 "sde.cps_candidate_stage_count, and "
                 "sde.cps_candidate_requires_tokenized_dataflow together";
-    if (!op->getAttrOfType<UnitAttr>(kCpsCandidateRequiresTokenizedDataflow))
+    if (!op->getAttrOfType<UnitAttr>(CpsCandidateRequiresTokenizedDataflow))
       return op.emitOpError()
              << "sde.cps_candidate_requires_tokenized_dataflow must be a "
                 "unit attr";
@@ -92,9 +90,9 @@ static LogicalResult verifyCandidateAttrSet(sde::SdeSuIterateOp op) {
              << "sde.cps candidate plan requires sde.async_strategy "
                 "advance_stage until tokenized dataflow exists";
 
-    auto group = op->getAttrOfType<IntegerAttr>(kCpsCandidateGroupId);
-    auto index = op->getAttrOfType<IntegerAttr>(kCpsCandidateStageIndex);
-    auto count = op->getAttrOfType<IntegerAttr>(kCpsCandidateStageCount);
+    auto group = op->getAttrOfType<IntegerAttr>(CpsCandidateGroupId);
+    auto index = op->getAttrOfType<IntegerAttr>(CpsCandidateStageIndex);
+    auto count = op->getAttrOfType<IntegerAttr>(CpsCandidateStageCount);
     if (!group || !index || !count)
       return op.emitOpError()
              << "sde.cps candidate plan attrs must be integer attrs";
@@ -282,11 +280,11 @@ struct VerifySdeCpsPlanPass
 
       if (hasCandidateAttr(op)) {
         auto group =
-            op->getAttrOfType<IntegerAttr>(kCpsCandidateGroupId).getInt();
+            op->getAttrOfType<IntegerAttr>(CpsCandidateGroupId).getInt();
         auto index =
-            op->getAttrOfType<IntegerAttr>(kCpsCandidateStageIndex).getInt();
+            op->getAttrOfType<IntegerAttr>(CpsCandidateStageIndex).getInt();
         auto count =
-            op->getAttrOfType<IntegerAttr>(kCpsCandidateStageCount).getInt();
+            op->getAttrOfType<IntegerAttr>(CpsCandidateStageCount).getInt();
         recordGroup(candidateGroupsByScope, module, op, group, index, count,
                     hasFailure, "sde.cps candidate",
                     "sde.cps_candidate_stage_count",

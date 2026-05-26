@@ -56,6 +56,7 @@ ARTS_DEBUG_SETUP(convert_openmp_to_sde);
 #include <optional>
 
 #include "carts/dialect/sde/Utils/SDECostModel.h"
+#include "carts/dialect/sde/Utils/SdeAttrNames.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/Statistic.h"
 static llvm::Statistic numParallelConverted{
@@ -78,8 +79,6 @@ using namespace mlir::carts;
 // Helpers
 //===----------------------------------------------------------------------===//
 
-constexpr llvm::StringLiteral kKeepHostOpenMP = "sde.keep_host_openmp";
-
 /// Ensure a value has index type, inserting arith.index_cast if needed.
 static Value ensureIndex(OpBuilder &b, Location loc, Value v) {
   if (v.getType().isIndex())
@@ -98,7 +97,7 @@ static SmallVector<Value> ensureIndexRange(OpBuilder &b, Location loc,
 
 static bool isInsideHostOpenMPIsland(Operation *op) {
   for (Operation *cur = op; cur; cur = cur->getParentOp())
-    if (cur->hasAttr(kKeepHostOpenMP))
+    if (cur->hasAttr(sde::AttrNames::KeepHostOpenMP))
       return true;
   return false;
 }
@@ -839,7 +838,7 @@ static unsigned markHostOpenMPIslands(ModuleOp module) {
       return;
     if (!markedOps.insert(op).second)
       return;
-    op->setAttr(kKeepHostOpenMP, UnitAttr::get(op->getContext()));
+    op->setAttr(sde::AttrNames::KeepHostOpenMP, UnitAttr::get(op->getContext()));
     ++marked;
   };
 

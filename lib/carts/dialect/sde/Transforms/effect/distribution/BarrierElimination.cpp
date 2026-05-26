@@ -16,6 +16,7 @@ namespace mlir::carts::sde {
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
 #include "carts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
+#include "carts/dialect/sde/Utils/SdeAttrNames.h"
 #include "carts/utils/ArrayAttrUtils.h"
 #include "carts/utils/ValueAnalysis.h"
 
@@ -39,13 +40,10 @@ using namespace mlir::carts;
 
 namespace {
 
-constexpr llvm::StringLiteral kCpsCandidateGroupId = "cps_candidate_group_id";
-constexpr llvm::StringLiteral kCpsCandidateStageIndex =
-    "cps_candidate_stage_index";
-constexpr llvm::StringLiteral kCpsCandidateStageCount =
-    "cps_candidate_stage_count";
-constexpr llvm::StringLiteral kCpsCandidateRequiresTokenizedDataflow =
-    "cps_candidate_requires_tokenized_dataflow";
+using sde::AttrNames::CpsCandidateGroupId;
+using sde::AttrNames::CpsCandidateRequiresTokenizedDataflow;
+using sde::AttrNames::CpsCandidateStageCount;
+using sde::AttrNames::CpsCandidateStageIndex;
 
 /// Find the su_iterate op that an operation represents. An su_iterate can
 /// appear directly or nested inside an su_distribute wrapper.
@@ -79,10 +77,10 @@ static bool isSuContainer(Operation *op) {
 }
 
 static bool hasCandidateAttrs(sde::SdeSuIterateOp op) {
-  return op && (op->hasAttr(kCpsCandidateGroupId) ||
-                op->hasAttr(kCpsCandidateStageIndex) ||
-                op->hasAttr(kCpsCandidateStageCount) ||
-                op->hasAttr(kCpsCandidateRequiresTokenizedDataflow));
+  return op && (op->hasAttr(CpsCandidateGroupId) ||
+                op->hasAttr(CpsCandidateStageIndex) ||
+                op->hasAttr(CpsCandidateStageCount) ||
+                op->hasAttr(CpsCandidateRequiresTokenizedDataflow));
 }
 
 static bool hasFinalCpsStageAttrs(sde::SdeSuIterateOp op) {
@@ -289,7 +287,7 @@ static Operation *findNextSuContainer(Operation *anchor) {
 static int64_t findNextCandidateGroupId(ModuleOp module) {
   int64_t nextId = 0;
   module.walk([&](sde::SdeSuIterateOp op) {
-    if (auto attr = op->getAttrOfType<IntegerAttr>(kCpsCandidateGroupId))
+    if (auto attr = op->getAttrOfType<IntegerAttr>(CpsCandidateGroupId))
       nextId = std::max(nextId, attr.getInt() + 1);
     if (auto attr = op.getCpsGroupIdAttr())
       nextId = std::max(nextId, attr.getInt() + 1);
@@ -317,13 +315,13 @@ static void stampCandidateGroup(ArrayRef<sde::SdeSuIterateOp> stages,
   int64_t stageCount = static_cast<int64_t>(stages.size());
 
   auto setStageAttrs = [&](sde::SdeSuIterateOp op, int64_t stageIndex) {
-    op->setAttr(kCpsCandidateGroupId,
+    op->setAttr(CpsCandidateGroupId,
                 IntegerAttr::get(IntegerType::get(ctx, 64), groupId));
-    op->setAttr(kCpsCandidateStageIndex,
+    op->setAttr(CpsCandidateStageIndex,
                 IntegerAttr::get(IntegerType::get(ctx, 64), stageIndex));
-    op->setAttr(kCpsCandidateStageCount,
+    op->setAttr(CpsCandidateStageCount,
                 IntegerAttr::get(IntegerType::get(ctx, 64), stageCount));
-    op->setAttr(kCpsCandidateRequiresTokenizedDataflow, UnitAttr::get(ctx));
+    op->setAttr(CpsCandidateRequiresTokenizedDataflow, UnitAttr::get(ctx));
   };
 
   for (auto [index, stage] : llvm::enumerate(stages))
