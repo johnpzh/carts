@@ -13,6 +13,8 @@ Use after implementation, verification, [[carts-simplify]], and [[carts-review]]
 - Do not revert unrelated user or parallel-agent edits.
 - Run `dekk carts format` before commit unless the change is docs-only.
 - Run [[carts-simplify]] then [[carts-review]] before committing.
+- Once both gates pass with no outstanding findings, commit autonomously;
+  do not pause for a second user confirmation. The gates *are* the gate.
 - Push only when explicitly requested.
 
 ## Procedure
@@ -30,3 +32,23 @@ Use after implementation, verification, [[carts-simplify]], and [[carts-review]]
 
 List staged files, verification run, commit hash if created, and any unrelated
 worktree changes left untouched.
+
+## Autocommit Authorization
+
+Once [[carts-simplify]] and [[carts-review]] have both run on the staged change
+with no outstanding findings, run `git commit` without asking. Do not treat
+the commit itself as a separate confirmation step.
+
+Scope: any commit under `~/projects/carts/` (carts compiler + carts-plugin),
+`~/projects/carts/external/carts-benchmarks/`, or `~/projects/carts-paper/`.
+
+Edge cases:
+- If [[carts-simplify]] flags a finding you cannot address without changing
+  behavior, stop and surface it to the user. Do not commit through.
+- For paper-only work in `~/projects/carts-paper/`, the analogous gates are
+  the `paper-write-style` and `paper-write-revision` grep sets from the
+  user-level rafa config. Same rule: pass the gates, then commit.
+- `git push` remains explicitly gated by the Hard Rule above; this
+  authorization is for `git commit` only.
+- If the user says "don't commit yet" or "let me review first" for a
+  specific change, that override beats this default for that change.
