@@ -64,15 +64,6 @@ constexpr StringLiteral NarrowableDep = "narrowable_dep";
 constexpr StringLiteral ContractKindKey = "contract_kind";
 } // namespace Contract
 
-/// Orchestration attributes for grouped repeated-wave lowering.
-namespace Orchestration {
-using namespace llvm;
-constexpr StringLiteral Kind = "arts.orch.kind";
-constexpr StringLiteral GroupId = "arts.orch.group_id";
-constexpr StringLiteral WaveIndex = "arts.orch.wave_index";
-constexpr StringLiteral WaveCount = "arts.orch.wave_count";
-} // namespace Orchestration
-
 // LaunchState::StateSchema and LaunchState::DepSchema live in
 // carts/dialect/arts-rt/Utils/ArtsRtAttrNames.h. The
 // arts.launch.state_schema_version / arts.launch.dep_schema_version
@@ -85,9 +76,6 @@ constexpr StringLiteral WaveCount = "arts.orch.wave_count";
 
 /// Persistent structured region attribute.
 constexpr llvm::StringLiteral PersistentRegion = "arts.persistent_region";
-
-/// Orchestration kind value for repeated-wave groups.
-constexpr llvm::StringLiteral RepeatedWaveGroup = "repeated_wave_group";
 
 // RT-facing loop execution hints (Rt::VectorizeWidth/UnrollFactor/
 // InterleaveCount) live in carts/dialect/arts-rt/Utils/ArtsRtAttrNames.h.
