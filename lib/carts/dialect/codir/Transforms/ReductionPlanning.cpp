@@ -157,16 +157,7 @@ static ArrayAttr buildDepResultDimMaps(codir::CodeletOp codelet) {
 }
 
 static std::optional<int64_t> getRuntimeTotalWorkers(ModuleOp module) {
-  if (!module)
-    return std::nullopt;
-  auto workers = module->getAttrOfType<IntegerAttr>(
-      arts::AttrNames::Module::RuntimeTotalWorkers);
-  if (!workers)
-    return std::nullopt;
-  int64_t value = workers.getInt();
-  if (value <= 0)
-    return std::nullopt;
-  return value;
+  return mlir::carts::arts::getRuntimeTotalWorkers(module);
 }
 
 static std::optional<int64_t> multiplyPositive(int64_t lhs, int64_t rhs) {

@@ -2,6 +2,7 @@
 #define CARTS_UTILS_OPERATIONATTRIBUTES_H
 
 #include "carts/dialect/arts/IR/ArtsDialect.h"
+#include "carts/dialect/arts/Utils/ArtsAttrNames.h"
 #include "carts/utils/StencilAttributes.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -15,24 +16,18 @@ namespace mlir {
 namespace carts::arts {
 namespace AttrNames {
 
-/// Module-level attributes used across ARTS passes/codegen.
-namespace Module {
-using namespace llvm;
-constexpr StringLiteral RuntimeConfigPath = "arts.runtime_config_path";
-constexpr StringLiteral RuntimeConfigData = "arts.runtime_config_data";
-constexpr StringLiteral RuntimeTotalWorkers = "arts.runtime_total_workers";
-constexpr StringLiteral RuntimeTotalNodes = "arts.runtime_total_nodes";
-constexpr StringLiteral RuntimeStaticWorkers = "arts.runtime_static_workers";
-} // namespace Module
+// Module-level marker attributes (Module::RuntimeConfigPath,
+// RuntimeConfigData, RuntimeTotalWorkers, RuntimeTotalNodes,
+// RuntimeStaticWorkers) live in carts/dialect/arts/Utils/ArtsAttrNames.h.
 
 /// Operation-level attributes used across ARTS passes
 namespace Operation {
 using namespace llvm;
 
+// ArtsId, ArtsCreateId, OutlinedFunc, PatternRevision, and
+// StripMiningGenerated live in carts/dialect/arts/Utils/ArtsAttrNames.h.
+
 /// Common ARTS attributes
-constexpr StringLiteral ArtsId = "arts.id";
-constexpr StringLiteral ArtsCreateId = "arts.create_id";
-constexpr StringLiteral OutlinedFunc = "outlined_func";
 constexpr StringLiteral Nowait = "nowait";
 constexpr StringLiteral PreserveAccessMode = "preserve_access_mode";
 constexpr StringLiteral PreserveDepEdge = "preserve_dep_edge";
@@ -48,7 +43,6 @@ constexpr StringLiteral DistributionPattern = "distribution_pattern";
 /// ODS-generated attribute name for EdtOp dep pattern
 constexpr StringLiteral DepPatternAttr = "depPattern";
 constexpr StringLiteral DistributionVersion = "distribution_version";
-constexpr StringLiteral PatternRevision = "arts.pattern_revision";
 
 /// Epoch without caller-active count.
 constexpr StringLiteral NoStartEpoch = "arts.no_start_epoch";
@@ -106,10 +100,6 @@ constexpr llvm::StringLiteral PersistentRegion = "arts.persistent_region";
 
 /// Orchestration kind value for repeated-wave groups.
 constexpr llvm::StringLiteral RepeatedWaveGroup = "repeated_wave_group";
-
-/// Block-loop strip-mining marker attribute.
-constexpr llvm::StringLiteral StripMiningGenerated =
-    "arts.block_loop_strip_mining.generated";
 
 /// RT-facing loop execution hints copied onto outlined EDT functions. These
 /// live on func/LLVM function ops, so they cannot be ODS accessors on CARTS
