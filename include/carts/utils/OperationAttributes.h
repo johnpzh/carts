@@ -1,6 +1,7 @@
 #ifndef CARTS_UTILS_OPERATIONATTRIBUTES_H
 #define CARTS_UTILS_OPERATIONATTRIBUTES_H
 
+#include "carts/dialect/arts-rt/Utils/ArtsRtAttrNames.h"
 #include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/ArtsAttrNames.h"
 #include "carts/utils/StencilAttributes.h"
@@ -27,11 +28,13 @@ using namespace llvm;
 // ArtsId, ArtsCreateId, OutlinedFunc, PatternRevision, and
 // StripMiningGenerated live in carts/dialect/arts/Utils/ArtsAttrNames.h.
 
+// ReadyLocalLaunch and NoStartEpoch live in
+// carts/dialect/arts-rt/Utils/ArtsRtAttrNames.h.
+
 /// Common ARTS attributes
 constexpr StringLiteral Nowait = "nowait";
 constexpr StringLiteral PreserveAccessMode = "preserve_access_mode";
 constexpr StringLiteral PreserveDepEdge = "preserve_dep_edge";
-constexpr StringLiteral ReadyLocalLaunch = "arts.ready_local_launch";
 
 /// Partition-related attributes (TableGen-generated names)
 constexpr StringLiteral PartitionMode = "partition_mode";
@@ -43,9 +46,6 @@ constexpr StringLiteral DistributionPattern = "distribution_pattern";
 /// ODS-generated attribute name for EdtOp dep pattern
 constexpr StringLiteral DepPatternAttr = "depPattern";
 constexpr StringLiteral DistributionVersion = "distribution_version";
-
-/// Epoch without caller-active count.
-constexpr StringLiteral NoStartEpoch = "arts.no_start_epoch";
 
 /// DB storage-type inference annotations (set by DbModeTighteningPass)
 constexpr StringLiteral LocalOnly = "arts.local_only";
@@ -73,14 +73,10 @@ constexpr StringLiteral WaveIndex = "arts.orch.wave_index";
 constexpr StringLiteral WaveCount = "arts.orch.wave_count";
 } // namespace Orchestration
 
-/// Split launch state attributes.
-namespace LaunchState {
-using namespace llvm;
-constexpr StringLiteral StateSchema = "arts.launch.state_schema";
-constexpr StringLiteral DepSchema = "arts.launch.dep_schema";
-constexpr StringLiteral StateSchemaVersion = "arts.launch.state_schema_version";
-constexpr StringLiteral DepSchemaVersion = "arts.launch.dep_schema_version";
-} // namespace LaunchState
+// LaunchState::StateSchema and LaunchState::DepSchema live in
+// carts/dialect/arts-rt/Utils/ArtsRtAttrNames.h. The
+// arts.launch.state_schema_version / arts.launch.dep_schema_version
+// constants had zero in-tree consumers and were dropped during the move.
 
 /// Proof-driven ownership attributes.
 namespace Proof {
@@ -101,15 +97,8 @@ constexpr llvm::StringLiteral PersistentRegion = "arts.persistent_region";
 /// Orchestration kind value for repeated-wave groups.
 constexpr llvm::StringLiteral RepeatedWaveGroup = "repeated_wave_group";
 
-/// RT-facing loop execution hints copied onto outlined EDT functions. These
-/// live on func/LLVM function ops, so they cannot be ODS accessors on CARTS
-/// ops; all in-dialect producers/consumers use generated accessors instead.
-namespace Rt {
-using namespace llvm;
-constexpr StringLiteral VectorizeWidth = "arts.rt.vectorize_width";
-constexpr StringLiteral UnrollFactor = "arts.rt.unroll_factor";
-constexpr StringLiteral InterleaveCount = "arts.rt.interleave_count";
-} // namespace Rt
+// RT-facing loop execution hints (Rt::VectorizeWidth/UnrollFactor/
+// InterleaveCount) live in carts/dialect/arts-rt/Utils/ArtsRtAttrNames.h.
 
 } // namespace Operation
 
@@ -120,11 +109,11 @@ inline void copyCoreExecutionHintAttrsToRtFunction(EdtOp source,
   if (!source || !dest)
     return;
   if (auto attr = source.getVectorizeWidthAttr())
-    dest->setAttr(AttrNames::Operation::Rt::VectorizeWidth, attr);
+    dest->setAttr(arts_rt::AttrNames::Rt::VectorizeWidth, attr);
   if (auto attr = source.getUnrollFactorAttr())
-    dest->setAttr(AttrNames::Operation::Rt::UnrollFactor, attr);
+    dest->setAttr(arts_rt::AttrNames::Rt::UnrollFactor, attr);
   if (auto attr = source.getInterleaveCountAttr())
-    dest->setAttr(AttrNames::Operation::Rt::InterleaveCount, attr);
+    dest->setAttr(arts_rt::AttrNames::Rt::InterleaveCount, attr);
 }
 
 inline ArrayAttr getPlanOwnerDimsAttr(Operation *op) {

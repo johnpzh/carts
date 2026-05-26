@@ -236,7 +236,7 @@ void DbLoweringPass::convertDbAllocOps() {
     for (auto &attr : oldOp->getAttrs()) {
       if (!attr.getName().getValue().starts_with("arts."))
         continue;
-      if (attr.getName() == AttrNames::Operation::ArtsCreateId)
+      if (attr.getName() == arts::AttrNames::Operation::ArtsCreateId)
         continue;
       newOp->setAttr(attr.getName(), attr.getValue());
     }

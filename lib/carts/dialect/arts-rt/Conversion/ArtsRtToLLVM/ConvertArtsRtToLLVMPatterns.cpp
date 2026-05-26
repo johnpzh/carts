@@ -409,7 +409,8 @@ struct DbAllocPattern : public ArtsRtToLLVMPattern<DbAllocOp> {
         AC->create<arith::MulIOp>(loc, elementSize, payloadSize);
     std::optional<int64_t> nextId;
     if (auto createIdAttr =
-            op->getAttrOfType<IntegerAttr>(AttrNames::Operation::ArtsCreateId))
+            op->getAttrOfType<IntegerAttr>(
+                arts::AttrNames::Operation::ArtsCreateId))
       nextId = createIdAttr.getInt();
     else
       nextId = getArtsId(op);

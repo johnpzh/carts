@@ -104,7 +104,7 @@ void EpochLoweringPass::runOnOperation() {
     /// owner-local slices across multiple logical timesteps.
     bool isPersistent = false;
     if (auto persistAttr = epochOp->getAttrOfType<BoolAttr>(
-            AttrNames::Operation::PersistentRegion))
+            arts::AttrNames::Operation::PersistentRegion))
       isPersistent = persistAttr.getValue();
     if (isPersistent) {
       ARTS_INFO("  Persistent structured region: epoch will use stable "
@@ -120,7 +120,7 @@ void EpochLoweringPass::runOnOperation() {
 
     /// Propagate persistent region flag to the lowered CreateEpochOp.
     if (isPersistent)
-      createEpochOp->setAttr(AttrNames::Operation::PersistentRegion,
+      createEpochOp->setAttr(arts::AttrNames::Operation::PersistentRegion,
                              BoolAttr::get(createEpochOp.getContext(), true));
 
     /// Collect EdtCreateOps that need the epoch GUID.

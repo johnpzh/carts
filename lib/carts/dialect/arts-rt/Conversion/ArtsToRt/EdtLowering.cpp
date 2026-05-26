@@ -713,22 +713,22 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
   setOutlinedFunc(outlineOp, outlinedFunc.getName());
 
   if (edtOp->hasAttr(
-          ::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch))
+          ::mlir::carts::arts_rt::AttrNames::Operation::ReadyLocalLaunch))
     outlineOp->setAttr(
-        ::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch,
+        ::mlir::carts::arts_rt::AttrNames::Operation::ReadyLocalLaunch,
         AC->getBuilder().getUnitAttr());
 
   /// Preserve structured launch schemas on the lowered create op for consumers
   /// that need the explicit state/dependency ABI.
   if (auto stateSchema = edtOp->getAttrOfType<DenseI64ArrayAttr>(
-          ::mlir::carts::arts::AttrNames::Operation::LaunchState::StateSchema))
+          ::mlir::carts::arts_rt::AttrNames::LaunchState::StateSchema))
     outlineOp->setAttr(
-        ::mlir::carts::arts::AttrNames::Operation::LaunchState::StateSchema,
+        ::mlir::carts::arts_rt::AttrNames::LaunchState::StateSchema,
         stateSchema);
   if (auto depSchema = edtOp->getAttrOfType<DenseI64ArrayAttr>(
-          ::mlir::carts::arts::AttrNames::Operation::LaunchState::DepSchema))
+          ::mlir::carts::arts_rt::AttrNames::LaunchState::DepSchema))
     outlineOp->setAttr(
-        ::mlir::carts::arts::AttrNames::Operation::LaunchState::DepSchema,
+        ::mlir::carts::arts_rt::AttrNames::LaunchState::DepSchema,
         depSchema);
   int64_t baseId = getArtsId(edtOp);
   if (!baseId)

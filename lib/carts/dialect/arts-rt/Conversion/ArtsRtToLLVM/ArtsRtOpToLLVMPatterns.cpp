@@ -79,7 +79,7 @@ struct CreateEpochPattern : public ArtsRtToLLVMPattern<CreateEpochOp> {
 
     /// Create epoch guid
     Value epochGuid;
-    if (op->hasAttr(::mlir::carts::arts::AttrNames::Operation::NoStartEpoch))
+    if (op->hasAttr(::mlir::carts::arts_rt::AttrNames::Operation::NoStartEpoch))
       epochGuid = AC->createEpochNoStart(guid, edtSlot, loc);
     else
       epochGuid = AC->createEpoch(guid, edtSlot, loc);
@@ -258,13 +258,13 @@ private:
 
     auto reference = site.representativeCreate();
     if (!reference->hasAttr(
-            ::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch) ||
+            ::mlir::carts::arts_rt::AttrNames::Operation::ReadyLocalLaunch) ||
         !reference.getEpochGuid())
       return false;
 
     for (EdtCreateOp create : site.creates) {
       if (!create->hasAttr(
-              ::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch) ||
+              ::mlir::carts::arts_rt::AttrNames::Operation::ReadyLocalLaunch) ||
           !create.getEpochGuid())
         return false;
       if (create.getParamMemref() != reference.getParamMemref() ||
@@ -1665,7 +1665,7 @@ struct EdtCreatePattern : public ArtsRtToLLVMPattern<EdtCreateOp> {
   LogicalResult matchAndRewrite(EdtCreateOp op,
                                 PatternRewriter &rewriter) const override {
     if (op->hasAttr(
-            ::mlir::carts::arts::AttrNames::Operation::ReadyLocalLaunch) &&
+            ::mlir::carts::arts_rt::AttrNames::Operation::ReadyLocalLaunch) &&
         op.getEpochGuid()) {
       for (Operation *user : op.getGuid().getUsers())
         if (isa<RecordDepOp>(user))

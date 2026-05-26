@@ -442,10 +442,10 @@ struct LoopVectorizationHintsPass
       unsigned rtVecWidth = 0;
       unsigned rtInterleaveCount = 0;
       if (auto attr = funcOp->getAttrOfType<IntegerAttr>(
-              ::mlir::carts::arts::AttrNames::Operation::Rt::VectorizeWidth))
+              ::mlir::carts::arts_rt::AttrNames::Rt::VectorizeWidth))
         rtVecWidth = attr.getInt();
       if (auto attr = funcOp->getAttrOfType<IntegerAttr>(
-              ::mlir::carts::arts::AttrNames::Operation::Rt::InterleaveCount))
+              ::mlir::carts::arts_rt::AttrNames::Rt::InterleaveCount))
         rtInterleaveCount = attr.getInt();
 
       int innermostCount = 0;
