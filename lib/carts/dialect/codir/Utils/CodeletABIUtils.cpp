@@ -8,8 +8,6 @@ bool isCodirDependencyType(Type type) {
   return isa<MemRefType, UnrankedMemRefType>(type);
 }
 
-bool isCodirScalarParamType(Type type) {
-  return type.isIntOrIndexOrFloat();
-}
+bool isCodirScalarParamType(Type type) { return type.isIntOrIndexOrFloat(); }
 
 } // namespace mlir::carts::codir

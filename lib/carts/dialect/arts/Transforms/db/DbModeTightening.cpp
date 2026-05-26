@@ -22,20 +22,20 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dominance.h"
 /// Arts
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/OwnershipProof.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbGraph.h"
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/passes/Passes.h"
 #include "mlir/Pass/Pass.h"
 /// Debug
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
 #include "carts/dialect/arts/Utils/BlockedAccessUtils.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
+#include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/dialect/arts/Utils/ValueAnalysisUtils.h"
 #include "carts/utils/Debug.h"
-#include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
@@ -133,8 +133,8 @@ static bool isIndexFullCoverage(Value idx, Value dimSize,
   if (!idx || !dimSize)
     return false;
 
-  auto dimConstOpt = arts::tryFoldConstantIndex(
-      ValueAnalysis::stripNumericCasts(dimSize));
+  auto dimConstOpt =
+      arts::tryFoldConstantIndex(ValueAnalysis::stripNumericCasts(dimSize));
   if (dimConstOpt && *dimConstOpt == 1)
     return true;
 
@@ -632,8 +632,8 @@ bool DbModeTighteningPass::adjustDbModes() {
       DbAllocOp allocOp = allocNode->getDbAllocOp();
       ArtsMode currentDbMode = allocOp.getMode();
       if (currentDbMode != maxMode) {
-        ARTS_DEBUG("AllocOp: " << allocOp << " from " << currentDbMode
-                               << " to " << maxMode);
+        ARTS_DEBUG("AllocOp: " << allocOp << " from " << currentDbMode << " to "
+                               << maxMode);
         allocOp.setModeAttr(ArtsModeAttr::get(allocOp.getContext(), maxMode));
         ++numAllocModesAdjusted;
         changed = true;
@@ -756,8 +756,9 @@ void DbModeTighteningPass::inferDbStorageTypes() {
 
       if (foundWriter && allReadAfterWrite && writerCount == 1 &&
           !writerInRepeatableControl) {
-        allocOp->setAttr(::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit,
-                         UnitAttr::get(allocOp.getContext()));
+        allocOp->setAttr(
+            ::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit,
+            UnitAttr::get(allocOp.getContext()));
         ++numDbsMarkedReadOnlyAfterInit;
         ARTS_DEBUG("AllocOp: " << allocOp
                                << " => read_only_after_init (ONCE candidate)");
@@ -781,7 +782,8 @@ void DbModeTighteningPass::invalidateAndRebuildGraph() {
 namespace mlir {
 namespace carts::arts {
 std::unique_ptr<Pass>
-createDbModeTighteningPass(mlir::carts::arts::AnalysisManager *AM, bool forceInout) {
+createDbModeTighteningPass(mlir::carts::arts::AnalysisManager *AM,
+                           bool forceInout) {
   return std::make_unique<DbModeTighteningPass>(AM, forceInout);
 }
 } // namespace carts::arts

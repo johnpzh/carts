@@ -194,8 +194,7 @@ static bool epochHasRepeatStableUniformPlan(EpochOp epochOp) {
   Operation *op = epochOp.getOperation();
   auto depPattern = getDepPattern(op);
   auto repetition = getPlanRepetitionStructureAttr(op);
-  return depPattern && isUniformFamilyDepPattern(*depPattern) &&
-         repetition &&
+  return depPattern && isUniformFamilyDepPattern(*depPattern) && repetition &&
          repetition.getValue() == ArtsPlanRepetitionStructure::full_timestep &&
          isStableRepeatTopology(op) && hasZeroSliceWideningPressure(op);
 }

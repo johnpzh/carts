@@ -40,7 +40,8 @@ module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_worker
 // CHECK: arts.db_alloc
 // CHECK-SAME: <block>
 // CHECK-SAME: elementSizes[%c16{{(_[0-9]+)?}}, %[[D1]]]
-// CHECK: arts.edt <task> <intranode>
+// CHECK: arts.edt <task> <internode>
+// CHECK-SAME: storageBridgeCopy
 // CHECK: arts.edt <task> <internode>
 // CHECK-SAME: planPhysicalBlockShape = [16, 16]
 // CHECK: %[[PAYLOAD:.*]] = arts.db_ref

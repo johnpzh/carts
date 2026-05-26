@@ -65,14 +65,16 @@ static bool isConstantIndexValue(Value value, int64_t expected) {
 bool hasCompleteMuDepSlice(sde::SdeMuDepOp muDep) {
   auto sourceType = dyn_cast<MemRefType>(muDep.getSource().getType());
   return sourceType && sourceType.getRank() > 0 &&
-         muDep.getOffsets().size() == static_cast<size_t>(sourceType.getRank()) &&
+         muDep.getOffsets().size() ==
+             static_cast<size_t>(sourceType.getRank()) &&
          muDep.getSizes().size() == static_cast<size_t>(sourceType.getRank());
 }
 
 bool hasOnlyStaticMuDepSliceBounds(sde::SdeMuDepOp muDep) {
-  return llvm::all_of(muDep.getOffsets(), [](Value value) {
-           return getConstantIndexValue(value).has_value();
-         }) &&
+  return llvm::all_of(muDep.getOffsets(),
+                      [](Value value) {
+                        return getConstantIndexValue(value).has_value();
+                      }) &&
          llvm::all_of(muDep.getSizes(), [](Value value) {
            return getConstantIndexValue(value).has_value();
          });
@@ -166,8 +168,7 @@ bool haveSameMuDepSlice(sde::SdeMuDepOp lhs, sde::SdeMuDepOp rhs) {
   return true;
 }
 
-bool accessIndicesMatchMuDepOffsets(ValueRange indices,
-                                    sde::SdeMuDepOp muDep) {
+bool accessIndicesMatchMuDepOffsets(ValueRange indices, sde::SdeMuDepOp muDep) {
   if (!hasCompleteMuDepSlice(muDep) ||
       indices.size() != muDep.getOffsets().size())
     return false;
@@ -228,8 +229,7 @@ bool hasExactSubviewAccessProofInTask(sde::SdeMuDepOp muDep,
   return sawMatchingSubview;
 }
 
-bool hasExactRootAccessProofInTask(sde::SdeMuDepOp muDep,
-                                   Region &taskRegion) {
+bool hasExactRootAccessProofInTask(sde::SdeMuDepOp muDep, Region &taskRegion) {
   bool sawMatchingAccess = false;
   for (Operation *user : muDep.getSource().getUsers()) {
     if (!taskRegion.isAncestor(user->getParentRegion()))
@@ -246,8 +246,9 @@ bool hasExactRootAccessProofInTask(sde::SdeMuDepOp muDep,
   return sawMatchingAccess;
 }
 
-bool hasPartitionedExactAccessProofInTask(
-    Value source, ArrayRef<sde::SdeMuDepOp> sourceDeps, Region &taskRegion) {
+bool hasPartitionedExactAccessProofInTask(Value source,
+                                          ArrayRef<sde::SdeMuDepOp> sourceDeps,
+                                          Region &taskRegion) {
   bool sawMatchingAccess = false;
   for (Operation *user : source.getUsers()) {
     if (!taskRegion.isAncestor(user->getParentRegion()))

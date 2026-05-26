@@ -59,15 +59,15 @@ SmallVector<int64_t, 4> factorWorkersAcrossDims(int64_t workers,
   return grid;
 }
 
-static long double estimateStencilExpandedTileRatio(
-    ArrayRef<int64_t> extents, ArrayRef<int64_t> haloRadii,
-    ArrayRef<int64_t> grid) {
+static long double estimateStencilExpandedTileRatio(ArrayRef<int64_t> extents,
+                                                    ArrayRef<int64_t> haloRadii,
+                                                    ArrayRef<int64_t> grid) {
   long double ownedVolume = 1.0L;
   long double expandedVolume = 1.0L;
   for (auto [idx, extent] : llvm::enumerate(extents)) {
     int64_t tile = ceilDivPositive(extent, grid[idx]);
-    int64_t halo = idx < haloRadii.size() ? std::max<int64_t>(0, haloRadii[idx])
-                                          : 0;
+    int64_t halo =
+        idx < haloRadii.size() ? std::max<int64_t>(0, haloRadii[idx]) : 0;
     ownedVolume *= static_cast<long double>(tile);
     expandedVolume *= static_cast<long double>(tile + 2 * halo);
   }

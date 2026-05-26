@@ -60,8 +60,7 @@ namespace {
 static bool isGuidReserveCall(func::CallOp call) {
   if (call.getNumOperands() != 2 || call.getNumResults() != 1)
     return false;
-  std::optional<types::RuntimeFunction> fn =
-      getRuntimeFunction(call);
+  std::optional<types::RuntimeFunction> fn = getRuntimeFunction(call);
   return fn && *fn == types::ARTSRTL_arts_guid_reserve;
 }
 
@@ -114,8 +113,7 @@ struct GuidRangeCallOptPass
       for (func::CallOp reserveCall : reserveCalls) {
         auto routeConst =
             RtDbUtils::tryFoldConstantIndex(reserveCall.getOperand(1));
-        if (!routeConst ||
-            !canReserveGuidRangeForRoute(module, *routeConst))
+        if (!routeConst || !canReserveGuidRangeForRoute(module, *routeConst))
           continue;
 
         auto staticTripCount = getStaticTripCount(loop.getOperation());

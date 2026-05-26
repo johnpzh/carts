@@ -5,9 +5,9 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/Analysis/loop/LoopNode.h"
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/LoopStructureUtils.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"

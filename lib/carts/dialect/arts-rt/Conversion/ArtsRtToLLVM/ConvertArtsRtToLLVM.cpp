@@ -19,9 +19,9 @@
 
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/ConvertArtsRtToLLVMInternal.h"
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_CONVERTARTSRTTOLLVM
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"

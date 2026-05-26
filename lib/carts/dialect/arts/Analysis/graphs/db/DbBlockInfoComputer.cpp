@@ -6,7 +6,6 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/Analysis/graphs/db/DbBlockInfoComputer.h"
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/AccessPatternAnalysis.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
@@ -14,6 +13,7 @@
 #include "carts/dialect/arts/Analysis/graphs/db/MemoryAccessClassifier.h"
 #include "carts/dialect/arts/Analysis/graphs/db/PartitionBoundsAnalyzer.h"
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/LoopStructureUtils.h"
 #include "carts/utils/Utils.h"
@@ -398,20 +398,23 @@ LogicalResult DbBlockInfoComputer::computeBlockInfoFromWhile(
   Value adjustedSize = minSize;
 
   if (bounds.minOffset < 0) {
-    Value absAdj = ::mlir::carts::createConstantIndex(builder, loc, -bounds.minOffset);
+    Value absAdj =
+        ::mlir::carts::createConstantIndex(builder, loc, -bounds.minOffset);
     Value cond = arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::uge,
                                        startIdx, absAdj);
     Value sub = arith::SubIOp::create(builder, loc, startIdx, absAdj);
     Value zeroIdx = ::mlir::carts::createZeroIndex(builder, loc);
     adjustedOffset = arith::SelectOp::create(builder, loc, cond, sub, zeroIdx);
   } else if (bounds.minOffset > 0) {
-    Value adj = ::mlir::carts::createConstantIndex(builder, loc, bounds.minOffset);
+    Value adj =
+        ::mlir::carts::createConstantIndex(builder, loc, bounds.minOffset);
     adjustedOffset = arith::AddIOp::create(builder, loc, startIdx, adj);
   }
 
   int64_t sizeAdjustment = bounds.maxOffset - bounds.minOffset;
   if (sizeAdjustment != 0) {
-    Value adjustment = ::mlir::carts::createConstantIndex(builder, loc, sizeAdjustment);
+    Value adjustment =
+        ::mlir::carts::createConstantIndex(builder, loc, sizeAdjustment);
     adjustedSize = arith::AddIOp::create(builder, loc, minSize, adjustment);
   }
 
@@ -674,7 +677,8 @@ LogicalResult DbBlockInfoComputer::computeBlockInfoFromForLoop(
       continue;
 
     if (bounds.minOffset < 0) {
-      Value absAdj = ::mlir::carts::createConstantIndex(builder, loc, -bounds.minOffset);
+      Value absAdj =
+          ::mlir::carts::createConstantIndex(builder, loc, -bounds.minOffset);
       Value cond = arith::CmpIOp::create(
           builder, loc, arith::CmpIPredicate::uge, adjustedOffset, absAdj);
       Value sub = arith::SubIOp::create(builder, loc, adjustedOffset, absAdj);
@@ -682,7 +686,8 @@ LogicalResult DbBlockInfoComputer::computeBlockInfoFromForLoop(
       adjustedOffset =
           arith::SelectOp::create(builder, loc, cond, sub, zeroIdx);
     } else if (bounds.minOffset > 0) {
-      Value adj = ::mlir::carts::createConstantIndex(builder, loc, bounds.minOffset);
+      Value adj =
+          ::mlir::carts::createConstantIndex(builder, loc, bounds.minOffset);
       adjustedOffset = arith::AddIOp::create(builder, loc, adjustedOffset, adj);
     }
 

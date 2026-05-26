@@ -10,9 +10,9 @@
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "polygeist/Ops.h"
 #include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "polygeist/Ops.h"
 
 #include <limits>
 
@@ -83,10 +83,14 @@ static std::optional<MemoryAccessInfo> getMemoryAccessInfo(Operation *op) {
 
 static bool indexSelectsOwnerSlice(Value index, Value ownerIv,
                                    llvm::SmallPtrSetImpl<Value> &seen) {
-  if (!index || !ownerIv || !seen.insert(index).second)
+  if (!index || !ownerIv)
     return false;
+  if (index == ownerIv)
+    return true;
   if (ValueAnalysis::dependsOn(index, ownerIv))
     return true;
+  if (!seen.insert(index).second)
+    return false;
 
   auto blockArg = dyn_cast<BlockArgument>(index);
   if (blockArg) {
@@ -95,8 +99,14 @@ static bool indexSelectsOwnerSlice(Value index, Value ownerIv,
     if (!loop || loop.getInductionVar() != index)
       return false;
 
-    return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, seen) &&
-           indexSelectsOwnerSlice(loop.getUpperBound(), ownerIv, seen);
+    llvm::SmallPtrSet<Value, 8> lowerSeen;
+    llvm::SmallPtrSet<Value, 8> upperSeen;
+    for (Value value : seen) {
+      lowerSeen.insert(value);
+      upperSeen.insert(value);
+    }
+    return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, lowerSeen) &&
+           indexSelectsOwnerSlice(loop.getUpperBound(), ownerIv, upperSeen);
   }
 
   Operation *def = index.getDefiningOp();
@@ -107,9 +117,14 @@ static bool indexSelectsOwnerSlice(Value index, Value ownerIv,
           arith::MinSIOp, arith::MinUIOp, arith::MaxSIOp, arith::MaxUIOp>(def))
     return false;
 
-  return llvm::any_of(def->getOperands(), [&](Value operand) {
-    return indexSelectsOwnerSlice(operand, ownerIv, seen);
-  });
+  for (Value operand : def->getOperands()) {
+    llvm::SmallPtrSet<Value, 8> operandSeen;
+    for (Value value : seen)
+      operandSeen.insert(value);
+    if (indexSelectsOwnerSlice(operand, ownerIv, operandSeen))
+      return true;
+  }
+  return false;
 }
 
 static bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
@@ -439,6 +454,11 @@ static bool isPerDependencyRedistribution(codir::CodeletOp codelet,
   return depOwnerDim && codeletOwnerDim && *depOwnerDim != *codeletOwnerDim;
 }
 
+static bool isMatmulCodelet(codir::CodeletOp codelet) {
+  auto pattern = codelet ? codelet.getPatternAttr() : nullptr;
+  return pattern && pattern.getValue() == codir::CodirPattern::matmul;
+}
+
 static std::optional<unsigned>
 getCodeletDepOperandIndex(codir::CodeletOp codelet, OpOperand &use) {
   if (!codelet)
@@ -566,6 +586,8 @@ static bool needsSharedRootRedistribution(codir::CodeletOp codelet,
 
 static bool shouldDeferPhaseRedistribution(codir::CodeletOp codelet,
                                            unsigned depIndex, Value dep) {
+  if (isMatmulCodelet(codelet))
+    return false;
   if (!isPerDependencyRedistribution(codelet, depIndex))
     return false;
 
@@ -586,6 +608,18 @@ static bool shouldUseHostWholeReadOnlyDep(codir::CodeletOp codelet,
          *elements <= kMaxSmallReadOnlyHostWholeElements;
 }
 
+static bool shouldUseReplicatedReadDep(codir::CodeletOp codelet,
+                                       unsigned depIndex) {
+  if (!isMatmulCodelet(codelet))
+    return false;
+  std::optional<codir::CodirAccessMode> mode =
+      getDepAccessMode(codelet, depIndex);
+  if (!mode || *mode != codir::CodirAccessMode::read)
+    return false;
+  return hasTileOwnerSlicePlan(codelet) &&
+         !depAccessesStayWithinSingleOwnerSlice(codelet, depIndex);
+}
+
 static ArrayAttr buildOwnerDimsAttr(MLIRContext *ctx,
                                     std::optional<unsigned> ownerDim) {
   if (!ownerDim)
@@ -596,6 +630,9 @@ static ArrayAttr buildOwnerDimsAttr(MLIRContext *ctx,
 static codir::CodirStorageViewKind
 chooseStorageView(codir::CodeletOp codelet, unsigned depIndex,
                   codir::CodirStorageViewKind requested) {
+  if (requested == codir::CodirStorageViewKind::host_whole &&
+      shouldUseReplicatedReadDep(codelet, depIndex))
+    return codir::CodirStorageViewKind::replicated_read;
   if (requested != codir::CodirStorageViewKind::compute_block)
     return requested;
   if (!codelet || depIndex >= codelet.getDeps().size())

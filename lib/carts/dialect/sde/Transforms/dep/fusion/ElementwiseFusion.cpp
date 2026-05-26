@@ -111,10 +111,8 @@ static SmallVector<Value, 4> mapValues(ValueRange values, IRMapping &mapping) {
   return mapped;
 }
 
-static void cloneSkippablePrefixOps(Operation *root,
-                                    sde::SdeSuIterateOp until,
-                                    IRRewriter &rewriter,
-                                    IRMapping &mapping) {
+static void cloneSkippablePrefixOps(Operation *root, sde::SdeSuIterateOp until,
+                                    IRRewriter &rewriter, IRMapping &mapping) {
   auto cuRegion = dyn_cast_or_null<sde::SdeCuRegionOp>(root);
   if (!cuRegion || !cuRegion.getBody().hasOneBlock())
     return;
@@ -350,16 +348,16 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
       mapValues(first.getLowerBounds(), fusedOperandMapping);
   SmallVector<Value, 4> upperBounds =
       mapValues(first.getUpperBounds(), fusedOperandMapping);
-  SmallVector<Value, 4> steps = mapValues(first.getSteps(), fusedOperandMapping);
-  Value chunkSize = first.getChunkSize()
-                        ? fusedOperandMapping.lookupOrDefault(
-                              first.getChunkSize())
-                        : Value{};
+  SmallVector<Value, 4> steps =
+      mapValues(first.getSteps(), fusedOperandMapping);
+  Value chunkSize =
+      first.getChunkSize()
+          ? fusedOperandMapping.lookupOrDefault(first.getChunkSize())
+          : Value{};
 
   auto fused = sde::SdeSuIterateOp::create(
       rewriter, loc, /*resultTypes=*/TypeRange{}, lowerBounds, upperBounds,
-      steps, first.getScheduleAttr(),
-      chunkSize, first.getNowaitAttr(),
+      steps, first.getScheduleAttr(), chunkSize, first.getNowaitAttr(),
       first.getReductionAccumulators(), first.getReductionKindsAttr(),
       first.getReductionStrategyAttr(), first.getPartialReductionAttr(),
       first.getPartialReductionDimsAttr(),
@@ -368,7 +366,7 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
           first.getContext(),
           sde::SdeStructuredClassification::elementwise_pipeline),
       sde::SdePatternAttr::get(first.getContext(),
-                                 sde::SdePattern::elementwise_pipeline),
+                               sde::SdePattern::elementwise_pipeline),
       first.getAccessMinOffsetsAttr(), first.getAccessMaxOffsetsAttr(),
       first.getOwnerDimsAttr(), first.getSpatialDimsAttr(),
       first.getWriteFootprintAttr(), first.getPhysicalOwnerDimsAttr(),
@@ -376,10 +374,10 @@ static sde::SdeSuIterateOp fuseStages(MutableArrayRef<ElementwiseStage> stages,
       first.getPhysicalHaloShapeAttr(), first.getIterationTopologyAttr(),
       first.getRepetitionStructureAttr(), first.getAsyncStrategyAttr(),
       first.getCpsGroupIdAttr(), first.getCpsStageIndexAttr(),
-      first.getCpsStageCountAttr(),
-      first.getDistributionKindAttr(), first.getInPlaceSafeAttr(),
-      first.getInPlaceSharedStateAttr(), first.getVectorizeWidthAttr(),
-      first.getUnrollFactorAttr(), first.getInterleaveCountAttr());
+      first.getCpsStageCountAttr(), first.getDistributionKindAttr(),
+      first.getInPlaceSafeAttr(), first.getInPlaceSharedStateAttr(),
+      first.getVectorizeWidthAttr(), first.getUnrollFactorAttr(),
+      first.getInterleaveCountAttr());
   fused->setAttrs(sde::getRewrittenAttrs(first));
   fused.setStructuredClassificationAttr(
       sde::SdeStructuredClassificationAttr::get(

@@ -40,12 +40,15 @@ static void verifyDistributedDbDeps(EdtOp edt, bool &found) {
         dyn_cast_or_null<DbAllocOp>(DbUtils::getUnderlyingDbAlloc(dep));
     if (!DbUtils::isCoarseUserDataDb(alloc))
       continue;
-    if (DbUtils::isAllowedSmallReadOnlyCoarseDep(dep, alloc))
+    if (DbUtils::isAllowedReadOnlyCoarseDep(dep, alloc))
+      continue;
+    if (DbUtils::isHostWholeToComputeBlockBridgeMovement(edt))
       continue;
     if (!reported.insert(alloc.getOperation()).second)
       continue;
 
-    InFlightDiagnostic diag = edt.emitError()
+    InFlightDiagnostic diag =
+        edt.emitError()
         << "internode ARTS task depends on a coarse single-block aggregate "
            "user DB";
     diag.attachNote(alloc.getLoc())
@@ -105,7 +108,7 @@ struct VerifyArtsObjectsOnlyPass
   }
 };
 
-} /// namespace
+} // namespace
 
 std::unique_ptr<Pass> mlir::carts::arts::createVerifyArtsObjectsOnlyPass() {
   return std::make_unique<VerifyArtsObjectsOnlyPass>();

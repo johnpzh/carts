@@ -2,7 +2,7 @@ add_mlir_dialect_library(MLIRCartsCodirTransforms
   CodirCodeletOpt.cpp
   ReductionPlanning.cpp
   StoragePlanning.cpp
-  VerifyCodir.cpp
+  Verify/VerifyCodir.cpp
 
   ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/include/carts/dialect/codir/Transforms

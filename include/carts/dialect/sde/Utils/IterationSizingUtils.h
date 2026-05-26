@@ -8,11 +8,11 @@
 #define CARTS_DIALECT_SDE_UTILS_ITERATIONSIZINGUTILS_H
 
 #include "carts/dialect/sde/IR/SdeDialect.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/SmallVector.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Value.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 #include <cstdint>
 
 namespace mlir::carts::sde {

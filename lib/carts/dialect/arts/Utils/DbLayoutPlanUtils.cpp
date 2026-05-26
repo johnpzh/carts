@@ -54,11 +54,9 @@ bool mlir::carts::arts::hasPhysicalDbLayoutPlan(Operation *op) {
   return getPlanOwnerDimsAttr(op) && getPlanPhysicalBlockShapeAttr(op);
 }
 
-FailureOr<DbPhysicalLayoutPlan>
-mlir::carts::arts::resolvePhysicalDbLayoutPlan(ArrayAttr ownerDimsAttr,
-                                        ArrayAttr blockShapeAttr,
-                                        ValueRange elementSizes,
-                                        OpBuilder &builder, Location loc) {
+FailureOr<DbPhysicalLayoutPlan> mlir::carts::arts::resolvePhysicalDbLayoutPlan(
+    ArrayAttr ownerDimsAttr, ArrayAttr blockShapeAttr, ValueRange elementSizes,
+    OpBuilder &builder, Location loc) {
   if (!ownerDimsAttr || !blockShapeAttr || elementSizes.empty())
     return failure();
 

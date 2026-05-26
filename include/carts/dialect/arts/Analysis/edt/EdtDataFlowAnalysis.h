@@ -7,10 +7,10 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_EDT_EDTDATAFLOWANALYSIS_H
 #define ARTS_DIALECT_CORE_ANALYSIS_EDT_EDTDATAFLOWANALYSIS_H
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbGraph.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtEdge.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SetVector.h"

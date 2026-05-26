@@ -72,11 +72,10 @@ collectDirectDepAccesses(codir::CodeletOp codelet) {
           findDepArgumentIndex(codelet, load.getMemRef());
       if (!depIndex)
         return;
-      accesses.push_back(
-          {*depIndex,
-           SmallVector<Value, 4>(load.getIndices().begin(),
-                                 load.getIndices().end()),
-           /*isWrite=*/false});
+      accesses.push_back({*depIndex,
+                          SmallVector<Value, 4>(load.getIndices().begin(),
+                                                load.getIndices().end()),
+                          /*isWrite=*/false});
       return;
     }
 
@@ -85,11 +84,10 @@ collectDirectDepAccesses(codir::CodeletOp codelet) {
           findDepArgumentIndex(codelet, store.getMemref());
       if (!depIndex)
         return;
-      accesses.push_back(
-          {*depIndex,
-           SmallVector<Value, 4>(store.getIndices().begin(),
-                                 store.getIndices().end()),
-           /*isWrite=*/true});
+      accesses.push_back({*depIndex,
+                          SmallVector<Value, 4>(store.getIndices().begin(),
+                                                store.getIndices().end()),
+                          /*isWrite=*/true});
     }
   });
 
@@ -110,7 +108,8 @@ selectResultAccess(codir::CodeletOp codelet,
 }
 
 static const CodirAccessInfo *
-findRepresentativeAccess(unsigned depIndex, ArrayRef<CodirAccessInfo> accesses) {
+findRepresentativeAccess(unsigned depIndex,
+                         ArrayRef<CodirAccessInfo> accesses) {
   const CodirAccessInfo *firstRead = nullptr;
   const CodirAccessInfo *firstWrite = nullptr;
   for (const CodirAccessInfo &access : accesses) {
@@ -298,9 +297,8 @@ stampPartialReductionSplitPlan(codir::CodeletOp codelet,
     return;
 
   SmallVector<int64_t, 4> inferredSplitDims;
-  std::optional<int64_t> reductionVolume =
-      computeStaticReductionVolume(codelet, depResultDimMaps,
-                                   inferredSplitDims);
+  std::optional<int64_t> reductionVolume = computeStaticReductionVolume(
+      codelet, depResultDimMaps, inferredSplitDims);
   if (!reductionVolume || *reductionVolume <= 1)
     return;
 

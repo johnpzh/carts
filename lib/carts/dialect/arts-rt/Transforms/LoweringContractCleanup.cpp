@@ -5,8 +5,8 @@
 /// consumed them and before final LLVM translation starts.
 ///==========================================================================///
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/utils/Debug.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"

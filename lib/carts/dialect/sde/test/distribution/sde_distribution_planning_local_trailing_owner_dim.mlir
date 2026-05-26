@@ -3,8 +3,9 @@
 
 // Imperfect local stencil/update loops can carry owner-slice scheduling intent
 // when the local owner IV maps to the trailing physical output dimension, and
-// all output self-reads stay within that owner slice. CODIR-to-ARTS keeps the
-// plan on the task contract while CreateDbs keeps the raw allocation coarse.
+// all output self-reads stay within that owner slice. CreateDbs keeps the
+// host-visible source allocation coarse and materializes a planned block DB for
+// the owner-slice task storage.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
@@ -20,7 +21,10 @@
 // DB: func.func @main
 // DB: arts.db_alloc
 // DB-SAME: <coarse>
-// DB-NOT: planPhysicalBlockShape
+// DB: arts.db_alloc
+// DB-SAME: <block>
+// DB-SAME: planOwnerDims = [2]
+// DB-SAME: planPhysicalBlockShape = [16, 16, 1]
 // DB: arts.edt <task>
 // DB-SAME: planOwnerDims = [2]
 // DB-SAME: stencil_owner_dims = [0, 1, 2]

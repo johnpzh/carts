@@ -70,8 +70,7 @@ struct SdeHandleDepsPass
 
 private:
   std::optional<DepInfo> extractDepInfo(Value depVar, omp::TaskOp taskOp,
-                                        unsigned depIdx,
-                                        omp::ClauseTaskDepend,
+                                        unsigned depIdx, omp::ClauseTaskDepend,
                                         OpBuilder &builder);
 };
 
@@ -79,10 +78,11 @@ private:
 /// extractDepInfo
 ///===----------------------------------------------------------------------===///
 
-std::optional<DepInfo>
-SdeHandleDepsPass::extractDepInfo(Value depVar, omp::TaskOp taskOp,
-                                  unsigned depIdx, omp::ClauseTaskDepend,
-                                  OpBuilder &builder) {
+std::optional<DepInfo> SdeHandleDepsPass::extractDepInfo(Value depVar,
+                                                         omp::TaskOp taskOp,
+                                                         unsigned depIdx,
+                                                         omp::ClauseTaskDepend,
+                                                         OpBuilder &builder) {
 
   DepInfo info;
   info.taskOp = taskOp;
@@ -101,7 +101,8 @@ SdeHandleDepsPass::extractDepInfo(Value depVar, omp::TaskOp taskOp,
           info.indices.append(loadOp.getIndices().begin(),
                               loadOp.getIndices().end());
           for (size_t d = 0; d < info.indices.size(); ++d)
-            info.sizes.push_back(::mlir::carts::createConstantIndex(builder, loc, 1));
+            info.sizes.push_back(
+                ::mlir::carts::createConstantIndex(builder, loc, 1));
           info.indices =
               sde::clampDepIndices(info.source, info.indices, builder, loc);
           return info;

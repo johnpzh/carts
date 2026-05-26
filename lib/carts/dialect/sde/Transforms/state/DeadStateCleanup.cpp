@@ -21,8 +21,7 @@ using namespace mlir::carts;
 namespace {
 
 struct SdeDeadStateCleanupPass
-    : public sde::impl::SdeDeadStateCleanupPassBase<
-          SdeDeadStateCleanupPass> {
+    : public sde::impl::SdeDeadStateCleanupPassBase<SdeDeadStateCleanupPass> {
   void runOnOperation() override {
     ModuleOp module = getOperation();
     unsigned totalRemoved = 0;
@@ -37,10 +36,9 @@ struct SdeDeadStateCleanupPass
         break;
     }
 
-    ARTS_DEBUG("SDE dead-state cleanup removed " << totalRemoved
-                                                 << " operations in "
-                                                 << iterations
-                                                 << " iterations");
+    ARTS_DEBUG("SDE dead-state cleanup removed "
+               << totalRemoved << " operations in " << iterations
+               << " iterations");
   }
 };
 

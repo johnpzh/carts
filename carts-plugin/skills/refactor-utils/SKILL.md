@@ -1,37 +1,35 @@
 ---
 name: carts-refactor-utils
-description: Use when auditing code quality, consolidating duplicate helpers, extracting reusable pass-local helpers, or fixing hardcoded utility placement.
+description: Use when consolidating duplicate CARTS helpers or extracting reusable pass-local helpers after placement is decided.
 ---
 
 # CARTS Utility Refactoring
 
-Use this skill for focused utility extraction after `carts-check-utils` has
-chosen the canonical owner. Use `carts-simplify` first when the broader
-question is whether a patch is too complex.
+Use after [[carts-check-utils]] has chosen the canonical owner. Use
+[[carts-simplify]] first when the broader question is patch complexity.
 
-Read `references/known-duplicates.md` only when the task needs the historical
-duplicate-helper backlog.
-
-## Workflow
-
-1. Run or consult `carts-check-utils` and record one placement decision:
-   use existing helper, extract to a named owner, or keep pass-local.
-2. Choose the narrowest correct home from that decision:
-   - pass-local for logic used by one transform only and not a dialect fact;
-   - dialect utility when it expresses a dialect invariant;
-   - `include/carts/utils/` and `lib/carts/utils/` for broadly shared behavior;
-   - analysis APIs when the logic belongs to DB/EDT/loop/cache/metadata state.
-3. Add or move the declaration and implementation.
-4. Update every call site with `rg`.
-5. Remove the old static helper.
-6. Run `dekk carts format`, then the smallest meaningful build/test command.
-
-## Guardrails
+## Hard Rule
 
 - Do not extract helpers that are intentionally pass-specific.
-- Do not create a new `*Utils` file when an existing semantic owner such as
-  `LoopUtils`, ARTS `LoopInvarianceUtils`, shared `ValueAnalysis`, `DbUtils`,
-  or `EdtUtils` already fits.
-- Do not add new hardcoded project attribute strings; use centralized constants.
-- Do not use a later cleanup pass to make malformed IR correct.
+- Promote multi-consumer `lib/` Utils headers to `include/`; see [[carts-include-tier]].
+- Do not create a new `*Utils` file when an existing semantic owner fits.
+- Do not add hardcoded CARTS IR attribute strings; see [[carts-attr-consolidation]].
 - Keep unrelated refactors out of the patch.
+
+## Procedure
+
+1. Record the [[carts-check-utils]] decision: use existing, extract, or keep local.
+2. Read `references/known-duplicates.md` only when the task touches the backlog.
+3. Choose the narrowest correct home: pass-local, dialect `Utils/`, shared
+   `include/carts/utils`, or owning `Analysis/`.
+4. If a `lib/` Utils header is included by more than one `.cpp`, promote it as
+   part of the same extraction patch.
+5. Add or move declarations and implementations.
+6. Update every call site with `rg`.
+7. Remove old static helpers and duplicate wrappers.
+8. Run `dekk carts format`, then the smallest meaningful build/test command.
+
+## Required Answer
+
+State the source helper, canonical owner, removed duplicates, include-tier
+decision, and verification command.

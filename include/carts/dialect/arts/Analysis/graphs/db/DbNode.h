@@ -7,9 +7,9 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_DB_DBNODE_H
 #define ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_DB_DBNODE_H
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/graphs/base/NodeBase.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbAccessPattern.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/MetadataEnums.h"
 #include "llvm/ADT/STLExtras.h"
 #include <functional>

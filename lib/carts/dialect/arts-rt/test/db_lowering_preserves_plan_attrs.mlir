@@ -5,6 +5,10 @@
 // CHECK-SAME: planOwnerDims = [0]
 // CHECK-SAME: planPhysicalBlockShape = [4]
 // CHECK-SAME: memref<?x!llvm.ptr>
+// CHECK-LABEL: func.func @db_lowering_keeps_replicated_read_acquire
+// CHECK: arts.db_acquire[<in>]
+// CHECK-SAME: {replicatedRead}
+// CHECK-SAME: memref<?x!llvm.ptr>
 
 module attributes {
   arts.runtime_total_nodes = 1 : i64,
@@ -17,6 +21,16 @@ module attributes {
     %route = arith.constant -1 : i32
     %c4 = arith.constant 4 : index
     %guid, %ptr = arts.db_alloc[<out>, <heap>, <write>, <block>] route(%route : i32) sizes[%c4] elementType(f64) elementSizes[%c4] {planOwnerDims = [0], planPhysicalBlockShape = [4]} : (memref<?xi64>, memref<?xmemref<?xf64>>)
+    return
+  }
+
+  func.func @db_lowering_keeps_replicated_read_acquire() {
+    %route = arith.constant -1 : i32
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c4 = arith.constant 4 : index
+    %guid, %ptr = arts.db_alloc[<in>, <heap>, <read>, <coarse>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c4, %c4] : (memref<?xi64>, memref<?xmemref<?x?xf64>>)
+    %acq_guid, %acq_ptr = arts.db_acquire[<in>] (%guid : memref<?xi64>, %ptr : memref<?xmemref<?x?xf64>>) partitioning(<coarse>), indices[], offsets[%c0], sizes[%c1] {replicatedRead} -> (memref<?xi64>, memref<?xmemref<?x?xf64>>)
     return
   }
 }

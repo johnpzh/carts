@@ -11,8 +11,8 @@
 #include "carts/dialect/arts/Utils/RuntimeOpUtils.h"
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/ArrayAttrUtils.h"
+#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -119,7 +119,8 @@ static void clearSplitPlanAttrs(EdtOp edt) {
 static void stampEffectiveSplitPlanAttrs(EdtOp edt, const SplitPlan &plan) {
   MLIRContext *ctx = edt.getContext();
   auto i64 = IntegerType::get(ctx, 64);
-  edt.setPartialReductionSplitFactorAttr(IntegerAttr::get(i64, plan.splitFactor));
+  edt.setPartialReductionSplitFactorAttr(
+      IntegerAttr::get(i64, plan.splitFactor));
   edt.setPartialReductionSplitTargetWorkerCountAttr(
       IntegerAttr::get(i64, plan.targetWorkerCount));
 }
@@ -160,26 +161,21 @@ static bool reconcileSplitTopology(EdtOp edt, SplitPlan &plan,
 
 static Value createOwnerOrdinal(OpBuilder &builder, Location loc,
                                 scf::ForOp ownerLoop, Value ownerIndex) {
-  Value relative =
-      arith::SubIOp::create(builder, loc, ownerIndex,
-                            ownerLoop.getLowerBound());
-  return arith::DivUIOp::create(builder, loc, relative,
-                                ownerLoop.getStep());
+  Value relative = arith::SubIOp::create(builder, loc, ownerIndex,
+                                         ownerLoop.getLowerBound());
+  return arith::DivUIOp::create(builder, loc, relative, ownerLoop.getStep());
 }
 
 static Value createDistributedRoute(OpBuilder &builder, Location loc,
                                     scf::ForOp ownerLoop, Value ownerIndex,
                                     Value tileIndex, int64_t tileCount) {
-  Value ownerOrdinal =
-      createOwnerOrdinal(builder, loc, ownerLoop, ownerIndex);
+  Value ownerOrdinal = createOwnerOrdinal(builder, loc, ownerLoop, ownerIndex);
   Value tileCountValue = createIndexConstant(builder, loc, tileCount);
   Value ownerBase =
       arith::MulIOp::create(builder, loc, ownerOrdinal, tileCountValue);
-  Value linearIndex =
-      arith::AddIOp::create(builder, loc, ownerBase, tileIndex);
-  Value linearIndexI32 =
-      arith::IndexCastOp::create(builder, loc, builder.getI32Type(),
-                                 linearIndex);
+  Value linearIndex = arith::AddIOp::create(builder, loc, ownerBase, tileIndex);
+  Value linearIndexI32 = arith::IndexCastOp::create(
+      builder, loc, builder.getI32Type(), linearIndex);
   auto totalNodes =
       RuntimeQueryOp::create(builder, loc, RuntimeQueryKind::totalNodes);
   return arith::RemUIOp::create(builder, loc, linearIndexI32,
@@ -207,9 +203,8 @@ static LogicalResult readRequiredI64Array(EdtOp edt, ArrayAttr attr,
                                           SmallVectorImpl<int64_t> &values) {
   auto parsed = readI64ArrayAttr(attr);
   if (!parsed)
-    return edt.emitOpError()
-           << "requires integer array attribute '" << name
-           << "' for partial-reduction split materialization";
+    return edt.emitOpError() << "requires integer array attribute '" << name
+                             << "' for partial-reduction split materialization";
   values.assign(parsed->begin(), parsed->end());
   return success();
 }
@@ -222,18 +217,17 @@ static LogicalResult findResultDependencyIndex(EdtOp edt, SplitPlan &plan) {
               "partial-reduction result dependency";
   if (depMaps.size() != edt.getDependencies().size())
     return edt.emitOpError()
-           << "partialReductionDepResultDimMaps entry count ("
-           << depMaps.size() << ") must match dependency count ("
-           << edt.getDependencies().size() << ")";
+           << "partialReductionDepResultDimMaps entry count (" << depMaps.size()
+           << ") must match dependency count (" << edt.getDependencies().size()
+           << ")";
 
   std::optional<unsigned> resultIndex;
   for (auto [idx, attr] : llvm::enumerate(depMaps)) {
     auto mapAttr = dyn_cast<ArrayAttr>(attr);
     auto dims = readI64ArrayAttr(mapAttr);
     if (!dims)
-      return edt.emitOpError()
-             << "partialReductionDepResultDimMaps entry #" << idx
-             << " must be an integer array";
+      return edt.emitOpError() << "partialReductionDepResultDimMaps entry #"
+                               << idx << " must be an integer array";
     if (dims->empty())
       continue;
     if (llvm::is_contained(*dims, -1))
@@ -300,8 +294,7 @@ static FailureOr<DbRefOp> findSingleResultRef(EdtOp edt,
 
 static FailureOr<ReductionLoopMatch> matchReductionLoop(EdtOp edt,
                                                         SplitPlan plan) {
-  FailureOr<DbRefOp> resultRef =
-      findSingleResultRef(edt, plan.resultDepIndex);
+  FailureOr<DbRefOp> resultRef = findSingleResultRef(edt, plan.resultDepIndex);
   if (failed(resultRef))
     return failure();
 
@@ -340,8 +333,7 @@ static FailureOr<ReductionLoopMatch> matchReductionLoop(EdtOp edt,
     if (!seedLoad)
       return;
 
-    matches.push_back(
-        {*resultRef, loop, stores.front(), add, seedLoad});
+    matches.push_back({*resultRef, loop, stores.front(), add, seedLoad});
   });
 
   SmallVector<ReductionLoopMatch, 2> rootMatches;
@@ -394,8 +386,7 @@ static LogicalResult validateSplitPlan(EdtOp edt, SplitPlan &plan) {
                                   "partialReductionDims",
                                   plan.reductionDims)) ||
       failed(readRequiredI64Array(edt, edt.getPartialReductionSplitDimsAttr(),
-                                  "partialReductionSplitDims",
-                                  plan.splitDims)))
+                                  "partialReductionSplitDims", plan.splitDims)))
     return failure();
 
   if (plan.ownerDims.size() != 1 || plan.reductionDims.empty() ||
@@ -464,8 +455,8 @@ static void copyMaterializedEdtAttrs(EdtOp source, EdtOp dest) {
   dest->removeAttr(dest.getPartialReductionSplitRequiredAttrName());
 }
 
-static void addEdtBlockArguments(EdtOp edt, ValueRange deps,
-                                 ValueRange params, Location loc) {
+static void addEdtBlockArguments(EdtOp edt, ValueRange deps, ValueRange params,
+                                 Location loc) {
   Block &body = edt.getBody().front();
   for (Value dep : deps)
     body.addArgument(dep.getType(), loc);
@@ -505,18 +496,16 @@ static LogicalResult retileSplitWorkerLoop(EdtOp splitEdt,
   Value splitFactor = createIndexConstant(loopBuilder, loc, plan.splitFactor);
   Value splitFactorMinusOne =
       createIndexConstant(loopBuilder, loc, plan.splitFactor - 1);
-  Value range = arith::SubIOp::create(loopBuilder, loc,
-                                      (*match).loop.getUpperBound(),
-                                      (*match).loop.getLowerBound());
+  Value range =
+      arith::SubIOp::create(loopBuilder, loc, (*match).loop.getUpperBound(),
+                            (*match).loop.getLowerBound());
   Value numerator =
       arith::AddIOp::create(loopBuilder, loc, range, splitFactorMinusOne);
-  Value tileSize = arith::DivUIOp::create(loopBuilder, loc, numerator,
-                                          splitFactor);
-  Value tileOffset =
-      arith::MulIOp::create(loopBuilder, loc, tileArg, tileSize);
-  Value tileBegin = arith::AddIOp::create(loopBuilder, loc,
-                                          (*match).loop.getLowerBound(),
-                                          tileOffset);
+  Value tileSize =
+      arith::DivUIOp::create(loopBuilder, loc, numerator, splitFactor);
+  Value tileOffset = arith::MulIOp::create(loopBuilder, loc, tileArg, tileSize);
+  Value tileBegin = arith::AddIOp::create(
+      loopBuilder, loc, (*match).loop.getLowerBound(), tileOffset);
   Value rawTileEnd =
       arith::AddIOp::create(loopBuilder, loc, tileBegin, tileSize);
   Value tileEnd = arith::MinUIOp::create(loopBuilder, loc, rawTileEnd,
@@ -525,8 +514,7 @@ static LogicalResult retileSplitWorkerLoop(EdtOp splitEdt,
   (*match).loop.setUpperBound(tileEnd);
   (*match).loop.setStep(one);
 
-  auto resultType =
-      cast<MemRefType>((*match).resultRef.getResult().getType());
+  auto resultType = cast<MemRefType>((*match).resultRef.getResult().getType());
   Value identity =
       createScalarZero(loopBuilder, loc, resultType.getElementType());
   if (!identity)
@@ -535,16 +523,14 @@ static LogicalResult retileSplitWorkerLoop(EdtOp splitEdt,
   OpBuilder addBuilder((*match).add);
   SmallVector<Value, 4> addLoadIndices((*match).seedLoad.getIndices().begin(),
                                        (*match).seedLoad.getIndices().end());
-  FailureOr<SmallVector<Value, 4>> initIndices =
-      rematerializeIndicesDominating(addLoadIndices, (*match).loop.getOperation(),
-                                     loopBuilder, loc);
+  FailureOr<SmallVector<Value, 4>> initIndices = rematerializeIndicesDominating(
+      addLoadIndices, (*match).loop.getOperation(), loopBuilder, loc);
   if (failed(initIndices))
     return failure();
   memref::StoreOp::create(loopBuilder, loc, identity,
                           (*match).resultRef.getResult(), *initIndices);
-  Value current = memref::LoadOp::create(addBuilder, loc,
-                                         (*match).resultRef.getResult(),
-                                         addLoadIndices);
+  Value current = memref::LoadOp::create(
+      addBuilder, loc, (*match).resultRef.getResult(), addLoadIndices);
   for (OpOperand &operand : (*match).add->getOpOperands())
     if (operand.get() == (*match).seedLoad.getResult())
       operand.set(current);
@@ -567,18 +553,17 @@ static DbAcquireOp createTileAcquire(OpBuilder &builder, Location loc,
                                      Type resultDepType, Value ownerIndex,
                                      Value tileIndex) {
   SmallVector<Value> indices{ownerIndex, tileIndex};
-  auto acquire =
-      DbAcquireOp::create(builder, loc, mode, db.getGuid(), db.getPtr(),
-                          resultDepType, PartitionMode::block,
-                          std::move(indices),
-                          /*offsets=*/SmallVector<Value>{},
-                          /*sizes=*/SmallVector<Value>{},
-                          /*partitionIndices=*/SmallVector<Value>{},
-                          /*partitionOffsets=*/SmallVector<Value>{},
-                          /*partitionSizes=*/SmallVector<Value>{},
-                          /*boundsValid=*/Value{},
-                          /*elementOffsets=*/SmallVector<Value>{},
-                          /*elementSizes=*/SmallVector<Value>{});
+  auto acquire = DbAcquireOp::create(builder, loc, mode, db.getGuid(),
+                                     db.getPtr(), resultDepType,
+                                     PartitionMode::block, std::move(indices),
+                                     /*offsets=*/SmallVector<Value>{},
+                                     /*sizes=*/SmallVector<Value>{},
+                                     /*partitionIndices=*/SmallVector<Value>{},
+                                     /*partitionOffsets=*/SmallVector<Value>{},
+                                     /*partitionSizes=*/SmallVector<Value>{},
+                                     /*boundsValid=*/Value{},
+                                     /*elementOffsets=*/SmallVector<Value>{},
+                                     /*elementSizes=*/SmallVector<Value>{});
   inheritDistributionAttrs(db.getOperation(), acquire.getOperation());
   if (auto depPattern = db.getDepPatternAttr())
     acquire.setDepPatternAttr(depPattern);
@@ -597,8 +582,7 @@ static DbAllocOp createReductionBufferDb(OpBuilder &builder, Location loc,
                                          Value route, Value ownerCount,
                                          Value tileCount, Value elementCount,
                                          int64_t resultElementCount,
-                                         Type scalarType,
-                                         bool distributed) {
+                                         Type scalarType, bool distributed) {
   auto db = DbAllocOp::create(
       builder, loc, ArtsMode::inout, route, DbAllocType::heap, DbMode::write,
       scalarType, SmallVector<Value>{ownerCount, tileCount},
@@ -717,10 +701,9 @@ static LogicalResult createFinalCombineBody(EdtOp combineEdt, Type scalarType,
 
 static LogicalResult createIntermediateCombineEdt(
     OpBuilder &builder, Location loc, EdtOp sourceEdt, DbAllocOp inputDb,
-    DbAllocOp outputDb, Type resultDepType, Value ownerIndex,
-    int64_t leftIndex, std::optional<int64_t> rightIndex, int64_t outputIndex,
-    Type scalarType, Value elementCount, EdtConcurrency concurrency,
-    Value route) {
+    DbAllocOp outputDb, Type resultDepType, Value ownerIndex, int64_t leftIndex,
+    std::optional<int64_t> rightIndex, int64_t outputIndex, Type scalarType,
+    Value elementCount, EdtConcurrency concurrency, Value route) {
   Value leftTile = createIndexConstant(builder, loc, leftIndex);
   Value outputTile = createIndexConstant(builder, loc, outputIndex);
   DbAcquireOp output = createTileAcquire(builder, loc, outputDb, ArtsMode::out,
@@ -731,29 +714,28 @@ static LogicalResult createIntermediateCombineEdt(
   SmallVector<Value> deps{output.getPtr(), left.getPtr()};
   if (rightIndex) {
     Value rightTile = createIndexConstant(builder, loc, *rightIndex);
-    DbAcquireOp right =
-        createTileAcquire(builder, loc, inputDb, ArtsMode::in, resultDepType,
-                          ownerIndex, rightTile);
+    DbAcquireOp right = createTileAcquire(builder, loc, inputDb, ArtsMode::in,
+                                          resultDepType, ownerIndex, rightTile);
     deps.push_back(right.getPtr());
   }
 
-  auto combineEdt =
-      EdtOp::create(builder, loc, EdtType::task, concurrency, route, deps,
-                    ValueRange{});
+  auto combineEdt = EdtOp::create(builder, loc, EdtType::task, concurrency,
+                                  route, deps, ValueRange{});
   addEdtBlockArguments(combineEdt, deps, ValueRange{}, loc);
   copyCombineMetadata(sourceEdt, combineEdt);
-  markMaterializedReductionDistribution(combineEdt.getOperation(),
-                                        concurrency ==
-                                            EdtConcurrency::internode);
+  markMaterializedReductionDistribution(
+      combineEdt.getOperation(), concurrency == EdtConcurrency::internode);
   return createIntermediateCombineBody(combineEdt, scalarType, elementCount,
                                        rightIndex.has_value());
 }
 
-static LogicalResult createFinalCombineEdt(
-    OpBuilder &builder, Location loc, EdtOp sourceEdt, DbAllocOp inputDb,
-    Value finalDep, Type resultDepType, Value ownerIndex, int64_t inputCount,
-    Type scalarType, Value elementCount, EdtConcurrency concurrency,
-    Value route) {
+static LogicalResult createFinalCombineEdt(OpBuilder &builder, Location loc,
+                                           EdtOp sourceEdt, DbAllocOp inputDb,
+                                           Value finalDep, Type resultDepType,
+                                           Value ownerIndex, int64_t inputCount,
+                                           Type scalarType, Value elementCount,
+                                           EdtConcurrency concurrency,
+                                           Value route) {
   if (inputCount < 1 || inputCount > 2)
     return failure();
 
@@ -764,20 +746,17 @@ static LogicalResult createFinalCombineEdt(
   SmallVector<Value> deps{finalDep, left.getPtr()};
   if (inputCount == 2) {
     Value rightTile = createOneIndex(builder, loc);
-    DbAcquireOp right =
-        createTileAcquire(builder, loc, inputDb, ArtsMode::in, resultDepType,
-                          ownerIndex, rightTile);
+    DbAcquireOp right = createTileAcquire(builder, loc, inputDb, ArtsMode::in,
+                                          resultDepType, ownerIndex, rightTile);
     deps.push_back(right.getPtr());
   }
 
-  auto combineEdt =
-      EdtOp::create(builder, loc, EdtType::task, concurrency, route, deps,
-                    ValueRange{});
+  auto combineEdt = EdtOp::create(builder, loc, EdtType::task, concurrency,
+                                  route, deps, ValueRange{});
   addEdtBlockArguments(combineEdt, deps, ValueRange{}, loc);
   copyCombineMetadata(sourceEdt, combineEdt);
-  markMaterializedReductionDistribution(combineEdt.getOperation(),
-                                        concurrency ==
-                                            EdtConcurrency::internode);
+  markMaterializedReductionDistribution(
+      combineEdt.getOperation(), concurrency == EdtConcurrency::internode);
   return createFinalCombineBody(combineEdt, scalarType, elementCount,
                                 inputCount == 2);
 }
@@ -818,22 +797,16 @@ static LogicalResult materializeSplitPlan(EdtOp edt, SplitPlan &plan) {
   Value splitFactor = createIndexConstant(builder, loc, plan.splitFactor);
   Value resultElementCount =
       createIndexConstant(builder, loc, plan.resultElementCount);
-  DbAllocOp partialDb = createReductionBufferDb(builder, loc, route,
-                                                ownerCount, splitFactor,
-                                                resultElementCount,
-                                                plan.resultElementCount,
-                                                scalarType,
-                                                distributedTopology);
+  DbAllocOp partialDb = createReductionBufferDb(
+      builder, loc, route, ownerCount, splitFactor, resultElementCount,
+      plan.resultElementCount, scalarType, distributedTopology);
   SmallVector<std::pair<DbAllocOp, int64_t>, 4> intermediateLevels;
   for (int64_t currentCount = plan.splitFactor; currentCount > 2;) {
     int64_t nextCount = (currentCount + 1) / 2;
     Value nextCountValue = createIndexConstant(builder, loc, nextCount);
-    DbAllocOp nextDb = createReductionBufferDb(builder, loc, route,
-                                               ownerCount, nextCountValue,
-                                               resultElementCount,
-                                               plan.resultElementCount,
-                                               scalarType,
-                                               distributedTopology);
+    DbAllocOp nextDb = createReductionBufferDb(
+        builder, loc, route, ownerCount, nextCountValue, resultElementCount,
+        plan.resultElementCount, scalarType, distributedTopology);
     intermediateLevels.push_back({nextDb, nextCount});
     currentCount = nextCount;
   }
@@ -901,8 +874,8 @@ static LogicalResult materializeSplitPlan(EdtOp edt, SplitPlan &plan) {
                                        outputTile, nextCount)
               : edt.getRoute();
       if (failed(createIntermediateCombineEdt(
-              builder, loc, edt, currentDb, nextDb, resultDepType,
-              ownerOrdinal, leftIndex, rightIndex, outputIndex, scalarType,
+              builder, loc, edt, currentDb, nextDb, resultDepType, ownerOrdinal,
+              leftIndex, rightIndex, outputIndex, scalarType,
               resultElementCount, materializedConcurrency, combineRoute)))
         return failure();
     }

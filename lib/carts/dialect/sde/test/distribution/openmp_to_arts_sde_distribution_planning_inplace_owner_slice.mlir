@@ -3,11 +3,9 @@
 // RUN: %carts-compile %s --O3 --arts-config %inputs_dir/arts_multinode_8x64.cfg --start-from sde-planning --pipeline create-dbs --mlir-print-ir-after-all 2>&1 | %FileCheck %s --check-prefix=MNDB
 
 // In-place row-local kernels read and write the same root memref, but every
-// access stays within the owner row. SDE may author the owner-slice plan during
-// distribution planning. Single-node raw bridges keep the root DB coarse at
-// CreateDbs while preserving the owner-slice plan on the EDT. Owner-local
-// pipeline slices use one hardware wave, so an 8-worker single-node config maps
-// 128 rows into 16 rows per task.
+// access stays within the owner row. The planned compute task should acquire
+// the block view while bridge tasks move data between the coarse host DB and
+// the block DB. With 8 workers, 128 rows map to 16 rows per task.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
@@ -26,9 +24,12 @@
 // DB: func.func @main
 // DB: arts.db_alloc
 // DB-SAME: <coarse>
+// DB: arts.db_alloc
+// DB-SAME: <block>
+// DB-SAME: arts.storage_bridge = "host_whole_to_compute_block"
 // DB: scf.for
 // DB: arts.db_acquire[<inout>]
-// DB-SAME: partitioning(<coarse>)
+// DB-SAME: partitioning(<block>)
 // DB: arts.edt <task> <intranode>
 // DB: depPattern = #arts.dep_pattern<elementwise_pipeline>
 // DB-SAME: planOwnerDims = [0]

@@ -12,10 +12,10 @@
 ///==========================================================================///
 
 #define GEN_PASS_DEF_DBDISTRIBUTEDOWNERSHIP
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Analysis/db/DbDistributedEligibility.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
 #include "carts/utils/OperationAttributes.h"
@@ -69,9 +69,9 @@ struct DbDistributedOwnershipPass
           setEdtDistributionKind(alloc.getOperation(),
                                  *eligibility.distributionKind);
       } else {
-        alloc->setAttr(AttrNames::Operation::DistributedRejectReason,
-                       StringAttr::get(alloc.getContext(),
-                                       toString(eligibility.reason)));
+        alloc->setAttr(
+            AttrNames::Operation::DistributedRejectReason,
+            StringAttr::get(alloc.getContext(), toString(eligibility.reason)));
         ARTS_DEBUG("Reject DbAlloc arts.id=" << getArtsId(alloc.getOperation())
                                              << " reason="
                                              << toString(eligibility.reason));

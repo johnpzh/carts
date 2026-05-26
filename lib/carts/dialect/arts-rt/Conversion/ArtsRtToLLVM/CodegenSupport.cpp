@@ -32,9 +32,9 @@
 #include "mlir/Transforms/DialectConversion.h"
 /// Arts
 #include "carts/dialect/arts/IR/ArtsDialect.h"
+#include "carts/dialect/arts/Utils/RuntimeConfig.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
-#include "carts/dialect/arts/Utils/RuntimeConfig.h"
 /// Debug
 
 #include "llvm/ADT/APFloat.h"
@@ -284,9 +284,9 @@ void ArtsCodegen::initializeTypes() {
 
   auto mainAbiInputs = SmallVector<Type>{Int32, llvmPtr};
   MainFn = FunctionType::get(context, mainAbiInputs, ArrayRef<Type>{Int32});
-  MainFnPtr = MemRefType::get(
-      {ShapedType::kDynamic},
-      LLVM::LLVMFunctionType::get(Int32, mainAbiInputs, false));
+  MainFnPtr =
+      MemRefType::get({ShapedType::kDynamic},
+                      LLVM::LLVMFunctionType::get(Int32, mainAbiInputs, false));
 }
 
 LogicalResult ArtsCodegen::extractDataLayouts() {
@@ -317,15 +317,15 @@ func::CallOp ArtsCodegen::createRuntimeCall(RuntimeFunction FnID,
     }
 
     if (targetType == llvmPtr && isa<MemRefType>(arg.getType())) {
-      if (auto ptrToMemref =
-              arg.getDefiningOp<polygeist::Pointer2MemrefOp>()) {
+      if (auto ptrToMemref = arg.getDefiningOp<polygeist::Pointer2MemrefOp>()) {
         Value source = ptrToMemref.getSource();
         if (source.getType() == llvmPtr) {
           callArgs.push_back(source);
           continue;
         }
       }
-      callArgs.push_back(create<polygeist::Memref2PointerOp>(loc, llvmPtr, arg));
+      callArgs.push_back(
+          create<polygeist::Memref2PointerOp>(loc, llvmPtr, arg));
       continue;
     }
 
@@ -597,9 +597,8 @@ static void adaptMainArgvToRuntimePointer(func::FuncOp mainFn,
 
   OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPointToStart(&entry);
-  Value argvMemref = polygeist::Pointer2MemrefOp::create(builder,
-                                                         mainFn.getLoc(),
-                                                         argvTy, argvArg);
+  Value argvMemref = polygeist::Pointer2MemrefOp::create(
+      builder, mainFn.getLoc(), argvTy, argvArg);
   argvArg.replaceAllUsesExcept(argvMemref, argvMemref.getDefiningOp());
 }
 
@@ -639,11 +638,11 @@ func::FuncOp ArtsCodegen::insertArtsMainFn(Location loc,
     if (callback.getNumArguments() > 1) {
       Type argvTy = callback.getArgumentTypes()[1];
       Value argvPtr = create<LLVM::IntToPtrOp>(loc, llvmPtr, argvRaw);
-      Value argv = isa<LLVM::LLVMPointerType>(argvTy)
-                       ? argvPtr
-                       : create<polygeist::Pointer2MemrefOp>(loc, argvTy,
-                                                             argvPtr)
-                             .getResult();
+      Value argv =
+          isa<LLVM::LLVMPointerType>(argvTy)
+              ? argvPtr
+              : create<polygeist::Pointer2MemrefOp>(loc, argvTy, argvPtr)
+                    .getResult();
       args.push_back(argv);
     }
     callArgs = args;

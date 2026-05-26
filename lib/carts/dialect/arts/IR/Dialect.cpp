@@ -16,8 +16,8 @@
 #include <algorithm>
 #include <cassert>
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/dialect/arts/Utils/RuntimeOpUtils.h"
@@ -434,11 +434,10 @@ void EpochOp::build(OpBuilder &builder, OperationState &state, Type epochGuid) {
   build(builder, state, epochGuid, ArtsDepPatternAttr{},
         EdtDistributionKindAttr{}, EdtDistributionPatternAttr{}, IntegerAttr{},
         IntegerAttr{}, ArrayAttr{}, ArrayAttr{}, ArrayAttr{}, ArrayAttr{},
-        ArrayAttr{}, ArrayAttr{}, UnitAttr{},
-        ArrayAttr{}, ArrayAttr{}, ArrayAttr{}, ArrayAttr{},
-        ArtsPlanIterationTopologyAttr{}, ArtsPlanRepetitionStructureAttr{},
-        ArtsPlanAsyncStrategyAttr{}, IntegerAttr{}, IntegerAttr{},
-        IntegerAttr{}, IntegerAttr{});
+        ArrayAttr{}, ArrayAttr{}, UnitAttr{}, ArrayAttr{}, ArrayAttr{},
+        ArrayAttr{}, ArrayAttr{}, ArtsPlanIterationTopologyAttr{},
+        ArtsPlanRepetitionStructureAttr{}, ArtsPlanAsyncStrategyAttr{},
+        IntegerAttr{}, IntegerAttr{}, IntegerAttr{}, IntegerAttr{});
 }
 
 /// Helper to compute GUID type from sizes

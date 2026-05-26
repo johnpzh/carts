@@ -42,10 +42,10 @@ namespace mlir::carts::arts_rt {
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
 
-#include "carts/utils/Debug.h"
-#include "carts/utils/ValueAnalysis.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
 #include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
+#include "carts/utils/Debug.h"
+#include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMInterfaces.h"

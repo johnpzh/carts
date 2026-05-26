@@ -100,7 +100,6 @@ public:
                                     llvm::SetVector<Value> &parameters,
                                     llvm::SetVector<Value> &constants,
                                     llvm::SetVector<Value> &dbHandles);
-
 };
 
 ///===----------------------------------------------------------------------===//

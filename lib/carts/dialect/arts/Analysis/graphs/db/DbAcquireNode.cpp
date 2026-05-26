@@ -7,7 +7,6 @@
 ///   - DbBlockInfoComputer       (block offset/size computation)
 ///==========================================================================///
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/AccessPatternAnalysis.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
@@ -21,6 +20,7 @@
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtGraph.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtNode.h"
 #include "carts/dialect/arts/Analysis/loop/LoopAnalysis.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"

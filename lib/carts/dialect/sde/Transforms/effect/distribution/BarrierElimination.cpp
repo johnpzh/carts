@@ -119,8 +119,8 @@ static bool haveSameIterationShape(sde::SdeSuIterateOp lhs,
              lhs.getLowerBounds(), rhs.getLowerBounds()) &&
          ::mlir::carts::ValueAnalysis::areValueRangesEquivalent(
              lhs.getUpperBounds(), rhs.getUpperBounds()) &&
-         ::mlir::carts::ValueAnalysis::areValueRangesEquivalent(
-             lhs.getSteps(), rhs.getSteps());
+         ::mlir::carts::ValueAnalysis::areValueRangesEquivalent(lhs.getSteps(),
+                                                                rhs.getSteps());
 }
 
 static bool haveSameIterationBounds(sde::SdeSuIterateOp lhs,
@@ -133,8 +133,7 @@ static bool haveSameIterationBounds(sde::SdeSuIterateOp lhs,
 }
 
 static bool isTiledMultipleOfStep(Value candidate, Value baseStep) {
-  if (::mlir::carts::ValueAnalysis::areValuesEquivalent(candidate,
-                                                              baseStep))
+  if (::mlir::carts::ValueAnalysis::areValuesEquivalent(candidate, baseStep))
     return true;
 
   auto mul = candidate.getDefiningOp<arith::MulIOp>();
@@ -149,11 +148,9 @@ static bool isTiledMultipleOfStep(Value candidate, Value baseStep) {
            ::mlir::carts::ValueAnalysis::isProvablyNonZero(value);
   };
 
-  if (::mlir::carts::ValueAnalysis::areValuesEquivalent(mul.getLhs(),
-                                                              baseStep))
+  if (::mlir::carts::ValueAnalysis::areValuesEquivalent(mul.getLhs(), baseStep))
     return isPositiveMultiplier(mul.getRhs());
-  if (::mlir::carts::ValueAnalysis::areValuesEquivalent(mul.getRhs(),
-                                                              baseStep))
+  if (::mlir::carts::ValueAnalysis::areValuesEquivalent(mul.getRhs(), baseStep))
     return isPositiveMultiplier(mul.getLhs());
   return false;
 }
@@ -164,8 +161,7 @@ static bool haveEquivalentOrTiledSteps(sde::SdeSuIterateOp lhs,
     return false;
 
   for (auto [lhsStep, rhsStep] : llvm::zip(lhs.getSteps(), rhs.getSteps())) {
-    if (::mlir::carts::ValueAnalysis::areValuesEquivalent(lhsStep,
-                                                          rhsStep))
+    if (::mlir::carts::ValueAnalysis::areValuesEquivalent(lhsStep, rhsStep))
       continue;
     std::optional<int64_t> lhsFolded =
         ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(lhsStep);
@@ -524,9 +520,10 @@ static bool accessMapUsesOwnerSliceAtPhysicalDim(AffineMap map,
   return loopIvSelectsOwnerSlice(ivs[*dimOffset->dim], ivs[ownerLoopDim]);
 }
 
-static bool accessEntriesUseOwnerDimForRoot(
-    ArrayRef<sde::MemrefAccessEntry> accesses, ArrayRef<Value> ivs, Value root,
-    unsigned physicalDim, unsigned ownerLoopDim) {
+static bool
+accessEntriesUseOwnerDimForRoot(ArrayRef<sde::MemrefAccessEntry> accesses,
+                                ArrayRef<Value> ivs, Value root,
+                                unsigned physicalDim, unsigned ownerLoopDim) {
   bool sawRoot = false;
   for (const sde::MemrefAccessEntry &access : accesses) {
     Value accessRoot =
@@ -620,8 +617,7 @@ static std::optional<SmallVector<int64_t, 4>>
 getUniqueStaticWrittenShape(const sde::StructuredMemoryEffectSummary &effects) {
   std::optional<SmallVector<int64_t, 4>> selectedShape;
   for (Value written : effects.writes) {
-    Value root =
-        ::mlir::carts::ValueAnalysis::stripMemrefViewOps(written);
+    Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(written);
     auto memrefType = dyn_cast<MemRefType>(root.getType());
     if (!memrefType || !memrefType.hasStaticShape())
       return std::nullopt;
@@ -932,7 +928,7 @@ struct BarrierEliminationPass
       }
 
       if (canPipelineThroughTokenLocalMemoryDeps(predecessor, successor,
-                                                predEffects, succEffects)) {
+                                                 predEffects, succEffects)) {
         barrier.setBarrierEliminatedAttr(UnitAttr::get(barrier.getContext()));
         setBarrierReason(barrier, sde::SdeBarrierReason::required_memory);
         eliminated++;

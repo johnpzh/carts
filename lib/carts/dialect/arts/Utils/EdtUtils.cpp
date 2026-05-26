@@ -58,8 +58,7 @@ EdtUtils::getBlockArgumentForAcquire(DbAcquireOp acquireOp) {
   return {edtUser, blockArg};
 }
 
-std::optional<unsigned> EdtUtils::mapMemrefToArg(EdtOp edt,
-                                                 Value memrefValue) {
+std::optional<unsigned> EdtUtils::mapMemrefToArg(EdtOp edt, Value memrefValue) {
   if (!memrefValue)
     return std::nullopt;
   Value current = ValueAnalysis::stripMemrefViewOps(memrefValue);
@@ -221,10 +220,11 @@ void EdtUtils::classifyUserValues(ArrayRef<Value> userValues,
   }
 }
 
-void EdtUtils::analyzeCapturedValues(
-    EdtOp edt, llvm::SetVector<Value> &capturedValues,
-    llvm::SetVector<Value> &parameters, llvm::SetVector<Value> &constants,
-    llvm::SetVector<Value> &dbHandles) {
+void EdtUtils::analyzeCapturedValues(EdtOp edt,
+                                     llvm::SetVector<Value> &capturedValues,
+                                     llvm::SetVector<Value> &parameters,
+                                     llvm::SetVector<Value> &constants,
+                                     llvm::SetVector<Value> &dbHandles) {
   if (!edt)
     return;
 

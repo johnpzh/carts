@@ -9,8 +9,8 @@
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtGraph.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtNode.h"
 #include "carts/dialect/arts/Analysis/loop/LoopNode.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/dialect/arts/Utils/ARTSCostModel.h"
+#include "carts/utils/OperationAttributes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/DenseMap.h"
@@ -23,8 +23,7 @@ using namespace mlir::carts::arts;
 using namespace mlir::carts;
 
 AnalysisManager::AnalysisManager(ModuleOp module, const std::string &configFile)
-    : module(module), configFile(configFile),
-      runtimeConfig(configFile) {}
+    : module(module), configFile(configFile), runtimeConfig(configFile) {}
 
 AnalysisManager::~AnalysisManager() {}
 

@@ -23,8 +23,8 @@ struct LinearizedAccess2D {
 std::optional<LinearizedAccess2D>
 decomposeRowMajorLinearizedIndex(Value index, Value requiredStride = Value());
 
-std::optional<SmallVector<Value, 2>>
-inferRowMajorFlatShape(Value totalElements, Value stride);
+std::optional<SmallVector<Value, 2>> inferRowMajorFlatShape(Value totalElements,
+                                                            Value stride);
 
 } // namespace mlir::carts::sde
 

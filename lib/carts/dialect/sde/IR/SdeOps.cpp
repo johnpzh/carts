@@ -31,9 +31,8 @@ static LogicalResult checkSdeCpsPortableCarry(Operation *op, StringRef role,
   if (isSdeCpsPortableCarryType(type))
     return success();
 
-  InFlightDiagnostic diag = op->emitError()
-                            << "sde.cps " << role << " #" << index
-                            << " cannot carry ";
+  InFlightDiagnostic diag = op->emitError() << "sde.cps " << role << " #"
+                                            << index << " cannot carry ";
   if (isSdeCpsBareDataOrPointerType(type))
     diag << "bare data/pointer type ";
   diag << type << "; use sde.mu_token, sde.mu_dep, or sde.control_token";
@@ -526,8 +525,7 @@ LogicalResult SdeSuIterateOp::verify() {
       return emitOpError()
              << "sde.cps stage plan requires sde.async_strategy cps_chain";
     if (auto repetition = getRepetitionStructure();
-        !repetition ||
-        *repetition != SdeRepetitionStructure::full_timestep)
+        !repetition || *repetition != SdeRepetitionStructure::full_timestep)
       return emitOpError()
              << "sde.cps stage plan requires sde.repetition_structure "
                 "full_timestep";
@@ -555,9 +553,9 @@ LogicalResult SdeSuIterateOp::verify() {
     }
     unsigned numIVs = getLowerBounds().size();
     for (unsigned index = numIVs; index < entry.getNumArguments(); ++index) {
-      if (failed(checkSdeCpsPortableCarry(
-              getOperation(), "body argument", index - numIVs,
-              entry.getArgument(index).getType())))
+      if (failed(checkSdeCpsPortableCarry(getOperation(), "body argument",
+                                          index - numIVs,
+                                          entry.getArgument(index).getType())))
         return failure();
     }
   }
@@ -673,9 +671,8 @@ LogicalResult SdeMuTokenOp::verify() {
 
     if (sizeIsConst && !ShapedType::isDynamic(sliceShape[i]) &&
         sliceShape[i] != sizeVal.getSExtValue()) {
-      return emitOpError() << "expects token slice_type dimension " << i
-                           << " (" << sliceShape[i]
-                           << ") to match static token size "
+      return emitOpError() << "expects token slice_type dimension " << i << " ("
+                           << sliceShape[i] << ") to match static token size "
                            << sizeVal.getSExtValue();
     }
 

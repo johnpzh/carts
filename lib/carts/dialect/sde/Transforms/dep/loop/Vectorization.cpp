@@ -12,8 +12,8 @@ namespace mlir::carts::sde {
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::carts::sde
 
-#include "carts/utils/Debug.h"
 #include "carts/dialect/sde/Utils/SDECostModel.h"
+#include "carts/utils/Debug.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/BuiltinTypes.h"
 

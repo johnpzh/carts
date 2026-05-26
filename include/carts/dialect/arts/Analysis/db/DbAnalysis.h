@@ -17,10 +17,10 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_DB_DBANALYSIS_H
 #define ARTS_DIALECT_CORE_ANALYSIS_DB_DBANALYSIS_H
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/Analysis.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbAccessPattern.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "mlir/Analysis/DataFlowFramework.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"

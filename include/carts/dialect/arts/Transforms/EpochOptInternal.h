@@ -9,11 +9,11 @@
 #ifndef ARTS_DIALECT_CORE_TRANSFORMS_EPOCHOPTINTERNAL_H
 #define ARTS_DIALECT_CORE_TRANSFORMS_EPOCHOPTINTERNAL_H
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Analysis/edt/EpochAnalysis.h"
 #include "carts/dialect/arts/Analysis/heuristics/EpochHeuristics.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/utils/LoopUtils.h"

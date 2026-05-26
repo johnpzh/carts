@@ -14,7 +14,8 @@
 // CHECK-SAME: partitioning(<coarse>)
 // CHECK: arts.db_acquire[<out>]
 // CHECK-SAME: partitioning(<block>)
-// CHECK: arts.edt <task> <intranode>
+// CHECK: arts.edt <task> <internode>
+// CHECK-SAME: storageBridgeCopy
 // CHECK: arts.edt <task> <internode>
 // CHECK: arts.barrier
 // CHECK: arts.db_acquire[<inout>]
@@ -22,6 +23,7 @@
 // CHECK: arts.db_acquire[<in>]
 // CHECK-SAME: partitioning(<block>)
 // CHECK: arts.edt <task> <intranode>
+// CHECK-SAME: storageBridgeCopy
 // CHECK: arts.barrier
 // CHECK: memref.load %[[HOST]]
 

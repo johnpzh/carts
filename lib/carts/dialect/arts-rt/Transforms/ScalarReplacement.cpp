@@ -28,8 +28,8 @@ namespace mlir::carts::arts_rt {
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
 
-#include "carts/utils/Debug.h"
 #include "carts/dialect/arts/Utils/LoopInvarianceUtils.h"
+#include "carts/utils/Debug.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Dominance.h"
@@ -171,8 +171,7 @@ detectReductionPattern(scf::ForOp forOp) {
       /// we can create new loads/stores outside the loop that use it.
       if (loadMemref == storeMemref &&
           ValueAnalysis::areValueRangesIdentical(loadIndices, storeIndices) &&
-          loadOp->hasOneUse() &&
-          isLoopInvariant(forOp, storeMemref)) {
+          loadOp->hasOneUse() && isLoopInvariant(forOp, storeMemref)) {
         pattern.loadOp = loadOp;
         pattern.storeOp = storeOp;
         pattern.valueToYield = storedValue;
@@ -371,9 +370,9 @@ static LogicalResult transformReduction(ReductionPattern &pattern,
   /// Create yield with the accumulated value.
   Value newAccValue = mapper.lookupOrDefault(pattern.valueToYield);
   if (!newAccValue || newAccValue == pattern.valueToYield) {
-    /// This can happen if the stored value was not cloned into the new loop body.
-    /// Keep the failure path transactional: remove the speculative loop and
-    /// its preheader load before giving another pattern a chance to match.
+    /// This can happen if the stored value was not cloned into the new loop
+    /// body. Keep the failure path transactional: remove the speculative loop
+    /// and its preheader load before giving another pattern a chance to match.
     scf::YieldOp::create(rewriter, loc, ValueRange{accArg});
     rewriter.setInsertionPointAfter(newForOp);
     rewriter.eraseOp(newForOp);

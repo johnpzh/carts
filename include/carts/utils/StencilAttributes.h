@@ -87,9 +87,8 @@ inline void setStencilCenterOffset(Operation *op, int64_t centerOffset) {
       detail::getStencilAttrName(op, detail::StencilAttrKind::CenterOffset);
   if (!name)
     return;
-  op->setAttr(
-      name,
-      IntegerAttr::get(IntegerType::get(op->getContext(), 64), centerOffset));
+  op->setAttr(name, IntegerAttr::get(IntegerType::get(op->getContext(), 64),
+                                     centerOffset));
 }
 
 inline std::optional<SmallVector<int64_t, 4>>

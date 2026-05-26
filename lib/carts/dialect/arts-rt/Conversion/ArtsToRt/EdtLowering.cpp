@@ -44,14 +44,14 @@ namespace mlir::carts::arts_rt {
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/Matchers.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
-#include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
@@ -278,8 +278,8 @@ static bool isAllowedWriteOrAddressUse(Operation *op) {
              polygeist::SubIndexOp, memref::CastOp, memref::SubViewOp,
              memref::ReinterpretCastOp, memref::DimOp, LLVM::GEPOp,
              LLVM::BitcastOp, LLVM::AddrSpaceCastOp, memref::StoreOp,
-             polygeist::DynStoreOp, LLVM::StoreOp,
-             UnrealizedConversionCastOp>(op);
+             polygeist::DynStoreOp, LLVM::StoreOp, UnrealizedConversionCastOp>(
+      op);
 }
 
 static bool edtDependencyPayloadMayRead(EdtOp edtOp, unsigned depIndex) {
@@ -342,8 +342,7 @@ static bool edtDependencyPayloadMayRead(EdtOp edtOp, unsigned depIndex) {
 }
 
 static bool canUsePlannedCoarseUnorderedOutWrite(DbAcquireOp acquire,
-                                                 EdtOp edtOp,
-                                                 ModuleOp module,
+                                                 EdtOp edtOp, ModuleOp module,
                                                  unsigned depIndex,
                                                  bool payloadMayRead) {
   if (!acquire || !edtOp)
@@ -361,8 +360,8 @@ static bool canUsePlannedCoarseUnorderedOutWrite(DbAcquireOp acquire,
     return false;
   auto alloc = dyn_cast_or_null<DbAllocOp>(
       RtDbUtils::getUnderlyingDbAlloc(acquire.getSourcePtr()));
-  if (!alloc || !alloc->hasAttr(
-                    ::mlir::carts::arts::AttrNames::Operation::LocalOnly))
+  if (!alloc ||
+      !alloc->hasAttr(::mlir::carts::arts::AttrNames::Operation::LocalOnly))
     return false;
   if (!edtOp.getPlanLogicalWorkerSliceAttr() ||
       !edtOp.getPlanIterationTopologyAttr())
@@ -398,8 +397,7 @@ static bool isInPlaceSafeUnorderedPattern(ArtsDepPattern pattern) {
 }
 
 static bool canUseInPlaceSafeCoarseUnorderedWrite(DbAcquireOp acquire,
-                                                  EdtOp edtOp,
-                                                  ModuleOp module,
+                                                  EdtOp edtOp, ModuleOp module,
                                                   unsigned depIndex) {
   if (!acquire || !edtOp)
     return false;
@@ -418,8 +416,8 @@ static bool canUseInPlaceSafeCoarseUnorderedWrite(DbAcquireOp acquire,
     return false;
   auto alloc = dyn_cast_or_null<DbAllocOp>(
       RtDbUtils::getUnderlyingDbAlloc(acquire.getSourcePtr()));
-  if (!alloc || !alloc->hasAttr(
-                    ::mlir::carts::arts::AttrNames::Operation::LocalOnly))
+  if (!alloc ||
+      !alloc->hasAttr(::mlir::carts::arts::AttrNames::Operation::LocalOnly))
     return false;
   auto depPattern = getDepPattern(edtOp.getOperation());
   if (!depPattern || !isInPlaceSafeUnorderedPattern(*depPattern))
@@ -555,12 +553,14 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
   AC->setInsertionPoint(edtOp);
   Location loc = edtOp.getLoc();
   if (edtOp.getPartialReductionSplitRequiredAttr()) {
-    InFlightDiagnostic diag = edtOp.emitError()
+    InFlightDiagnostic diag =
+        edtOp.emitError()
         << "partial-reduction split plan was not materialized before "
            "ARTS-RT EDT lowering";
     if (auto ownerCount = edtOp.getPartialReductionSplitOwnerTaskCountAttr())
       diag << "; split owner task count: " << ownerCount.getInt();
-    if (auto targetCount = edtOp.getPartialReductionSplitTargetWorkerCountAttr())
+    if (auto targetCount =
+            edtOp.getPartialReductionSplitTargetWorkerCountAttr())
       diag << "; split target worker count: " << targetCount.getInt();
     if (auto splitFactor = edtOp.getPartialReductionSplitFactorAttr())
       diag << "; partial-reduction split factor: " << splitFactor.getInt();
@@ -745,8 +745,8 @@ LogicalResult EdtLoweringPass::lowerEdt(EdtOp edtOp) {
   Value edtGuid = outlineOp.getGuid();
   AC->setInsertionPointAfter(outlineOp);
   SmallVector<Value> depsVec(edtDeps.begin(), edtDeps.end());
-  if (failed(insertDepManagement(edtOp, loc, edtGuid, depsVec,
-                                 depPayloadMayRead)))
+  if (failed(
+          insertDepManagement(edtOp, loc, edtGuid, depsVec, depPayloadMayRead)))
     return edtOp.emitError("Failed to insert dependency management");
 
   /// Replace all uses of EDT with the outlined function result.
@@ -1372,9 +1372,9 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
         dbMode = allocMode;
       runtimeDbMode = static_cast<int32_t>(dbMode);
     }
-    bool payloadMayRead =
-        depIndex < depPayloadMayRead.size() ? depPayloadMayRead[depIndex]
-                                            : true;
+    bool payloadMayRead = depIndex < depPayloadMayRead.size()
+                              ? depPayloadMayRead[depIndex]
+                              : true;
     if (dbMode == DbMode::write &&
         (canUseUnorderedLocalWrite(dbAcquireOp, edtOp, module) ||
          canUsePlannedCoarseUnorderedOutWrite(dbAcquireOp, edtOp, module,
@@ -1388,13 +1388,17 @@ EdtLoweringPass::insertDepManagement(EdtOp edtOp, Location loc, Value edtGuid,
     acquireModes.push_back(runtimeDbMode);
 
     int32_t depFlagBits = 0;
+    bool duplicateReadDep =
+        dbAcquireOp &&
+        DbUtils::isAllowedReadOnlyCoarseDep(dbAcquireOp.getPtr(), allocForHint);
     if (allocForHint && dbMode == DbMode::read &&
         (hasDistributedDbAllocation(allocForHint.getOperation()) ||
-         DbUtils::isSmallCoarseUserDataDb(allocForHint))) {
+         DbUtils::isSmallCoarseUserDataDb(allocForHint) || duplicateReadDep)) {
       bool duplicateSafe =
           allocForHint.getDbMode() == DbMode::read ||
           allocForHint->hasAttr(
-              ::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit);
+              ::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit) ||
+          duplicateReadDep;
       if (duplicateSafe) {
         depFlagBits |= kArtsDepFlagPreferDuplicate;
       }

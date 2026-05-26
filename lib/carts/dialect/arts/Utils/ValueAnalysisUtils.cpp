@@ -212,8 +212,8 @@ std::optional<int64_t> mlir::carts::arts::tryFoldConstantIndex(Value value,
                                                  depth);
 }
 
-std::optional<int64_t> mlir::carts::arts::getConstantIndexStripped(
-    Value value) {
+std::optional<int64_t>
+mlir::carts::arts::getConstantIndexStripped(Value value) {
   if (!value)
     return std::nullopt;
   return tryFoldConstantIndex(ValueAnalysis::stripNumericCasts(value));
@@ -265,8 +265,7 @@ Value mlir::carts::arts::stripSelectClamp(Value value, int maxDepth) {
   return value;
 }
 
-std::optional<int64_t> mlir::carts::arts::getOffsetStride(Value idx,
-                                                          Value base,
+std::optional<int64_t> mlir::carts::arts::getOffsetStride(Value idx, Value base,
                                                           int depth) {
   if (!idx || !base || depth > 8)
     return std::nullopt;
@@ -329,8 +328,9 @@ bool mlir::carts::arts::isDerivedFromPtr(Value value, Value source) {
   return isDerivedFromPtrImpl(value, source, visited, 0);
 }
 
-std::optional<int64_t> mlir::carts::arts::extractConstantOffset(
-    Value idx, Value loopIV, Value chunkOffset) {
+std::optional<int64_t>
+mlir::carts::arts::extractConstantOffset(Value idx, Value loopIV,
+                                         Value chunkOffset) {
   if (auto delta = proveConstantOffsetWithBounds(idx, loopIV, chunkOffset))
     return delta;
 

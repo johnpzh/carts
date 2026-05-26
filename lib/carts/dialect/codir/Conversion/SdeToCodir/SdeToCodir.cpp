@@ -11,8 +11,7 @@ namespace mlir::carts::codir {
 } // namespace mlir::carts::codir
 namespace {
 struct ConvertSdeToCodirPass
-    : public codir::impl::ConvertSdeToCodirBase<
-          ConvertSdeToCodirPass> {
+    : public codir::impl::ConvertSdeToCodirBase<ConvertSdeToCodirPass> {
   void runOnOperation() override {
     SmallVector<sde::SdeCuCodeletOp> codelets;
     getOperation().walk(
@@ -25,8 +24,7 @@ struct ConvertSdeToCodirPass
       SmallVector<SlicedTokenLocalIndexRewrite> localIndexRewrites;
       OpBuilder builder(sdeCodelet);
       if (failed(materializeCodirDeps(sdeCodelet, builder, deps, depModes,
-                                      depStorageViews,
-                                      localIndexRewrites))) {
+                                      depStorageViews, localIndexRewrites))) {
         signalPassFailure();
         return;
       }
@@ -36,17 +34,14 @@ struct ConvertSdeToCodirPass
       unsigned originalParamCount = params.size();
       appendSlicedTokenOffsetParams(localIndexRewrites, params);
       appendDynamicCodirDepSliceParams(deps, params);
-      auto codirCodelet =
-          createCodirCodelet(builder, sdeCodelet.getLoc(),
-                             builder.getArrayAttr(depModes),
-                             builder.getArrayAttr(depStorageViews), deps,
-                             params);
+      auto codirCodelet = createCodirCodelet(
+          builder, sdeCodelet.getLoc(), builder.getArrayAttr(depModes),
+          builder.getArrayAttr(depStorageViews), deps, params);
       codirCodelet.getBody().takeBody(sdeCodelet.getBody());
       Block &body = codirCodelet.getBody().front();
       for (unsigned idx = originalParamCount, e = params.size(); idx < e; ++idx)
         body.addArgument(params[idx].getType(), sdeCodelet.getLoc());
-      if (failed(rewriteTokenLocalAccesses(codirCodelet,
-                                           localIndexRewrites))) {
+      if (failed(rewriteTokenLocalAccesses(codirCodelet, localIndexRewrites))) {
         signalPassFailure();
         return;
       }
@@ -55,8 +50,7 @@ struct ConvertSdeToCodirPass
     }
 
     SmallVector<sde::SdeCuTaskOp> tasks;
-    getOperation().walk(
-        [&](sde::SdeCuTaskOp task) { tasks.push_back(task); });
+    getOperation().walk([&](sde::SdeCuTaskOp task) { tasks.push_back(task); });
     for (sde::SdeCuTaskOp task : tasks) {
       if (failed(convertCuTaskToCodir(task))) {
         signalPassFailure();
@@ -99,13 +93,14 @@ struct ConvertSdeToCodirPass
     }
 
     bool hasUnresolvedMuDep = false;
-    getOperation().walk([&](sde::SdeMuDepOp muDep) {
-      muDep.emitOpError()
-          << "must be consumed by convert-sde-to-codir before the CODIR "
-             "boundary; materialize it as an sde.mu_token/codelet dep or "
-             "remove the stale dependency declaration";
-      hasUnresolvedMuDep = true;
-    });
+    getOperation().walk(
+        [&](sde::SdeMuDepOp muDep) {
+          muDep.emitOpError()
+              << "must be consumed by convert-sde-to-codir before the CODIR "
+                 "boundary; materialize it as an sde.mu_token/codelet dep or "
+                 "remove the stale dependency declaration";
+          hasUnresolvedMuDep = true;
+        });
     if (hasUnresolvedMuDep)
       signalPassFailure();
   }

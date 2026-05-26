@@ -14,22 +14,20 @@ bool hasCompleteMuDepSlice(sde::SdeMuDepOp muDep);
 bool hasOnlyStaticMuDepSliceBounds(sde::SdeMuDepOp muDep);
 bool hasCodirTaskDepSliceBoundsSupport(sde::SdeMuDepOp muDep);
 
-bool subviewMatchesMuDepSlice(memref::SubViewOp subview,
-                              sde::SdeMuDepOp muDep);
+bool subviewMatchesMuDepSlice(memref::SubViewOp subview, sde::SdeMuDepOp muDep);
 bool subindexMatchesMuDepSlice(polygeist::SubIndexOp subindex,
                                sde::SdeMuDepOp muDep);
 bool haveSameMuDepSlice(sde::SdeMuDepOp lhs, sde::SdeMuDepOp rhs);
-bool accessIndicesMatchMuDepOffsets(ValueRange indices,
-                                    sde::SdeMuDepOp muDep);
+bool accessIndicesMatchMuDepOffsets(ValueRange indices, sde::SdeMuDepOp muDep);
 bool rootAccessMatchesMuDepOffsets(Operation *user, sde::SdeMuDepOp muDep);
 
 bool hasOnlyDirectLoadStoreUsersInTask(Value memref, Region &taskRegion);
 bool hasExactSubviewAccessProofInTask(sde::SdeMuDepOp muDep,
                                       Region &taskRegion);
-bool hasExactRootAccessProofInTask(sde::SdeMuDepOp muDep,
-                                   Region &taskRegion);
-bool hasPartitionedExactAccessProofInTask(
-    Value source, ArrayRef<sde::SdeMuDepOp> sourceDeps, Region &taskRegion);
+bool hasExactRootAccessProofInTask(sde::SdeMuDepOp muDep, Region &taskRegion);
+bool hasPartitionedExactAccessProofInTask(Value source,
+                                          ArrayRef<sde::SdeMuDepOp> sourceDeps,
+                                          Region &taskRegion);
 
 void collectExactSubviewAccessProofsInTask(
     sde::SdeMuDepOp muDep, Region &taskRegion,
@@ -37,9 +35,9 @@ void collectExactSubviewAccessProofsInTask(
 void collectExactSubindexAccessProofsInTask(
     sde::SdeMuDepOp muDep, Region &taskRegion,
     SmallVectorImpl<polygeist::SubIndexOp> &subindices);
-void collectExactRootAccessProofsInTask(
-    sde::SdeMuDepOp muDep, Region &taskRegion,
-    SmallVectorImpl<Operation *> &accesses);
+void collectExactRootAccessProofsInTask(sde::SdeMuDepOp muDep,
+                                        Region &taskRegion,
+                                        SmallVectorImpl<Operation *> &accesses);
 
 } // namespace mlir::carts::codir
 

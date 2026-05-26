@@ -23,10 +23,10 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/LLVM.h"
 /// Arts
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtGraph.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/passes/Passes.h"
 #include "mlir/Pass/Pass.h"
 /// Other
@@ -485,7 +485,8 @@ bool EdtStructuralOptPass::removeRedundantBarriersWithGraphs(
 namespace mlir {
 namespace carts::arts {
 std::unique_ptr<Pass>
-createEdtStructuralOptPass(mlir::carts::arts::AnalysisManager *AM, bool runAnalysis) {
+createEdtStructuralOptPass(mlir::carts::arts::AnalysisManager *AM,
+                           bool runAnalysis) {
   return std::make_unique<EdtStructuralOptPass>(AM, runAnalysis);
 }
 } // namespace carts::arts

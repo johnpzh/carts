@@ -10,8 +10,8 @@
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/MetadataEnums.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
+#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -66,7 +66,6 @@ DbAllocNode::DbAllocNode(DbAllocOp op, DbAnalysis *analysis)
     auto &stringAnalysis = analysis->getAnalysisManager().getStringAnalysis();
     isStringBacked = stringAnalysis.isStringMemRef(address);
   }
-
 }
 
 void DbAllocNode::forEachChildNode(

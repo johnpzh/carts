@@ -218,10 +218,14 @@ static inline bool canUseOwnerSliceBoundaryPlan(sde::SdeSuIterateOp source) {
 
 static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv,
                                           llvm::SmallPtrSetImpl<Value> &seen) {
-  if (!index || !ownerIv || !seen.insert(index).second)
+  if (!index || !ownerIv)
     return false;
+  if (index == ownerIv)
+    return true;
   if (::mlir::carts::ValueAnalysis::dependsOn(index, ownerIv))
     return true;
+  if (!seen.insert(index).second)
+    return false;
 
   auto blockArg = dyn_cast<BlockArgument>(index);
   if (blockArg) {
@@ -230,8 +234,14 @@ static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv,
     if (!loop || loop.getInductionVar() != index)
       return false;
 
-    return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, seen) &&
-           indexSelectsOwnerSlice(loop.getUpperBound(), ownerIv, seen);
+    llvm::SmallPtrSet<Value, 8> lowerSeen;
+    llvm::SmallPtrSet<Value, 8> upperSeen;
+    for (Value value : seen) {
+      lowerSeen.insert(value);
+      upperSeen.insert(value);
+    }
+    return indexSelectsOwnerSlice(loop.getLowerBound(), ownerIv, lowerSeen) &&
+           indexSelectsOwnerSlice(loop.getUpperBound(), ownerIv, upperSeen);
   }
 
   Operation *def = index.getDefiningOp();
@@ -242,9 +252,14 @@ static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv,
           arith::MinSIOp, arith::MinUIOp, arith::MaxSIOp, arith::MaxUIOp>(def))
     return false;
 
-  return llvm::any_of(def->getOperands(), [&](Value operand) {
-    return indexSelectsOwnerSlice(operand, ownerIv, seen);
-  });
+  for (Value operand : def->getOperands()) {
+    llvm::SmallPtrSet<Value, 8> operandSeen;
+    for (Value value : seen)
+      operandSeen.insert(value);
+    if (indexSelectsOwnerSlice(operand, ownerIv, operandSeen))
+      return true;
+  }
+  return false;
 }
 
 static inline bool indexSelectsOwnerSlice(Value index, Value ownerIv) {

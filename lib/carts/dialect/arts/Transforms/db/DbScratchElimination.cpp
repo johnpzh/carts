@@ -6,16 +6,16 @@
 /// established stable acquire and dependency structure.
 ///==========================================================================///
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_DBSCRATCHELIMINATION
-#include "carts/passes/Passes.h"
-#include "carts/passes/Passes.h.inc"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
+#include "carts/passes/Passes.h"
+#include "carts/passes/Passes.h.inc"
+#include "carts/utils/OperationAttributes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Dominance.h"

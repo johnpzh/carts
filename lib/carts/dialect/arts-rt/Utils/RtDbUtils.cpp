@@ -297,13 +297,11 @@ DbMode RtDbUtils::convertArtsModeToDbMode(ArtsMode mode) {
 
 void RtDbUtils::convertElementSliceToBlockSlice(
     OpBuilder &builder, Location loc, ValueRange elementOffsets,
-    ValueRange elementSizes, ValueRange blockSpans,
-    ValueRange totalBlockCounts, SmallVectorImpl<Value> &blockOffsets,
-    SmallVectorImpl<Value> &blockSizes) {
-  DbUtils::convertElementSliceToBlockSlice(builder, loc, elementOffsets,
-                                           elementSizes, blockSpans,
-                                           totalBlockCounts, blockOffsets,
-                                           blockSizes);
+    ValueRange elementSizes, ValueRange blockSpans, ValueRange totalBlockCounts,
+    SmallVectorImpl<Value> &blockOffsets, SmallVectorImpl<Value> &blockSizes) {
+  DbUtils::convertElementSliceToBlockSlice(
+      builder, loc, elementOffsets, elementSizes, blockSpans, totalBlockCounts,
+      blockOffsets, blockSizes);
 }
 
 void RtDbUtils::mergeNormalizedBlockSlice(
@@ -311,8 +309,7 @@ void RtDbUtils::mergeNormalizedBlockSlice(
     ValueRange existingSizes, ValueRange totalBlockCounts,
     ValueRange normalizedOffsets, ValueRange normalizedSizes,
     SmallVectorImpl<Value> &blockOffsets, SmallVectorImpl<Value> &blockSizes) {
-  DbUtils::mergeNormalizedBlockSlice(builder, loc, existingOffsets,
-                                     existingSizes, totalBlockCounts,
-                                     normalizedOffsets, normalizedSizes,
-                                     blockOffsets, blockSizes);
+  DbUtils::mergeNormalizedBlockSlice(
+      builder, loc, existingOffsets, existingSizes, totalBlockCounts,
+      normalizedOffsets, normalizedSizes, blockOffsets, blockSizes);
 }

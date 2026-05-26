@@ -33,13 +33,13 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 /// Arts
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/edt/EdtInfo.h"
 #include "carts/dialect/arts/Analysis/graphs/base/EdgeBase.h"
 #include "carts/dialect/arts/Analysis/graphs/base/NodeBase.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtGraph.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtNode.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
 #include "carts/utils/OperationAttributes.h"
@@ -303,7 +303,8 @@ unsigned EdtTransformsPass::analyzeCriticalPath(func::FuncOp func,
     EdtOp edt = node->getEdtOp();
 
     /// Set critical_path_distance directly on the EdtOp.
-    edt->setAttr(::mlir::carts::arts::AttrNames::Operation::Contract::CriticalPathDistance,
+    edt->setAttr(::mlir::carts::arts::AttrNames::Operation::Contract::
+                     CriticalPathDistance,
                  IntegerAttr::get(i64Type, dist));
 
     /// Also update LoweringContractOps on the EDT's dependency acquires.
@@ -386,8 +387,9 @@ static void markDepNarrowable(DbAcquireOp acquire, Value ptr,
                               std::optional<ArtsDepPattern> edtDepPattern,
                               ArrayRef<int64_t> haloFootprint = {}) {
   if (contractOp) {
-    contractOp->setAttr(::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep,
-                        UnitAttr::get(contractOp.getContext()));
+    contractOp->setAttr(
+        ::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep,
+        UnitAttr::get(contractOp.getContext()));
   } else {
     /// No existing contract -- create one with the marker.
     LoweringContractInfo newInfo;
@@ -398,8 +400,9 @@ static void markDepNarrowable(DbAcquireOp acquire, Value ptr,
     auto newContractOp =
         upsertLoweringContract(builder, acquire.getLoc(), ptr, newInfo);
     if (newContractOp) {
-      newContractOp->setAttr(::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep,
-                             UnitAttr::get(newContractOp.getContext()));
+      newContractOp->setAttr(
+          ::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep,
+          UnitAttr::get(newContractOp.getContext()));
     }
   }
 }
@@ -615,9 +618,8 @@ unsigned EdtTransformsPass::eliminateDeadDependencies() {
       }
 
       llvm::SetVector<Operation *> cleanupChain;
-      bool removable =
-          DbUtils::collectCleanupOnlyUseChain(arg, cleanupChain,
-                                              &edt.getRegion());
+      bool removable = DbUtils::collectCleanupOnlyUseChain(arg, cleanupChain,
+                                                           &edt.getRegion());
       if (!removable && acquire && acquire.getMode() == ArtsMode::out)
         removable = DbUtils::collectTrueOnlyControlTokenUseChain(
             arg, cleanupChain, &edt.getRegion());
@@ -685,7 +687,8 @@ unsigned EdtTransformsPass::eliminateDeadDependencies() {
 ///===----------------------------------------------------------------------===///
 namespace mlir {
 namespace carts::arts {
-std::unique_ptr<Pass> createEdtTransformsPass(mlir::carts::arts::AnalysisManager *AM) {
+std::unique_ptr<Pass>
+createEdtTransformsPass(mlir::carts::arts::AnalysisManager *AM) {
   return std::make_unique<EdtTransformsPass>(AM);
 }
 } // namespace carts::arts

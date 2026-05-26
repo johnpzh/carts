@@ -41,12 +41,12 @@ struct DistributedLaunchConsistencyPass
       edt.setConcurrency(EdtConcurrency::intranode);
       edt.getRouteMutable().set(localRoute);
       ++localized;
-      ARTS_DEBUG("Localized internode EDT with rejected distributed DB dep: "
-                 << edt);
+      ARTS_DEBUG(
+          "Localized internode EDT with rejected distributed DB dep: " << edt);
     });
 
-    ARTS_INFO("Distributed launch consistency localized "
-              << localized << " EDTs");
+    ARTS_INFO("Distributed launch consistency localized " << localized
+                                                          << " EDTs");
   }
 };
 

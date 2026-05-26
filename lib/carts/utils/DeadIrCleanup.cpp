@@ -197,7 +197,8 @@ unsigned removeDeadSymbols(ModuleOp module) {
       auto symbolRef = dyn_cast<SymbolRefAttr>(attr.getValue());
       if (!symbolRef)
         continue;
-      if (Operation *symbol = symbolTable.lookupNearestSymbolFrom(op, symbolRef))
+      if (Operation *symbol =
+              symbolTable.lookupNearestSymbolFrom(op, symbolRef))
         usedSymbols.insert(symbol);
     }
   });

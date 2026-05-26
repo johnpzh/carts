@@ -940,7 +940,8 @@ Value buildNeighborhoodBoundaryValue(
   case LoopNeighborhoodSegment::BoundaryKind::constant:
     return ::mlir::carts::createConstantIndex(builder, loc, boundary.constant);
   case LoopNeighborhoodSegment::BoundaryKind::blockSizeMinusConstant: {
-    Value constant = ::mlir::carts::createConstantIndex(builder, loc, boundary.constant);
+    Value constant =
+        ::mlir::carts::createConstantIndex(builder, loc, boundary.constant);
     return arith::SubIOp::create(builder, loc, blockSize, constant);
   }
   case LoopNeighborhoodSegment::BoundaryKind::blockSize:
@@ -954,7 +955,8 @@ Value buildNeighborhoodRemValue(OpBuilder &builder, Location loc, Value local,
                                 int64_t blockDelta) {
   Value remVal = local;
   if (offsetConst != 0) {
-    Value offset = ::mlir::carts::createConstantIndex(builder, loc, offsetConst);
+    Value offset =
+        ::mlir::carts::createConstantIndex(builder, loc, offsetConst);
     remVal = arith::AddIOp::create(builder, loc, remVal, offset);
   }
   if (blockDelta > 0)
@@ -992,10 +994,10 @@ bool stripMineNeighborhoodLoopImpl(scf::ForOp loop,
   if (!info.blockSizeConst)
     bsSource = ValueAnalysis::traceValueToDominating(info.blockSizeVal, loop,
                                                      builder, domInfo, loc);
-  Value bsVal =
-      info.blockSizeConst
-          ? ::mlir::carts::createConstantIndex(builder, loc, *info.blockSizeConst)
-          : ValueAnalysis::ensureIndexType(bsSource, builder, loc);
+  Value bsVal = info.blockSizeConst
+                    ? ::mlir::carts::createConstantIndex(builder, loc,
+                                                         *info.blockSizeConst)
+                    : ValueAnalysis::ensureIndexType(bsSource, builder, loc);
   if (!lbVal || !ubVal || !bsVal)
     return false;
   Value baseVal;
@@ -1090,7 +1092,8 @@ bool stripMineNeighborhoodLoopImpl(scf::ForOp loop,
 
       Value blockIdx = outer.getInductionVar();
       if (blockDelta != 0) {
-        Value deltaConst = ::mlir::carts::createConstantIndex(builder, loc, blockDelta);
+        Value deltaConst =
+            ::mlir::carts::createConstantIndex(builder, loc, blockDelta);
         blockIdx = arith::AddIOp::create(builder, loc, blockIdx, deltaConst);
       }
       for (auto div : group.divOps)
@@ -1109,7 +1112,8 @@ bool stripMineNeighborhoodLoopImpl(scf::ForOp loop,
 
       Value blockIdx = outer.getInductionVar();
       if (blockDelta != 0) {
-        Value deltaConst = ::mlir::carts::createConstantIndex(builder, loc, blockDelta);
+        Value deltaConst =
+            ::mlir::carts::createConstantIndex(builder, loc, blockDelta);
         blockIdx = arith::AddIOp::create(builder, loc, blockIdx, deltaConst);
       }
       for (auto div : group.divOps)
@@ -1254,7 +1258,8 @@ bool stripMineSingleDimBlockLoop(scf::ForOp loop,
   Value ubVal = loop.getUpperBound();
   Value bsVal =
       info.blockSizeConst
-          ? ::mlir::carts::createConstantIndex(builder, loc, *info.blockSizeConst)
+          ? ::mlir::carts::createConstantIndex(builder, loc,
+                                               *info.blockSizeConst)
           : ValueAnalysis::ensureIndexType(info.blockSizeVal, builder, loc);
   Value ubGeLb = arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::uge,
                                        ubVal, lbVal);
@@ -1322,7 +1327,8 @@ bool stripMineSingleDimBlockLoop(scf::ForOp loop,
         ValueAnalysis::ensureIndexType(info.lowerBoundDivHint, builder, loc);
   } else if (info.lowerBoundConst && info.blockSizeConst) {
     int64_t lowerDivConst = *info.lowerBoundConst / *info.blockSizeConst;
-    effectiveLowerDiv = ::mlir::carts::createConstantIndex(builder, loc, lowerDivConst);
+    effectiveLowerDiv =
+        ::mlir::carts::createConstantIndex(builder, loc, lowerDivConst);
   } else {
     effectiveLowerDiv = arith::DivUIOp::create(builder, loc, lbVal, bsVal);
   }
@@ -1331,11 +1337,11 @@ bool stripMineSingleDimBlockLoop(scf::ForOp loop,
     if (info.offsetDivHint) {
       offsetDiv =
           ValueAnalysis::ensureIndexType(info.offsetDivHint, builder, loc);
-    } else if (auto offConst =
-                   arts::tryFoldConstantIndex(info.offsetVal)) {
+    } else if (auto offConst = arts::tryFoldConstantIndex(info.offsetVal)) {
       if (info.blockSizeConst) {
         int64_t offDivConst = *offConst / *info.blockSizeConst;
-        offsetDiv = ::mlir::carts::createConstantIndex(builder, loc, offDivConst);
+        offsetDiv =
+            ::mlir::carts::createConstantIndex(builder, loc, offDivConst);
       }
     }
     if (!offsetDiv) {
@@ -1346,8 +1352,7 @@ bool stripMineSingleDimBlockLoop(scf::ForOp loop,
     effectiveLowerDiv =
         arith::AddIOp::create(builder, loc, effectiveLowerDiv, offsetDiv);
   }
-  auto effectiveLowerDivConst =
-      arts::tryFoldConstantIndex(effectiveLowerDiv);
+  auto effectiveLowerDivConst = arts::tryFoldConstantIndex(effectiveLowerDiv);
   if (!effectiveLowerDivConst || *effectiveLowerDivConst != 0)
     blockIdx = arith::AddIOp::create(builder, loc, blockIdx, effectiveLowerDiv);
   for (auto div : info.divOps)

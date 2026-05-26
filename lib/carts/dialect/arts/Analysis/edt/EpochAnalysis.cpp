@@ -17,6 +17,6 @@ EpochAccessSummary EpochAnalysis::summarizeEpochAccess(EpochOp epoch) const {
 EpochFusionDecision EpochAnalysis::evaluateEpochFusion(
     EpochOp first, EpochOp second, const EpochAccessSummary *firstSummary,
     const EpochAccessSummary *secondSummary) const {
-  return EpochHeuristics::evaluateEpochFusion(
-      first, second, firstSummary, secondSummary);
+  return EpochHeuristics::evaluateEpochFusion(first, second, firstSummary,
+                                              secondSummary);
 }

@@ -179,7 +179,8 @@ analyzeLoadTypes(const SmallPtrSet<Block *, 16> &loopBlocks) {
 static unsigned getTargetVectorBits(ModuleOp module) {
   unsigned bits = 128;
 
-  auto features = module->getAttrOfType<StringAttr>("polygeist.target-features");
+  auto features =
+      module->getAttrOfType<StringAttr>("polygeist.target-features");
   if (!features)
     return bits;
 
@@ -191,12 +192,12 @@ static unsigned getTargetVectorBits(ModuleOp module) {
   return bits;
 }
 
-static unsigned
-getTargetMaxVectorWidth(ModuleOp module, const TypeAnalysisResult &typeInfo) {
+static unsigned getTargetMaxVectorWidth(ModuleOp module,
+                                        const TypeAnalysisResult &typeInfo) {
   unsigned elementBits = 32;
   if (typeInfo.f64Count >= typeInfo.f32Count &&
-      typeInfo.f64Count >= typeInfo.totalLoads - typeInfo.f64Count -
-                                  typeInfo.f32Count)
+      typeInfo.f64Count >=
+          typeInfo.totalLoads - typeInfo.f64Count - typeInfo.f32Count)
     elementBits = 64;
 
   return std::max(1u, getTargetVectorBits(module) / elementBits);
@@ -479,8 +480,7 @@ struct LoopVectorizationHintsPass
         auto typeInfo = analyzeLoadTypes(loopBlocks);
         if (rtVecWidth) {
           width = rtVecWidth;
-          interleave =
-              rtInterleaveCount ? rtInterleaveCount : interleaveCount;
+          interleave = rtInterleaveCount ? rtInterleaveCount : interleaveCount;
         } else {
           width = vectorWidth ? vectorWidth : typeInfo.vectorWidth;
           interleave = interleaveCount;
@@ -496,8 +496,8 @@ struct LoopVectorizationHintsPass
           ARTS_DEBUG_TYPE("Innermost loop - vectorization hints at "
                           << terminator->getLoc());
         } else {
-          annotation = createOuterLoopHints(
-              ctx, enableMustProgress, parallelAccessGroups);
+          annotation = createOuterLoopHints(ctx, enableMustProgress,
+                                            parallelAccessGroups);
           outerCount++;
           ARTS_DEBUG_TYPE("Outer loop - light hints at "
                           << terminator->getLoc());

@@ -28,17 +28,17 @@
 /// Arts
 #include "carts/dialect/arts/IR/ArtsDialect.h"
 #define GEN_PASS_DEF_CREATEEPOCHS
+#include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
-#include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Pass/Pass.h"
 /// Other
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
-#include "mlir/Pass/Pass.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Pass/Pass.h"
 #include "mlir/Support/LogicalResult.h"
 
 #include "carts/utils/Debug.h"
@@ -137,8 +137,7 @@ static Operation *getInsertionAfter(Operation *op, Operation *barrier) {
 }
 
 static Operation *adjustEpochInsertionForDominance(
-    Operation *insertionOp, Operation *barrier,
-    ArrayRef<Operation *> opsToMove,
+    Operation *insertionOp, Operation *barrier, ArrayRef<Operation *> opsToMove,
     const llvm::SmallDenseSet<Operation *, 8> &opsToMoveSet) {
   if (!insertionOp || !barrier)
     return insertionOp;

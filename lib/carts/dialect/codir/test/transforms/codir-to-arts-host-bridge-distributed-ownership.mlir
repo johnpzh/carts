@@ -61,4 +61,5 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // CHECK: arts.db_acquire[<inout>] (%{{.*}} : {{.*}}, %{{.*}} : {{.*}}) partitioning(<coarse>)
 // CHECK: arts.db_acquire[<in>] (%[[BGUID]] : {{.*}}, %[[BPTR]] : {{.*}}) partitioning(<block>)
 // CHECK: arts.edt <task> <intranode>
+// CHECK-SAME: storageBridgeCopy
 // CHECK: arts.barrier

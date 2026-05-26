@@ -7,12 +7,12 @@
 #ifndef ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_EDT_EDTGRAPH_H
 #define ARTS_DIALECT_CORE_ANALYSIS_GRAPHS_EDT_EDTGRAPH_H
 
-#include "carts/dialect/arts/IR/ArtsDialect.h" // For EdtOp
 #include "carts/dialect/arts/Analysis/graphs/base/EdgeBase.h"
 #include "carts/dialect/arts/Analysis/graphs/base/NodeBase.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbGraph.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtEdge.h"
 #include "carts/dialect/arts/Analysis/graphs/edt/EdtNode.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h" // For EdtOp
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"

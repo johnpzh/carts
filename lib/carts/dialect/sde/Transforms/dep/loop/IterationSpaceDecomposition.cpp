@@ -67,7 +67,8 @@ static bool yieldsConstantBool(Block &block, bool expected) {
   auto yield = dyn_cast<scf::YieldOp>(block.getTerminator());
   if (!yield || yield.getNumOperands() != 1)
     return false;
-  return ::mlir::carts::ValueAnalysis::isConstantBool(yield.getOperand(0), expected);
+  return ::mlir::carts::ValueAnalysis::isConstantBool(yield.getOperand(0),
+                                                      expected);
 }
 
 static bool matchEqConst(Value condition, Value value, int64_t expectedConst) {
@@ -123,9 +124,12 @@ static bool matchBoundaryPattern(scf::ForOp loop, BoundaryPeelingMatch &match) {
   if (!loop || loop.getNumResults() != 0)
     return fail("loop missing or has results");
 
-  auto lowerConst = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(loop.getLowerBound());
-  auto upperConst = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(loop.getUpperBound());
-  auto stepConst = ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(loop.getStep());
+  auto lowerConst =
+      ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(loop.getLowerBound());
+  auto upperConst =
+      ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(loop.getUpperBound());
+  auto stepConst =
+      ::mlir::carts::ValueAnalysis::tryFoldConstantIndex(loop.getStep());
   if (!lowerConst || !upperConst || !stepConst || *stepConst != 1)
     return fail("bounds are not constant step-1");
   if ((*upperConst - *lowerConst) <= 2)

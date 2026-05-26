@@ -44,8 +44,7 @@ static bool isLoopInductionVar(Value value) {
 static std::optional<LinearizedAccess2D>
 matchLinearizedMul(Value mulCandidate, Value innerCandidate,
                    Value requiredStride) {
-  mulCandidate =
-      ::mlir::carts::ValueAnalysis::stripNumericCasts(mulCandidate);
+  mulCandidate = ::mlir::carts::ValueAnalysis::stripNumericCasts(mulCandidate);
   innerCandidate =
       ::mlir::carts::ValueAnalysis::stripNumericCasts(innerCandidate);
 
@@ -53,10 +52,8 @@ matchLinearizedMul(Value mulCandidate, Value innerCandidate,
   if (!mulOp)
     return std::nullopt;
 
-  Value lhs =
-      ::mlir::carts::ValueAnalysis::stripNumericCasts(mulOp.getLhs());
-  Value rhs =
-      ::mlir::carts::ValueAnalysis::stripNumericCasts(mulOp.getRhs());
+  Value lhs = ::mlir::carts::ValueAnalysis::stripNumericCasts(mulOp.getLhs());
+  Value rhs = ::mlir::carts::ValueAnalysis::stripNumericCasts(mulOp.getRhs());
 
   auto build = [&](Value outer,
                    Value stride) -> std::optional<LinearizedAccess2D> {
@@ -130,10 +127,8 @@ std::optional<SmallVector<Value, 2>> inferRowMajorFlatShape(Value totalElements,
   if (!mulOp)
     return std::nullopt;
 
-  Value lhs =
-      ::mlir::carts::ValueAnalysis::stripNumericCasts(mulOp.getLhs());
-  Value rhs =
-      ::mlir::carts::ValueAnalysis::stripNumericCasts(mulOp.getRhs());
+  Value lhs = ::mlir::carts::ValueAnalysis::stripNumericCasts(mulOp.getLhs());
+  Value rhs = ::mlir::carts::ValueAnalysis::stripNumericCasts(mulOp.getRhs());
   if (::mlir::carts::ValueAnalysis::sameValue(lhs, stride))
     return SmallVector<Value, 2>{rhs, stride};
   if (::mlir::carts::ValueAnalysis::sameValue(rhs, stride))

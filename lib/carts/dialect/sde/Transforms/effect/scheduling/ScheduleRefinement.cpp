@@ -16,9 +16,9 @@ namespace mlir::carts::sde {
 #include "carts/dialect/sde/Transforms/Passes.h.inc"
 } // namespace mlir::carts::sde
 
+#include "carts/dialect/sde/Utils/SDECostModel.h"
 #include "carts/utils/LoopUtils.h"
 #include "carts/utils/ValueAnalysis.h"
-#include "carts/dialect/sde/Utils/SDECostModel.h"
 
 #include "mlir/IR/BuiltinOps.h"
 
@@ -47,7 +47,8 @@ static bool hasPositiveConstantStep(sde::SdeSuIterateOp op) {
     return false;
 
   int64_t step = 0;
-  return ::mlir::carts::ValueAnalysis::getConstantIndex(op.getSteps().front(), step) &&
+  return ::mlir::carts::ValueAnalysis::getConstantIndex(op.getSteps().front(),
+                                                        step) &&
          step > 0;
 }
 

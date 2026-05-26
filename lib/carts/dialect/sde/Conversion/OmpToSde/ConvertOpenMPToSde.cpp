@@ -315,7 +315,9 @@ static bool hasOneDimensionalFloatingPointMap(omp::WsloopOp wsloop,
 /// symmetric self-Gram scatter (e.g. correlation/covariance).
 static bool hasSymmetricSelfGramStorePair(ArrayRef<memref::StoreOp> stores,
                                           Value outerIv) {
-  for (auto [lhsIndex, lhs] : llvm::enumerate(stores)) {
+  for (auto indexedLhs : llvm::enumerate(stores)) {
+    size_t lhsIndex = indexedLhs.index();
+    memref::StoreOp lhs = indexedLhs.value();
     if (lhs.getIndices().size() != 2)
       continue;
     Value lhsFirst = ValueAnalysis::stripNumericCasts(lhs.getIndices()[0]);
@@ -323,7 +325,7 @@ static bool hasSymmetricSelfGramStorePair(ArrayRef<memref::StoreOp> stores,
     if (!ValueAnalysis::sameValue(lhsFirst, outerIv) &&
         !ValueAnalysis::sameValue(lhsSecond, outerIv))
       continue;
-    for (auto rhs : llvm::drop_begin(stores, lhsIndex + 1)) {
+    for (memref::StoreOp rhs : llvm::drop_begin(stores, lhsIndex + 1)) {
       if (rhs.getMemRef() != lhs.getMemRef() || rhs.getIndices().size() != 2)
         continue;
       Value rhsFirst = ValueAnalysis::stripNumericCasts(rhs.getIndices()[0]);
@@ -563,6 +565,113 @@ static bool hasPrivateScratchContraction(omp::WsloopOp wsloop) {
          hasFloatMul && hasFloatAdd;
 }
 
+static bool isDefinedInside(Operation *ancestor, Value value) {
+  Operation *def = value ? value.getDefiningOp() : nullptr;
+  return def && ancestor && ancestor->isAncestor(def);
+}
+
+static Value getMemrefRoot(Value value) {
+  return ValueAnalysis::stripMemrefViewOps(value);
+}
+
+static bool sameIndex(Value lhs, Value rhs) {
+  return ValueAnalysis::sameValue(ValueAnalysis::stripNumericCasts(lhs),
+                                  ValueAnalysis::stripNumericCasts(rhs));
+}
+
+static bool matchesTwoDimAccess(ValueRange indices, Value first, Value second) {
+  return indices.size() == 2 && sameIndex(indices[0], first) &&
+         sameIndex(indices[1], second);
+}
+
+static bool hasCanonicalPrivateScratchMatmul(omp::WsloopOp wsloop) {
+  if (wsloop.getReductionSyms())
+    return false;
+
+  auto loopNest = dyn_cast_or_null<omp::LoopNestOp>(wsloop.getWrappedLoop());
+  if (!loopNest || loopNest.getRegion().empty())
+    return false;
+
+  Block &outerBody = loopNest.getRegion().front();
+  if (outerBody.getArguments().size() != 1)
+    return false;
+  Value outerIv = outerBody.getArgument(0);
+
+  SmallVector<scf::ForOp, 2> loops;
+  loopNest.walk([&](scf::ForOp loop) {
+    loops.push_back(loop);
+    return WalkResult::advance();
+  });
+  if (loops.size() != 2)
+    return false;
+
+  scf::ForOp middleLoop;
+  scf::ForOp innerLoop;
+  if (loops[0]->isAncestor(loops[1])) {
+    middleLoop = loops[0];
+    innerLoop = loops[1];
+  } else if (loops[1]->isAncestor(loops[0])) {
+    middleLoop = loops[1];
+    innerLoop = loops[0];
+  } else {
+    return false;
+  }
+
+  Value middleIv = middleLoop.getInductionVar();
+  Value innerIv = innerLoop.getInductionVar();
+  llvm::DenseSet<Value> outputRoots;
+  bool hasOutputStore = false;
+
+  loopNest.walk([&](memref::StoreOp store) {
+    if (!isFloatMemref(store.getMemRef()))
+      return WalkResult::advance();
+
+    Value root = getMemrefRoot(store.getMemRef());
+    if (!root || isDefinedInside(loopNest.getOperation(), root))
+      return WalkResult::advance();
+
+    if (matchesTwoDimAccess(store.getIndices(), outerIv, middleIv)) {
+      outputRoots.insert(root);
+      hasOutputStore = true;
+    }
+    return WalkResult::advance();
+  });
+
+  if (!hasOutputStore)
+    return false;
+
+  Value lhsRoot;
+  Value rhsRoot;
+  bool lhsConflict = false;
+  bool rhsConflict = false;
+  loopNest.walk([&](memref::LoadOp load) {
+    if (!isFloatMemref(load.getMemRef()))
+      return WalkResult::advance();
+
+    Value root = getMemrefRoot(load.getMemRef());
+    if (!root || isDefinedInside(loopNest.getOperation(), root) ||
+        outputRoots.contains(root))
+      return WalkResult::advance();
+
+    if (matchesTwoDimAccess(load.getIndices(), outerIv, innerIv)) {
+      if (!lhsRoot)
+        lhsRoot = root;
+      else if (lhsRoot != root)
+        lhsConflict = true;
+    }
+    if (matchesTwoDimAccess(load.getIndices(), innerIv, middleIv)) {
+      if (!rhsRoot)
+        rhsRoot = root;
+      else if (rhsRoot != root)
+        rhsConflict = true;
+    }
+    return WalkResult::advance();
+  });
+
+  return lhsRoot && rhsRoot && lhsRoot != rhsRoot && !lhsConflict &&
+         !rhsConflict;
+}
+
 static bool shouldKeepHostOpenMP(omp::ParallelOp parallel) {
   if (!hasRepeatedStencilParentLoop(parallel.getOperation()))
     return false;
@@ -716,8 +825,11 @@ static unsigned markHostOpenMPIslands(ModuleOp module) {
                                  hasSerialFloatingPointDotProductMap,
                                  /*minCount=*/std::nullopt,
                                  /*exactCount=*/2);
-  collectSingleWsloopParallelsIf(module, fallbackParallels,
-                                 hasPrivateScratchContraction);
+  collectSingleWsloopParallelsIf(
+      module, fallbackParallels, [](omp::WsloopOp wsloop) {
+        return hasPrivateScratchContraction(wsloop) &&
+               !hasCanonicalPrivateScratchMatmul(wsloop);
+      });
   collectSingleWsloopParallelsIf(module, fallbackParallels,
                                  hasTriangularFloatingPointScatter);
   collectSingleWsloopParallelsIf(module, fallbackParallels,

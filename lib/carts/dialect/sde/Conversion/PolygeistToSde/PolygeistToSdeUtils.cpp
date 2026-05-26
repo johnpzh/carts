@@ -36,8 +36,8 @@ Value materializeDependView(OpBuilder &builder, Location loc, Value source,
     } else if (!sourceType.isDynamicDim(dim)) {
       viewSizes.push_back(builder.getIndexAttr(sourceType.getDimSize(dim)));
     } else {
-      viewSizes.push_back(memref::DimOp::create(builder, loc, source, dim)
-                              .getResult());
+      viewSizes.push_back(
+          memref::DimOp::create(builder, loc, source, dim).getResult());
     }
     strides.push_back(builder.getIndexAttr(1));
   }

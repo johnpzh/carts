@@ -578,8 +578,7 @@ private:
 
     if (allocOp && !allocOp.getSizes().empty())
       return AC->computeTotalElements(allocOp.getSizes(), allocOp.getLoc());
-    SmallVector<Value, 4> sizes =
-        resolveOuterSizesForGuid(dbGuid);
+    SmallVector<Value, 4> sizes = resolveOuterSizesForGuid(dbGuid);
     if (!sizes.empty())
       return AC->computeTotalElements(sizes, dbGuid.getLoc());
     return nullptr;

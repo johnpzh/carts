@@ -27,8 +27,8 @@
 #include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/passes/Passes.h"
 #include "carts/passes/Passes.h.inc"
-#include "carts/utils/Debug.h"
 #include "carts/utils/DeadIrCleanup.h"
+#include "carts/utils/Debug.h"
 #include "carts/utils/RemovalUtils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -297,7 +297,6 @@ struct DeadCodeEliminationPass
 
     return toRemove.size();
   }
-
 };
 
 } // namespace

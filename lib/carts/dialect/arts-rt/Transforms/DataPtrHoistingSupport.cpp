@@ -414,9 +414,9 @@ Value buildDepPtrLoad(OpBuilder &builder, Location loc, DepGepOp depGep,
                               newDepGep.getPtr());
 }
 
-Value buildGuardedDepPtrLoad(OpBuilder &builder, Location loc,
-                             DepGepOp depGep, ArrayRef<Value> indices,
-                             Value guard, Value fallbackPtr) {
+Value buildGuardedDepPtrLoad(OpBuilder &builder, Location loc, DepGepOp depGep,
+                             ArrayRef<Value> indices, Value guard,
+                             Value fallbackPtr) {
   if (!guard)
     return buildDepPtrLoad(builder, loc, depGep, indices);
 

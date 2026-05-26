@@ -136,9 +136,8 @@ static std::optional<int64_t> tryFoldScalarMemrefLoad(memref::LoadOp load,
   return std::nullopt;
 }
 
-static std::optional<int64_t> tryFoldCmpResult(arith::CmpIOp cmp,
-                                               unsigned depth,
-                                               ExtraIndexFolder folder) {
+static std::optional<int64_t>
+tryFoldCmpResult(arith::CmpIOp cmp, unsigned depth, ExtraIndexFolder folder) {
   auto lhs = tryFoldConstantIndexWithImpl(cmp.getLhs(), depth + 1, folder);
   auto rhs = tryFoldConstantIndexWithImpl(cmp.getRhs(), depth + 1, folder);
 
@@ -217,9 +216,9 @@ static std::optional<int64_t> tryFoldCmpResult(arith::CmpIOp cmp,
   return std::nullopt;
 }
 
-static bool canCloneOperation(
-    Operation *op, bool allowMemoryEffectFree,
-    llvm::function_ref<bool(Operation *)> extraAllowed) {
+static bool
+canCloneOperation(Operation *op, bool allowMemoryEffectFree,
+                  llvm::function_ref<bool(Operation *)> extraAllowed) {
   if (!op)
     return false;
   if (op->hasTrait<OpTrait::ConstantLike>())
@@ -389,40 +388,40 @@ tryFoldConstantIndexWithImpl(Value v, unsigned depth,
   }
 
   if (auto add = v.getDefiningOp<arith::AddIOp>()) {
-    auto lhs = tryFoldConstantIndexWithImpl(add.getLhs(), depth + 1,
-                                            extraFolder);
-    auto rhs = tryFoldConstantIndexWithImpl(add.getRhs(), depth + 1,
-                                            extraFolder);
+    auto lhs =
+        tryFoldConstantIndexWithImpl(add.getLhs(), depth + 1, extraFolder);
+    auto rhs =
+        tryFoldConstantIndexWithImpl(add.getRhs(), depth + 1, extraFolder);
     if (lhs && rhs)
       return *lhs + *rhs;
     return std::nullopt;
   }
 
   if (auto sub = v.getDefiningOp<arith::SubIOp>()) {
-    auto lhs = tryFoldConstantIndexWithImpl(sub.getLhs(), depth + 1,
-                                            extraFolder);
-    auto rhs = tryFoldConstantIndexWithImpl(sub.getRhs(), depth + 1,
-                                            extraFolder);
+    auto lhs =
+        tryFoldConstantIndexWithImpl(sub.getLhs(), depth + 1, extraFolder);
+    auto rhs =
+        tryFoldConstantIndexWithImpl(sub.getRhs(), depth + 1, extraFolder);
     if (lhs && rhs)
       return *lhs - *rhs;
     return std::nullopt;
   }
 
   if (auto mul = v.getDefiningOp<arith::MulIOp>()) {
-    auto lhs = tryFoldConstantIndexWithImpl(mul.getLhs(), depth + 1,
-                                            extraFolder);
-    auto rhs = tryFoldConstantIndexWithImpl(mul.getRhs(), depth + 1,
-                                            extraFolder);
+    auto lhs =
+        tryFoldConstantIndexWithImpl(mul.getLhs(), depth + 1, extraFolder);
+    auto rhs =
+        tryFoldConstantIndexWithImpl(mul.getRhs(), depth + 1, extraFolder);
     if (lhs && rhs)
       return *lhs * *rhs;
     return std::nullopt;
   }
 
   if (auto div = v.getDefiningOp<arith::DivUIOp>()) {
-    auto lhs = tryFoldConstantIndexWithImpl(div.getLhs(), depth + 1,
-                                            extraFolder);
-    auto rhs = tryFoldConstantIndexWithImpl(div.getRhs(), depth + 1,
-                                            extraFolder);
+    auto lhs =
+        tryFoldConstantIndexWithImpl(div.getLhs(), depth + 1, extraFolder);
+    auto rhs =
+        tryFoldConstantIndexWithImpl(div.getRhs(), depth + 1, extraFolder);
     if (lhs && rhs && *rhs != 0) {
       uint64_t ulhs = static_cast<uint64_t>(*lhs);
       uint64_t urhs = static_cast<uint64_t>(*rhs);
@@ -432,20 +431,20 @@ tryFoldConstantIndexWithImpl(Value v, unsigned depth,
   }
 
   if (auto div = v.getDefiningOp<arith::DivSIOp>()) {
-    auto lhs = tryFoldConstantIndexWithImpl(div.getLhs(), depth + 1,
-                                            extraFolder);
-    auto rhs = tryFoldConstantIndexWithImpl(div.getRhs(), depth + 1,
-                                            extraFolder);
+    auto lhs =
+        tryFoldConstantIndexWithImpl(div.getLhs(), depth + 1, extraFolder);
+    auto rhs =
+        tryFoldConstantIndexWithImpl(div.getRhs(), depth + 1, extraFolder);
     if (lhs && rhs && *rhs != 0)
       return *lhs / *rhs;
     return std::nullopt;
   }
 
   if (auto div = v.getDefiningOp<arith::CeilDivUIOp>()) {
-    auto lhs = tryFoldConstantIndexWithImpl(div.getLhs(), depth + 1,
-                                            extraFolder);
-    auto rhs = tryFoldConstantIndexWithImpl(div.getRhs(), depth + 1,
-                                            extraFolder);
+    auto lhs =
+        tryFoldConstantIndexWithImpl(div.getLhs(), depth + 1, extraFolder);
+    auto rhs =
+        tryFoldConstantIndexWithImpl(div.getRhs(), depth + 1, extraFolder);
     if (lhs && rhs && *lhs >= 0 && *rhs > 0) {
       uint64_t ulhs = static_cast<uint64_t>(*lhs);
       uint64_t urhs = static_cast<uint64_t>(*rhs);
@@ -455,20 +454,20 @@ tryFoldConstantIndexWithImpl(Value v, unsigned depth,
   }
 
   if (auto div = v.getDefiningOp<arith::CeilDivSIOp>()) {
-    auto lhs = tryFoldConstantIndexWithImpl(div.getLhs(), depth + 1,
-                                            extraFolder);
-    auto rhs = tryFoldConstantIndexWithImpl(div.getRhs(), depth + 1,
-                                            extraFolder);
+    auto lhs =
+        tryFoldConstantIndexWithImpl(div.getLhs(), depth + 1, extraFolder);
+    auto rhs =
+        tryFoldConstantIndexWithImpl(div.getRhs(), depth + 1, extraFolder);
     if (lhs && rhs && *lhs >= 0 && *rhs > 0)
       return (*lhs + *rhs - 1) / *rhs;
     return std::nullopt;
   }
 
   if (auto max = v.getDefiningOp<arith::MaxUIOp>()) {
-    auto lhs = tryFoldConstantIndexWithImpl(max.getLhs(), depth + 1,
-                                            extraFolder);
-    auto rhs = tryFoldConstantIndexWithImpl(max.getRhs(), depth + 1,
-                                            extraFolder);
+    auto lhs =
+        tryFoldConstantIndexWithImpl(max.getLhs(), depth + 1, extraFolder);
+    auto rhs =
+        tryFoldConstantIndexWithImpl(max.getRhs(), depth + 1, extraFolder);
     if (lhs && rhs)
       return std::max<uint64_t>(static_cast<uint64_t>(*lhs),
                                 static_cast<uint64_t>(*rhs));
@@ -476,10 +475,10 @@ tryFoldConstantIndexWithImpl(Value v, unsigned depth,
   }
 
   if (auto min = v.getDefiningOp<arith::MinUIOp>()) {
-    auto lhs = tryFoldConstantIndexWithImpl(min.getLhs(), depth + 1,
-                                            extraFolder);
-    auto rhs = tryFoldConstantIndexWithImpl(min.getRhs(), depth + 1,
-                                            extraFolder);
+    auto lhs =
+        tryFoldConstantIndexWithImpl(min.getLhs(), depth + 1, extraFolder);
+    auto rhs =
+        tryFoldConstantIndexWithImpl(min.getRhs(), depth + 1, extraFolder);
     if (lhs && rhs)
       return std::min<uint64_t>(static_cast<uint64_t>(*lhs),
                                 static_cast<uint64_t>(*rhs));
@@ -493,17 +492,14 @@ tryFoldConstantIndexWithImpl(Value v, unsigned depth,
     auto cond = tryFoldConstantIndexWithImpl(select.getCondition(), depth + 1,
                                              extraFolder);
     if (cond)
-      return tryFoldConstantIndexWithImpl((*cond != 0)
-                                              ? select.getTrueValue()
-                                              : select.getFalseValue(),
+      return tryFoldConstantIndexWithImpl((*cond != 0) ? select.getTrueValue()
+                                                       : select.getFalseValue(),
                                           depth + 1, extraFolder);
 
-    auto trueValue =
-        tryFoldConstantIndexWithImpl(select.getTrueValue(), depth + 1,
-                                     extraFolder);
-    auto falseValue =
-        tryFoldConstantIndexWithImpl(select.getFalseValue(), depth + 1,
-                                     extraFolder);
+    auto trueValue = tryFoldConstantIndexWithImpl(select.getTrueValue(),
+                                                  depth + 1, extraFolder);
+    auto falseValue = tryFoldConstantIndexWithImpl(select.getFalseValue(),
+                                                   depth + 1, extraFolder);
     if (trueValue && falseValue && *trueValue == *falseValue)
       return trueValue;
     return std::nullopt;
@@ -979,8 +975,7 @@ Value ValueAnalysis::stripMemrefViewOps(Value value) {
       value = viewOp.getSource();
       continue;
     }
-    if (auto reinterpretOp =
-            value.getDefiningOp<memref::ReinterpretCastOp>()) {
+    if (auto reinterpretOp = value.getDefiningOp<memref::ReinterpretCastOp>()) {
       value = reinterpretOp.getSource();
       continue;
     }

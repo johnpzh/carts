@@ -22,17 +22,17 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 /// Arts
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts/Analysis/db/DbAnalysis.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbGraph.h"
 #include "carts/dialect/arts/Analysis/graphs/db/DbNode.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/utils/ValueAnalysis.h"
 #define GEN_PASS_DEF_DBTRANSFORMS
-#include "carts/passes/Passes.h"
-#include "carts/passes/Passes.h.inc"
 #include "carts/dialect/arts/Utils/DbUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
+#include "carts/passes/Passes.h"
+#include "carts/passes/Passes.h.inc"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/RemovalUtils.h"
 #include "carts/utils/StencilAttributes.h"
@@ -437,7 +437,8 @@ unsigned DbTransformsPass::eliminateDeadDbs() {
 ///===----------------------------------------------------------------------===///
 namespace mlir {
 namespace carts::arts {
-std::unique_ptr<Pass> createDbTransformsPass(mlir::carts::arts::AnalysisManager *AM) {
+std::unique_ptr<Pass>
+createDbTransformsPass(mlir::carts::arts::AnalysisManager *AM) {
   return std::make_unique<DbTransformsPass>(AM);
 }
 } // namespace carts::arts

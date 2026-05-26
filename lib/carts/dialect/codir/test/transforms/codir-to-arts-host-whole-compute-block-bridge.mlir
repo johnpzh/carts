@@ -434,7 +434,8 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // CHECK-SAME: partitioning(<coarse>)
 // CHECK: arts.db_acquire[<out>]
 // CHECK-SAME: partitioning(<block>)
-// CHECK: arts.edt <task> <intranode>
+// CHECK: arts.edt <task> <internode>
+// CHECK-SAME: storageBridgeCopy
 // CHECK: arts.edt <task> <internode>
 // CHECK: arts.barrier
 // CHECK: arts.db_acquire[<inout>]
@@ -442,6 +443,7 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // CHECK: arts.db_acquire[<in>]
 // CHECK-SAME: partitioning(<block>)
 // CHECK: arts.edt <task> <intranode>
+// CHECK-SAME: storageBridgeCopy
 // CHECK: arts.barrier
 // CHECK: memref.load %[[HOST]]
 
@@ -456,6 +458,7 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // WRITE: arts.db_acquire[<inout>]
 // WRITE-SAME: partitioning(<coarse>)
 // WRITE: arts.edt <task> <intranode>
+// WRITE-SAME: storageBridgeCopy
 // WRITE: arts.barrier
 // WRITE: memref.load %[[HOST]]
 
@@ -468,6 +471,7 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // WRITEFIRST: arts.edt <task> <internode>
 // WRITEFIRST: arts.barrier
 // WRITEFIRST: arts.edt <task> <intranode>
+// WRITEFIRST-SAME: storageBridgeCopy
 // WRITEFIRST: arts.barrier
 // WRITEFIRST: memref.load %[[HOST]]
 
@@ -476,24 +480,28 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // HOIST: arts.db_alloc
 // HOIST-SAME: <block>
 // HOIST-SAME: arts.storage_bridge = "host_whole_to_compute_block"
-// HOIST: arts.edt <task> <intranode>
+// HOIST: arts.edt <task> <internode>
+// HOIST-SAME: storageBridgeCopy
 // HOIST: scf.for
 // HOIST: arts.edt <task> <internode>
 // HOIST: arts.barrier
 // HOIST: arts.edt <task> <intranode>
+// HOIST-SAME: storageBridgeCopy
 // HOIST: arts.barrier
 // HOIST: memref.load %[[HOST]]
 
 // SHARED-LABEL: func.func @host_bridge_shared_across_phases
 // SHARED: %[[HOST:.*]] = arts.db_ref
 // SHARED-COUNT-1: arts.storage_bridge = "host_whole_to_compute_block"
-// SHARED: arts.edt <task> <intranode>
+// SHARED: arts.edt <task> <internode>
+// SHARED-SAME: storageBridgeCopy
 // SHARED: scf.for
 // SHARED: arts.edt <task> <internode>
 // SHARED: arts.barrier
 // SHARED: arts.edt <task> <internode>
 // SHARED: arts.barrier
 // SHARED: arts.edt <task> <intranode>
+// SHARED-SAME: storageBridgeCopy
 // SHARED: arts.barrier
 // SHARED: memref.load %[[HOST]]
 
@@ -504,7 +512,8 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // READONLY: arts.db_alloc{{.*}}arts.storage_bridge = "host_whole_to_compute_block"
 // READONLY: arts.db_acquire[<in>]
 // READONLY-SAME: partitioning(<coarse>)
-// READONLY: arts.edt <task> <intranode>
+// READONLY: arts.edt <task> <internode>
+// READONLY-SAME: storageBridgeCopy
 // READONLY: scf.for
 // READONLY-NOT: arts.storage_bridge = "host_whole_to_compute_block"
 // READONLY: arts.edt <task>
@@ -515,17 +524,22 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // PERSIST-LABEL: func.func @write_bridge_persists_across_read_only_host_phase
 // PERSIST: %[[HOST:.*]] = arts.db_ref
 // PERSIST-COUNT-1: arts.storage_bridge = "host_whole_to_compute_block"
-// PERSIST: arts.edt <task> <intranode>
+// PERSIST: arts.edt <task> <internode>
+// PERSIST-SAME: storageBridgeCopy
 // PERSIST: scf.for
 // PERSIST: arts.edt <task> <internode>
 // PERSIST: arts.barrier
 // PERSIST: arts.edt <task> <intranode>
+// PERSIST-SAME: storageBridgeCopy
 // PERSIST: arts.barrier
 // PERSIST: arts.edt <task> <intranode>
 // PERSIST: arts.edt <task> <intranode>
 // PERSIST: arts.edt <task> <internode>
+// PERSIST-SAME: storageBridgeCopy
+// PERSIST: arts.edt <task> <internode>
 // PERSIST: arts.barrier
 // PERSIST: arts.edt <task> <intranode>
+// PERSIST-SAME: storageBridgeCopy
 // PERSIST: arts.barrier
 // PERSIST: memref.load %[[HOST]]
 
@@ -534,6 +548,7 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // INCOMPAT: arts.edt <task> <internode>
 // INCOMPAT: arts.barrier
 // INCOMPAT: arts.edt <task> <intranode>
+// INCOMPAT-SAME: storageBridgeCopy
 // INCOMPAT: arts.barrier
 // INCOMPAT: arts.db_alloc
 // INCOMPAT-SAME: arts.storage_bridge = "host_whole_to_compute_block"
@@ -541,5 +556,6 @@ module attributes {arts.runtime_total_nodes = 8 : i64, arts.runtime_total_worker
 // INCOMPAT-SAME: partitioning(<coarse>)
 // INCOMPAT: arts.db_acquire[<out>]
 // INCOMPAT-SAME: partitioning(<block>)
-// INCOMPAT: arts.edt <task> <intranode>
+// INCOMPAT: arts.edt <task> <internode>
+// INCOMPAT-SAME: storageBridgeCopy
 // INCOMPAT: arts.edt <task> <internode>

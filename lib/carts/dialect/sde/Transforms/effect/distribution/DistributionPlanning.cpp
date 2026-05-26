@@ -191,8 +191,9 @@ collectAllSuLoopIndexValues(sde::SdeSuIterateOp op) {
   return ownerIndexValues;
 }
 
-static bool allRootAccessesStayWithinOwnerTile(
-    sde::SdeSuIterateOp op, Value root, ArrayRef<int64_t> ownerDims) {
+static bool allRootAccessesStayWithinOwnerTile(sde::SdeSuIterateOp op,
+                                               Value root,
+                                               ArrayRef<int64_t> ownerDims) {
   if (!op || !root || ownerDims.empty())
     return false;
 
@@ -338,9 +339,10 @@ static std::optional<int64_t> getPositiveConstantIndex(Value value) {
   return std::nullopt;
 }
 
-static void alignLateOwnerPlanToExistingStep(
-    sde::SdeSuIterateOp op, ArrayRef<int64_t> ownerDims,
-    MutableArrayRef<int64_t> physicalBlockShape) {
+static void
+alignLateOwnerPlanToExistingStep(sde::SdeSuIterateOp op,
+                                 ArrayRef<int64_t> ownerDims,
+                                 MutableArrayRef<int64_t> physicalBlockShape) {
   if (ownerDims.size() != 1 || op.getSteps().empty())
     return;
 
@@ -386,8 +388,8 @@ static void stampStencilPhysicalPlan(sde::SdeSuIterateOp op,
     if (outputPlan) {
       SmallVector<unsigned, 4> ownerLoopDims =
           chooseMappedSdeOwnerLoopDims(op, *outputPlan);
-      int64_t workers = std::max<int64_t>(
-          1, getInterLocalityTargetWorkers(costModel));
+      int64_t workers =
+          std::max<int64_t>(1, getInterLocalityTargetWorkers(costModel));
       // One-dimensional halo stencils form a dependency pipeline between
       // neighboring owner blocks. Planning modestly more owner blocks than
       // logical worker capacity gives later ARTS scheduling enough ready tasks
@@ -528,9 +530,8 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
     auto effects = sde::collectStructuredMemoryEffects(op.getBody());
     bool selfRead = effects.reads.contains(outputPlan->root);
     bool ownerLocalSelfRead =
-        selfRead &&
-        sde::allRootAccessesStayWithinOwnerSlice(
-            op, outputPlan->root, outputPlan->ownerPhysicalDims);
+        selfRead && sde::allRootAccessesStayWithinOwnerSlice(
+                        op, outputPlan->root, outputPlan->ownerPhysicalDims);
     if (effects.hasUnknownEffects || (selfRead && !ownerLocalSelfRead))
       return;
   }
@@ -542,7 +543,8 @@ static void stampUniformPhysicalPlan(sde::SdeSuIterateOp op,
   SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
   bool ownerLocalPipeline =
       classification &&
-      *classification == sde::SdeStructuredClassification::elementwise_pipeline &&
+      *classification ==
+          sde::SdeStructuredClassification::elementwise_pipeline &&
       sde::isOwnerLocalPipelineReduction(op);
   int64_t minOwnerIterations =
       ownerLocalPipeline
@@ -613,6 +615,44 @@ static void stampMatmulPhysicalPlan(sde::SdeSuIterateOp op,
       op.getContext(), sde::SdeIterationTopology::owner_tile_2d));
 }
 
+static void stampDirectRowMatmulPhysicalPlan(sde::SdeSuIterateOp op,
+                                             sde::SDECostModel &costModel) {
+  if ((op.getPhysicalOwnerDimsAttr() && op.getPhysicalBlockShapeAttr()) ||
+      costModel.getLogicalWorkerCapacity() <= 1)
+    return;
+  if (op.getLowerBounds().size() != 1 || op.getSteps().size() != 1)
+    return;
+  auto classification = op.getStructuredClassification();
+  if (!classification ||
+      *classification != sde::SdeStructuredClassification::matmul)
+    return;
+  std::optional<sde::LoopIndexedOutputPlan> outputPlan =
+      sde::findLoopIndexedOutputPlan(op);
+  if (!outputPlan || outputPlan->shape.size() < 2 ||
+      outputPlan->ownerPhysicalDims.size() != 1 ||
+      outputPlan->ownerPhysicalDims.front() != 0 || outputPlan->shape[0] <= 0)
+    return;
+
+  auto effects = sde::collectStructuredMemoryEffects(op.getBody());
+  if (effects.hasUnknownEffects || !effects.writes.contains(outputPlan->root))
+    return;
+  if (!sde::hasDistinctExternalMatmulInputRoots(op))
+    return;
+  if (!sde::allRootAccessesStayWithinOwnerSlice(op, outputPlan->root,
+                                                outputPlan->ownerPhysicalDims))
+    return;
+
+  int64_t workers =
+      std::max<int64_t>(1, getInterLocalityTargetWorkers(costModel));
+  SmallVector<int64_t, 4> physicalBlockShape(outputPlan->shape);
+  physicalBlockShape[0] =
+      std::clamp(sde::ceilDivPositive(outputPlan->shape[0], workers),
+                 int64_t{1}, outputPlan->shape[0]);
+  alignLateOwnerPlanToExistingStep(op, outputPlan->ownerPhysicalDims,
+                                   physicalBlockShape);
+  applyPhysicalPlan(op, outputPlan->ownerPhysicalDims, physicalBlockShape);
+}
+
 static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
                                         sde::SDECostModel &costModel) {
   if (op.getLogicalWorkerSliceAttr() &&
@@ -631,9 +671,9 @@ static void stampReductionTaskShapePlan(sde::SdeSuIterateOp op,
   if (op.getReductionAccumulators().empty())
     targetTasks = saturatingMultiplyPositive(
         workers, costModel.getOwnerLocalPipelineTargetTaskWaves());
-  int64_t slice = std::max<int64_t>(
-      costModel.getMinIterationsPerWorker(),
-      sde::ceilDivPositive(*tripCount, targetTasks));
+  int64_t slice =
+      std::max<int64_t>(costModel.getMinIterationsPerWorker(),
+                        sde::ceilDivPositive(*tripCount, targetTasks));
   slice = std::clamp<int64_t>(slice, 1, *tripCount);
 
   if (op.getReductionAccumulators().empty()) {
@@ -787,6 +827,7 @@ struct DistributionPlanningPass
     SmallVector<PlannedDistribution> rewrites;
     getOperation().walk([&](sde::SdeSuIterateOp op) {
       stampStencilPhysicalPlan(op, *costModel);
+      stampDirectRowMatmulPhysicalPlan(op, *costModel);
       stampMatmulPhysicalPlan(op, *costModel);
       stampUniformPhysicalPlan(op, *costModel);
       stampReductionTaskShapePlan(op, *costModel);

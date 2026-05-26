@@ -229,7 +229,8 @@ collectEligibilityFacts(DbAllocOp alloc, DbAnalysis &dbAnalysis) {
 }
 
 static bool hasReadOnlyAfterInitAttr(DbAllocOp alloc) {
-  return alloc->hasAttr(::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit);
+  return alloc->hasAttr(
+      ::mlir::carts::arts::AttrNames::Operation::ReadOnlyAfterInit);
 }
 
 static bool isHostWholeToComputeBlockBridge(DbAllocOp alloc) {
@@ -251,12 +252,14 @@ static bool isHaloBackedHostBridge(DbAllocOp alloc) {
   if (!isHostWholeToComputeBlockBridge(alloc) || !hasBridgeHaloContract(alloc))
     return false;
   std::optional<PartitionMode> mode = getPartitionMode(alloc.getOperation());
-  return mode && (*mode == PartitionMode::block || *mode == PartitionMode::stencil);
+  return mode &&
+         (*mode == PartitionMode::block || *mode == PartitionMode::stencil);
 }
 
 } // namespace
 
-const char *mlir::carts::arts::toString(DistributedDbEligibilityRejectReason reason) {
+const char *
+mlir::carts::arts::toString(DistributedDbEligibilityRejectReason reason) {
   switch (reason) {
   case DistributedDbEligibilityRejectReason::None:
     return "eligible";
@@ -284,7 +287,7 @@ const char *mlir::carts::arts::toString(DistributedDbEligibilityRejectReason rea
 
 DistributedDbEligibilityResult
 mlir::carts::arts::evaluateDistributedDbEligibility(DbAllocOp alloc,
-                                             DbAnalysis &dbAnalysis) {
+                                                    DbAnalysis &dbAnalysis) {
   if (!alloc)
     return {false, DistributedDbEligibilityRejectReason::UnsupportedShape};
   if (alloc->getParentOfType<EdtOp>())

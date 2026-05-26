@@ -1,6 +1,7 @@
 // RUN: rm -rf %t.pipes
-// RUN: %carts compile %s --all-pipelines -O3 --arts-config %arts_config -o %t.pipes
-// RUN: %FileCheck %s --input-file=%t.pipes/5_rt/stages/12_pre-lowering.mlir
+// RUN: %carts compile %s --all-pipelines -O3 --arts-config %arts_config -o
+// %t.pipes RUN: %FileCheck %s
+// --input-file=%t.pipes/5_rt/stages/12_pre-lowering.mlir
 
 // A coarse pointer-table DB does not carry the trusted partitioned-write
 // contract required for unordered local DB_MODE_RW. Keep the dependency in
@@ -23,8 +24,7 @@ int main() {
 #pragma omp parallel for
   for (int i = 1; i < n - 1; ++i)
     for (int j = 1; j < n - 1; ++j)
-      B[i * n + j] =
-          A[(i - 1) * n + j] + A[i * n + j] + A[(i + 1) * n + j];
+      B[i * n + j] = A[(i - 1) * n + j] + A[i * n + j] + A[(i + 1) * n + j];
 
   float sum = 0.0f;
   for (int i = 1; i < n - 1; ++i)

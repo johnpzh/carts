@@ -63,9 +63,9 @@ static Value buildRelaxedOwnerLocalPipelineMinIterations(
   Value one = getConstantIndex(builder, loc, 1);
   Value relaxationThreshold =
       arith::MulIOp::create(builder, loc, targetTasks, minValue);
-  Value underfilledOwnerDomain = arith::CmpIOp::create(
-      builder, loc, arith::CmpIPredicate::ult, clampedTripCount,
-      relaxationThreshold);
+  Value underfilledOwnerDomain =
+      arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::ult,
+                            clampedTripCount, relaxationThreshold);
   return arith::SelectOp::create(builder, loc, underfilledOwnerDomain, one,
                                  minValue);
 }
@@ -424,9 +424,10 @@ getStencilHaloRadiiForOwnerDims(sde::SdeSuIterateOp op,
   return halos;
 }
 
-static int64_t relaxOwnerLocalPipelineMinIterations(
-    sde::SdeSuIterateOp op, int64_t tripCount, int64_t targetTasks,
-    int64_t minIterations) {
+static int64_t relaxOwnerLocalPipelineMinIterations(sde::SdeSuIterateOp op,
+                                                    int64_t tripCount,
+                                                    int64_t targetTasks,
+                                                    int64_t minIterations) {
   if (!usesOwnerLocalPipelineGrain(op) || targetTasks <= 1 ||
       minIterations <= 1)
     return minIterations;
@@ -903,14 +904,13 @@ struct TilingPass : public sde::impl::TilingBase<TilingPass> {
         if (std::optional<int64_t> tripCount =
                 getStaticTripCount(op.getOperation())) {
           int64_t targetTasks = getTargetTileTasks(op, *costModel);
-          int64_t minIterations =
-              relaxOwnerLocalPipelineMinIterations(
-                  op, *tripCount, targetTasks,
-                  getMinTileIterations(op, *costModel));
+          int64_t minIterations = relaxOwnerLocalPipelineMinIterations(
+              op, *tripCount, targetTasks,
+              getMinTileIterations(op, *costModel));
           int64_t balancedTile = llvm::divideCeil(*tripCount, targetTasks);
-          int64_t tileCount = std::clamp(
-              std::max<int64_t>(balancedTile, minIterations),
-              int64_t{1}, *tripCount);
+          int64_t tileCount =
+              std::clamp(std::max<int64_t>(balancedTile, minIterations),
+                         int64_t{1}, *tripCount);
           if (tileCount <= 1)
             continue;
           tileIterations = getConstantIndex(rewriter, loc, tileCount);

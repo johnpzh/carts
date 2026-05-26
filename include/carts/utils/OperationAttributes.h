@@ -315,8 +315,8 @@ inline void setPlanHaloShapeAttr(Operation *op, ArrayAttr attr) {
     dbAllocOp.setPlanHaloShapeAttr(attr);
 }
 
-inline void setPlanIterationTopologyAttr(
-    Operation *op, ArtsPlanIterationTopologyAttr attr) {
+inline void setPlanIterationTopologyAttr(Operation *op,
+                                         ArtsPlanIterationTopologyAttr attr) {
   if (!op || !attr)
     return;
   if (auto edtOp = dyn_cast<EdtOp>(op))
@@ -327,8 +327,9 @@ inline void setPlanIterationTopologyAttr(
     dbAllocOp.setPlanIterationTopologyAttr(attr);
 }
 
-inline void setPlanRepetitionStructureAttr(
-    Operation *op, ArtsPlanRepetitionStructureAttr attr) {
+inline void
+setPlanRepetitionStructureAttr(Operation *op,
+                               ArtsPlanRepetitionStructureAttr attr) {
   if (!op || !attr)
     return;
   if (auto edtOp = dyn_cast<EdtOp>(op))
@@ -374,8 +375,7 @@ inline void setPlanCostSliceWideningPressureAttr(Operation *op,
     dbAllocOp.setPlanCostSliceWideningPressureAttr(attr);
 }
 
-inline void setPlanCostExpectedLocalWorkAttr(Operation *op,
-                                             IntegerAttr attr) {
+inline void setPlanCostExpectedLocalWorkAttr(Operation *op, IntegerAttr attr) {
   if (!op || !attr)
     return;
   if (auto edtOp = dyn_cast<EdtOp>(op))
@@ -405,8 +405,7 @@ inline bool hasStructuredPlanAttrs(Operation *op) {
   return getPlanOwnerDimsAttr(op) || getPlanPhysicalBlockShapeAttr(op) ||
          getPlanLogicalWorkerSliceAttr(op) || getPlanHaloShapeAttr(op) ||
          getPlanIterationTopologyAttr(op) ||
-         getPlanRepetitionStructureAttr(op) ||
-         getPlanAsyncStrategyAttr(op) ||
+         getPlanRepetitionStructureAttr(op) || getPlanAsyncStrategyAttr(op) ||
          getPlanCostSchedulerOverheadAttr(op) ||
          getPlanCostSliceWideningPressureAttr(op) ||
          getPlanCostExpectedLocalWorkAttr(op) ||
@@ -695,7 +694,8 @@ inline IntegerAttr getDistributionVersionAttr(Operation *op) {
     return dbAllocOp.getDistributionVersionAttr();
   if (auto dbAcquireOp = dyn_cast<DbAcquireOp>(op))
     return dbAcquireOp.getDistributionVersionAttr();
-  return op->getAttrOfType<IntegerAttr>(AttrNames::Operation::DistributionVersion);
+  return op->getAttrOfType<IntegerAttr>(
+      AttrNames::Operation::DistributionVersion);
 }
 
 inline void setDistributionVersionAttr(Operation *op, IntegerAttr attr) {

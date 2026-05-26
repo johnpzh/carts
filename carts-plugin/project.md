@@ -71,6 +71,14 @@ skills disagree with the compiler, the live compiler manifest wins.
   belong in the narrowest owning dialect `Utils/` area or an owning analysis
   API; keep helpers pass-local only when they are genuinely one-pass logic.
 
+**Session-start skill gate (blocking).** Before editing any file in
+`lib/carts/`, `include/carts/`, or `tools/compile/`, invoke the Skill tool with
+`check-utils` (helper placement), `carts-dialect-map` (boundary ownership), and
+`carts-attr-consolidation` (when touching `.td` attribute enums or any
+attribute string). Before any commit, invoke `carts-simplify` then
+`carts-review`. Reconnaissance-first / skill-invocation-never is the failure
+mode this gate prevents.
+
 ## Development Artifacts
 
 - Put generated diagnostics, stage dumps, benchmark triage bundles, generated

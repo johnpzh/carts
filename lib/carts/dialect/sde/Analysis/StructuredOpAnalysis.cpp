@@ -873,8 +873,7 @@ bool isOwnerLocalPipelineReduction(SdeSuIterateOp iterOp) {
 }
 
 bool hasDistinctExternalMatmulInputRoots(SdeSuIterateOp iterOp) {
-  std::optional<StructuredLoopSummary> summary = analyzeStructuredLoop(iterOp);
-  if (!summary) {
+  auto hasDistinctExternalReadOnlyRoots = [&]() {
     StructuredMemoryEffectSummary effects =
         collectStructuredMemoryEffects(iterOp.getBody());
     if (effects.hasUnknownEffects)
@@ -891,7 +890,11 @@ bool hasDistinctExternalMatmulInputRoots(SdeSuIterateOp iterOp) {
       inputRoots.insert(root);
     });
     return inputRoots.size() >= 2;
-  }
+  };
+
+  std::optional<StructuredLoopSummary> summary = analyzeStructuredLoop(iterOp);
+  if (!summary)
+    return hasDistinctExternalReadOnlyRoots();
 
   SmallVector<unsigned, 2> parallelDims;
   SmallVector<unsigned, 1> reductionDims;
@@ -903,7 +906,7 @@ bool hasDistinctExternalMatmulInputRoots(SdeSuIterateOp iterOp) {
   }
   if (parallelDims.size() != 2 || reductionDims.size() != 1 ||
       summary->nest.ivs.size() != 3)
-    return false;
+    return hasDistinctExternalReadOnlyRoots();
 
   unsigned numDims = summary->nest.ivs.size();
   llvm::SmallBitVector lhsDims(numDims);
@@ -943,7 +946,9 @@ bool hasDistinctExternalMatmulInputRoots(SdeSuIterateOp iterOp) {
     }
   }
 
-  return lhsRoot && rhsRoot && lhsRoot != rhsRoot;
+  if (lhsRoot && rhsRoot && lhsRoot != rhsRoot)
+    return true;
+  return hasDistinctExternalReadOnlyRoots();
 }
 
 std::optional<AffineDimOffset> extractDimOffset(AffineExpr expr) {

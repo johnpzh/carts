@@ -173,7 +173,8 @@ uint64_t getElementTypeByteSize(Type elemTy) {
   return 0;
 }
 
-MemRefType getElementMemRefType(Type elementType, ArrayRef<Value> elementSizes) {
+MemRefType getElementMemRefType(Type elementType,
+                                ArrayRef<Value> elementSizes) {
   const size_t rank = elementSizes.empty() ? 1 : elementSizes.size();
   SmallVector<int64_t> elementShape(rank, ShapedType::kDynamic);
   return MemRefType::get(elementShape, elementType);
@@ -381,8 +382,7 @@ std::optional<int64_t> DbUtils::getStaticElementCount(DbAllocOp alloc) {
         ValueAnalysis::stripNumericCasts(value));
     if (!folded || *folded < 0)
       return false;
-    if (*folded != 0 &&
-        total > std::numeric_limits<int64_t>::max() / *folded)
+    if (*folded != 0 && total > std::numeric_limits<int64_t>::max() / *folded)
       return false;
     total *= *folded;
     return true;
@@ -433,15 +433,66 @@ bool DbUtils::isAllowedSmallReadOnlyCoarseDep(Value dep, DbAllocOp alloc) {
          DbUtils::isSmallCoarseUserDataDb(alloc);
 }
 
+bool DbUtils::isAllowedReadOnlyCoarseDep(Value dep, DbAllocOp alloc) {
+  auto acquire = dep.getDefiningOp<DbAcquireOp>();
+  if (!acquire || acquire.getMode() != ArtsMode::in)
+    return false;
+  if (DbUtils::isSmallCoarseUserDataDb(alloc))
+    return true;
+  return DbUtils::isCoarseUserDataDb(alloc) &&
+         static_cast<bool>(acquire.getReplicatedReadAttr());
+}
+
+static bool isHostWholeToComputeBlockBridgeDb(DbAllocOp alloc) {
+  if (!alloc)
+    return false;
+  auto bridge = alloc->getAttrOfType<StringAttr>("arts.storage_bridge");
+  return bridge && bridge.getValue() == "host_whole_to_compute_block";
+}
+
+bool DbUtils::isHostWholeToComputeBlockBridgeMovement(EdtOp edt) {
+  if (!edt || !edt.getStorageBridgeCopyAttr() ||
+      edt.getDependencies().size() != 2 || edt.getDepPatternAttr() ||
+      getPlanOwnerDimsAttr(edt.getOperation()) ||
+      getPlanPhysicalBlockShapeAttr(edt.getOperation()))
+    return false;
+
+  bool hasCoarseHost = false;
+  bool hasBlockBridge = false;
+  for (Value dep : edt.getDependencies()) {
+    auto acquire = dep.getDefiningOp<DbAcquireOp>();
+    if (!acquire)
+      return false;
+    auto alloc =
+        dyn_cast_or_null<DbAllocOp>(DbUtils::getUnderlyingDbAlloc(dep));
+    PartitionMode partition =
+        acquire.getPartitionMode().value_or(PartitionMode::coarse);
+    if (DbUtils::isCoarseUserDataDb(alloc) &&
+        partition == PartitionMode::coarse) {
+      hasCoarseHost = true;
+      continue;
+    }
+    if (isHostWholeToComputeBlockBridgeDb(alloc) &&
+        partition == PartitionMode::block) {
+      hasBlockBridge = true;
+      continue;
+    }
+    return false;
+  }
+  return hasCoarseHost && hasBlockBridge;
+}
+
 bool DbUtils::requiresLocalLaunchForDistributedDep(Value dep) {
   auto alloc = dyn_cast_or_null<DbAllocOp>(DbUtils::getUnderlyingDbAlloc(dep));
   if (!DbUtils::isRejectedForDistributedOwnership(alloc))
     return false;
-  return !DbUtils::isAllowedSmallReadOnlyCoarseDep(dep, alloc);
+  return !DbUtils::isAllowedReadOnlyCoarseDep(dep, alloc);
 }
 
 bool DbUtils::hasLocalOnlyDistributedLaunchDependency(EdtOp edt) {
   if (!edt)
+    return false;
+  if (DbUtils::isHostWholeToComputeBlockBridgeMovement(edt))
     return false;
   for (Value dep : edt.getDependencies())
     if (DbUtils::requiresLocalLaunchForDistributedDep(dep))

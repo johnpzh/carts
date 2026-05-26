@@ -1,9 +1,10 @@
 // RUN: %carts-compile %s --pass-pipeline='builtin.module(verify-codir,storage-planning,convert-codir-to-arts,verify-arts-objects-only)' \
-// RUN:   | %FileCheck %s --implicit-check-not="arts.edt <task> <internode>"
+// RUN:   | %FileCheck %s
 
 // A codelet may carry generic distribution intent before SDE/CODIR can
 // materialize physical owner/block storage. CODIR-to-ARTS must not turn that
-// into internode placement over coarse raw DBs.
+// into internode placement over coarse raw DBs. Once a planned owner-slice
+// codelet has materialized block storage, the task can launch internode.
 
 module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_workers = 64 : i64} {
   func.func @unmaterialized_distributed_intent_stays_local(%A: memref<128xf64>,
@@ -23,7 +24,7 @@ module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_worker
     func.return
   }
 
-  func.func @planned_codelet_over_prebacked_coarse_db_stays_local() {
+  func.func @planned_codelet_over_prebacked_coarse_db_uses_block_storage() {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c16 = arith.constant 16 : index
@@ -59,8 +60,11 @@ module attributes {arts.runtime_total_nodes = 4 : i64, arts.runtime_total_worker
 // CHECK: arts.edt <task> <intranode>
 // CHECK-SAME: distribution_kind = #arts.distribution_kind<block>
 
-// CHECK-LABEL: func.func @planned_codelet_over_prebacked_coarse_db_stays_local
+// CHECK-LABEL: func.func @planned_codelet_over_prebacked_coarse_db_uses_block_storage
 // CHECK: arts.db_alloc
 // CHECK-SAME: <coarse>
-// CHECK: arts.edt <task> <intranode>
+// CHECK: arts.db_alloc
+// CHECK-SAME: <block>
+// CHECK-SAME: planPhysicalBlockShape = [16]
+// CHECK: arts.edt <task> <internode>
 // CHECK-SAME: planPhysicalBlockShape = [16]

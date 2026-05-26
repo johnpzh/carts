@@ -31,8 +31,7 @@ enum class RuntimeFunction {
 };
 #undef ARTS_RTL_FUNCTIONS
 
-#define ARTS_RTL(Enum, ...)                                                    \
-  constexpr auto Enum = RuntimeFunction::Enum;
+#define ARTS_RTL(Enum, ...) constexpr auto Enum = RuntimeFunction::Enum;
 #define ARTS_RTL_FUNCTIONS
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/Kinds.def"
 #undef ARTS_RTL_FUNCTIONS
@@ -83,7 +82,7 @@ inline bool isRuntimeTopologyQuery(RuntimeFunction fn) {
 }
 
 } // end namespace types
-} // end namespace arts_rt
+} // namespace carts::arts_rt
 } // end namespace mlir
 
 /// Specialization of DenseMapInfo for RuntimeFunction enum.

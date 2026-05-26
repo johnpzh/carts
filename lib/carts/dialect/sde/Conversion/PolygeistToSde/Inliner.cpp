@@ -252,8 +252,7 @@ struct SdeInputInlinerInterface : public mlir::InlinerInterface {
 };
 
 struct SdeInputInlinerPass
-    : public mlir::carts::sde::impl::SdeInputInlinerBase<
-          SdeInputInlinerPass> {
+    : public mlir::carts::sde::impl::SdeInputInlinerBase<SdeInputInlinerPass> {
 
   void runOnOperation() override {
     ModuleOp module = getOperation();

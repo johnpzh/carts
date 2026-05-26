@@ -19,9 +19,9 @@ namespace mlir::carts::arts_rt {
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
 #include "carts/dialect/arts-rt/Utils/RuntimeCallUtils.h"
+#include "carts/dialect/arts/Utils/LoopInvarianceUtils.h"
 #include "carts/passes/Passes.h"
 #include "carts/utils/Debug.h"
-#include "carts/dialect/arts/Utils/LoopInvarianceUtils.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dominance.h"

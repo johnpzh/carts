@@ -120,7 +120,8 @@ materializeDominatingIndexValues(OpBuilder &builder, Location loc,
     int64_t constant = 0;
     if (!ValueAnalysis::getConstantIndex(value, constant))
       return {};
-    result.push_back(::mlir::carts::createConstantIndex(builder, loc, constant));
+    result.push_back(
+        ::mlir::carts::createConstantIndex(builder, loc, constant));
   }
 
   if (!result.empty())
@@ -413,8 +414,8 @@ mlir::carts::arts::getSemanticContract(Operation *op) {
   info.spatial.supportedBlockHalo =
       hasSupportedBlockHalo(op) && info.pattern.depPattern &&
       isStencilFamilyDepPattern(*info.pattern.depPattern);
-  info.analysis.narrowableDep =
-      op->hasAttr(::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep);
+  info.analysis.narrowableDep = op->hasAttr(
+      ::mlir::carts::arts::AttrNames::Operation::Contract::NarrowableDep);
   if (auto contractKind = op->getAttrOfType<IntegerAttr>(
           ::mlir::carts::arts::AttrNames::Operation::Contract::ContractKindKey))
     info.pattern.kind = static_cast<ContractKind>(contractKind.getInt());
@@ -426,7 +427,7 @@ mlir::carts::arts::getSemanticContract(Operation *op) {
 
 std::optional<LoweringContractInfo>
 mlir::carts::arts::getLoweringContract(Operation *op, OpBuilder &builder,
-                                Location loc) {
+                                       Location loc) {
   if (!op)
     return std::nullopt;
 
@@ -449,7 +450,7 @@ mlir::carts::arts::getLoweringContract(Operation *op, OpBuilder &builder,
 
 ContractChange
 mlir::carts::arts::mergeLoweringContractInfo(LoweringContractInfo &dest,
-                                      const LoweringContractInfo &src) {
+                                             const LoweringContractInfo &src) {
   bool changed = false;
 
   if (dest.pattern.kind == ContractKind::Unknown &&
@@ -581,7 +582,8 @@ mlir::carts::arts::mergeLoweringContractInfo(LoweringContractInfo &dest,
   return changed ? ContractChange::Changed : ContractChange::Unchanged;
 }
 
-void mlir::carts::arts::normalizeLoweringContractInfo(LoweringContractInfo &info) {
+void mlir::carts::arts::normalizeLoweringContractInfo(
+    LoweringContractInfo &info) {
   const size_t expectedRank = info.spatial.ownerDims.size();
   if (expectedRank == 0)
     return;
@@ -607,7 +609,7 @@ void mlir::carts::arts::normalizeLoweringContractInfo(LoweringContractInfo &info
 
 SmallVector<unsigned, 4>
 mlir::carts::arts::resolveContractOwnerDims(const LoweringContractInfo &info,
-                                     unsigned rank) {
+                                            unsigned rank) {
   SmallVector<unsigned, 4> dims;
   dims.reserve(rank);
   for (int64_t dim : info.spatial.ownerDims) {
@@ -654,15 +656,15 @@ mlir::carts::arts::resolveAcquireContract(DbAcquireOp acquire) {
   return info;
 }
 
-bool mlir::carts::arts::shouldApplyStencilHalo(const LoweringContractInfo &contract,
-                                        ArtsMode effectiveMode) {
+bool mlir::carts::arts::shouldApplyStencilHalo(
+    const LoweringContractInfo &contract, ArtsMode effectiveMode) {
   if (effectiveMode != ArtsMode::in)
     return false;
   return contract.supportsBlockHalo();
 }
 
-bool mlir::carts::arts::shouldApplyStencilHalo(const LoweringContractInfo &contract,
-                                        DbAcquireOp acquire) {
+bool mlir::carts::arts::shouldApplyStencilHalo(
+    const LoweringContractInfo &contract, DbAcquireOp acquire) {
   if (!acquire)
     return false;
   return shouldApplyStencilHalo(contract, acquire.getMode());
@@ -715,8 +717,8 @@ bool mlir::carts::arts::shouldPreserveParentDepRange(
 
 LoweringContractOp
 mlir::carts::arts::upsertLoweringContract(OpBuilder &builder, Location loc,
-                                   Value target,
-                                   const LoweringContractInfo &info) {
+                                          Value target,
+                                          const LoweringContractInfo &info) {
   if (!target || info.empty())
     return nullptr;
 
@@ -762,14 +764,16 @@ void mlir::carts::arts::eraseLoweringContracts(Value target) {
 }
 
 void mlir::carts::arts::transferOperationContract(Operation *source,
-                                           Operation *target) {
+                                                  Operation *target) {
   if (!source || !target)
     return;
   copySemanticContractAttrs(source, target);
 }
 
-void mlir::carts::arts::transferLoweringContract(Operation *source, Value target,
-                                          OpBuilder &builder, Location loc) {
+void mlir::carts::arts::transferLoweringContract(Operation *source,
+                                                 Value target,
+                                                 OpBuilder &builder,
+                                                 Location loc) {
   if (!source || !target)
     return;
 
@@ -788,7 +792,7 @@ static void copyLoweringContract(Value source, Value target, OpBuilder &builder,
 }
 
 void mlir::carts::arts::moveValueContract(Value source, Value target,
-                                   OpBuilder &builder, Location loc) {
+                                          OpBuilder &builder, Location loc) {
   if (!source || !target || source == target)
     return;
   copyLoweringContract(source, target, builder, loc);

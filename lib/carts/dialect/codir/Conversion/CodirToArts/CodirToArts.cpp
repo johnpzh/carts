@@ -31,6 +31,15 @@ struct ConvertCodirToArtsPass
            arts::DbUtils::isSmallCoarseUserDataDb(alloc);
   }
 
+  bool isReplicatedReadDep(codir::CodeletOp codelet, unsigned depIndex) const {
+    std::optional<codir::CodirAccessMode> mode =
+        getCodirDepAccessMode(codelet, depIndex);
+    std::optional<codir::CodirStorageViewKind> view =
+        getCodirDepStorageViewKind(codelet, depIndex);
+    return mode && *mode == codir::CodirAccessMode::read && view &&
+           *view == codir::CodirStorageViewKind::replicated_read;
+  }
+
   bool hasDistributedLaunchStoragePlan(codir::CodeletOp codelet) const {
     if (!hasGenericWorkerPlan(codelet))
       return false;
@@ -42,6 +51,8 @@ struct ConvertCodirToArtsPass
     for (auto [idx, dep] : llvm::enumerate(codelet.getDeps())) {
       arts::DbAllocOp alloc = findBackingDbAlloc(dep);
       if (isSmallReadOnlyCoarseDep(codelet, static_cast<unsigned>(idx), alloc))
+        continue;
+      if (isReplicatedReadDep(codelet, static_cast<unsigned>(idx)))
         continue;
       if (!codirDepAllowsComputeBlockStorage(codelet,
                                              static_cast<unsigned>(idx)))
@@ -138,7 +149,17 @@ struct ConvertCodirToArtsPass
       for (auto [depIndex, dep] : llvm::enumerate(codelet.getDeps())) {
         unsigned depIdx = static_cast<unsigned>(depIndex);
         if (findBackingDbAlloc(dep)) {
-          if (failed(materializeExistingDbHostBridgeIfNeeded(codelet, depIdx))) {
+          if (failed(
+                  materializeExistingDbComputeBlockIfNeeded(codelet, depIdx))) {
+            codelet.emitOpError()
+                << "dependency #" << depIdx
+                << " requests compute-block storage but cannot be materialized "
+                   "from its existing DB view";
+            signalPassFailure();
+            return;
+          }
+          if (failed(
+                  materializeExistingDbHostBridgeIfNeeded(codelet, depIdx))) {
             codelet.emitOpError()
                 << "dependency #" << depIdx
                 << " requests compute-block storage but cannot be bridged "
@@ -244,15 +265,13 @@ struct ConvertCodirToArtsPass
       SmallVector<Value> dbSizes{createOneIndex(builder, loc)};
       std::optional<unsigned> plannedBlockOwnerDim;
       unsigned depIdx = static_cast<unsigned>(idx);
-      if (codirDepAllowsComputeBlockStorage(codelet,
-                                             depIdx) &&
+      if (codirDepAllowsComputeBlockStorage(codelet, depIdx) &&
           canUseCodirOwnerSliceForAlloc(codelet, depIdx, alloc) &&
           codirDepAccessesStayWithinSingleOwnerSlice(codelet, depIdx) &&
           !codelet.getParams().empty()) {
-        if (std::optional<int64_t> blockSize =
-                getSingleCodirTileOwnerBlockSize(
-                    codelet, depIdx,
-                    static_cast<unsigned>(alloc.getElementSizes().size()))) {
+        if (std::optional<int64_t> blockSize = getSingleCodirTileOwnerBlockSize(
+                codelet, depIdx,
+                static_cast<unsigned>(alloc.getElementSizes().size()))) {
           Value blockSizeValue = createConstantIndex(builder, loc, *blockSize);
           Value base = codelet.getParams().back();
           Value domainBase =
@@ -279,6 +298,8 @@ struct ConvertCodirToArtsPass
           /*boundsValid=*/Value{},
           /*elementOffsets=*/SmallVector<Value>{},
           /*elementSizes=*/SmallVector<Value>{});
+      if (isReplicatedReadDep(codelet, depIdx))
+        acquire.setReplicatedReadAttr(UnitAttr::get(codelet.getContext()));
       taskDeps.push_back(acquire.getPtr());
       blockArgTypes.push_back(acquire.getPtr().getType());
       depSlices.push_back(std::move(slice));

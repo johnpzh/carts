@@ -49,7 +49,8 @@ public:
   static SmallVector<Value> getDepOffsetsFromDb(Operation *dbOp);
   static SmallVector<Value> getDepOffsetsFromDb(Value dbPtr);
 
-  static carts::arts::DbMode convertArtsModeToDbMode(carts::arts::ArtsMode mode);
+  static carts::arts::DbMode
+  convertArtsModeToDbMode(carts::arts::ArtsMode mode);
 
   static void convertElementSliceToBlockSlice(
       OpBuilder &builder, Location loc, ValueRange elementOffsets,
@@ -61,8 +62,7 @@ public:
       OpBuilder &builder, Location loc, ValueRange existingOffsets,
       ValueRange existingSizes, ValueRange totalBlockCounts,
       ValueRange normalizedOffsets, ValueRange normalizedSizes,
-      SmallVectorImpl<Value> &blockOffsets,
-      SmallVectorImpl<Value> &blockSizes);
+      SmallVectorImpl<Value> &blockOffsets, SmallVectorImpl<Value> &blockSizes);
 };
 
 } // namespace carts::arts_rt

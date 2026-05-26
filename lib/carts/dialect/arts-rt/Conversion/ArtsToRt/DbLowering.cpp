@@ -18,21 +18,21 @@
 ///     (users rewritten to the lowered pointer representation)
 ///==========================================================================///
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsRtToLLVM/CodegenSupport.h"
 #include "carts/dialect/arts-rt/Conversion/ArtsToRt/DbLayoutStrategy.h"
 #include "carts/dialect/arts-rt/Transforms/Passes.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
 namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_DBLOWERING
 #include "carts/dialect/arts-rt/Transforms/Passes.h.inc"
 } // namespace mlir::carts::arts_rt
-#include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
-#include "carts/utils/Debug.h"
-#include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/dialect/arts-rt/Utils/IdRegistry.h"
+#include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
+#include "carts/dialect/arts/Utils/EdtUtils.h"
 #include "carts/dialect/arts/Utils/LoweringContractUtils.h"
-#include "carts/utils/OperationAttributes.h"
 #include "carts/dialect/arts/Utils/PartitionPredicates.h"
+#include "carts/utils/Debug.h"
+#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/RemovalUtils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -248,8 +248,8 @@ void DbLoweringPass::convertDbAllocOps() {
       setPlanLogicalWorkerSliceAttr(newOp.getOperation(), workerSlice);
     if (auto haloShape = getPlanHaloShapeAttr(oldOp))
       setPlanHaloShapeAttr(newOp.getOperation(), haloShape);
-    /// Preserve non-arts distributed ownership marker so ConvertArtsRtToLLVM can
-    /// route datablock reservation by node.
+    /// Preserve non-arts distributed ownership marker so ConvertArtsRtToLLVM
+    /// can route datablock reservation by node.
     if (hasDistributedDbAllocation(oldOp.getOperation()))
       setDistributedDbAllocation(newOp.getOperation(), /*enabled=*/true);
 
@@ -425,6 +425,8 @@ void DbLoweringPass::updateAcquireUsers(DbAcquireOp acquireOp, Value newGuid,
     if (attr.getName().getValue().starts_with("arts."))
       newAcquireOp->setAttr(attr.getName(), attr.getValue());
   }
+  if (auto attr = acquireOp.getReplicatedReadAttr())
+    newAcquireOp.setReplicatedReadAttr(attr);
   /// Rebuilt acquires must preserve the semantic stencil/distribution contract
   /// in addition to generic `arts.*` bookkeeping. Downstream passes such as
   /// dep lowering rely on these attrs (or the mirrored value contract) to

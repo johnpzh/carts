@@ -124,8 +124,7 @@ public:
   /// transport read-only to distributed tasks instead of forcing the whole
   /// task back to intranode execution.
   static bool isSmallCoarseUserDataDb(
-      DbAllocOp alloc,
-      int64_t maxElements = kSmallCoarseReadOnlyElementLimit);
+      DbAllocOp alloc, int64_t maxElements = kSmallCoarseReadOnlyElementLimit);
 
   /// Return true when distributed ownership rejected this allocation and it
   /// therefore cannot be used as the storage anchor for an internode launch.
@@ -134,6 +133,14 @@ public:
   /// Return true when a dependency is a small read-only coarse DB that is cheap
   /// enough to transport to an internode task without forcing local placement.
   static bool isAllowedSmallReadOnlyCoarseDep(Value dep, DbAllocOp alloc);
+
+  /// Return true when a read-only coarse DB dependency has an explicit
+  /// transport contract that allows internode tasks to consume it.
+  static bool isAllowedReadOnlyCoarseDep(Value dep, DbAllocOp alloc);
+
+  /// Return true for generated bridge EDTs that move data between a local
+  /// coarse host allocation and a distributed compute-block bridge allocation.
+  static bool isHostWholeToComputeBlockBridgeMovement(EdtOp edt);
 
   /// Return true when this dependency forces an otherwise distributed task to
   /// stay local because its root DB allocation was rejected for distributed
@@ -211,10 +218,8 @@ public:
   /// Return true when an i1 control-token DB is only consumed by cleanup
   /// plumbing and stores of literal true. Collected operations can be erased
   /// after removing the owning EDT dependency slot.
-  static bool
-  collectTrueOnlyControlTokenUseChain(Value source,
-                                      llvm::SetVector<Operation *> &ops,
-                                      Region *scope = nullptr);
+  static bool collectTrueOnlyControlTokenUseChain(
+      Value source, llvm::SetVector<Operation *> &ops, Region *scope = nullptr);
 
   ///===----------------------------------------------------------------------===///
   /// Element-to-Block Space Slice Conversion
@@ -239,8 +244,7 @@ public:
       OpBuilder &builder, Location loc, ValueRange existingOffsets,
       ValueRange existingSizes, ValueRange totalBlockCounts,
       ValueRange normalizedOffsets, ValueRange normalizedSizes,
-      SmallVectorImpl<Value> &blockOffsets,
-      SmallVectorImpl<Value> &blockSizes);
+      SmallVectorImpl<Value> &blockOffsets, SmallVectorImpl<Value> &blockSizes);
 
   ///===----------------------------------------------------------------------===///
   /// Block Size and Malloc Pattern Extraction
@@ -251,7 +255,6 @@ public:
   /// and maxui clamp patterns with recursive descent up to depth 4.
   static std::optional<int64_t> extractBlockSizeFromHint(Value sizeHint,
                                                          int depth = 0);
-
 };
 
 } // namespace carts::arts

@@ -232,7 +232,8 @@ struct TaskDepRef {
 static bool isWholeFlatDep(const DepInfo &dep, Value totalElements) {
   return dep.indices.size() == 1 && dep.sizes.size() == 1 &&
          ::mlir::carts::ValueAnalysis::isZeroConstant(dep.indices.front()) &&
-         ::mlir::carts::ValueAnalysis::sameValue(dep.sizes.front(), totalElements);
+         ::mlir::carts::ValueAnalysis::sameValue(dep.sizes.front(),
+                                                 totalElements);
 }
 
 static bool isUnitFlatDep(const DepInfo &dep) {
@@ -293,7 +294,8 @@ static Value traceWrapperLoadToAlloc(Value val) {
         if (storeOp.getMemref() == wrapper) {
           Value storedVal = storeOp.getValue();
           /// Check if direct allocation (through casts)
-          Value underlying = ::mlir::carts::ValueAnalysis::getUnderlyingValue(storedVal);
+          Value underlying =
+              ::mlir::carts::ValueAnalysis::getUnderlyingValue(storedVal);
           if (underlying && underlying.getDefiningOp<memref::AllocOp>())
             return underlying;
           /// Otherwise continue tracing through nested loads
@@ -370,8 +372,7 @@ private:
   bool hasOnlySupportedUseGraph(const AllocPattern &pattern);
   bool hasOnlySupportedUses(Value value, DenseSet<Value> &visitedValues);
   bool hasOnlySupportedSubviewUses(Value value, DenseSet<Value> &visitedValues);
-  std::optional<FlatStridedPlan>
-  inferFlatStridedPlan(AllocPattern &pattern);
+  std::optional<FlatStridedPlan> inferFlatStridedPlan(AllocPattern &pattern);
 
   /// Phase 3: Transform the pattern
   LogicalResult transformPattern(AllocPattern &pattern, OpBuilder &builder);
@@ -534,8 +535,8 @@ void SdeMemrefNormalizationPass::runOnOperation() {
       /// is only accessed through a consistent row-major linearization
       /// (`outer * stride + inner`). Otherwise fall back to simple SROA.
       if (auto flatPlan = inferFlatStridedPlan(*patternOpt)) {
-        if (failed(transformFlatStridedWrapper(*patternOpt, *flatPlan,
-                                               builder))) {
+        if (failed(
+                transformFlatStridedWrapper(*patternOpt, *flatPlan, builder))) {
           ARTS_DEBUG("  Skipping flat strided wrapper pattern - "
                      "transformation failed at "
                      << patternOpt->rootAlloc.getLoc());
@@ -660,7 +661,8 @@ SdeMemrefNormalizationPass::detectPattern(Value alloc) {
           ///   %alloc = memref.alloc() : memref<10xf64>
           ///   %cast = memref.cast %alloc : memref<10xf64> to memref<?xf64>
           ///   memref.store %cast, %wrapper[]
-          Value underlying = ::mlir::carts::ValueAnalysis::getUnderlyingValue(storedVal);
+          Value underlying =
+              ::mlir::carts::ValueAnalysis::getUnderlyingValue(storedVal);
           if (underlying && underlying.getDefiningOp<memref::AllocOp>()) {
             pattern.wrapperAlloca = alloc;
             pattern.rootAlloc = storedVal; /// Keep cast result for SROA
@@ -717,8 +719,8 @@ SdeMemrefNormalizationPass::detectPattern(Value alloc) {
           SmallVector<Value> dynSizes;
           for (int64_t d = 0; d < memType.getRank(); ++d) {
             if (memType.isDynamicDim(d)) {
-              dynSizes.push_back(
-                  ::mlir::carts::createZeroIndex(cleanupBuilder, loadOp.getLoc()));
+              dynSizes.push_back(::mlir::carts::createZeroIndex(
+                  cleanupBuilder, loadOp.getLoc()));
             }
           }
           Value repl = memref::AllocOp::create(cleanupBuilder, loadOp.getLoc(),
@@ -731,8 +733,8 @@ SdeMemrefNormalizationPass::detectPattern(Value alloc) {
           SmallVector<Value> dynSizes;
           for (int64_t d = 0; d < memType.getRank(); ++d) {
             if (memType.isDynamicDim(d)) {
-              dynSizes.push_back(
-                  ::mlir::carts::createZeroIndex(cleanupBuilder, affineLoad.getLoc()));
+              dynSizes.push_back(::mlir::carts::createZeroIndex(
+                  cleanupBuilder, affineLoad.getLoc()));
             }
           }
           Value repl = memref::AllocOp::create(
@@ -789,7 +791,8 @@ SdeMemrefNormalizationPass::detectPattern(Value alloc) {
 
     if (allocType.getRank() >= 1) {
       /// Get underlying allocation (traces through casts)
-      Value underlying = ::mlir::carts::ValueAnalysis::getUnderlyingValue(pattern.rootAlloc);
+      Value underlying =
+          ::mlir::carts::ValueAnalysis::getUnderlyingValue(pattern.rootAlloc);
       auto underlyingAlloc =
           underlying ? underlying.getDefiningOp<memref::AllocOp>() : nullptr;
       auto underlyingType =
@@ -802,16 +805,16 @@ SdeMemrefNormalizationPass::detectPattern(Value alloc) {
         }
         /// Case 2: rootAlloc is cast from static alloc (e.g., memref<10xf64>)
         else if (underlyingType.hasStaticShape()) {
-          pattern.dimensions.push_back(
-              ::mlir::carts::createConstantIndex(b, loc, underlyingType.getDimSize(0)));
+          pattern.dimensions.push_back(::mlir::carts::createConstantIndex(
+              b, loc, underlyingType.getDimSize(0)));
         } else {
           ARTS_DEBUG("  Cannot get dimension from allocation");
           return std::nullopt;
         }
       } else {
         /// Static dimension in allocType
-        pattern.dimensions.push_back(
-            ::mlir::carts::createConstantIndex(b, loc, allocType.getDimSize(0)));
+        pattern.dimensions.push_back(::mlir::carts::createConstantIndex(
+            b, loc, allocType.getDimSize(0)));
       }
     }
 
@@ -843,8 +846,8 @@ SdeMemrefNormalizationPass::detectPattern(Value alloc) {
       return std::nullopt;
     }
   } else {
-    outerSize = ::mlir::carts::createConstantIndex(b, pattern.rootAlloc.getLoc(),
-                                          allocType.getDimSize(0));
+    outerSize = ::mlir::carts::createConstantIndex(
+        b, pattern.rootAlloc.getLoc(), allocType.getDimSize(0));
   }
   pattern.dimensions.push_back(outerSize);
 
@@ -1085,8 +1088,8 @@ void SdeMemrefNormalizationPass::collectOmpDependencies(
 
 std::optional<DepInfo>
 SdeMemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
-                                       omp::TaskOp taskOp, unsigned depIdx,
-                                       omp::ClauseTaskDepend) {
+                                          omp::TaskOp taskOp, unsigned depIdx,
+                                          omp::ClauseTaskDepend) {
   DepInfo info;
   info.taskOp = taskOp;
   info.depVarIndex = depIdx;
@@ -1190,8 +1193,8 @@ SdeMemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
     /// Element-level sizes
     for (size_t d = 0; d < info.indices.size(); ++d)
       info.sizes.push_back(::mlir::carts::createConstantIndex(builder, loc, 1));
-    info.indices = sde::clampDepIndices(info.source, info.indices, builder,
-                                        loc, pattern.dimensions);
+    info.indices = sde::clampDepIndices(info.source, info.indices, builder, loc,
+                                        pattern.dimensions);
 
     info.opsToRemove = traceResult->chainOps;
     info.opsToRemove.push_back(loadOp);
@@ -1213,8 +1216,8 @@ SdeMemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
     /// Element-level sizes
     for (size_t d = 0; d < info.indices.size(); ++d)
       info.sizes.push_back(::mlir::carts::createConstantIndex(builder, loc, 1));
-    info.indices = sde::clampDepIndices(info.source, info.indices, builder,
-                                        loc, pattern.dimensions);
+    info.indices = sde::clampDepIndices(info.source, info.indices, builder, loc,
+                                        pattern.dimensions);
 
     info.opsToRemove = traceResult->chainOps;
     info.opsToRemove.push_back(subIndexOp);
@@ -1229,7 +1232,8 @@ SdeMemrefNormalizationPass::analyzeDepVar(Value depVar, AllocPattern &pattern,
 
     /// Whole array: indices = [0, 0], sizes = [dim0, dim1]
     for (Value dim : pattern.dimensions) {
-      info.indices.push_back(::mlir::carts::createConstantIndex(builder, loc, 0));
+      info.indices.push_back(
+          ::mlir::carts::createConstantIndex(builder, loc, 0));
       info.sizes.push_back(dim);
     }
     return info;
@@ -1291,7 +1295,8 @@ SdeMemrefNormalizationPass::traceToPattern(Value val, AllocPattern &pattern) {
 }
 
 std::optional<TraceResult>
-SdeMemrefNormalizationPass::traceValueToPattern(Value val, AllocPattern &pattern) {
+SdeMemrefNormalizationPass::traceValueToPattern(Value val,
+                                                AllocPattern &pattern) {
   /// For element values (not memrefs), we look at the defining load
   if (auto loadOp = val.getDefiningOp<memref::LoadOp>()) {
     auto memResult = traceToPattern(loadOp.getMemref(), pattern);
@@ -1369,7 +1374,7 @@ void SdeMemrefNormalizationPass::collectOuterWrapperAliases(
 }
 
 bool SdeMemrefNormalizationPass::recordUnsupportedUse(Operation *op,
-                                                   llvm::Twine reason) {
+                                                      llvm::Twine reason) {
   if (!unsupportedUseOp) {
     unsupportedUseOp = op;
     unsupportedUseReason = reason.str();
@@ -1601,8 +1606,9 @@ SdeMemrefNormalizationPass::inferFlatStridedPlan(AllocPattern &pattern) {
     OpBuilder builder(dep.taskOp.getContext());
     builder.setInsertionPoint(dep.taskOp);
     if (isWholeFlatDep(dep, totalElements)) {
-      dep.indices = {::mlir::carts::createConstantIndex(builder, dep.taskOp.getLoc(), 0),
-                     ::mlir::carts::createConstantIndex(builder, dep.taskOp.getLoc(), 0)};
+      dep.indices = {
+          ::mlir::carts::createConstantIndex(builder, dep.taskOp.getLoc(), 0),
+          ::mlir::carts::createConstantIndex(builder, dep.taskOp.getLoc(), 0)};
       dep.sizes = {plan.dimensions[0], plan.dimensions[1]};
       continue;
     }
@@ -1613,8 +1619,9 @@ SdeMemrefNormalizationPass::inferFlatStridedPlan(AllocPattern &pattern) {
       if (!linear)
         return std::nullopt;
       dep.indices = {linear->outer, linear->inner};
-      dep.sizes = {::mlir::carts::createConstantIndex(builder, dep.taskOp.getLoc(), 1),
-                   ::mlir::carts::createConstantIndex(builder, dep.taskOp.getLoc(), 1)};
+      dep.sizes = {
+          ::mlir::carts::createConstantIndex(builder, dep.taskOp.getLoc(), 1),
+          ::mlir::carts::createConstantIndex(builder, dep.taskOp.getLoc(), 1)};
       continue;
     }
 
@@ -1644,8 +1651,9 @@ LogicalResult SdeMemrefNormalizationPass::transformFlatStridedWrapper(
   return transformPattern(pattern, builder);
 }
 
-LogicalResult SdeMemrefNormalizationPass::transformPattern(AllocPattern &pattern,
-                                                        OpBuilder &builder) {
+LogicalResult
+SdeMemrefNormalizationPass::transformPattern(AllocPattern &pattern,
+                                             OpBuilder &builder) {
   OpBuilder::InsertionGuard guard(builder);
   DominanceInfo localDomInfo(
       pattern.rootAlloc.getDefiningOp()->getParentOfType<func::FuncOp>());
@@ -1816,9 +1824,8 @@ LogicalResult SdeMemrefNormalizationPass::transformPattern(AllocPattern &pattern
   for (auto &dep : pattern.dependencies) {
     builder.setInsertionPoint(dep.taskOp);
 
-    Value depValue =
-        sde::materializeDependView(builder, dep.taskOp.getLoc(), ndAlloc,
-                                   dep.indices, dep.sizes);
+    Value depValue = sde::materializeDependView(
+        builder, dep.taskOp.getLoc(), ndAlloc, dep.indices, dep.sizes);
 
     /// Update the task's depend_vars
     dep.taskOp.getDependVarsMutable()[dep.depVarIndex].set(depValue);
@@ -1982,7 +1989,7 @@ void SdeMemrefNormalizationPass::rewriteTracedMemref2PointerUses(
 ///
 LogicalResult
 SdeMemrefNormalizationPass::transformSimpleWrapper(AllocPattern &pattern,
-                                                OpBuilder &builder) {
+                                                   OpBuilder &builder) {
   OpBuilder::InsertionGuard guard(builder);
   DominanceInfo localDomInfo(
       pattern.rootAlloc.getDefiningOp()->getParentOfType<func::FuncOp>());
@@ -2051,14 +2058,13 @@ SdeMemrefNormalizationPass::transformSimpleWrapper(AllocPattern &pattern,
   for (auto &dep : pattern.dependencies) {
     builder.setInsertionPoint(dep.taskOp);
 
-    Value depValue =
-        sde::materializeDependView(builder, dep.taskOp.getLoc(), actualAlloc,
-                                   dep.indices, dep.sizes);
+    Value depValue = sde::materializeDependView(
+        builder, dep.taskOp.getLoc(), actualAlloc, dep.indices, dep.sizes);
 
     dep.taskOp.getDependVarsMutable()[dep.depVarIndex].set(depValue);
 
     ARTS_DEBUG("  Created memref dependency view with " << dep.indices.size()
-                                                       << " indices");
+                                                        << " indices");
 
     /// Mark ops for removal
     for (auto *op : dep.opsToRemove)
@@ -2423,7 +2429,8 @@ void SdeMemrefNormalizationPass::handleDeallocations(
 ///===----------------------------------------------------------------------===///
 
 /// Check if maybeLoad is a load operation from the given source value
-bool SdeMemrefNormalizationPass::isLoadFromValue(Value maybeLoad, Value source) {
+bool SdeMemrefNormalizationPass::isLoadFromValue(Value maybeLoad,
+                                                 Value source) {
   if (auto loadOp = maybeLoad.getDefiningOp<memref::LoadOp>()) {
     return loadOp.getMemref() == source;
   }
@@ -2452,11 +2459,9 @@ bool SdeMemrefNormalizationPass::isLoadFromValue(Value maybeLoad, Value source) 
 /// directly.
 ///
 /// Returns true if a complete pattern was found (reaching scalar element type)
-bool SdeMemrefNormalizationPass::extractNestedAllocations(Value storedVal,
-                                                       Operation *loopOp,
-                                                       memref::StoreOp storeOp,
-                                                       AllocPattern &pattern,
-                                                       int depth) {
+bool SdeMemrefNormalizationPass::extractNestedAllocations(
+    Value storedVal, Operation *loopOp, memref::StoreOp storeOp,
+    AllocPattern &pattern, int depth) {
   /// Limit recursion depth to prevent infinite loops
   constexpr int MAX_DEPTH = 10;
   if (depth >= MAX_DEPTH) {
@@ -2465,7 +2470,8 @@ bool SdeMemrefNormalizationPass::extractNestedAllocations(Value storedVal,
   }
 
   /// Trace through casts to find the underlying allocation
-  Value underlying = ::mlir::carts::ValueAnalysis::getUnderlyingValue(storedVal);
+  Value underlying =
+      ::mlir::carts::ValueAnalysis::getUnderlyingValue(storedVal);
   auto innerAlloc = underlying ? underlying.getDefiningOp<memref::AllocOp>()
                                : storedVal.getDefiningOp<memref::AllocOp>();
   if (!innerAlloc) {
@@ -2491,7 +2497,7 @@ bool SdeMemrefNormalizationPass::extractNestedAllocations(Value storedVal,
   } else {
     OpBuilder innerB(loopOp);
     innerSize = ::mlir::carts::createConstantIndex(innerB, innerAlloc.getLoc(),
-                                          innerType.getDimSize(0));
+                                                   innerType.getDimSize(0));
   }
   pattern.dimensions.push_back(innerSize);
 
@@ -2553,7 +2559,7 @@ bool SdeMemrefNormalizationPass::extractNestedAllocations(Value storedVal,
 
 /// Check if a value traces back to the root allocation through a chain of loads
 bool SdeMemrefNormalizationPass::tracesToRootAlloc(Value val,
-                                                AllocPattern &pattern) {
+                                                   AllocPattern &pattern) {
   constexpr int MAX_TRACE_DEPTH = 10;
   Value current = val;
 

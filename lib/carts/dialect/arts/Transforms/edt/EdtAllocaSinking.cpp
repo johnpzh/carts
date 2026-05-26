@@ -6,8 +6,8 @@
 ///==========================================================================///
 
 #include "carts/dialect/arts/IR/ArtsDialect.h"
-#include "carts/passes/Passes.h"
 #include "carts/dialect/arts/Utils/EdtUtils.h"
+#include "carts/passes/Passes.h"
 #include "carts/utils/Utils.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"

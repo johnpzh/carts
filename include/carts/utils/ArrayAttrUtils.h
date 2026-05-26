@@ -31,8 +31,7 @@ inline ArrayAttr buildI64ArrayAttr(Operation *op, ArrayRef<int64_t> values) {
   return buildI64ArrayAttr(op->getContext(), values);
 }
 
-inline std::optional<SmallVector<int64_t, 4>>
-readI64ArrayAttr(ArrayAttr attr) {
+inline std::optional<SmallVector<int64_t, 4>> readI64ArrayAttr(ArrayAttr attr) {
   if (!attr)
     return std::nullopt;
 
@@ -54,8 +53,8 @@ inline std::optional<SmallVector<int64_t, 4>> readI64ArrayAttr(Operation *op,
   return readI64ArrayAttr(op->getAttrOfType<ArrayAttr>(name));
 }
 
-inline std::optional<SmallVector<int64_t, 4>> readI64ArrayAttr(Operation *op,
-                                                               StringAttr name) {
+inline std::optional<SmallVector<int64_t, 4>>
+readI64ArrayAttr(Operation *op, StringAttr name) {
   if (!op || !name)
     return std::nullopt;
   return readI64ArrayAttr(op->getAttrOfType<ArrayAttr>(name));

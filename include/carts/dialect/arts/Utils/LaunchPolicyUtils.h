@@ -29,6 +29,24 @@ inline bool hasArtsInterNodeRuntime(ModuleOp module) {
   return totalNodes && *totalNodes > 1;
 }
 
+inline ArtsLaunchPolicy resolveArtsOrdinalLaunchPolicy(ModuleOp module,
+                                                       Value ordinal,
+                                                       OpBuilder &builder,
+                                                       Location loc) {
+  ArtsLaunchPolicy policy;
+  if (!module || !hasArtsInterNodeRuntime(module) || !ordinal)
+    return policy;
+
+  policy.concurrency = EdtConcurrency::internode;
+  Value ordinalI32 =
+      arith::IndexCastOp::create(builder, loc, builder.getI32Type(), ordinal);
+  auto totalNodes =
+      RuntimeQueryOp::create(builder, loc, RuntimeQueryKind::totalNodes);
+  policy.route =
+      arith::RemUIOp::create(builder, loc, ordinalI32, totalNodes.getResult());
+  return policy;
+}
+
 inline ArtsLaunchPolicy
 resolveArtsLaunchPolicy(ModuleOp module, scf::ForOp dispatchLoop,
                         bool hasDistributedLaunchStoragePlan,
@@ -44,13 +62,7 @@ resolveArtsLaunchPolicy(ModuleOp module, scf::ForOp dispatchLoop,
                             dispatchLoop.getLowerBound());
   Value ordinal =
       arith::DivUIOp::create(builder, loc, relative, dispatchLoop.getStep());
-  Value ordinalI32 =
-      arith::IndexCastOp::create(builder, loc, builder.getI32Type(), ordinal);
-  auto totalNodes =
-      RuntimeQueryOp::create(builder, loc, RuntimeQueryKind::totalNodes);
-  policy.route =
-      arith::RemUIOp::create(builder, loc, ordinalI32, totalNodes.getResult());
-  return policy;
+  return resolveArtsOrdinalLaunchPolicy(module, ordinal, builder, loc);
 }
 
 } // namespace mlir::carts::arts
