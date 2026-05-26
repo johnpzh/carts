@@ -113,30 +113,18 @@ static inline bool shouldLowerReductionsToAtomics(codir::CodeletOp codelet) {
          strategy.getValue() == codir::CodirReductionStrategy::atomic;
 }
 
-static inline arts::ArtsBarrierReason
-convertBarrierReason(sde::SdeBarrierReason reason) {
-  switch (reason) {
-  case sde::SdeBarrierReason::redundant:
-    return arts::ArtsBarrierReason::redundant;
-  case sde::SdeBarrierReason::required_memory:
-    return arts::ArtsBarrierReason::required_memory;
-  case sde::SdeBarrierReason::timestep_stage_boundary:
-    return arts::ArtsBarrierReason::timestep_stage_boundary;
-  case sde::SdeBarrierReason::wavefront_frontier:
-    return arts::ArtsBarrierReason::wavefront_frontier;
-  case sde::SdeBarrierReason::unknown_required:
-    return arts::ArtsBarrierReason::unknown_required;
-  }
-  return arts::ArtsBarrierReason::unknown_required;
-}
-
-static inline arts::ArtsBarrierReasonAttr
-convertBarrierReasonAttr(MLIRContext *ctx, sde::SdeBarrierReasonAttr attr) {
-  if (!attr)
-    return {};
-  return arts::ArtsBarrierReasonAttr::get(
-      ctx, convertBarrierReason(attr.getValue()));
-}
+// Tier-1 enums (BarrierReason, ReductionStrategy, IterationTopology) have
+// identical case sets and integer codes across SDE, CODIR, and ARTS
+// (audit-verified). Call sites translate via static_cast guarded by these
+// invariants.
+static_assert(static_cast<int>(sde::SdeBarrierReason::unknown_required) ==
+              static_cast<int>(arts::ArtsBarrierReason::unknown_required));
+static_assert(
+    static_cast<int>(codir::CodirReductionStrategy::local_accumulate) ==
+    static_cast<int>(arts::ArtsReductionStrategy::local_accumulate));
+static_assert(
+    static_cast<int>(codir::CodirIterationTopology::owner_tile_2d) ==
+    static_cast<int>(arts::ArtsPlanIterationTopology::owner_tile_2d));
 
 static inline arts::ArtsDepPattern convertPattern(codir::CodirPattern pattern) {
   switch (pattern) {
@@ -162,19 +150,6 @@ static inline arts::ArtsDepPattern convertPattern(codir::CodirPattern pattern) {
   return arts::ArtsDepPattern::unknown;
 }
 
-static inline arts::ArtsReductionStrategy
-convertReductionStrategy(codir::CodirReductionStrategy strategy) {
-  switch (strategy) {
-  case codir::CodirReductionStrategy::atomic:
-    return arts::ArtsReductionStrategy::atomic;
-  case codir::CodirReductionStrategy::tree:
-    return arts::ArtsReductionStrategy::tree;
-  case codir::CodirReductionStrategy::local_accumulate:
-    return arts::ArtsReductionStrategy::local_accumulate;
-  }
-  return arts::ArtsReductionStrategy::tree;
-}
-
 static inline arts::EdtDistributionKind
 convertDistributionKind(codir::CodirDistributionKind kind) {
   switch (kind) {
@@ -186,19 +161,6 @@ convertDistributionKind(codir::CodirDistributionKind kind) {
     return arts::EdtDistributionKind::block_cyclic;
   }
   return arts::EdtDistributionKind::block;
-}
-
-static inline arts::ArtsPlanIterationTopology
-convertIterationTopology(codir::CodirIterationTopology topology) {
-  switch (topology) {
-  case codir::CodirIterationTopology::owner_strip:
-    return arts::ArtsPlanIterationTopology::owner_strip;
-  case codir::CodirIterationTopology::owner_tile:
-    return arts::ArtsPlanIterationTopology::owner_tile;
-  case codir::CodirIterationTopology::owner_tile_2d:
-    return arts::ArtsPlanIterationTopology::owner_tile_2d;
-  }
-  return arts::ArtsPlanIterationTopology::owner_strip;
 }
 
 static inline arts::ArtsPlanRepetitionStructure
@@ -270,8 +232,10 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
   }
   if (auto topology = codelet.getIterationTopologyAttr()) {
     arts::setPlanIterationTopologyAttr(
-        taskOp, arts::ArtsPlanIterationTopologyAttr::get(
-                    ctx, convertIterationTopology(topology.getValue())));
+        taskOp,
+        arts::ArtsPlanIterationTopologyAttr::get(
+            ctx, static_cast<arts::ArtsPlanIterationTopology>(
+                     topology.getValue())));
   }
   if (auto repetition = codelet.getRepetitionStructureAttr()) {
     arts::setPlanRepetitionStructureAttr(
@@ -285,7 +249,7 @@ static inline void propagateCodirPlanToArts(codir::CodeletOp codelet,
   }
   if (auto strategy = codelet.getReductionStrategyAttr())
     task.setReductionStrategyAttr(arts::ArtsReductionStrategyAttr::get(
-        ctx, convertReductionStrategy(strategy.getValue())));
+        ctx, static_cast<arts::ArtsReductionStrategy>(strategy.getValue())));
   if (codelet.getPartialReductionAttr())
     task.setPartialReductionAttr(UnitAttr::get(ctx));
   if (auto dims = codelet.getPartialReductionDimsAttr())
@@ -2316,9 +2280,14 @@ static inline LogicalResult lowerSdeResourceQuery(sde::SdeResourceQueryOp op) {
 static inline LogicalResult lowerSdeControlBarrier(sde::SdeSuBarrierOp op) {
   OpBuilder builder(op);
   if (!op.getBarrierEliminatedAttr()) {
+    auto reasonAttr = op.getBarrierReasonAttr();
     arts::BarrierOp::create(
         builder, op.getLoc(),
-        convertBarrierReasonAttr(op.getContext(), op.getBarrierReasonAttr()));
+        reasonAttr ? arts::ArtsBarrierReasonAttr::get(
+                         op.getContext(),
+                         static_cast<arts::ArtsBarrierReason>(
+                             reasonAttr.getValue()))
+                   : arts::ArtsBarrierReasonAttr{});
   }
   op.erase();
   return success();

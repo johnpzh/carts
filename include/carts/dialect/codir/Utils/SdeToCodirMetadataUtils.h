@@ -4,6 +4,11 @@
 /// SDE-owned planning metadata translation for the SDE -> CODIR boundary.
 /// These helpers carry source scheduling intent into CODIR without creating
 /// ARTS runtime/orchestration objects.
+///
+/// The SDE and CODIR enum classes for AccessMode, StorageViewKind, Pattern,
+/// DistributionKind, IterationTopology, RepetitionStructure, AsyncStrategy,
+/// and ReductionStrategy have identical case sets and integer codes
+/// (audit-verified). Translation across the boundary is a static_cast.
 ///==========================================================================///
 #ifndef CARTS_DIALECT_CODIR_UTILS_SDETOCODIRMETADATAUTILS_H
 #define CARTS_DIALECT_CODIR_UTILS_SDETOCODIRMETADATAUTILS_H
@@ -15,122 +20,22 @@
 
 namespace mlir::carts::codir::sde_to_codir {
 
-inline CodirAccessMode convertAccessMode(sde::SdeAccessMode mode) {
-  switch (mode) {
-  case sde::SdeAccessMode::read:
-    return CodirAccessMode::read;
-  case sde::SdeAccessMode::write:
-    return CodirAccessMode::write;
-  case sde::SdeAccessMode::readwrite:
-    return CodirAccessMode::readwrite;
-  }
-  return CodirAccessMode::readwrite;
-}
-
-inline CodirStorageViewKind
-convertStorageViewKind(sde::SdeStorageViewKind view) {
-  switch (view) {
-  case sde::SdeStorageViewKind::host_whole:
-    return CodirStorageViewKind::host_whole;
-  case sde::SdeStorageViewKind::compute_block:
-    return CodirStorageViewKind::compute_block;
-  case sde::SdeStorageViewKind::replicated_read:
-    return CodirStorageViewKind::replicated_read;
-  case sde::SdeStorageViewKind::phase_redistributed:
-    return CodirStorageViewKind::phase_redistributed;
-  }
-  return CodirStorageViewKind::host_whole;
-}
-
-inline CodirPattern convertPattern(sde::SdePattern pattern) {
-  switch (pattern) {
-  case sde::SdePattern::uniform:
-    return CodirPattern::uniform;
-  case sde::SdePattern::stencil_tiling_nd:
-    return CodirPattern::stencil_tiling_nd;
-  case sde::SdePattern::cross_dim_stencil_3d:
-    return CodirPattern::cross_dim_stencil_3d;
-  case sde::SdePattern::higher_order_stencil:
-    return CodirPattern::higher_order_stencil;
-  case sde::SdePattern::wavefront_2d:
-    return CodirPattern::wavefront_2d;
-  case sde::SdePattern::jacobi_alternating_buffers:
-    return CodirPattern::jacobi_alternating_buffers;
-  case sde::SdePattern::matmul:
-    return CodirPattern::matmul;
-  case sde::SdePattern::elementwise_pipeline:
-    return CodirPattern::elementwise_pipeline;
-  case sde::SdePattern::reduction:
-    return CodirPattern::reduction;
-  }
-  return CodirPattern::uniform;
-}
-
-inline CodirDistributionKind
-convertDistributionKind(sde::SdeDistributionKind kind) {
-  switch (kind) {
-  case sde::SdeDistributionKind::owner_compute:
-    return CodirDistributionKind::owner_compute;
-  case sde::SdeDistributionKind::blocked:
-    return CodirDistributionKind::blocked;
-  case sde::SdeDistributionKind::cyclic:
-    return CodirDistributionKind::cyclic;
-  }
-  return CodirDistributionKind::owner_compute;
-}
-
-inline CodirIterationTopology
-convertIterationTopology(sde::SdeIterationTopology topology) {
-  switch (topology) {
-  case sde::SdeIterationTopology::owner_strip:
-    return CodirIterationTopology::owner_strip;
-  case sde::SdeIterationTopology::owner_tile:
-    return CodirIterationTopology::owner_tile;
-  case sde::SdeIterationTopology::owner_tile_2d:
-    return CodirIterationTopology::owner_tile_2d;
-  }
-  return CodirIterationTopology::owner_strip;
-}
-
-inline CodirRepetitionStructure
-convertRepetitionStructure(sde::SdeRepetitionStructure structure) {
-  switch (structure) {
-  case sde::SdeRepetitionStructure::none:
-    return CodirRepetitionStructure::none;
-  case sde::SdeRepetitionStructure::pair_step:
-    return CodirRepetitionStructure::pair_step;
-  case sde::SdeRepetitionStructure::k_step:
-    return CodirRepetitionStructure::k_step;
-  case sde::SdeRepetitionStructure::full_timestep:
-    return CodirRepetitionStructure::full_timestep;
-  }
-  return CodirRepetitionStructure::none;
-}
-
-inline CodirAsyncStrategy convertAsyncStrategy(sde::SdeAsyncStrategy strategy) {
-  switch (strategy) {
-  case sde::SdeAsyncStrategy::blocking:
-    return CodirAsyncStrategy::blocking;
-  case sde::SdeAsyncStrategy::advance_stage:
-    return CodirAsyncStrategy::advance_stage;
-  case sde::SdeAsyncStrategy::cps_chain:
-    return CodirAsyncStrategy::cps_chain;
-  }
-  return CodirAsyncStrategy::blocking;
-}
-
-inline CodirReductionStrategy
-convertReductionStrategy(sde::SdeReductionStrategy strategy) {
-  switch (strategy) {
-  case sde::SdeReductionStrategy::atomic:
-    return CodirReductionStrategy::atomic;
-  case sde::SdeReductionStrategy::tree:
-    return CodirReductionStrategy::tree;
-  case sde::SdeReductionStrategy::local_accumulate:
-    return CodirReductionStrategy::local_accumulate;
-  }
-  return CodirReductionStrategy::tree;
-}
+static_assert(static_cast<int>(sde::SdeAccessMode::readwrite) ==
+              static_cast<int>(CodirAccessMode::readwrite));
+static_assert(static_cast<int>(sde::SdeStorageViewKind::phase_redistributed) ==
+              static_cast<int>(CodirStorageViewKind::phase_redistributed));
+static_assert(static_cast<int>(sde::SdePattern::reduction) ==
+              static_cast<int>(CodirPattern::reduction));
+static_assert(static_cast<int>(sde::SdeDistributionKind::cyclic) ==
+              static_cast<int>(CodirDistributionKind::cyclic));
+static_assert(static_cast<int>(sde::SdeIterationTopology::owner_tile_2d) ==
+              static_cast<int>(CodirIterationTopology::owner_tile_2d));
+static_assert(static_cast<int>(sde::SdeRepetitionStructure::full_timestep) ==
+              static_cast<int>(CodirRepetitionStructure::full_timestep));
+static_assert(static_cast<int>(sde::SdeAsyncStrategy::cps_chain) ==
+              static_cast<int>(CodirAsyncStrategy::cps_chain));
+static_assert(static_cast<int>(sde::SdeReductionStrategy::local_accumulate) ==
+              static_cast<int>(CodirReductionStrategy::local_accumulate));
 
 struct CodirCodeletMetadata {
   CodirPatternAttr pattern;
@@ -162,8 +67,8 @@ inline CodirCodeletMetadata getCodirMetadataFromTask(sde::SdeCuTaskOp task) {
     return metadata;
   MLIRContext *ctx = task.getContext();
   if (auto pattern = task.getPatternAttr())
-    metadata.pattern =
-        CodirPatternAttr::get(ctx, convertPattern(pattern.getValue()));
+    metadata.pattern = CodirPatternAttr::get(
+        ctx, static_cast<CodirPattern>(pattern.getValue()));
   return metadata;
 }
 
@@ -174,27 +79,27 @@ getCodirMetadataFromSchedulingUnit(sde::SdeSuIterateOp source) {
     return metadata;
   MLIRContext *ctx = source.getContext();
   if (auto pattern = source.getPatternAttr())
-    metadata.pattern =
-        CodirPatternAttr::get(ctx, convertPattern(pattern.getValue()));
+    metadata.pattern = CodirPatternAttr::get(
+        ctx, static_cast<CodirPattern>(pattern.getValue()));
   if (auto kind = source.getDistributionKindAttr())
     metadata.distributionKind = CodirDistributionKindAttr::get(
-        ctx, convertDistributionKind(kind.getValue()));
+        ctx, static_cast<CodirDistributionKind>(kind.getValue()));
   else if (auto parentDistribute =
                source->getParentOfType<sde::SdeSuDistributeOp>())
     metadata.distributionKind = CodirDistributionKindAttr::get(
-        ctx, convertDistributionKind(parentDistribute.getKind()));
+        ctx, static_cast<CodirDistributionKind>(parentDistribute.getKind()));
   if (auto topology = source.getIterationTopologyAttr())
     metadata.iterationTopology = CodirIterationTopologyAttr::get(
-        ctx, convertIterationTopology(topology.getValue()));
+        ctx, static_cast<CodirIterationTopology>(topology.getValue()));
   if (auto repetition = source.getRepetitionStructureAttr())
     metadata.repetitionStructure = CodirRepetitionStructureAttr::get(
-        ctx, convertRepetitionStructure(repetition.getValue()));
+        ctx, static_cast<CodirRepetitionStructure>(repetition.getValue()));
   if (auto async = source.getAsyncStrategyAttr())
     metadata.asyncStrategy = CodirAsyncStrategyAttr::get(
-        ctx, convertAsyncStrategy(async.getValue()));
+        ctx, static_cast<CodirAsyncStrategy>(async.getValue()));
   if (auto strategy = source.getReductionStrategyAttr())
     metadata.reductionStrategy = CodirReductionStrategyAttr::get(
-        ctx, convertReductionStrategy(strategy.getValue()));
+        ctx, static_cast<CodirReductionStrategy>(strategy.getValue()));
   if (source.getPartialReductionAttr())
     metadata.partialReduction = UnitAttr::get(ctx);
   metadata.partialReductionDims = source.getPartialReductionDimsAttr();

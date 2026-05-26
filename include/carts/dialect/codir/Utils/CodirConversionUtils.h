@@ -34,8 +34,6 @@ using namespace mlir::carts::codir;
 namespace {
 
 using ::mlir::carts::codir::sde_to_codir::CodirCodeletMetadata;
-using ::mlir::carts::codir::sde_to_codir::convertAccessMode;
-using ::mlir::carts::codir::sde_to_codir::convertStorageViewKind;
 using ::mlir::carts::codir::sde_to_codir::getCodirMetadataFromSchedulingUnit;
 using ::mlir::carts::codir::sde_to_codir::getCodirMetadataFromTask;
 
@@ -980,10 +978,10 @@ static inline LogicalResult materializeCodirDeps(
       }
       deps.push_back(tokenOp.getSource());
       modes.push_back(codir::CodirAccessModeAttr::get(
-          builder.getContext(), convertAccessMode(tokenOp.getMode())));
+          builder.getContext(), static_cast<codir::CodirAccessMode>(tokenOp.getMode())));
       codir::CodirStorageViewKind view =
           tokenOp.getStorageViewAttr()
-              ? convertStorageViewKind(tokenOp.getStorageViewAttr().getValue())
+              ? static_cast<codir::CodirStorageViewKind>(tokenOp.getStorageViewAttr().getValue())
               : codir::CodirStorageViewKind::host_whole;
       storageViews.push_back(
           codir::CodirStorageViewKindAttr::get(builder.getContext(), view));
@@ -1002,10 +1000,10 @@ static inline LogicalResult materializeCodirDeps(
         tokenOp.getSource(), offsets, sizes, strides);
     deps.push_back(subview.getResult());
     modes.push_back(codir::CodirAccessModeAttr::get(
-        builder.getContext(), convertAccessMode(tokenOp.getMode())));
+        builder.getContext(), static_cast<codir::CodirAccessMode>(tokenOp.getMode())));
     codir::CodirStorageViewKind view =
         tokenOp.getStorageViewAttr()
-            ? convertStorageViewKind(tokenOp.getStorageViewAttr().getValue())
+            ? static_cast<codir::CodirStorageViewKind>(tokenOp.getStorageViewAttr().getValue())
             : codir::CodirStorageViewKind::compute_block;
     storageViews.push_back(
         codir::CodirStorageViewKindAttr::get(builder.getContext(), view));
@@ -1344,11 +1342,14 @@ static inline LogicalResult buildCodirTaskPlan(sde::SdeCuTaskOp task,
 
     codir::CodirStorageViewKind storageView =
         muDep.getStorageViewAttr()
-            ? convertStorageViewKind(muDep.getStorageViewAttr().getValue())
+            ? static_cast<codir::CodirStorageViewKind>(
+                  muDep.getStorageViewAttr().getValue())
             : (useTokenLocalView ? codir::CodirStorageViewKind::compute_block
                                  : codir::CodirStorageViewKind::host_whole);
-    if (failed(addTaskDep(codirDep, convertAccessMode(muDep.getMode()),
-                          storageView, plan)))
+    if (failed(addTaskDep(
+            codirDep,
+            static_cast<codir::CodirAccessMode>(muDep.getMode()),
+            storageView, plan)))
       return muDep.emitOpError()
              << "source must be a memref for CODIR task dependency";
 
