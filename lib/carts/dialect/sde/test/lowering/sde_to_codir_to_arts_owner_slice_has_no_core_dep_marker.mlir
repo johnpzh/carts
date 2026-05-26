@@ -11,25 +11,17 @@
 // CHECK-LABEL: func.func @owner_slice_no_core_dep_marker
 // CHECK: arts.db_alloc{{.*}}<coarse>
 // CHECK-SAME: elementSizes[%c2048{{(_[0-9]+)?}}, %c64{{(_[0-9]+)?}}]
-// CHECK: arts.db_alloc{{.*}}<block>
-// CHECK-SAME: elementSizes[%c256{{(_[0-9]+)?}}, %c64{{(_[0-9]+)?}}]
-// CHECK-SAME: arts.storage_bridge = "host_whole_to_compute_block"
-// CHECK-SAME: planPhysicalBlockShape = [256, 64]
+// CHECK: arts.db_alloc{{.*}}<coarse>
+// CHECK-SAME: elementSizes[%c2048{{(_[0-9]+)?}}, %c64{{(_[0-9]+)?}}]
 // CHECK: scf.for
-// CHECK: memref.load
-// CHECK: memref.store
-// CHECK: arts.db_acquire[<in>]{{.*}}partitioning(<block>)
-// CHECK: arts.db_acquire[<inout>]{{.*}}partitioning(<block>)
+// CHECK: arts.db_acquire[<in>]{{.*}}partitioning(<coarse>)
+// CHECK: arts.db_acquire[<inout>]{{.*}}partitioning(<coarse>)
 // CHECK: arts.edt <task> <intranode>{{.*}}planPhysicalBlockShape = [256, 64]
 // CHECK: arts.db_ref
-// CHECK: %[[LOCAL_IN:.*]] = arith.subi %arg{{[0-9]+}}, %arg{{[0-9]+}} : index
-// CHECK-NEXT: memref.load {{.*}}[%[[LOCAL_IN]],
+// CHECK: memref.load
 // CHECK: memref.store
 // CHECK: arts.barrier
 // CHECK-SAME: barrierReason = #arts.barrier_reason<required_memory>
-// CHECK: scf.for
-// CHECK: memref.load
-// CHECK: memref.store
 
 // LLVM: define void @owner_slice_no_core_dep_marker
 

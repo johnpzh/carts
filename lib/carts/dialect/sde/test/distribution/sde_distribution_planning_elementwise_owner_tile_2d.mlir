@@ -14,9 +14,12 @@
 // CHECK-SAME: physicalOwnerDims = [0, 1]
 // CHECK-LABEL: // -----// IR Dump After ConvertSdeToCodir
 // CHECK: func.func @elementwise_inplace_2d_owner_tile
-// CHECK: scf.for {{.*}} step %c64
-// CHECK: scf.for {{.*}} step %c64
+// CHECK: scf.for
+// CHECK: scf.for
 // CHECK: codir.codelet
+// CHECK-SAME: iteration_topology = #codir.iteration_topology<owner_tile>
+// CHECK-SAME: logical_worker_slice = [64, 64, 16]
+// CHECK-SAME: tile_owner_dims = [0, 1]
 
 module attributes {
   dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f32, dense<32> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">>,

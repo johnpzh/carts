@@ -290,12 +290,16 @@ static bool isElementwiseStage(Operation *root, ElementwiseStage &stage) {
     Value target = getWriteRoot(loadOp.getMemref());
     if (!target)
       return;
+    if (sde::isDefinedInside(op.getOperation(), target))
+      return;
     reads.push_back(
         MemrefAccess{target, SmallVector<Value, 4>(loadOp.getIndices())});
   });
   op.getBody().walk([&](memref::StoreOp storeOp) {
     Value target = getWriteRoot(storeOp.getMemref());
     if (!target)
+      return;
+    if (sde::isDefinedInside(op.getOperation(), target))
       return;
     if (!seenWrites.insert(target).second) {
       hasDuplicateWrite = true;

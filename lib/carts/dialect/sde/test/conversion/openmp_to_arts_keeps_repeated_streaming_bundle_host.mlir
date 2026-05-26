@@ -5,9 +5,8 @@
 // RUN:   | awk '/IR Dump After ConvertOpenMPToSde/,/IR Dump After PatternAnalysis/' \
 // RUN:   | %FileCheck %s --check-prefix=MULTI
 
-// A repeated bundle of one-dimensional floating-point streaming maps is kept as
-// host OpenMP for single-node benchmark runs. Multinode runs must enter
-// SDE/CODIR/ARTS so benchmark Slurm artifacts are true distributed ARTS jobs.
+// A repeated bundle of one-dimensional floating-point streaming maps uses the
+// single-node host policy. Multinode runs still enter SDE/CODIR/ARTS.
 
 // SINGLE-LABEL: // -----// IR Dump After ConvertOpenMPToSde (convert-openmp-to-sde) //----- //
 // SINGLE: omp.parallel

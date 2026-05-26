@@ -840,10 +840,8 @@ static void stampDirectMatmulTilePlan(sde::SdeSuIterateOp op,
     return;
   blockShape[0] = plan.rowTile;
 
-  // Direct-memory matmul keeps full output rows in one owner task until SDE
-  // can also tile the input access windows. Splitting columns across owner
-  // tasks duplicates the k-sweep against coarse A/B inputs and regresses large
-  // GEMM.
+  // Direct-memory matmul keeps full output rows in one owner task. Splitting
+  // columns across owner tasks duplicates the k-sweep against coarse inputs.
   op.setPhysicalOwnerDimsAttr(
       buildI64ArrayAttr(op.getContext(), SmallVector<int64_t, 1>{0}));
   op.setPhysicalBlockShapeAttr(buildI64ArrayAttr(op.getContext(), blockShape));

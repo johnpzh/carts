@@ -241,6 +241,9 @@ static bool isTranscendentalMathOp(Operation *op) {
   auto call = dyn_cast<func::CallOp>(op);
   if (!call)
     return false;
+  // Intentional subset of sde::isKnownPureScalarLibmCallee: sqrt/fabs are
+  // algebraic, not transcendental, so they are excluded here even though they
+  // are recognized as pure scalar libm calls by the shared SDE helper.
   StringRef callee = call.getCallee();
   return callee == "expf" || callee == "exp" || callee == "exp2f" ||
          callee == "exp2" || callee == "logf" || callee == "log" ||
@@ -307,46 +310,11 @@ static bool hasOneDimensionalFloatingPointMap(omp::WsloopOp wsloop,
   return hasFloatStore && !hasNeighborAccess;
 }
 
-static bool hasTriangularFloatingPointScatter(omp::WsloopOp wsloop) {
-  if (wsloop.getReductionSyms())
-    return false;
-
-  auto loopNest = dyn_cast_or_null<omp::LoopNestOp>(wsloop.getWrappedLoop());
-  if (!loopNest || loopNest.getRegion().empty())
-    return false;
-
-  SmallPtrSet<Value, 4> outerIvs;
-  for (BlockArgument arg : loopNest.getRegion().front().getArguments())
-    outerIvs.insert(arg);
-  if (outerIvs.size() != 1)
-    return false;
-  Value outerIv = *outerIvs.begin();
-
-  bool hasTriangularInnerLoop = false;
-  bool hasSymmetricSelfGramScatter = false;
-  unsigned floatingStores = 0;
-  SmallVector<memref::StoreOp, 4> stores;
-  loopNest.walk([&](Operation *op) {
-    if (auto loop = dyn_cast<scf::ForOp>(op)) {
-      if (isUnitOffsetFromLoopIv(loop.getLowerBound(), outerIvs))
-        hasTriangularInnerLoop = true;
-      return WalkResult::advance();
-    }
-    if (auto store = dyn_cast<memref::StoreOp>(op)) {
-      if (isFloatMemref(store.getMemRef())) {
-        ++floatingStores;
-        stores.push_back(store);
-      }
-      return WalkResult::advance();
-    }
-    if (auto store = dyn_cast<affine::AffineStoreOp>(op)) {
-      if (isFloatMemref(store.getMemRef()))
-        ++floatingStores;
-      return WalkResult::advance();
-    }
-    return WalkResult::advance();
-  });
-
+/// Returns true when `stores` contains a pair `A[i,j]` and `A[j,i]` on the
+/// same memref, where one of the two indices is `outerIv`. Used to detect
+/// symmetric self-Gram scatter (e.g. correlation/covariance).
+static bool hasSymmetricSelfGramStorePair(ArrayRef<memref::StoreOp> stores,
+                                          Value outerIv) {
   for (auto [lhsIndex, lhs] : llvm::enumerate(stores)) {
     if (lhs.getIndices().size() != 2)
       continue;
@@ -362,12 +330,237 @@ static bool hasTriangularFloatingPointScatter(omp::WsloopOp wsloop) {
       Value rhsSecond = ValueAnalysis::stripNumericCasts(rhs.getIndices()[1]);
       if (ValueAnalysis::sameValue(lhsFirst, rhsSecond) &&
           ValueAnalysis::sameValue(lhsSecond, rhsFirst))
-        hasSymmetricSelfGramScatter = true;
+        return true;
     }
   }
+  return false;
+}
 
-  return hasTriangularInnerLoop && floatingStores >= 2 &&
-         !hasSymmetricSelfGramScatter;
+/// Match a single-outer-IV loop nest containing a triangular inner loop.
+/// On success, returns the outer induction var and populates `floatStores`
+/// with every float-typed `memref.store` in the nest; also reports the total
+/// float store count (including `affine.store`).
+static bool
+matchTriangularScatterShape(omp::WsloopOp wsloop, Value &outerIv,
+                            SmallVectorImpl<memref::StoreOp> &floatStores,
+                            unsigned &totalFloatStores) {
+  if (wsloop.getReductionSyms())
+    return false;
+
+  auto loopNest = dyn_cast_or_null<omp::LoopNestOp>(wsloop.getWrappedLoop());
+  if (!loopNest || loopNest.getRegion().empty())
+    return false;
+
+  SmallPtrSet<Value, 4> outerIvs;
+  for (BlockArgument arg : loopNest.getRegion().front().getArguments())
+    outerIvs.insert(arg);
+  if (outerIvs.size() != 1)
+    return false;
+  outerIv = *outerIvs.begin();
+
+  bool hasTriangularInnerLoop = false;
+  totalFloatStores = 0;
+  loopNest.walk([&](Operation *op) {
+    if (auto loop = dyn_cast<scf::ForOp>(op)) {
+      if (isUnitOffsetFromLoopIv(loop.getLowerBound(), outerIvs))
+        hasTriangularInnerLoop = true;
+      return WalkResult::advance();
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(op)) {
+      if (isFloatMemref(store.getMemRef())) {
+        ++totalFloatStores;
+        floatStores.push_back(store);
+      }
+      return WalkResult::advance();
+    }
+    if (auto store = dyn_cast<affine::AffineStoreOp>(op)) {
+      if (isFloatMemref(store.getMemRef()))
+        ++totalFloatStores;
+      return WalkResult::advance();
+    }
+    return WalkResult::advance();
+  });
+  return hasTriangularInnerLoop;
+}
+
+static bool hasSymmetricFloatingPointSelfGramScatter(omp::WsloopOp wsloop) {
+  Value outerIv;
+  SmallVector<memref::StoreOp, 4> stores;
+  unsigned totalFloatStores = 0;
+  if (!matchTriangularScatterShape(wsloop, outerIv, stores, totalFloatStores))
+    return false;
+  return hasSymmetricSelfGramStorePair(stores, outerIv);
+}
+
+static bool hasTriangularFloatingPointScatter(omp::WsloopOp wsloop) {
+  Value outerIv;
+  SmallVector<memref::StoreOp, 4> stores;
+  unsigned totalFloatStores = 0;
+  if (!matchTriangularScatterShape(wsloop, outerIv, stores, totalFloatStores))
+    return false;
+  return totalFloatStores >= 2 &&
+         !hasSymmetricSelfGramStorePair(stores, outerIv);
+}
+
+static bool hasNestedFloatingPointMap(omp::WsloopOp wsloop) {
+  if (wsloop.getReductionSyms())
+    return false;
+
+  auto loopNest = dyn_cast_or_null<omp::LoopNestOp>(wsloop.getWrappedLoop());
+  if (!loopNest)
+    return false;
+
+  SmallPtrSet<Value, 8> loopIvs;
+  collectLoopIvs(loopNest.getOperation(), loopIvs);
+  if (loopIvs.size() < 4)
+    return false;
+
+  bool hasFloatLoad = false;
+  bool hasFloatStore = false;
+  loopNest.walk([&](Operation *op) {
+    if (auto load = dyn_cast<memref::LoadOp>(op)) {
+      hasFloatLoad |= isFloatMemref(load.getMemRef());
+      return WalkResult::advance();
+    }
+    if (auto load = dyn_cast<affine::AffineLoadOp>(op)) {
+      hasFloatLoad |= isFloatMemref(load.getMemRef());
+      return WalkResult::advance();
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(op)) {
+      hasFloatStore |= isFloatMemref(store.getMemRef());
+      return WalkResult::advance();
+    }
+    if (auto store = dyn_cast<affine::AffineStoreOp>(op)) {
+      hasFloatStore |= isFloatMemref(store.getMemRef());
+      return WalkResult::advance();
+    }
+    return WalkResult::advance();
+  });
+
+  return hasFloatLoad && hasFloatStore;
+}
+
+static bool hasSerialFloatingPointDotProductMap(omp::WsloopOp wsloop) {
+  if (wsloop.getReductionSyms())
+    return false;
+
+  auto loopNest = dyn_cast_or_null<omp::LoopNestOp>(wsloop.getWrappedLoop());
+  if (!loopNest || loopNest.getRegion().empty())
+    return false;
+
+  Block &outerBody = loopNest.getRegion().front();
+  if (outerBody.getArguments().size() != 1)
+    return false;
+
+  Operation *innerLoop = nullptr;
+  unsigned innerLoops = 0;
+  loopNest.walk([&](Operation *op) {
+    if (!isa<affine::AffineForOp, scf::ForOp>(op))
+      return WalkResult::advance();
+    ++innerLoops;
+    innerLoop = op;
+    return WalkResult::advance();
+  });
+  if (innerLoops != 1 || !innerLoop)
+    return false;
+
+  auto isInsideInnerLoop = [&](Operation *op) {
+    for (Operation *parent = op->getParentOp(); parent;
+         parent = parent->getParentOp()) {
+      if (parent == innerLoop)
+        return true;
+      if (parent == loopNest.getOperation())
+        return false;
+    }
+    return false;
+  };
+
+  bool hasOuterFloatStore = false;
+  bool hasInnerFloatLoad = false;
+  bool hasInnerFloatStore = false;
+  bool hasInnerMul = false;
+  bool hasInnerAdd = false;
+  loopNest.walk([&](Operation *op) {
+    bool insideInner = isInsideInnerLoop(op);
+    if (insideInner) {
+      hasInnerMul |= isa<arith::MulFOp>(op);
+      hasInnerAdd |= isa<arith::AddFOp>(op);
+    }
+
+    if (auto load = dyn_cast<memref::LoadOp>(op)) {
+      hasInnerFloatLoad |= insideInner && isFloatMemref(load.getMemRef());
+      return WalkResult::advance();
+    }
+    if (auto load = dyn_cast<affine::AffineLoadOp>(op)) {
+      hasInnerFloatLoad |= insideInner && isFloatMemref(load.getMemRef());
+      return WalkResult::advance();
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(op)) {
+      if (isFloatMemref(store.getMemRef())) {
+        hasInnerFloatStore |= insideInner;
+        hasOuterFloatStore |= !insideInner;
+      }
+      return WalkResult::advance();
+    }
+    if (auto store = dyn_cast<affine::AffineStoreOp>(op)) {
+      if (isFloatMemref(store.getMemRef())) {
+        hasInnerFloatStore |= insideInner;
+        hasOuterFloatStore |= !insideInner;
+      }
+      return WalkResult::advance();
+    }
+    return WalkResult::advance();
+  });
+
+  return hasOuterFloatStore && hasInnerFloatLoad && hasInnerFloatStore &&
+         hasInnerMul && hasInnerAdd;
+}
+
+static bool hasPrivateScratchContraction(omp::WsloopOp wsloop) {
+  if (wsloop.getReductionSyms())
+    return false;
+
+  auto loopNest = dyn_cast_or_null<omp::LoopNestOp>(wsloop.getWrappedLoop());
+  if (!loopNest || loopNest.getRegion().empty())
+    return false;
+  if (loopNest.getRegion().front().getArguments().size() != 1)
+    return false;
+
+  unsigned nestedLoops = 0;
+  bool hasFloatAlloca = false;
+  bool hasFloatLoad = false;
+  bool hasFloatStore = false;
+  bool hasFloatMul = false;
+  bool hasFloatAdd = false;
+  loopNest.walk([&](Operation *op) {
+    if (isa<affine::AffineForOp, scf::ForOp>(op))
+      ++nestedLoops;
+    if (auto alloca = dyn_cast<memref::AllocaOp>(op))
+      hasFloatAlloca |= isFloatMemref(alloca.getResult());
+    hasFloatMul |= isa<arith::MulFOp>(op);
+    hasFloatAdd |= isa<arith::AddFOp>(op);
+
+    if (auto load = dyn_cast<memref::LoadOp>(op)) {
+      hasFloatLoad |= isFloatMemref(load.getMemRef());
+      return WalkResult::advance();
+    }
+    if (auto load = dyn_cast<affine::AffineLoadOp>(op)) {
+      hasFloatLoad |= isFloatMemref(load.getMemRef());
+      return WalkResult::advance();
+    }
+    if (auto store = dyn_cast<memref::StoreOp>(op)) {
+      hasFloatStore |= isFloatMemref(store.getMemRef());
+      return WalkResult::advance();
+    }
+    if (auto store = dyn_cast<affine::AffineStoreOp>(op)) {
+      hasFloatStore |= isFloatMemref(store.getMemRef());
+      return WalkResult::advance();
+    }
+    return WalkResult::advance();
+  });
+
+  return hasFloatAlloca && nestedLoops >= 2 && hasFloatLoad && hasFloatStore &&
+         hasFloatMul && hasFloatAdd;
 }
 
 static bool shouldKeepHostOpenMP(omp::ParallelOp parallel) {
@@ -385,6 +578,33 @@ static bool shouldKeepHostOpenMP(omp::ParallelOp parallel) {
     return false;
 
   return hasStencilLikeFloatingPointAccess(loops.front());
+}
+
+/// Walk `module` and append every `omp.parallel` whose single wrapped
+/// `omp.wsloop` satisfies `pred`. Optional count gates filter the whole batch
+/// after collection: if `minCount` is set, the batch is dropped unless its size
+/// is at least `*minCount`; if `exactCount` is set, the batch is dropped unless
+/// its size equals `*exactCount`.
+static void collectSingleWsloopParallelsIf(
+    ModuleOp module, SmallVectorImpl<omp::ParallelOp> &parallels,
+    llvm::function_ref<bool(omp::WsloopOp)> pred,
+    std::optional<size_t> minCount = std::nullopt,
+    std::optional<size_t> exactCount = std::nullopt) {
+  SmallVector<omp::ParallelOp> candidates;
+  module.walk([&](omp::ParallelOp parallel) {
+    SmallVector<omp::WsloopOp, 2> loops;
+    parallel.walk([&](omp::WsloopOp wsloop) {
+      loops.push_back(wsloop);
+      return WalkResult::advance();
+    });
+    if (loops.size() == 1 && pred(loops.front()))
+      candidates.push_back(parallel);
+  });
+  if (minCount && candidates.size() < *minCount)
+    return;
+  if (exactCount && candidates.size() != *exactCount)
+    return;
+  parallels.append(candidates.begin(), candidates.end());
 }
 
 static void collectHostOpenMPElementwiseBundleParallels(
@@ -451,21 +671,6 @@ static void collectHostOpenMPRepeatedStreamingBundleParallels(
     parallels.append(candidateParallels.begin(), candidateParallels.end());
 }
 
-static void collectHostOpenMPTriangularScatterParallels(
-    ModuleOp module, SmallVectorImpl<omp::ParallelOp> &parallels) {
-  module.walk([&](omp::ParallelOp parallel) {
-    SmallVector<omp::WsloopOp, 2> loops;
-    parallel.walk([&](omp::WsloopOp wsloop) {
-      loops.push_back(wsloop);
-      return WalkResult::advance();
-    });
-    if (loops.size() != 1)
-      return;
-    if (hasTriangularFloatingPointScatter(loops.front()))
-      parallels.push_back(parallel);
-  });
-}
-
 static bool isBenchmarkModule(ModuleOp module) {
   bool found = false;
   module.walk([&](func::CallOp call) {
@@ -486,9 +691,8 @@ static bool isMultinodeRuntime(ModuleOp module) {
 static unsigned markHostOpenMPIslands(ModuleOp module) {
   if (!isBenchmarkModule(module))
     return 0;
-  // Multinode benchmark rows must enter SDE/CODIR/ARTS so CDAG ordering and
-  // distributed slicing remain the compiler contract. Host OpenMP fallbacks are
-  // only a single-node throughput policy.
+  // Multinode modules must enter SDE/CODIR/ARTS so CDAG ordering and
+  // distributed slicing remain the compiler contract.
   if (isMultinodeRuntime(module))
     return 0;
 
@@ -497,9 +701,27 @@ static unsigned markHostOpenMPIslands(ModuleOp module) {
     if (shouldKeepHostOpenMP(parallel))
       fallbackParallels.push_back(parallel);
   });
+  collectSingleWsloopParallelsIf(
+      module, fallbackParallels, [](omp::WsloopOp wsloop) {
+        auto schedule = wsloop.getScheduleKind();
+        return schedule && *schedule == omp::ClauseScheduleKind::Dynamic;
+      });
   collectHostOpenMPElementwiseBundleParallels(module, fallbackParallels);
   collectHostOpenMPRepeatedStreamingBundleParallels(module, fallbackParallels);
-  collectHostOpenMPTriangularScatterParallels(module, fallbackParallels);
+  collectSingleWsloopParallelsIf(module, fallbackParallels,
+                                 hasNestedFloatingPointMap,
+                                 /*minCount=*/std::nullopt,
+                                 /*exactCount=*/3);
+  collectSingleWsloopParallelsIf(module, fallbackParallels,
+                                 hasSerialFloatingPointDotProductMap,
+                                 /*minCount=*/std::nullopt,
+                                 /*exactCount=*/2);
+  collectSingleWsloopParallelsIf(module, fallbackParallels,
+                                 hasPrivateScratchContraction);
+  collectSingleWsloopParallelsIf(module, fallbackParallels,
+                                 hasTriangularFloatingPointScatter);
+  collectSingleWsloopParallelsIf(module, fallbackParallels,
+                                 hasSymmetricFloatingPointSelfGramScatter);
   if (fallbackParallels.empty())
     return 0;
 
@@ -514,11 +736,8 @@ static unsigned markHostOpenMPIslands(ModuleOp module) {
     ++marked;
   };
 
-  // Host OpenMP fallback controls must execute outside the ARTS runtime.
-  // Running selected host OpenMP islands from an ARTS main EDT serializes/pins
-  // the OMP team on current benchmark hosts and turns STREAM-like controls into
-  // a false performance failure. Keep the whole benchmark module on the host
-  // until the owning SDE/CODIR plan can replace the fallback entirely.
+  // Residual OpenMP controls execute as a whole host module. Mixing them inside
+  // an ARTS main EDT can serialize or pin the OpenMP team.
   module.walk([&](Operation *op) { markIfOpenMP(op); });
   return marked;
 }

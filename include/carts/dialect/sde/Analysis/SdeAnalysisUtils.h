@@ -14,8 +14,8 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include <optional>
 
 namespace mlir::carts::sde {
@@ -82,8 +82,41 @@ inline bool isDefinedInside(Operation *ancestor, Value value) {
   return def && ancestor->isAncestor(def);
 }
 
+/// True when `op` is a memref alloc/alloca/load/store/dealloc whose root memref
+/// is defined inside `ownerScope`. This identifies "local scratch" effects that
+/// SDE analyses and transforms can treat as private to the owning region.
+inline bool isLocalScratchEffect(Operation *op, Operation *ownerScope) {
+  if (!op || !ownerScope)
+    return false;
+  if (isa<memref::AllocOp, memref::AllocaOp>(op)) {
+    for (Value result : op->getResults())
+      if (!isDefinedInside(ownerScope, result))
+        return false;
+    return op->getNumResults() != 0;
+  }
+  Value memref;
+  if (auto load = dyn_cast<memref::LoadOp>(op))
+    memref = load.getMemref();
+  else if (auto store = dyn_cast<memref::StoreOp>(op))
+    memref = store.getMemref();
+  else if (auto dealloc = dyn_cast<memref::DeallocOp>(op))
+    memref = dealloc.getMemref();
+  else
+    return false;
+  Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(memref);
+  return root && isDefinedInside(ownerScope, root);
+}
+
 inline bool isKnownPureScalarLibmCallee(StringRef callee) {
-  return callee == "tanhf" || callee == "tanh";
+  return callee == "expf" || callee == "exp" || callee == "exp2f" ||
+         callee == "exp2" || callee == "logf" || callee == "log" ||
+         callee == "log2f" || callee == "log2" || callee == "log10f" ||
+         callee == "log10" || callee == "sinf" || callee == "sin" ||
+         callee == "cosf" || callee == "cos" || callee == "tanf" ||
+         callee == "tan" || callee == "tanhf" || callee == "tanh" ||
+         callee == "erff" || callee == "erf" || callee == "powf" ||
+         callee == "pow" || callee == "sqrtf" || callee == "sqrt" ||
+         callee == "fabsf" || callee == "fabs";
 }
 
 inline bool isScalarOrVectorValueType(Type type) {
@@ -130,8 +163,7 @@ inline bool hasUnmodeledMemoryEffect(Operation *op) {
     SmallVector<MemoryEffects::EffectInstance> effects;
     memEffects.getEffects(effects);
     for (const MemoryEffects::EffectInstance &effect : effects) {
-      if (isa<MemoryEffects::Read, MemoryEffects::Write>(
-              effect.getEffect()))
+      if (isa<MemoryEffects::Read, MemoryEffects::Write>(effect.getEffect()))
         return true;
     }
     return false;
@@ -140,8 +172,9 @@ inline bool hasUnmodeledMemoryEffect(Operation *op) {
   return !isMemoryEffectFree(op);
 }
 
-inline void collectStructuredMemoryEffects(
-    Region &region, StructuredMemoryEffectSummary &summary) {
+inline void
+collectStructuredMemoryEffects(Region &region,
+                               StructuredMemoryEffectSummary &summary) {
   region.walk([&](Operation *op) {
     if (auto loadOp = dyn_cast<memref::LoadOp>(op)) {
       summary.reads.insert(
@@ -150,8 +183,8 @@ inline void collectStructuredMemoryEffects(
     }
 
     if (auto storeOp = dyn_cast<memref::StoreOp>(op)) {
-      summary.writes.insert(
-          ::mlir::carts::ValueAnalysis::stripMemrefViewOps(storeOp.getMemref()));
+      summary.writes.insert(::mlir::carts::ValueAnalysis::stripMemrefViewOps(
+          storeOp.getMemref()));
       return;
     }
 
@@ -183,12 +216,13 @@ inline SmallVector<Value, 4> collectOwnerIndexValues(SdeSuIterateOp op) {
   ownerIndexValues.push_back(loopIv);
   Block *computeBlock = getSuIterateComputeBlock(op);
   if (computeBlock && computeBlock != &body) {
-    if (auto cuRegion = dyn_cast_or_null<SdeCuRegionOp>(
-            computeBlock->getParentOp())) {
+    if (auto cuRegion =
+            dyn_cast_or_null<SdeCuRegionOp>(computeBlock->getParentOp())) {
       for (auto [idx, iterArg] : llvm::enumerate(cuRegion.getIterArgs())) {
         if (idx >= computeBlock->getNumArguments())
           break;
-        if (iterArg == loopIv || ::mlir::carts::ValueAnalysis::dependsOn(iterArg, loopIv))
+        if (iterArg == loopIv ||
+            ::mlir::carts::ValueAnalysis::dependsOn(iterArg, loopIv))
           ownerIndexValues.push_back(computeBlock->getArgument(idx));
       }
     }
@@ -242,10 +276,10 @@ collectExactOwnerIndexedPhysicalDims(OperandRange indices,
 
 /// Prove that all accesses to an in-place output root stay within the same
 /// owner slice of a one-dimensional scheduling unit. This permits blocked
-/// storage layout for row-local update kernels such as layernorm while rejecting
-/// stencil-like first-dimension offsets (`i +/- 1`) that need halo planning.
-inline bool allRootAccessesStayWithinOwnerSlice(SdeSuIterateOp op,
-                                                Value root,
+/// storage layout for row-local update kernels such as layernorm while
+/// rejecting stencil-like first-dimension offsets (`i +/- 1`) that need halo
+/// planning.
+inline bool allRootAccessesStayWithinOwnerSlice(SdeSuIterateOp op, Value root,
                                                 ArrayRef<int64_t> ownerDims) {
   if (!op || !root)
     return false;
@@ -292,8 +326,7 @@ inline bool allRootAccessesStayWithinOwnerSlice(SdeSuIterateOp op,
   return !result.wasInterrupted() && sawRootAccess;
 }
 
-inline bool allRootAccessesStayWithinOwnerSlice(SdeSuIterateOp op,
-                                                Value root) {
+inline bool allRootAccessesStayWithinOwnerSlice(SdeSuIterateOp op, Value root) {
   SmallVector<int64_t, 1> firstDim{0};
   return allRootAccessesStayWithinOwnerSlice(op, root, firstDim);
 }
@@ -317,13 +350,15 @@ findLoopIndexedOutputPlan(SdeSuIterateOp op) {
       return WalkResult::advance();
 
     auto memRefType = dyn_cast<MemRefType>(base.getType());
-    if (!memRefType || memRefType.getRank() == 0 || storeOp.getIndices().empty())
+    if (!memRefType || memRefType.getRank() == 0 ||
+        storeOp.getIndices().empty())
       return WalkResult::advance();
 
     bool indexedByOwner = false;
     for (Value ownerIndex : ownerIndexValues)
       if (isExactOwnerIndex(storeOp.getIndices().front(), ownerIndexValues) ||
-          ::mlir::carts::ValueAnalysis::dependsOn(storeOp.getIndices().front(), ownerIndex)) {
+          ::mlir::carts::ValueAnalysis::dependsOn(storeOp.getIndices().front(),
+                                                  ownerIndex)) {
         indexedByOwner = true;
         break;
       }
@@ -373,7 +408,8 @@ findConsistentLoopIndexedOutputPlanWithOwnerDims(SdeSuIterateOp op) {
   bool rejected = false;
   std::optional<LoopIndexedOutputPlan> selectedPlan;
   auto visitStore = [&](memref::StoreOp storeOp) {
-    Value base = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(storeOp.getMemref());
+    Value base =
+        ::mlir::carts::ValueAnalysis::stripMemrefViewOps(storeOp.getMemref());
     if (isDefinedInside(op.getOperation(), base))
       return WalkResult::advance();
 
@@ -428,15 +464,15 @@ findConsistentLoopIndexedOutputPlanWithOwnerDims(SdeSuIterateOp op) {
   return selectedPlan;
 }
 
-inline StructuredMemoryEffectSummary collectStructuredMemoryEffects(
-    Region &region) {
+inline StructuredMemoryEffectSummary
+collectStructuredMemoryEffects(Region &region) {
   StructuredMemoryEffectSummary summary;
   collectStructuredMemoryEffects(region, summary);
   return summary;
 }
 
-inline StructuredMemoryEffectSummary collectStructuredMemoryEffects(
-    Operation *op) {
+inline StructuredMemoryEffectSummary
+collectStructuredMemoryEffects(Operation *op) {
   StructuredMemoryEffectSummary summary;
   if (!op)
     return summary;

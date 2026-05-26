@@ -20,7 +20,8 @@
 /// This pass is intentionally conservative and only applies when:
 /// - lower bound is 0 and step is 1,
 /// - exactly one @arts_guid_reserve call appears in the loop body,
-/// - route operand is compile-time constant 0.
+/// - route operand is compile-time constant 0, or current-node route -1 on a
+///   proven single-node module.
 ///
 /// For dynamic trip counts, it emits a guarded rewrite:
 /// - if (upperBound <= UINT32_MAX): use reserve_range/from_index
@@ -33,6 +34,7 @@
 #include "carts/dialect/arts-rt/Utils/RtDbUtils.h"
 #include "carts/dialect/arts-rt/Utils/RuntimeCallUtils.h"
 #include "carts/utils/LoopUtils.h"
+#include "carts/utils/OperationAttributes.h"
 #include "carts/utils/ValueAnalysis.h"
 namespace mlir::carts::arts_rt {
 #define GEN_PASS_DEF_GUIDRANGECALLOPT
@@ -61,6 +63,15 @@ static bool isGuidReserveCall(func::CallOp call) {
   std::optional<types::RuntimeFunction> fn =
       getRuntimeFunction(call);
   return fn && *fn == types::ARTSRTL_arts_guid_reserve;
+}
+
+static bool canReserveGuidRangeForRoute(ModuleOp module, int64_t route) {
+  if (route == 0)
+    return true;
+  if (route != -1)
+    return false;
+  std::optional<int64_t> totalNodes = arts::getRuntimeTotalNodes(module);
+  return totalNodes && *totalNodes == 1;
 }
 
 struct GuidRangeCallOptPass
@@ -103,7 +114,8 @@ struct GuidRangeCallOptPass
       for (func::CallOp reserveCall : reserveCalls) {
         auto routeConst =
             RtDbUtils::tryFoldConstantIndex(reserveCall.getOperand(1));
-        if (!routeConst || *routeConst != 0)
+        if (!routeConst ||
+            !canReserveGuidRangeForRoute(module, *routeConst))
           continue;
 
         auto staticTripCount = getStaticTripCount(loop.getOperation());

@@ -683,7 +683,7 @@ def compile_cmd(
         if normalized_arts_debug or _has_flag(passthrough_args, FLAG_ARTS_DEBUG):
             print_error("--arts-debug is only supported for carts-compile pipeline runs")
             raise Exit(1)
-        _compile_from_ll(input_file, output, debug, passthrough_args)
+        _compile_from_ll(input_file, output, optimize, debug, passthrough_args)
         return
 
     if ext not in (".c", ".cpp", ".mlir"):
@@ -872,6 +872,7 @@ def _compile_from_mlir(
 def _compile_from_ll(
     input_file: Path,
     output: Optional[Path],
+    optimize: bool,
     debug: bool,
     passthrough_args: List[str],
 ) -> None:
@@ -890,6 +891,7 @@ def _compile_from_ll(
         config,
         input_file,
         output,
+        optimize,
         debug,
         passthrough_args,
     )
@@ -937,18 +939,31 @@ def _build_cgeist_cmd(
     passthrough_args: List[str],
     with_openmp: bool = False,
     with_debug_info: bool = False,
+    emit_llvm: bool = False,
+    optimize: bool = False,
+    output_file: Optional[Path] = None,
 ) -> List[str]:
-    """Build cgeist (C-to-MLIR) command with standard flags."""
+    """Build cgeist (C-to-MLIR) command with standard flags.
+
+    ``emit_llvm`` + ``optimize`` + ``output_file`` cover the SDE host-OpenMP
+    fallback path (LLVM emission at -O3 with an explicit -o), while the
+    defaults give the standard C-to-MLIR pipeline command.
+    """
     cmd = [str(config.get_polygeist_tool(TOOL_CGEIST))]
     cmd.extend(config.include_flags)
     cmd.extend(config.cgeist_sysroot_flags)
-    cmd.extend(["--raise-scf-to-affine", std_flag, "-O0", "-S",
-                 "-D_POSIX_C_SOURCE=199309L"])  # Required for clock_gettime
+    cmd.extend(["--raise-scf-to-affine", std_flag, "-S",
+                "-D_POSIX_C_SOURCE=199309L"])  # Required for clock_gettime
+    cmd.append("-O3" if optimize else "-O0")
+    if emit_llvm:
+        cmd.append("--emit-llvm")
     if with_openmp:
         cmd.append("-fopenmp")
     if with_debug_info:
         cmd.append("--print-debug-info")
     cmd.extend(passthrough_args)
+    if output_file is not None:
+        cmd.extend(["-o", str(output_file)])
     cmd.append(str(input_file))
     return cmd
 
@@ -957,6 +972,7 @@ def _build_link_cmd(
     config: CartsConfig,
     input_file: Path,
     output_file: Path,
+    optimize: bool,
     debug: bool,
     extra_args: List[str],
 ) -> List[str]:
@@ -966,12 +982,52 @@ def _build_link_cmd(
     cmd.extend(config.clang_sysroot_flags)
     cmd.extend(config.compile_library_flags)
     cmd.extend(config.linker_flags)
+    if optimize:
+        cmd.append("-O3")
     cmd.append(str(input_file))
     cmd.extend(["-o", str(output_file)])
     if debug:
         cmd.append("-g")
     cmd.extend(config.compile_libraries)
     cmd.extend(extra_args)
+    return cmd
+
+
+def _llvm_ir_marks_host_openmp(ll_file: Path) -> bool:
+    try:
+        # MUST match CARTS_BENCHMARKS_HOST_OPENMP_MARKER_NAME in
+        # include/carts/utils/benchmarks/CartsBenchmarks.h.
+        return "carts_benchmarks_mark_host_openmp" in ll_file.read_text(
+            errors="ignore")
+    except OSError:
+        return False
+
+
+def _build_host_openmp_link_cmd(
+    config: CartsConfig,
+    input_file: Path,
+    output_file: Path,
+    optimize: bool,
+    debug: bool,
+    link_args: List[str],
+) -> List[str]:
+    """Build clang link command for SDE host-fallback OpenMP LLVM IR."""
+    cmd = [str(config.get_llvm_tool(TOOL_CLANG))]
+    cmd.extend(config.runtime_flags)
+    cmd.extend(config.include_flags)
+    cmd.extend(config.clang_sysroot_flags)
+    cmd.extend(config.clang_library_flags)
+    cmd.extend(config.linker_flags)
+    cmd.append("-fopenmp")
+    cmd.append(str(input_file))
+    cmd.extend(config.clang_libraries)
+    cmd.extend(["-o", str(output_file)])
+    if optimize:
+        cmd.append("-O3")
+    if debug:
+        cmd.append("-g")
+    cmd.extend(link_args)
+    cmd.extend(["-lm", "-lcartsbenchmarks"])
     return cmd
 
 
@@ -1073,10 +1129,25 @@ def _compile_c_pipeline(
             ))
             return
 
-        # Step 3: Link with ARTS runtime
+        # Step 3: Link with ARTS runtime, or preserve selected host OpenMP.
         task = progress.add_task(f"[3{step_label} Final linking...", total=None)
-        cmd = _build_link_cmd(
-            config, ll_file, output_name, debug, link_args)
+        if _llvm_ir_marks_host_openmp(ll_file):
+            host_openmp_ll = Path(f"{base_name}-host-openmp.ll")
+            cmd = _build_cgeist_cmd(
+                config, input_file, std_flag, passthrough_args,
+                with_openmp=True, with_debug_info=debug,
+                emit_llvm=True, optimize=enable_pipeline_o3,
+                output_file=host_openmp_ll)
+            if run_command_with_output(cmd, host_openmp_ll) != 0:
+                print_error("Failed host OpenMP fallback emission")
+                raise Exit(1)
+            cmd = _build_host_openmp_link_cmd(
+                config, host_openmp_ll, output_name, enable_pipeline_o3, debug,
+                link_args)
+        else:
+            cmd = _build_link_cmd(
+                config, ll_file, output_name, enable_pipeline_o3, debug,
+                link_args)
         if run_subprocess(cmd, check=False).returncode != 0:
             print_error("Failed final linking")
             raise Exit(1)

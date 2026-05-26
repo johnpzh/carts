@@ -4,12 +4,13 @@
 /// Identify memref-backed SDE patterns and stamp approved SDE facts.
 ///==========================================================================///
 
-#include "carts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "carts/dialect/sde/Analysis/SdeAnalysisUtils.h"
+#include "carts/dialect/sde/Analysis/StructuredOpAnalysis.h"
 #include "carts/dialect/sde/Transforms/Passes.h"
 #include "carts/utils/ArrayAttrUtils.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/IRMapping.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/Support/MathExtras.h"
 #include <algorithm>
 
@@ -113,9 +114,10 @@ static bool isWavefront2D(const sde::StructuredLoopSummary &summary,
   return negativeOwnerDims == 2;
 }
 
-static bool hasNonZeroHaloOnAllOwnerDims(
-    const sde::StructuredNeighborhoodInfo &info) {
-  if (info.ownerDims.empty() || info.minOffsets.size() != info.maxOffsets.size())
+static bool
+hasNonZeroHaloOnAllOwnerDims(const sde::StructuredNeighborhoodInfo &info) {
+  if (info.ownerDims.empty() ||
+      info.minOffsets.size() != info.maxOffsets.size())
     return false;
   for (int64_t rawDim : info.ownerDims) {
     if (rawDim < 0 || static_cast<size_t>(rawDim) >= info.minOffsets.size())
@@ -127,8 +129,9 @@ static bool hasNonZeroHaloOnAllOwnerDims(
   return true;
 }
 
-static bool hasSingleExternalWriteRoot(sde::SdeSuIterateOp op,
-                                       const sde::StructuredLoopSummary &summary) {
+static bool
+hasSingleExternalWriteRoot(sde::SdeSuIterateOp op,
+                           const sde::StructuredLoopSummary &summary) {
   Value selectedRoot;
   for (const sde::MemrefAccessEntry &write : summary.writes) {
     Value root = accessRoot(write.memref);
@@ -145,8 +148,7 @@ static bool hasSingleExternalWriteRoot(sde::SdeSuIterateOp op,
 }
 
 static std::optional<int64_t> getStaticTripCount(Value lowerBound,
-                                                 Value upperBound,
-                                                 Value step) {
+                                                 Value upperBound, Value step) {
   int64_t lb = 0;
   int64_t ub = 0;
   int64_t stride = 0;
@@ -158,8 +160,9 @@ static std::optional<int64_t> getStaticTripCount(Value lowerBound,
   return llvm::divideCeil(std::max<int64_t>(0, ub - lb), stride);
 }
 
-static bool hasBoundedPromotedIterationVolume(
-    sde::SdeSuIterateOp op, ArrayRef<scf::ForOp> innerForChain) {
+static bool
+hasBoundedPromotedIterationVolume(sde::SdeSuIterateOp op,
+                                  ArrayRef<scf::ForOp> innerForChain) {
   constexpr int64_t kMaxPromotedStaticIterations = 32LL * 1024LL * 1024LL;
   std::optional<int64_t> outerTrip =
       getStaticTripCount(op.getLowerBounds().front(),
@@ -182,9 +185,9 @@ static bool hasBoundedPromotedIterationVolume(
 }
 
 static SmallVector<scf::ForOp, 4>
-findPromotableInnerForChain(Block *computeBlock) {
+findPromotableInnerForChain(sde::SdeSuIterateOp owner, Block *computeBlock) {
   SmallVector<scf::ForOp, 4> chain;
-  if (!computeBlock)
+  if (!owner || !computeBlock)
     return chain;
 
   Block *current = computeBlock;
@@ -204,7 +207,8 @@ findPromotableInnerForChain(Block *computeBlock) {
       if (&op == nestedFor.getOperation())
         continue;
       if (!op.isBeforeInBlock(nestedFor.getOperation()) ||
-          !isMemoryEffectFree(&op))
+          (!isMemoryEffectFree(&op) &&
+           !sde::isLocalScratchEffect(&op, owner.getOperation())))
         return {};
     }
 
@@ -233,13 +237,9 @@ static bool isSafeOutOfPlaceStencilPromotion(
   if (summary.nest.ivs.size() != promotedRank ||
       summary.iterTypes.size() != promotedRank)
     return false;
-  // Rank-3+ promotion is valuable for compact kernels, but on very large
-  // static domains the resulting tiled 3D loop nest can make LLVM backend
-  // optimization dominate benchmark build time. Keep large production stencils
-  // on the existing owner-strip path until CODIR/ARTS can represent nested
-  // owner dimensions without cloning them into SDE loop structure.
-  if (promotedRank > 2 &&
-      !hasBoundedPromotedIterationVolume(op, innerForChain))
+  // Rank-3+ promotion is useful for compact kernels, but very large static
+  // domains can make downstream optimization cost dominate the intended gain.
+  if (promotedRank > 2 && !hasBoundedPromotedIterationVolume(op, innerForChain))
     return false;
   if (!llvm::all_of(summary.iterTypes, [](utils::IteratorType iteratorType) {
         return iteratorType == utils::IteratorType::parallel;
@@ -262,8 +262,8 @@ static bool isSafeOutOfPlaceStencilPromotion(
   Block *computeBlock = sde::getSuIterateComputeBlock(op);
   if (!computeBlock)
     return false;
-  if (auto cuRegion = dyn_cast_or_null<sde::SdeCuRegionOp>(
-          computeBlock->getParentOp()))
+  if (auto cuRegion =
+          dyn_cast_or_null<sde::SdeCuRegionOp>(computeBlock->getParentOp()))
     if (!cuRegion.getIterArgs().empty() || cuRegion.getNumResults() != 0)
       return false;
 
@@ -311,9 +311,17 @@ static void clonePromotedBody(OpBuilder &builder, Block *sourceBlock,
   }
 }
 
-static bool isSafeElementwiseInnerOwnerPromotion(
-    sde::SdeSuIterateOp op, const sde::StructuredLoopSummary &summary,
-    ArrayRef<scf::ForOp> innerForChain) {
+// The prologue here (outer-bound shape, chunk/result/reduction rejection,
+// CuRegion iter-arg check, inner-for shape, outer-IV independence of inner
+// bounds) is shared with `isSafeOpaqueElementwiseInnerOwnerPromotion` below.
+// The body walks diverge significantly (summary-driven rank>=3 store check vs
+// libm-call rejection + read/write disjointness with rank>=2), so the two are
+// kept as two flat predicates: factoring only the prologue saved <25 lines
+// while forcing readers to context-switch to verify the invariants.
+static bool
+isSafeElementwiseInnerOwnerPromotion(sde::SdeSuIterateOp op,
+                                     const sde::StructuredLoopSummary &summary,
+                                     ArrayRef<scf::ForOp> innerForChain) {
   if (!op || innerForChain.empty())
     return false;
   if (op.getLowerBounds().size() != 1 || op.getUpperBounds().size() != 1 ||
@@ -334,8 +342,8 @@ static bool isSafeElementwiseInnerOwnerPromotion(
   Block *computeBlock = sde::getSuIterateComputeBlock(op);
   if (!computeBlock)
     return false;
-  if (auto cuRegion = dyn_cast_or_null<sde::SdeCuRegionOp>(
-          computeBlock->getParentOp()))
+  if (auto cuRegion =
+          dyn_cast_or_null<sde::SdeCuRegionOp>(computeBlock->getParentOp()))
     if (!cuRegion.getIterArgs().empty() || cuRegion.getNumResults() != 0)
       return false;
 
@@ -370,9 +378,8 @@ static bool isSafeElementwiseInnerOwnerPromotion(
   std::optional<int64_t> outerTrip =
       staticTripCount(op.getLowerBounds().front(), op.getUpperBounds().front(),
                       op.getSteps().front());
-  std::optional<int64_t> innerTrip =
-      staticTripCount(innerFor.getLowerBound(), innerFor.getUpperBound(),
-                      innerFor.getStep());
+  std::optional<int64_t> innerTrip = staticTripCount(
+      innerFor.getLowerBound(), innerFor.getUpperBound(), innerFor.getStep());
   if (!outerTrip || !innerTrip || *outerTrip > kMaxPromotedOwnerExtent ||
       *innerTrip > kMaxPromotedOwnerExtent)
     return false;
@@ -426,8 +433,8 @@ static bool isSafeElementwiseInnerOwnerPromotion(
   return !rejected && sawRankedTensorWrite && promotedPhysicalDim.has_value();
 }
 
-static sde::SdeSuIterateOp promoteElementwiseInnerOwnerLoop(
-    sde::SdeSuIterateOp op, scf::ForOp innerFor) {
+static sde::SdeSuIterateOp
+promoteElementwiseInnerOwnerLoop(sde::SdeSuIterateOp op, scf::ForOp innerFor) {
   OpBuilder builder(op);
   Location loc = op.getLoc();
   SmallVector<Value, 2> lowerBounds{innerFor.getLowerBound(),
@@ -445,15 +452,16 @@ static sde::SdeSuIterateOp promoteElementwiseInnerOwnerLoop(
       op.getPartialReductionOwnerDimsAttr(),
       op.getStructuredClassificationAttr(), op.getPatternAttr(),
       op.getAccessMinOffsetsAttr(), op.getAccessMaxOffsetsAttr(),
-      op.getOwnerDimsAttr(), op.getSpatialDimsAttr(), op.getWriteFootprintAttr(),
-      op.getPhysicalOwnerDimsAttr(), op.getPhysicalBlockShapeAttr(),
-      op.getLogicalWorkerSliceAttr(), op.getPhysicalHaloShapeAttr(),
-      op.getIterationTopologyAttr(), op.getRepetitionStructureAttr(),
-      op.getAsyncStrategyAttr(), op.getCpsGroupIdAttr(),
-      op.getCpsStageIndexAttr(), op.getCpsStageCountAttr(),
-      op.getDistributionKindAttr(), op.getInPlaceSafeAttr(),
-      op.getInPlaceSharedStateAttr(), op.getVectorizeWidthAttr(),
-      op.getUnrollFactorAttr(), op.getInterleaveCountAttr());
+      op.getOwnerDimsAttr(), op.getSpatialDimsAttr(),
+      op.getWriteFootprintAttr(), op.getPhysicalOwnerDimsAttr(),
+      op.getPhysicalBlockShapeAttr(), op.getLogicalWorkerSliceAttr(),
+      op.getPhysicalHaloShapeAttr(), op.getIterationTopologyAttr(),
+      op.getRepetitionStructureAttr(), op.getAsyncStrategyAttr(),
+      op.getCpsGroupIdAttr(), op.getCpsStageIndexAttr(),
+      op.getCpsStageCountAttr(), op.getDistributionKindAttr(),
+      op.getInPlaceSafeAttr(), op.getInPlaceSharedStateAttr(),
+      op.getVectorizeWidthAttr(), op.getUnrollFactorAttr(),
+      op.getInterleaveCountAttr());
   newOp->setAttrs(sde::getRewrittenAttrs(op));
   removeStaleShapePlanAttrs(newOp);
 
@@ -493,18 +501,140 @@ static sde::SdeSuIterateOp promoteElementwiseInnerOwnerLoop(
   return newOp;
 }
 
-static sde::SdeSuIterateOp tryPromoteElementwiseInnerOwnerLoop(
-    sde::SdeSuIterateOp op, const sde::StructuredLoopSummary &summary) {
+static bool
+isSafeOpaqueElementwiseInnerOwnerPromotion(sde::SdeSuIterateOp op,
+                                           ArrayRef<scf::ForOp> innerForChain) {
+  if (!op || innerForChain.empty())
+    return false;
+  if (op.getLowerBounds().size() != 1 || op.getUpperBounds().size() != 1 ||
+      op.getSteps().size() != 1)
+    return false;
+  if (op.getChunkSize() || op.getNumResults() != 0 ||
+      !op.getReductionAccumulators().empty() || op.getReductionKindsAttr())
+    return false;
+
+  Block *computeBlock = sde::getSuIterateComputeBlock(op);
+  if (!computeBlock)
+    return false;
+  if (auto cuRegion =
+          dyn_cast_or_null<sde::SdeCuRegionOp>(computeBlock->getParentOp()))
+    if (!cuRegion.getIterArgs().empty() || cuRegion.getNumResults() != 0)
+      return false;
+
+  scf::ForOp innerFor = innerForChain.front();
+  if (!innerFor || !innerFor.getInitArgs().empty() ||
+      innerFor.getNumResults() != 0)
+    return false;
+
+  Value outerIv = op.getBody().front().getArgument(0);
+  Value innerIv = innerFor.getInductionVar();
+  if (::mlir::carts::ValueAnalysis::dependsOn(innerFor.getLowerBound(),
+                                              outerIv) ||
+      ::mlir::carts::ValueAnalysis::dependsOn(innerFor.getUpperBound(),
+                                              outerIv) ||
+      ::mlir::carts::ValueAnalysis::dependsOn(innerFor.getStep(), outerIv))
+    return false;
+
+  llvm::DenseSet<Value> readRoots;
+  llvm::DenseSet<Value> writeRoots;
+  std::optional<unsigned> promotedPhysicalDim;
+  bool sawExternalWrite = false;
+  bool rejected = false;
+
+  op.getBody().walk([&](Operation *nested) {
+    if (rejected)
+      return WalkResult::interrupt();
+    if (auto call = dyn_cast<func::CallOp>(nested))
+      if (!sde::isKnownPureScalarLibmCallee(call.getCallee())) {
+        rejected = true;
+        return WalkResult::interrupt();
+      }
+
+    if (auto loadOp = dyn_cast<memref::LoadOp>(nested)) {
+      if (isa<MemRefType>(loadOp.getResult().getType()))
+        return WalkResult::advance();
+      Value root =
+          ::mlir::carts::ValueAnalysis::stripMemrefViewOps(loadOp.getMemref());
+      if (!root || sde::isDefinedInside(op.getOperation(), root))
+        return WalkResult::advance();
+      readRoots.insert(root);
+      return WalkResult::advance();
+    }
+
+    if (auto storeOp = dyn_cast<memref::StoreOp>(nested)) {
+      if (isa<MemRefType>(storeOp.getValueToStore().getType()))
+        return WalkResult::advance();
+      Value root =
+          ::mlir::carts::ValueAnalysis::stripMemrefViewOps(storeOp.getMemref());
+      if (!root || sde::isDefinedInside(op.getOperation(), root))
+        return WalkResult::advance();
+
+      auto type = dyn_cast<MemRefType>(root.getType());
+      if (!type || type.getRank() < 2 ||
+          storeOp.getIndices().size() != static_cast<size_t>(type.getRank())) {
+        rejected = true;
+        return WalkResult::interrupt();
+      }
+
+      bool outerIndexed = false;
+      std::optional<unsigned> innerIndexedDim;
+      Value outerOwners[1] = {outerIv};
+      Value innerOwners[1] = {innerIv};
+      for (auto [dim, index] : llvm::enumerate(storeOp.getIndices())) {
+        if (sde::isExactOwnerIndex(index, outerOwners))
+          outerIndexed = true;
+        if (sde::isExactOwnerIndex(index, innerOwners))
+          innerIndexedDim = static_cast<unsigned>(dim);
+      }
+      if (!outerIndexed || !innerIndexedDim || *innerIndexedDim == 0) {
+        rejected = true;
+        return WalkResult::interrupt();
+      }
+      if (promotedPhysicalDim && *promotedPhysicalDim != *innerIndexedDim) {
+        rejected = true;
+        return WalkResult::interrupt();
+      }
+      promotedPhysicalDim = *innerIndexedDim;
+      writeRoots.insert(root);
+      sawExternalWrite = true;
+      return WalkResult::advance();
+    }
+
+    return WalkResult::advance();
+  });
+
+  if (rejected || !sawExternalWrite || !promotedPhysicalDim)
+    return false;
+  for (Value writeRoot : writeRoots)
+    if (readRoots.contains(writeRoot))
+      return false;
+  return true;
+}
+
+static sde::SdeSuIterateOp
+tryPromoteOpaqueElementwiseInnerOwnerLoop(sde::SdeSuIterateOp op) {
   Block *computeBlock = sde::getSuIterateComputeBlock(op);
   SmallVector<scf::ForOp, 4> innerForChain =
-      findPromotableInnerForChain(computeBlock);
+      findPromotableInnerForChain(op, computeBlock);
+  if (!isSafeOpaqueElementwiseInnerOwnerPromotion(op, innerForChain))
+    return op;
+  return promoteElementwiseInnerOwnerLoop(op, innerForChain.front());
+}
+
+static sde::SdeSuIterateOp
+tryPromoteElementwiseInnerOwnerLoop(sde::SdeSuIterateOp op,
+                                    const sde::StructuredLoopSummary &summary) {
+  Block *computeBlock = sde::getSuIterateComputeBlock(op);
+  SmallVector<scf::ForOp, 4> innerForChain =
+      findPromotableInnerForChain(op, computeBlock);
   if (!isSafeElementwiseInnerOwnerPromotion(op, summary, innerForChain))
     return op;
   return promoteElementwiseInnerOwnerLoop(op, innerForChain.front());
 }
 
-static sde::SdeSuIterateOp promoteOutOfPlaceStencilOwnerLoop(
-    sde::SdeSuIterateOp op, ArrayRef<scf::ForOp> innerForChain) {
+static sde::SdeSuIterateOp
+promoteOutOfPlaceStencilOwnerLoop(sde::SdeSuIterateOp op,
+                                  ArrayRef<scf::ForOp> innerForChain) {
   OpBuilder builder(op);
   Location loc = op.getLoc();
   SmallVector<Value, 4> lowerBounds{op.getLowerBounds().front()};
@@ -531,10 +661,10 @@ static sde::SdeSuIterateOp promoteOutOfPlaceStencilOwnerLoop(
       op.getPhysicalHaloShapeAttr(), op.getIterationTopologyAttr(),
       op.getRepetitionStructureAttr(), op.getAsyncStrategyAttr(),
       op.getCpsGroupIdAttr(), op.getCpsStageIndexAttr(),
-      op.getCpsStageCountAttr(),
-      op.getDistributionKindAttr(), op.getInPlaceSafeAttr(),
-      op.getInPlaceSharedStateAttr(), op.getVectorizeWidthAttr(),
-      op.getUnrollFactorAttr(), op.getInterleaveCountAttr());
+      op.getCpsStageCountAttr(), op.getDistributionKindAttr(),
+      op.getInPlaceSafeAttr(), op.getInPlaceSharedStateAttr(),
+      op.getVectorizeWidthAttr(), op.getUnrollFactorAttr(),
+      op.getInterleaveCountAttr());
   newOp->setAttrs(sde::getRewrittenAttrs(op));
   removeStaleShapePlanAttrs(newOp);
 
@@ -581,7 +711,7 @@ static sde::SdeSuIterateOp tryPromoteOutOfPlaceStencilOwnerLoop(
     const sde::StructuredNeighborhoodInfo &neighborhood) {
   Block *computeBlock = sde::getSuIterateComputeBlock(op);
   SmallVector<scf::ForOp, 4> innerForChain =
-      findPromotableInnerForChain(computeBlock);
+      findPromotableInnerForChain(op, computeBlock);
   if (!isSafeOutOfPlaceStencilPromotion(op, summary, neighborhood,
                                         innerForChain))
     return op;
@@ -590,8 +720,8 @@ static sde::SdeSuIterateOp tryPromoteOutOfPlaceStencilOwnerLoop(
 
 static sde::SdePattern
 derivePattern(const sde::StructuredLoopSummary &summary,
-                sde::SdeStructuredClassification classification,
-                std::optional<sde::StructuredNeighborhoodInfo> neighborhood) {
+              sde::SdeStructuredClassification classification,
+              std::optional<sde::StructuredNeighborhoodInfo> neighborhood) {
   switch (classification) {
   case sde::SdeStructuredClassification::elementwise:
     return sde::SdePattern::uniform;
@@ -623,9 +753,10 @@ static void clearPartialReductionIntent(sde::SdeSuIterateOp op) {
   op->removeAttr(op.getPartialReductionOwnerDimsAttrName());
 }
 
-static void stampPartialReductionIntent(
-    sde::SdeSuIterateOp op, const sde::StructuredLoopSummary &summary,
-    sde::SdeStructuredClassification classification) {
+static void
+stampPartialReductionIntent(sde::SdeSuIterateOp op,
+                            const sde::StructuredLoopSummary &summary,
+                            sde::SdeStructuredClassification classification) {
   clearPartialReductionIntent(op);
 
   if (classification != sde::SdeStructuredClassification::elementwise_pipeline)
@@ -672,8 +803,20 @@ struct PatternAnalysisPass
     getOperation().walk([&](sde::SdeSuIterateOp op) {
       std::optional<sde::StructuredLoopSummary> summary =
           sde::analyzeStructuredLoop(op);
-      if (!summary)
+      if (!summary) {
+        sde::SdeSuIterateOp promoted =
+            tryPromoteOpaqueElementwiseInnerOwnerLoop(op);
+        if (promoted != op) {
+          promoted.setStructuredClassificationAttr(
+              sde::SdeStructuredClassificationAttr::get(
+                  &getContext(),
+                  sde::SdeStructuredClassification::elementwise));
+          promoted.setPatternAttr(sde::SdePatternAttr::get(
+              &getContext(), sde::SdePattern::uniform));
+          ARTS_DEBUG("promoted opaque SDE elementwise owner loop");
+        }
         return;
+      }
 
       op->removeAttr(op.getInPlaceSafeAttrName());
       op->removeAttr(op.getInPlaceSharedStateAttrName());
@@ -693,9 +836,10 @@ struct PatternAnalysisPass
         classification = *existingClassification;
         hasExplicitStencilContract = true;
       } else if (existingClassification &&
-          *existingClassification ==
-              sde::SdeStructuredClassification::elementwise_pipeline &&
-          classification == sde::SdeStructuredClassification::elementwise) {
+                 *existingClassification ==
+                     sde::SdeStructuredClassification::elementwise_pipeline &&
+                 classification ==
+                     sde::SdeStructuredClassification::elementwise) {
         classification = sde::SdeStructuredClassification::elementwise_pipeline;
       } else if (auto existingClassification = op.getStructuredClassification();
                  existingClassification &&
@@ -745,9 +889,8 @@ struct PatternAnalysisPass
         }
 
         if (!hasExplicitStencilContract) {
-          sde::SdeSuIterateOp promoted =
-              tryPromoteOutOfPlaceStencilOwnerLoop(
-                  op, *summary, *neighborhoodSummary);
+          sde::SdeSuIterateOp promoted = tryPromoteOutOfPlaceStencilOwnerLoop(
+              op, *summary, *neighborhoodSummary);
           if (promoted != op) {
             op = promoted;
             summary = sde::analyzeStructuredLoop(op);

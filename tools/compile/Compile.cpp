@@ -27,6 +27,7 @@
 #include "mlir/InitAllExtensions.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/InitAllTranslations.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
@@ -37,32 +38,32 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "mlir/Transforms/Passes.h"
-#include "mlir/Interfaces/FunctionInterfaces.h"
 #include "polygeist/Dialect.h"
 #include "polygeist/Ops.h"
 #include "polygeist/Passes/Passes.h"
 
-#include "carts/dialect/arts/IR/ArtsDialect.h"
-#include "carts/dialect/arts/Analysis/AnalysisManager.h"
 #include "carts/dialect/arts-rt/IR/RtDialect.h"
+#include "carts/dialect/arts/Analysis/AnalysisManager.h"
+#include "carts/dialect/arts/IR/ArtsDialect.h"
+#include "carts/dialect/codir/Conversion/PassRegistration.h"
+#include "carts/dialect/codir/IR/CodirDialect.h"
+#include "carts/dialect/codir/Transforms/PassRegistration.h"
 #include "carts/dialect/sde/IR/SdeDialect.h"
 #include "carts/passes/Passes.h"
 #include "carts/utils/Debug.h"
 #include "carts/utils/OperationAttributes.h"
 #include "carts/utils/PassInstrumentation.h"
-#include "carts/dialect/codir/Conversion/PassRegistration.h"
-#include "carts/dialect/codir/IR/CodirDialect.h"
-#include "carts/dialect/codir/Transforms/PassRegistration.h"
+#include "carts/utils/benchmarks/CartsBenchmarks.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/Module.h"
 #include <array>
 #include <cassert>
 #include <functional>
@@ -248,17 +249,12 @@ static cl::opt<std::string> CustomPassPipeline(
              "pipeline"),
     cl::value_desc("pipeline"), cl::init(""));
 
-static const std::array<llvm::StringLiteral, 10>
-    kSdeInputNormalizationPasses = {"LowerAffine(func)",
-                                    "CSE",
-                                    "SdeInputInliner",
-                                    "PolygeistCanonicalize",
-                                    "ScalarForwarding",
-                                    "PolygeistCanonicalize",
-                                    "SdeMemrefNormalization",
-                                    "SdeHandleDeps",
-                                    "SdeDeadStateCleanup",
-                                    "CSE"};
+static const std::array<llvm::StringLiteral, 10> kSdeInputNormalizationPasses =
+    {"LowerAffine(func)",      "CSE",
+     "SdeInputInliner",        "PolygeistCanonicalize",
+     "ScalarForwarding",       "PolygeistCanonicalize",
+     "SdeMemrefNormalization", "SdeHandleDeps",
+     "SdeDeadStateCleanup",    "CSE"};
 static const std::array<llvm::StringLiteral, 3> kInitialCleanupPasses = {
     "LowerAffine(func)", "CSE(func)", "PolygeistCanonicalizeFor(func)"};
 static const std::array<llvm::StringLiteral, 14> kSdePlanningPasses = {
@@ -277,26 +273,17 @@ static const std::array<llvm::StringLiteral, 14> kSdePlanningPasses = {
     "VerifySdeCpsPlan",
     "MemoryUnitMaterialization"};
 static const std::array<llvm::StringLiteral, 4> kSdeToCodirPasses = {
-    "ConvertSdeToCodir", "CodirCodeletOpt", "ReductionPlanning",
-    "VerifyCodir"};
+    "ConvertSdeToCodir", "CodirCodeletOpt", "ReductionPlanning", "VerifyCodir"};
 static const std::array<llvm::StringLiteral, 8> kCodirToArtsPasses = {
-    "ReductionPlanning",
-    "StoragePlanning",
-    "ConvertCodirToArts",
-    "VerifySdeLowered",
-    "VerifyArtsObjectsOnly",
-    "ArtsDeadCodeElimination",
-    "CSE(arts.edt)",
-    "VerifyEdtCreated"};
+    "ReductionPlanning", "StoragePlanning",       "ConvertCodirToArts",
+    "VerifySdeLowered",  "VerifyArtsObjectsOnly", "ArtsDeadCodeElimination",
+    "CSE(arts.edt)",     "VerifyEdtCreated"};
 static const std::array<llvm::StringLiteral, 5> kEdtTransformsPasses = {
-    "EdtStructuralOpt(runAnalysis=false)",
-    "ArtsDeadCodeElimination",
-    "SymbolDCE",
-    "CSE(arts.edt)",
-    "EdtPtrRematerialization"};
+    "EdtStructuralOpt(runAnalysis=false)", "ArtsDeadCodeElimination",
+    "SymbolDCE", "CSE(arts.edt)", "EdtPtrRematerialization"};
 static const std::array<llvm::StringLiteral, 6> kCreateDbsPasses = {
-    "CreateDbs", "PolygeistCanonicalize", "CSE(arts.edt)",
-    "SymbolDCE", "Mem2Reg", "PolygeistCanonicalize"};
+    "CreateDbs", "PolygeistCanonicalize", "CSE(arts.edt)", "SymbolDCE",
+    "Mem2Reg",   "PolygeistCanonicalize"};
 static const std::array<llvm::StringLiteral, 4> kDbOptPasses = {
     "DbModeTightening", "PolygeistCanonicalize", "CSE(arts.edt)", "Mem2Reg"};
 static const std::array<llvm::StringLiteral, 10> kPostDbRefinementPasses = {
@@ -319,9 +306,8 @@ static const std::array<llvm::StringLiteral, 7> kLateConcurrencyCleanupPasses =
      "ArtsDeadCodeElimination",
      "Mem2Reg"};
 static const std::array<llvm::StringLiteral, 5> kEpochsPasses = {
-    "PolygeistCanonicalize", "CreateEpochs",
-    "VerifyEpochCreated", "EpochOpt[scheduling] (conditional)",
-    "PolygeistCanonicalize"};
+    "PolygeistCanonicalize", "CreateEpochs", "VerifyEpochCreated",
+    "EpochOpt[scheduling] (conditional)", "PolygeistCanonicalize"};
 static const std::array<llvm::StringLiteral, 22> kPreLoweringPasses = {
     "EdtAllocaSinking",
     "PolygeistCanonicalize",
@@ -385,8 +371,8 @@ static const std::array<llvm::StringLiteral, 15> kLLVMIREmissionPasses = {
     "PolygeistCanonicalize",
     "CSE"};
 
-static constexpr llvm::StringLiteral kFrontendLayers[] = {
-    "polygeist", "memref", "scf"};
+static constexpr llvm::StringLiteral kFrontendLayers[] = {"polygeist", "memref",
+                                                          "scf"};
 static constexpr llvm::StringLiteral kArtsLayers[] = {"arts"};
 static constexpr llvm::StringLiteral kArtsRtLayers[] = {"arts-rt", "llvm"};
 static constexpr llvm::StringLiteral kSdeLayers[] = {"sde"};
@@ -403,15 +389,15 @@ static constexpr llvm::StringLiteral kCurrentSdeToCodirStages[] = {
 static constexpr llvm::StringLiteral kCurrentCodirToArtsStages[] = {
     "codir-to-arts"};
 static constexpr llvm::StringLiteral kCurrentArtsStages[] = {
-    "edt-transforms", "create-dbs", "db-opt", "post-db-refinement",
+    "edt-transforms",           "create-dbs", "db-opt", "post-db-refinement",
     "late-concurrency-cleanup", "epochs"};
 static constexpr llvm::StringLiteral kCurrentArtsRtStages[] = {
     "pre-lowering", "arts-rt-to-llvm"};
 
 static constexpr llvm::StringLiteral kTargetFrontendStages[] = {
     "frontend-normalization"};
-static constexpr llvm::StringLiteral kTargetSdeStages[] = {
-    "openmp-to-sde", "sde-planning"};
+static constexpr llvm::StringLiteral kTargetSdeStages[] = {"openmp-to-sde",
+                                                           "sde-planning"};
 static constexpr llvm::StringLiteral kTargetSdeToCodirStages[] = {
     "sde-to-codir"};
 static constexpr llvm::StringLiteral kTargetCodirStages[] = {
@@ -434,7 +420,8 @@ static const std::array<DialectGroupDescriptor, 6> kCurrentDialectGroups = {{
      "Materialize SDE codelet plans into isolated CODIR codelets.",
      kSdeToCodirLayers, kCurrentSdeToCodirStages, kTargetSdeToCodirStages},
     {"codir-to-arts", "current",
-     "Lower CODIR codelet deps and params to ARTS DB/EDT objects; no SDE operation may survive this boundary.",
+     "Lower CODIR codelet deps and params to ARTS DB/EDT objects; no SDE "
+     "operation may survive this boundary.",
      kCodirToArtsLayers, kCurrentCodirToArtsStages, kTargetCodirToArtsStages},
     {"arts-object-refinement", "current",
      "Abstract ARTS DB, EDT, epoch, dependency, and cleanup stages.",
@@ -452,7 +439,8 @@ static const std::array<DialectGroupDescriptor, 7> kTargetDialectGroups = {{
      "SDE proves source semantics and authors MU/CU/SU planning facts.",
      kSdeLayers, kCurrentSdePlanningStages, kTargetSdeStages},
     {"sde-to-codir", "current",
-     "Materialize SDE plans into isolated CODIR codelets and token-local views.",
+     "Materialize SDE plans into isolated CODIR codelets and token-local "
+     "views.",
      kSdeToCodirLayers, kCurrentSdeToCodirStages, kTargetSdeToCodirStages},
     {"codir", "current",
      "Verify explicit deps, params, yielded values, and no implicit captures.",
@@ -545,9 +533,9 @@ static void printStringArray(llvm::raw_ostream &os,
   os << "]";
 }
 
-static void printDialectGroupArray(
-    llvm::raw_ostream &os,
-    llvm::ArrayRef<DialectGroupDescriptor> groups) {
+static void
+printDialectGroupArray(llvm::raw_ostream &os,
+                       llvm::ArrayRef<DialectGroupDescriptor> groups) {
   os << "[\n";
   for (size_t i = 0; i < groups.size(); ++i) {
     const DialectGroupDescriptor &group = groups[i];
@@ -657,8 +645,7 @@ static bool shouldExportDetailedDiagnose(std::optional<StageId> stopAt) {
 }
 
 static LogicalResult
-configurePassManager(PassManager &pm,
-                     PassTimingData *timingData = nullptr) {
+configurePassManager(PassManager &pm, PassTimingData *timingData = nullptr) {
   pm.enableVerifier(true);
   if (failed(applyPassManagerCLOptions(pm)))
     return failure();
@@ -743,8 +730,7 @@ static void ensureRuntimeConfigDataVisibleForValidation(ModuleOp module) {
   std::optional<StringRef> configData = arts::getRuntimeConfigData(module);
   if (!configData || configData->empty())
     return;
-  constexpr llvm::StringLiteral kConfigGlobalName =
-      "__carts_embedded_arts_cfg";
+  constexpr llvm::StringLiteral kConfigGlobalName = "__carts_embedded_arts_cfg";
   if (module.lookupSymbol<LLVM::GlobalOp>(kConfigGlobalName))
     return;
 
@@ -752,10 +738,9 @@ static void ensureRuntimeConfigDataVisibleForValidation(ModuleOp module) {
   builder.setInsertionPointToStart(module.getBody());
   auto i8 = mlir::IntegerType::get(module.getContext(), 8);
   auto type = LLVM::LLVMArrayType::get(i8, configData->size() + 1);
-  LLVM::GlobalOp::create(
-      builder, module.getLoc(), type, /*isConstant=*/true,
-      LLVM::Linkage::Internal, kConfigGlobalName,
-      builder.getStringAttr(configData->str() + '\0'));
+  LLVM::GlobalOp::create(builder, module.getLoc(), type, /*isConstant=*/true,
+                         LLVM::Linkage::Internal, kConfigGlobalName,
+                         builder.getStringAttr(configData->str() + '\0'));
 }
 
 static bool hasResidualOpenMP(ModuleOp module) {
@@ -775,15 +760,15 @@ static void markHostOpenMPBenchmarkMode(ModuleOp module) {
     return;
 
   constexpr llvm::StringLiteral kMarkerFn =
-      "carts_benchmarks_mark_host_openmp";
+      CARTS_BENCHMARKS_HOST_OPENMP_MARKER_NAME;
   MLIRContext *ctx = module.getContext();
   if (!module.lookupSymbol<LLVM::LLVMFuncOp>(kMarkerFn)) {
     OpBuilder builder(ctx);
     builder.setInsertionPointToStart(module.getBody());
     auto fnType = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
                                               /*params=*/{}, false);
-    auto fn = LLVM::LLVMFuncOp::create(builder, module.getLoc(), kMarkerFn,
-                                       fnType);
+    auto fn =
+        LLVM::LLVMFuncOp::create(builder, module.getLoc(), kMarkerFn, fnType);
     fn.setLinkage(LLVM::Linkage::External);
   }
 
@@ -938,11 +923,11 @@ static void foldResidualHostOpenMPMemrefPointerCasts(ModuleOp module) {
       continue;
 
     OpBuilder builder(cast);
-    mlir::Value ptr = LLVM::ExtractValueOp::create(
-        builder, cast.getLoc(), descriptor, /*position=*/1);
+    mlir::Value ptr = LLVM::ExtractValueOp::create(builder, cast.getLoc(),
+                                                   descriptor, /*position=*/1);
     if (ptr.getType() != cast.getResult(0).getType())
-      ptr = LLVM::AddrSpaceCastOp::create(
-          builder, cast.getLoc(), cast.getResult(0).getType(), ptr);
+      ptr = LLVM::AddrSpaceCastOp::create(builder, cast.getLoc(),
+                                          cast.getResult(0).getType(), ptr);
     cast.getResult(0).replaceAllUsesWith(ptr);
     cast.erase();
     if (sourceCast->use_empty())
@@ -956,10 +941,9 @@ static mlir::Value createLLVMIndexConstant(OpBuilder &builder, Location loc,
                                   builder.getIntegerAttr(type, value));
 }
 
-static mlir::Value buildRankOneDescriptorFromBarePtr(OpBuilder &builder,
-                                                     Location loc,
-                                                     mlir::Value ptr,
-                                                     mlir::Type descriptorType) {
+static mlir::Value
+buildRankOneDescriptorFromBarePtr(OpBuilder &builder, Location loc,
+                                  mlir::Value ptr, mlir::Type descriptorType) {
   auto structType = dyn_cast<LLVM::LLVMStructType>(descriptorType);
   if (!structType || structType.getBody().size() < 5)
     return {};
@@ -975,10 +959,10 @@ static mlir::Value buildRankOneDescriptorFromBarePtr(OpBuilder &builder,
                                            ArrayRef<int64_t>{1});
   descriptor = LLVM::InsertValueOp::create(builder, loc, descriptor, zero,
                                            ArrayRef<int64_t>{2});
-  descriptor = LLVM::InsertValueOp::create(
-      builder, loc, descriptor, zero, ArrayRef<int64_t>{3, 0});
-  descriptor = LLVM::InsertValueOp::create(
-      builder, loc, descriptor, one, ArrayRef<int64_t>{4, 0});
+  descriptor = LLVM::InsertValueOp::create(builder, loc, descriptor, zero,
+                                           ArrayRef<int64_t>{3, 0});
+  descriptor = LLVM::InsertValueOp::create(builder, loc, descriptor, one,
+                                           ArrayRef<int64_t>{4, 0});
   return descriptor;
 }
 
@@ -1020,7 +1004,8 @@ static void cleanupResidualHostOpenMPMemrefs(ModuleOp module) {
 
   SmallVector<polygeist::Memref2PointerOp> memrefToPointerOps;
   module.walk([&](polygeist::Memref2PointerOp op) {
-    auto sourceCast = op.getSource().getDefiningOp<UnrealizedConversionCastOp>();
+    auto sourceCast =
+        op.getSource().getDefiningOp<UnrealizedConversionCastOp>();
     if (!sourceCast || sourceCast.getNumOperands() != 1 ||
         !isLLVMMemRefDescriptorLike(sourceCast.getOperand(0).getType()))
       return;
@@ -1030,7 +1015,8 @@ static void cleanupResidualHostOpenMPMemrefs(ModuleOp module) {
   for (polygeist::Memref2PointerOp op : memrefToPointerOps) {
     if (!op)
       continue;
-    auto sourceCast = op.getSource().getDefiningOp<UnrealizedConversionCastOp>();
+    auto sourceCast =
+        op.getSource().getDefiningOp<UnrealizedConversionCastOp>();
     if (!sourceCast)
       continue;
     OpBuilder builder(op);
@@ -1384,8 +1370,8 @@ static constexpr llvm::StringLiteral kDepPreLowering[] = {
 static constexpr llvm::StringLiteral kDepArtsRtToLLVM[] = {"pre-lowering"};
 static ArrayRef<StageDescriptor> getStageRegistry() {
   static const std::array<StageDescriptor, 15> kStageRegistry = {{
-      {StageId::SdeInputNormalization, "sde-input-normalization", StageKind::Core, true, true,
-       false, "Error when normalizing SDE input",
+      {StageId::SdeInputNormalization, "sde-input-normalization",
+       StageKind::Core, true, true, false, "Error when normalizing SDE input",
        kSdeInputNormalizationPasses,
        [](PassManager &pm, const StageExecutionContext &) {
          buildSdeInputNormalizationPipeline(pm);
@@ -1400,16 +1386,15 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepSdeInputNormalization},
-      {StageId::SdePlanning, "sde-planning", StageKind::Core, true, true,
-       false, "Error when converting OpenMP to SDE planning IR",
-       kSdePlanningPasses,
+      {StageId::SdePlanning, "sde-planning", StageKind::Core, true, true, false,
+       "Error when converting OpenMP to SDE planning IR", kSdePlanningPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildSdePlanningPipeline(pm, ctx.analysisManager);
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepInitialCleanup},
-      {StageId::SdeToCodir, "sde-to-codir", StageKind::Core, true, true,
-       false, "Error when materializing SDE plans into CODIR codelets",
+      {StageId::SdeToCodir, "sde-to-codir", StageKind::Core, true, true, false,
+       "Error when materializing SDE plans into CODIR codelets",
        kSdeToCodirPasses,
        [](PassManager &pm, const StageExecutionContext &) {
          buildSdeToCodirPipeline(pm);
@@ -1431,41 +1416,38 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepCodirToArts},
-      {StageId::CreateDbs, "create-dbs",
-       StageKind::Core, true, true, false, "Error when creating DBs",
-       kCreateDbsPasses,
+      {StageId::CreateDbs, "create-dbs", StageKind::Core, true, true, false,
+       "Error when creating DBs", kCreateDbsPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildCreateDbsPipeline(pm, ctx.analysisManager);
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepCodirToArts},
-      {StageId::DbOpt, "db-opt",
-       StageKind::Core, true, true, false, "Error when optimizing DBs",
-       kDbOptPasses,
+      {StageId::DbOpt, "db-opt", StageKind::Core, true, true, false,
+       "Error when optimizing DBs", kDbOptPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildDbOptPipeline(pm, ctx.analysisManager);
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepCreateDbs},
-      {StageId::PostDbRefinement, "post-db-refinement", StageKind::Core, true, true,
-       false, "Error when refining post-partition DB contracts",
+      {StageId::PostDbRefinement, "post-db-refinement", StageKind::Core, true,
+       true, false, "Error when refining post-partition DB contracts",
        kPostDbRefinementPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
-         buildPostDbRefinementPipeline(pm, ctx.analysisManager,
-                                       DistributedDb);
+         buildPostDbRefinementPipeline(pm, ctx.analysisManager, DistributedDb);
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepCreateDbs},
-      {StageId::LateConcurrencyCleanup, "late-concurrency-cleanup", StageKind::Core, true, true,
-       false, "Error when running late concurrency cleanup",
+      {StageId::LateConcurrencyCleanup, "late-concurrency-cleanup",
+       StageKind::Core, true, true, false,
+       "Error when running late concurrency cleanup",
        kLateConcurrencyCleanupPasses,
        [](PassManager &pm, const StageExecutionContext &) {
          buildLateConcurrencyCleanupPipeline(pm);
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepPostDbRefinement},
-      {StageId::Epochs, "epochs",
-       StageKind::Core, true, true, false,
+      {StageId::Epochs, "epochs", StageKind::Core, true, true, false,
        "Error when creating and optimizing epochs", kEpochsPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildEpochsPipeline(pm, ctx.analysisManager);
@@ -1494,8 +1476,9 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
        },
        isStageEnabledWhenOptRequested,
        /*dependsOn=*/kDepArtsRtToLLVM},
-      {StageId::LLVMIREmission, kLLVMIREmissionToken, StageKind::Epilogue, false, false,
-       false, "Error when emitting LLVM IR", kLLVMIREmissionPasses,
+      {StageId::LLVMIREmission, kLLVMIREmissionToken, StageKind::Epilogue,
+       false, false, false, "Error when emitting LLVM IR",
+       kLLVMIREmissionPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
          buildLLVMIREmissionPipeline(pm, hasResidualOpenMP(ctx.module));
        },

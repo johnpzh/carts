@@ -5,8 +5,7 @@
 // RUN:   | awk '/IR Dump After ConvertOpenMPToSde/,/IR Dump After PatternAnalysis/' \
 // RUN:   | %FileCheck %s --check-prefix=MULTI
 
-// Unsupported triangular scatter writes use the single-node host policy.
-// Multinode runs still enter SDE/CODIR/ARTS.
+// Dense two-stage matrix-vector bundles use the single-node host policy.
 
 // SINGLE-LABEL: // -----// IR Dump After ConvertOpenMPToSde (convert-openmp-to-sde) //----- //
 // SINGLE: omp.parallel
@@ -18,27 +17,43 @@
 // MULTI: sde.su_iterate
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i64:64-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
-  func.func @main(%A: memref<128x128xf64>, %C: memref<128x128xf64>) {
+  func.func @main(%a: memref<8x16xf64>, %x: memref<16xf64>, %tmp: memref<8xf64>, %y: memref<16xf64>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
-    %c128 = arith.constant 128 : index
+    %c8 = arith.constant 8 : index
+    %c16 = arith.constant 16 : index
     %zero = arith.constant 0.0 : f64
     func.call @carts_benchmarks_start() : () -> ()
 
     omp.parallel {
       omp.wsloop {
-        omp.loop_nest (%i) : index = (%c0) to (%c128) step (%c1) {
-          %next = arith.addi %i, %c1 : index
-          scf.for %j = %next to %c128 step %c1 {
-            %sum = scf.for %k = %c0 to %c128 step %c1 iter_args(%acc = %zero) -> (f64) {
-              %a = memref.load %A[%i, %k] : memref<128x128xf64>
-              %b = memref.load %A[%j, %k] : memref<128x128xf64>
-              %mul = arith.mulf %a, %b : f64
-              %next_acc = arith.addf %acc, %mul : f64
-              scf.yield %next_acc : f64
-            }
-            memref.store %sum, %C[%i, %j] : memref<128x128xf64>
-            memref.store %sum, %C[%j, %c0] : memref<128x128xf64>
+        omp.loop_nest (%i) : index = (%c0) to (%c8) step (%c1) {
+          memref.store %zero, %tmp[%i] : memref<8xf64>
+          scf.for %j = %c0 to %c16 step %c1 {
+            %acc = memref.load %tmp[%i] : memref<8xf64>
+            %av = memref.load %a[%i, %j] : memref<8x16xf64>
+            %xv = memref.load %x[%j] : memref<16xf64>
+            %prod = arith.mulf %av, %xv : f64
+            %sum = arith.addf %acc, %prod : f64
+            memref.store %sum, %tmp[%i] : memref<8xf64>
+          }
+          omp.yield
+        }
+      }
+      omp.terminator
+    }
+
+    omp.parallel {
+      omp.wsloop {
+        omp.loop_nest (%j) : index = (%c0) to (%c16) step (%c1) {
+          memref.store %zero, %y[%j] : memref<16xf64>
+          scf.for %i = %c0 to %c8 step %c1 {
+            %acc = memref.load %y[%j] : memref<16xf64>
+            %av = memref.load %a[%i, %j] : memref<8x16xf64>
+            %tv = memref.load %tmp[%i] : memref<8xf64>
+            %prod = arith.mulf %av, %tv : f64
+            %sum = arith.addf %acc, %prod : f64
+            memref.store %sum, %y[%j] : memref<16xf64>
           }
           omp.yield
         }

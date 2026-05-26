@@ -9,6 +9,8 @@
 // SDE: sde.su_distribute <blocked> {
 // SDE: sde.su_iterate (%c0) to (%c128) step (%c1) classification(<elementwise>) {
 // SDE: func.call @tanhf
+// SDE: func.call @expf
+// SDE: func.call @sqrtf
 // SDE: } {
 // SDE-SAME: iterationTopology = #sde.iteration_topology<owner_strip>
 // SDE-SAME: physicalBlockShape = [16]
@@ -39,7 +41,11 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
           %xf = arith.sitofp %si : i32 to f32
           %x = arith.mulf %xf, %scale : f32
           %y = func.call @tanhf(%x) : (f32) -> f32
-          memref.store %y, %B[%i] : memref<128xf32>
+          %z = func.call @expf(%x) : (f32) -> f32
+          %root = func.call @sqrtf(%x) : (f32) -> f32
+          %sum0 = arith.addf %y, %z : f32
+          %sum1 = arith.addf %sum0, %root : f32
+          memref.store %sum1, %B[%i] : memref<128xf32>
           omp.yield
         }
       }
@@ -53,4 +59,6 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
 
   func.func private @use(f32) attributes {llvm.linkage = #llvm.linkage<external>}
   func.func private @tanhf(f32) -> f32 attributes {llvm.linkage = #llvm.linkage<external>}
+  func.func private @expf(f32) -> f32 attributes {llvm.linkage = #llvm.linkage<external>}
+  func.func private @sqrtf(f32) -> f32 attributes {llvm.linkage = #llvm.linkage<external>}
 }

@@ -3,7 +3,7 @@
 
 // Verify that structured elementwise loops with enough work receive blocked
 // distribution planning on the SDE side and carry the advisory across the ARTS
-// boundary without SDE selecting local/distributed scope.
+// boundary.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
@@ -13,7 +13,7 @@
 
 // ARTS-LABEL: // -----// IR Dump After ConvertCodirToArts (convert-codir-to-arts) //----- //
 // ARTS: func.func @main
-// ARTS: arts.edt <task> <internode>
+// ARTS: arts.edt <task> <intranode>
 // ARTS-SAME: arts.pattern_revision = 1 : i64
 // ARTS-SAME: depPattern = #arts.dep_pattern<uniform>
 // ARTS-SAME: distribution_pattern = #arts.distribution_pattern<uniform>

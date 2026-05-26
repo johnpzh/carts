@@ -10,7 +10,9 @@
 #include "carts/utils/Utils.h"
 #include "carts/utils/ValueAnalysis.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "polygeist/Ops.h"
 
 #include <limits>
 
@@ -30,6 +32,13 @@ static constexpr int64_t kMaxPhaseRedistributionBridgeElements =
 struct MemoryAccessInfo {
   Value memref;
   SmallVector<Value> indices;
+};
+
+enum class AccessTraceStatus { NotRooted, Unsupported, Rooted };
+
+struct AccessOwnerDims {
+  AccessTraceStatus status = AccessTraceStatus::NotRooted;
+  SmallVector<unsigned> ownerDims;
 };
 
 static bool isMemrefForwardingOp(Operation *op) {
@@ -108,6 +117,132 @@ static bool indexSelectsOwnerSlice(Value index, Value ownerIv) {
   return indexSelectsOwnerSlice(index, ownerIv, seen);
 }
 
+static bool indexSelectsOwnerSlice(OpFoldResult index, Value ownerIv) {
+  if (auto value = dyn_cast<Value>(index))
+    return indexSelectsOwnerSlice(value, ownerIv);
+  return false;
+}
+
+static std::optional<unsigned> getMemrefRank(Value value) {
+  auto type = dyn_cast_if_present<MemRefType>(value.getType());
+  if (!type || type.getRank() < 0)
+    return std::nullopt;
+  return static_cast<unsigned>(type.getRank());
+}
+
+static void addUniqueDim(SmallVectorImpl<unsigned> &dims, unsigned dim) {
+  if (!llvm::is_contained(dims, dim))
+    dims.push_back(dim);
+}
+
+static bool remapSubviewOwnerDims(memref::SubViewOp subview,
+                                  SmallVectorImpl<unsigned> &selectedDims,
+                                  Value ownerBase) {
+  std::optional<unsigned> sourceRank = getMemrefRank(subview.getSource());
+  std::optional<unsigned> resultRank = getMemrefRank(subview.getResult());
+  if (!sourceRank || !resultRank ||
+      subview.getMixedOffsets().size() != *sourceRank)
+    return false;
+
+  llvm::SmallBitVector droppedDims = subview.getDroppedDims();
+  if (droppedDims.size() != *sourceRank)
+    return false;
+
+  SmallVector<unsigned> remappedDims;
+  unsigned resultDim = 0;
+  for (auto [sourceDim, offset] : llvm::enumerate(subview.getMixedOffsets())) {
+    bool offsetSelectsOwner = indexSelectsOwnerSlice(offset, ownerBase);
+    if (droppedDims.test(sourceDim)) {
+      if (offsetSelectsOwner)
+        addUniqueDim(remappedDims, static_cast<unsigned>(sourceDim));
+      continue;
+    }
+
+    if (resultDim >= *resultRank)
+      return false;
+    if (offsetSelectsOwner || llvm::is_contained(selectedDims, resultDim))
+      addUniqueDim(remappedDims, static_cast<unsigned>(sourceDim));
+    ++resultDim;
+  }
+
+  if (resultDim != *resultRank)
+    return false;
+  selectedDims.assign(remappedDims.begin(), remappedDims.end());
+  return true;
+}
+
+static AccessOwnerDims traceAccessToRoot(Value memref, ArrayRef<Value> indices,
+                                         Value root, Value ownerBase) {
+  std::optional<unsigned> currentRank = getMemrefRank(memref);
+  bool unsupportedMapping = !currentRank || indices.size() != *currentRank;
+  SmallVector<unsigned> selectedDims;
+  if (!unsupportedMapping)
+    for (auto [dim, index] : llvm::enumerate(indices))
+      if (indexSelectsOwnerSlice(index, ownerBase))
+        addUniqueDim(selectedDims, static_cast<unsigned>(dim));
+
+  Value current = memref;
+  llvm::SmallPtrSet<Value, 8> seen;
+  while (current != root) {
+    if (!current || !seen.insert(current).second)
+      return {AccessTraceStatus::Unsupported, {}};
+
+    Operation *def = current.getDefiningOp();
+    if (!def)
+      return {AccessTraceStatus::NotRooted, {}};
+
+    if (auto cast = dyn_cast<memref::CastOp>(def)) {
+      std::optional<unsigned> sourceRank = getMemrefRank(cast.getSource());
+      if (!sourceRank || !currentRank || *sourceRank != *currentRank)
+        unsupportedMapping = true;
+      current = cast.getSource();
+      currentRank = sourceRank;
+      continue;
+    }
+
+    if (auto subview = dyn_cast<memref::SubViewOp>(def)) {
+      std::optional<unsigned> sourceRank = getMemrefRank(subview.getSource());
+      if (!unsupportedMapping &&
+          !remapSubviewOwnerDims(subview, selectedDims, ownerBase))
+        unsupportedMapping = true;
+      current = subview.getSource();
+      currentRank = sourceRank;
+      continue;
+    }
+
+    if (auto subindex = dyn_cast<polygeist::SubIndexOp>(def)) {
+      std::optional<unsigned> sourceRank = getMemrefRank(subindex.getSource());
+      if (!sourceRank || !currentRank || *sourceRank != *currentRank + 1) {
+        unsupportedMapping = true;
+        current = subindex.getSource();
+        currentRank = sourceRank;
+        continue;
+      }
+
+      for (unsigned &dim : selectedDims)
+        ++dim;
+      if (indexSelectsOwnerSlice(subindex.getIndex(), ownerBase))
+        addUniqueDim(selectedDims, 0);
+      current = subindex.getSource();
+      currentRank = sourceRank;
+      continue;
+    }
+
+    if (ValueAnalysis::isDerivedFromPtr(current, root))
+      return {AccessTraceStatus::Unsupported, {}};
+    return {AccessTraceStatus::NotRooted, {}};
+  }
+
+  std::optional<unsigned> rootRank = getMemrefRank(root);
+  if (!rootRank || !currentRank || *rootRank != *currentRank ||
+      unsupportedMapping)
+    return {AccessTraceStatus::Unsupported, {}};
+  for (unsigned dim : selectedDims)
+    if (dim >= *rootRank)
+      return {AccessTraceStatus::Unsupported, {}};
+  return {AccessTraceStatus::Rooted, std::move(selectedDims)};
+}
+
 static bool hasTileOwnerSlicePlan(codir::CodeletOp codelet) {
   return codelet && codelet.getTileShapeAttr() &&
          codelet.getTileOwnerDimsAttr();
@@ -154,7 +289,7 @@ static std::optional<unsigned> inferDepOwnerAccessDim(codir::CodeletOp codelet,
   if (!ownerBase)
     return std::nullopt;
 
-  bool sawDirectRootAccess = false;
+  bool sawDepAccess = false;
   bool rejected = false;
   std::optional<unsigned> selectedDim;
   body.walk([&](Operation *op) {
@@ -162,33 +297,33 @@ static std::optional<unsigned> inferDepOwnerAccessDim(codir::CodeletOp codelet,
       return WalkResult::interrupt();
 
     auto access = getMemoryAccessInfo(op);
-    if (!access || access->memref != depArg)
+    if (!access)
       return WalkResult::advance();
 
-    sawDirectRootAccess = true;
-    std::optional<unsigned> accessDim;
-    for (auto [dim, index] : llvm::enumerate(access->indices)) {
-      if (!indexSelectsOwnerSlice(index, ownerBase))
-        continue;
-      if (accessDim && *accessDim != dim) {
-        rejected = true;
-        return WalkResult::interrupt();
-      }
-      accessDim = static_cast<unsigned>(dim);
-    }
-    if (!accessDim || *accessDim >= depType.getRank()) {
+    AccessOwnerDims traced =
+        traceAccessToRoot(access->memref, access->indices, depArg, ownerBase);
+    if (traced.status == AccessTraceStatus::NotRooted)
+      return WalkResult::advance();
+    if (traced.status == AccessTraceStatus::Unsupported) {
       rejected = true;
       return WalkResult::interrupt();
     }
-    if (selectedDim && *selectedDim != *accessDim) {
+
+    sawDepAccess = true;
+    if (traced.ownerDims.size() != 1) {
       rejected = true;
       return WalkResult::interrupt();
     }
-    selectedDim = *accessDim;
+    unsigned accessDim = traced.ownerDims.front();
+    if (selectedDim && *selectedDim != accessDim) {
+      rejected = true;
+      return WalkResult::interrupt();
+    }
+    selectedDim = accessDim;
     return WalkResult::advance();
   });
 
-  if (!sawDirectRootAccess || rejected)
+  if (!sawDepAccess || rejected)
     return std::nullopt;
   return selectedDim;
 }
@@ -221,26 +356,34 @@ static bool depAccessesStayWithinSingleOwnerSlice(codir::CodeletOp codelet,
   if (!ownerBase)
     return false;
 
-  bool sawDirectRootAccess = false;
+  bool sawDepAccess = false;
   bool rejected = false;
   body.walk([&](Operation *op) {
     if (rejected)
       return WalkResult::interrupt();
 
     auto access = getMemoryAccessInfo(op);
-    if (!access || access->memref != depArg)
+    if (!access)
       return WalkResult::advance();
 
-    sawDirectRootAccess = true;
-    if (access->indices.size() <= *ownerDim ||
-        !indexSelectsOwnerSlice(access->indices[*ownerDim], ownerBase)) {
+    AccessOwnerDims traced =
+        traceAccessToRoot(access->memref, access->indices, depArg, ownerBase);
+    if (traced.status == AccessTraceStatus::NotRooted)
+      return WalkResult::advance();
+    if (traced.status == AccessTraceStatus::Unsupported) {
+      rejected = true;
+      return WalkResult::interrupt();
+    }
+
+    sawDepAccess = true;
+    if (!llvm::is_contained(traced.ownerDims, *ownerDim)) {
       rejected = true;
       return WalkResult::interrupt();
     }
     return WalkResult::advance();
   });
 
-  return sawDirectRootAccess && !rejected;
+  return sawDepAccess && !rejected;
 }
 
 static bool hasHostMemrefAccessOutsideCodelet(Value root) {

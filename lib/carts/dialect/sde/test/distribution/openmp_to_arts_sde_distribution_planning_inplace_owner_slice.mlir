@@ -4,10 +4,10 @@
 
 // In-place row-local kernels read and write the same root memref, but every
 // access stays within the owner row. SDE may author the owner-slice plan during
-// distribution planning. Until SDE/CODIR materializes token-local reduction
-// views, the unsupported physical storage attrs are demoted before the raw
-// CreateDbs bridge. Owner-local pipeline slices use one hardware wave, so an
-// 8-worker single-node config maps 128 rows into 16 rows per task.
+// distribution planning. Single-node raw bridges keep the root DB coarse at
+// CreateDbs while preserving the owner-slice plan on the EDT. Owner-local
+// pipeline slices use one hardware wave, so an 8-worker single-node config maps
+// 128 rows into 16 rows per task.
 
 // SDE-LABEL: // -----// IR Dump After DistributionPlanning (distribution-planning) //----- //
 // SDE: func.func @main
@@ -26,20 +26,16 @@
 // DB: func.func @main
 // DB: arts.db_alloc
 // DB-SAME: <coarse>
-// DB: arts.db_alloc
-// DB-SAME: <block>
-// DB-SAME: arts.storage_bridge = "host_whole_to_compute_block"
 // DB: scf.for
-// DB: memref.load
-// DB: memref.store
+// DB: arts.db_acquire[<inout>]
+// DB-SAME: partitioning(<coarse>)
 // DB: arts.edt <task> <intranode>
 // DB: depPattern = #arts.dep_pattern<elementwise_pipeline>
 // DB-SAME: planOwnerDims = [0]
 // DB-SAME: planPhysicalBlockShape = [16, 64]
-// DB: arts.barrier
-// DB: scf.for
 // DB: memref.load
 // DB: memref.store
+// DB: arts.barrier
 // DB-NOT: planHaloShape
 // DB-NOT: SDE-authored physical DB layout reached CreateDbs as a raw memref
 

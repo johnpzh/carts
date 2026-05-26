@@ -66,8 +66,7 @@ static bool isUsedInsideAny(ArrayRef<Operation *> ancestors, Value value) {
 // memref.alloc.  The analyzer may ignore those effects only for exact
 // allocator/free pairs whose result cannot escape the analyzed body.
 static bool isLibcAllocatorCallee(StringRef callee) {
-  return callee == "malloc" || callee == "calloc" ||
-         callee == "aligned_alloc";
+  return callee == "malloc" || callee == "calloc" || callee == "aligned_alloc";
 }
 
 static bool isLibcFreeCallee(StringRef callee) { return callee == "free"; }
@@ -181,7 +180,7 @@ static bool isLocalLibcAllocatorScratch(Value root, Block &scope,
 }
 
 static bool isLocalLibcAllocatorScratchCall(Operation *op, Block &scope,
-                                           ArrayRef<Operation *> regions) {
+                                            ArrayRef<Operation *> regions) {
   auto call = dyn_cast_or_null<func::CallOp>(op);
   if (!call || call->getBlock() != &scope ||
       !isLibcAllocatorCallee(call.getCallee()) || call.getNumResults() == 0)
@@ -237,8 +236,9 @@ static bool isLocalScratchSideEffectUsedByLoop(Operation *op, Block &scope,
   return false;
 }
 
-static bool isLocalScratchSideEffectUsedByRegions(
-    Operation *op, Block &scope, ArrayRef<Operation *> regions) {
+static bool
+isLocalScratchSideEffectUsedByRegions(Operation *op, Block &scope,
+                                      ArrayRef<Operation *> regions) {
   if (!op || regions.empty())
     return false;
 
@@ -275,9 +275,9 @@ static bool isEffectFreeBoundaryOp(Operation *op) {
   return isMemoryEffectFree(op) || isRankZeroScalarMemrefAccess(op);
 }
 
-static bool boundarySideEffectsAreLocalScratch(
-    ArrayRef<Operation *> sideEffects, Block &body,
-    ArrayRef<Operation *> regions) {
+static bool
+boundarySideEffectsAreLocalScratch(ArrayRef<Operation *> sideEffects,
+                                   Block &body, ArrayRef<Operation *> regions) {
   for (Operation *op : sideEffects)
     if (!isLocalScratchSideEffectUsedByRegions(op, body, regions))
       return false;
@@ -415,19 +415,6 @@ static std::optional<AffineMap> tryBuildIndexingMap(OperandRange indices,
   return AffineMap::get(/*dimCount=*/ivs.size(), /*symbolCount=*/0, exprs, ctx);
 }
 
-static bool isLocalScratchAccess(Operation *scope, Value memref) {
-  Value root = ::mlir::carts::ValueAnalysis::stripMemrefViewOps(memref);
-  return root && isDefinedInside(scope, root);
-}
-
-static bool isLocalScratchAllocation(Operation *scope, Operation *op) {
-  if (!op || !isa<memref::AllocOp, memref::AllocaOp>(op))
-    return false;
-  return llvm::all_of(op->getResults(), [&](Value result) {
-    return isLocalScratchAccess(scope, result);
-  });
-}
-
 static bool isLocalLibcAllocatorScratchForBody(Operation *op, Block &body) {
   Operation *region = body.getParentOp();
   if (!region)
@@ -447,15 +434,11 @@ collectMemrefAccessesImpl(Operation *scope, Block &body, ArrayRef<Value> ivs,
     if (op.hasTrait<OpTrait::IsTerminator>())
       continue;
 
-    if (isLocalScratchAllocation(scope, &op))
+    if (isLocalScratchEffect(&op, scope))
       continue;
 
     if (isLocalLibcAllocatorScratchForBody(&op, body))
       continue;
-
-    if (auto deallocOp = dyn_cast<memref::DeallocOp>(&op))
-      if (isLocalScratchAccess(scope, deallocOp.getMemref()))
-        continue;
 
     if (auto loadOp = dyn_cast<memref::LoadOp>(&op)) {
       // Skip pointer-to-memref wrapper loads (e.g., memref.load %wrapper[] :
@@ -466,8 +449,6 @@ collectMemrefAccessesImpl(Operation *scope, Block &body, ArrayRef<Value> ivs,
         continue;
       auto memrefType = dyn_cast<MemRefType>(loadOp.getMemref().getType());
       if (memrefType && memrefType.getRank() == 0)
-        continue;
-      if (isLocalScratchAccess(scope, loadOp.getMemref()))
         continue;
 
       auto map = tryBuildIndexingMap(loadOp.getIndices(), ivs, ctx);
@@ -485,8 +466,6 @@ collectMemrefAccessesImpl(Operation *scope, Block &body, ArrayRef<Value> ivs,
         continue;
       auto memrefType = dyn_cast<MemRefType>(storeOp.getMemref().getType());
       if (memrefType && memrefType.getRank() == 0)
-        continue;
-      if (isLocalScratchAccess(scope, storeOp.getMemref()))
         continue;
 
       auto map = tryBuildIndexingMap(storeOp.getIndices(), ivs, ctx);
