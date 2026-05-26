@@ -144,7 +144,8 @@ struct ContractValidationPass
       /// If owner_dim_reachability is false but block partitioning is
       /// requested, emit warning
       auto partMode = contract->getAttrOfType<PartitionModeAttr>(
-          ::mlir::carts::arts::AttrNames::Operation::PartitionMode);
+          DbAllocOp::getPartitionModeAttrName(OperationName(
+              DbAllocOp::getOperationName(), contract.getContext())));
       if (!proof.ownerDimReachability && partMode &&
           (partMode.getValue() == PartitionMode::block ||
            partMode.getValue() == PartitionMode::stencil)) {

@@ -68,6 +68,9 @@ struct PartitionInfo {
 #define GET_ATTRDEF_CLASSES
 #include "carts/dialect/arts/IR/ArtsOpsAttributes.h.inc"
 
+/// ARTS Dialect Op Interfaces
+#include "carts/dialect/arts/IR/ArtsOpInterfaces.h.inc"
+
 /// ARTS Dialect Operations
 #define GET_OP_CLASSES
 #include "carts/dialect/arts/IR/ArtsOps.h.inc"

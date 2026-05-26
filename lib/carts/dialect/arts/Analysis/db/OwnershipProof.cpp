@@ -49,7 +49,8 @@ mlir::carts::arts::computeOwnershipProof(LoweringContractOp contractOp) {
   ///    owner dims rank matches memref rank in the relevant dimensions
   if (proof.ownerDimReachability && depPattern) {
     auto partitionMode = contractOp->getAttrOfType<PartitionModeAttr>(
-        ::mlir::carts::arts::AttrNames::Operation::PartitionMode);
+        DbAllocOp::getPartitionModeAttrName(OperationName(
+            DbAllocOp::getOperationName(), contractOp.getContext())));
     bool hasBlockCompatibleMode =
         !partitionMode || partitionMode.getValue() == PartitionMode::block ||
         partitionMode.getValue() == PartitionMode::stencil;

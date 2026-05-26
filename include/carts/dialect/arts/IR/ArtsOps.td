@@ -18,6 +18,7 @@ include "mlir/Interfaces/LoopLikeInterface.td"
 include "ArtsDialect.td"
 include "ArtsAttrs.td"
 include "ArtsTypes.td"
+include "ArtsOpInterfaces.td"
 
 ///===----------------------------------------------------------------------===///
 /// Custom Traits for ARTS
@@ -80,7 +81,9 @@ def DbDimOp : Arts_Op<"db_dim", [Pure]> {
 }
 
 def DbAllocOp : Arts_Op<"db_alloc",
-                        [AttrSizedOperandSegments, MemoryEffects<[MemAlloc]>]> {
+                        [AttrSizedOperandSegments, MemoryEffects<[MemAlloc]>,
+                         ArtsPartitionedOpInterface,
+                         ArtsDistributedDbOpInterface]> {
   let summary = "Allocate an ARTS DataBlock and get its pointer and GUID.";
   let description = [{
     This operation corresponds to the `artsDbCreate` runtime function.
@@ -200,7 +203,9 @@ def DbAllocOp : Arts_Op<"db_alloc",
   }];
 }
 
-def DbAcquireOp : Arts_Op<"db_acquire", [AttrSizedOperandSegments]> {
+def DbAcquireOp : Arts_Op<"db_acquire",
+                          [AttrSizedOperandSegments,
+                           ArtsPartitionedOpInterface]> {
   let summary = "Acquires access to an ARTS DataBlock.";
   let description = [{
     This operation acquires a local view of the DataBlock for safe access within EDTs.

@@ -47,6 +47,8 @@ void ArtsDialect::initialize() {
 
 #include "carts/dialect/arts/IR/ArtsOpsDialect.cpp.inc"
 
+#include "carts/dialect/arts/IR/ArtsOpInterfaces.cpp.inc"
+
 #define GET_OP_CLASSES
 #include "carts/dialect/arts/IR/ArtsOps.cpp.inc"
 
@@ -498,7 +500,7 @@ static void buildDbAllocOpCommon(OpBuilder &builder, OperationState &state,
   state.addAttribute("dbMode", dbModeAttr);
   state.addAttribute("elementType", elementTypeAttr);
   state.addAttribute(
-      ::mlir::carts::arts::AttrNames::Operation::PartitionMode,
+      DbAllocOp::getPartitionModeAttrName(state.name),
       PartitionModeAttr::get(builder.getContext(), info.partitionMode));
 
   state.addOperands(info.route);
@@ -828,7 +830,7 @@ static void addDbAcquireOperandsAndAttrs(
       resolvedMode = *parentMode;
   }
   state.addAttribute(
-      ::mlir::carts::arts::AttrNames::Operation::PartitionMode,
+      DbAcquireOp::getPartitionModeAttrName(state.name),
       PartitionModeAttr::get(builder.getContext(), resolvedMode));
 }
 

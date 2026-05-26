@@ -36,9 +36,10 @@ constexpr StringLiteral Nowait = "nowait";
 constexpr StringLiteral PreserveAccessMode = "preserve_access_mode";
 constexpr StringLiteral PreserveDepEdge = "preserve_dep_edge";
 
-/// Partition-related attributes (TableGen-generated names)
-constexpr StringLiteral PartitionMode = "partition_mode";
-constexpr StringLiteral Distributed = "distributed";
+/// Partition-related attributes (TableGen-generated names).
+/// `partition_mode` is owned by ArtsPartitionedOpInterface and `distributed`
+/// by ArtsDistributedDbOpInterface; their attr names are obtained from the
+/// implementing op rather than via a raw string.
 constexpr StringLiteral DistributedRejectReason =
     "arts.distributed_reject_reason";
 constexpr StringLiteral DistributionKind = "distribution_kind";
@@ -505,8 +506,11 @@ inline void setNowait(Operation *op, bool enabled = true) {
 inline std::optional<PartitionMode> getPartitionMode(Operation *op) {
   if (!op)
     return std::nullopt;
+  auto partitioned = dyn_cast<ArtsPartitionedOpInterface>(op);
+  if (!partitioned)
+    return std::nullopt;
   if (auto attr = op->getAttrOfType<PartitionModeAttr>(
-          AttrNames::Operation::PartitionMode))
+          partitioned.getPartitionModeAttrName()))
     return attr.getValue();
   return std::nullopt;
 }
@@ -514,18 +518,24 @@ inline std::optional<PartitionMode> getPartitionMode(Operation *op) {
 inline bool hasDistributedDbAllocation(Operation *op) {
   if (!op)
     return false;
-  return op->hasAttr(AttrNames::Operation::Distributed);
+  auto distributed = dyn_cast<ArtsDistributedDbOpInterface>(op);
+  if (!distributed)
+    return false;
+  return op->hasAttr(distributed.getDistributedAttrName());
 }
 
 inline void setDistributedDbAllocation(Operation *op, bool enabled) {
   if (!op)
     return;
+  auto distributed = dyn_cast<ArtsDistributedDbOpInterface>(op);
+  if (!distributed)
+    return;
+  auto name = distributed.getDistributedAttrName();
   if (enabled) {
-    op->setAttr(AttrNames::Operation::Distributed,
-                UnitAttr::get(op->getContext()));
+    op->setAttr(name, UnitAttr::get(op->getContext()));
     return;
   }
-  op->removeAttr(AttrNames::Operation::Distributed);
+  op->removeAttr(name);
 }
 
 inline std::optional<EdtDistributionKind>
@@ -889,9 +899,13 @@ inline void copyArtsMetadataAttrs(Operation *source, Operation *dest) {
   if (auto id =
           source->getAttrOfType<IntegerAttr>(AttrNames::Operation::ArtsId))
     dest->setAttr(AttrNames::Operation::ArtsId, id);
-  if (auto mode = source->getAttrOfType<PartitionModeAttr>(
-          AttrNames::Operation::PartitionMode))
-    dest->setAttr(AttrNames::Operation::PartitionMode, mode);
+  auto sourcePartitioned = dyn_cast<ArtsPartitionedOpInterface>(source);
+  auto destPartitioned = dyn_cast<ArtsPartitionedOpInterface>(dest);
+  if (sourcePartitioned && destPartitioned) {
+    if (auto mode = source->getAttrOfType<PartitionModeAttr>(
+            sourcePartitioned.getPartitionModeAttrName()))
+      dest->setAttr(destPartitioned.getPartitionModeAttrName(), mode);
+  }
 }
 
 /// Copy only the semantic contract attrs that specialized pattern detection

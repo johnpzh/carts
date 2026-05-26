@@ -6,6 +6,7 @@ add_mlir_dialect_library(MLIRCartsArts
 
   DEPENDS
     MLIRArtsOpsIncGen
+    MLIRArtsOpInterfacesIncGen
     MLIRArtsRtOpsIncGen
 
   LINK_LIBS PUBLIC
