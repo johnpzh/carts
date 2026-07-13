@@ -6,6 +6,7 @@
 .vscode
 compile_commands.json
 /build/
+cmake-build-*/
 CMakeFiles/
 # Core dump files (anchored to root to avoid matching dialect/core/)
 /core
@@ -24,6 +25,8 @@ CMakeFiles/
 /.agents.json
 /agents/
 /.dekk/
+/arts.cfg
+/notes
 
 .cursor*/*
 !.cursor/rules/
@@ -39,6 +42,7 @@ results/
 .results/
 .artsPrintLock
 .findings/
+.idea/
 
 # CARTS scratch outputs
 /.carts/outputs/
@@ -55,6 +59,7 @@ external/*/cmake_install.cmake
 # Generated MLIR files
 *.mlir
 *.ll
+samples/*/boundaries
 !tests/contracts/*.mlir
 !tests/contracts/**/*.mlir
 !tests/contracts/partitioning/safety/specfem3d_stress_block_halo_contract.mlir

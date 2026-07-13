@@ -38,8 +38,14 @@ config.suffixes = [".mlir"]
 project_root = getattr(config, "carts_source_dir", None) or os.path.dirname(os.path.abspath(__file__))
 tests_dir = os.path.join(project_root, "tests")
 tools_scripts_dir = os.path.join(project_root, "tools", "scripts")
+# Append (never insert at front): tools/scripts/platform.py would otherwise
+# shadow the standard-library `platform` module that llvm-lit imports at
+# top level. In multiprocessing "spawn" workers (default on macOS/Python 3.13)
+# the parent's sys.path is restored before llvm-lit is re-executed, so a
+# front-loaded tools/scripts makes `import platform` resolve to our module and
+# fail. Appending keeps stdlib ahead while local_config stays importable.
 if tools_scripts_dir not in sys.path:
-    sys.path.insert(0, tools_scripts_dir)
+    sys.path.append(tools_scripts_dir)
 from local_config import (
     managed_runtime_library_dirs,
     resolve_build_dir,

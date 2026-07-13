@@ -375,6 +375,13 @@ void DbReleaseOp::build(OpBuilder &builder, OperationState &state,
   state.addOperands(source);
 }
 
+void DbReleaseOp::build(OpBuilder &builder, OperationState &state, Value source,
+                        DbReleaseType release_type) {
+  state.addOperands(source);
+  state.getOrAddProperties<Properties>().release_type =
+      DbReleaseTypeAttr::get(builder.getContext(), release_type);
+}
+
 void DbDimOp::build(OpBuilder &builder, OperationState &state, Value source,
                     int64_t dim) {
   state.addOperands(source);

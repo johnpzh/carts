@@ -1,6 +1,6 @@
 [submodule "external/arts"]
 	path = external/arts
-	url = https://github.com/randreshg/ARTS.git
+	url = git@github.com:johnpzh/ARTS.git
 	branch = main
 	shallow = true
 
