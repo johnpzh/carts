@@ -6,6 +6,7 @@
 .vscode
 compile_commands.json
 /build/
+cmake-build-*/
 CMakeFiles/
 # Core dump files (anchored to root to avoid matching dialect/core/)
 /core
@@ -39,6 +40,7 @@ results/
 .results/
 .artsPrintLock
 .findings/
+.idea/
 
 # CARTS scratch outputs
 /.carts/outputs/

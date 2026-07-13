@@ -245,15 +245,30 @@ def is_linux_platform(platform_info: Any | None = None) -> bool:
 
 
 def runtime_library_env_vars(platform_info: Any | None = None) -> tuple[str, ...]:
-    """Return dynamic-library search env vars for the current platform."""
+    """Return dynamic-library search env vars for the current platform.
+
+    On macOS we use ``DYLD_FALLBACK_LIBRARY_PATH`` rather than
+    ``DYLD_LIBRARY_PATH``.  ``DYLD_LIBRARY_PATH`` is searched *before* a binary's
+    install names/rpaths, so the managed ``.../lib`` dir shadows the system
+    ``/usr/lib/libc++abi.dylib``.  The managed libc++abi (built from the in-tree
+    libcxxabi) omits the C++26 type-aware allocation operators
+    (``operator new/new[](size_t, std::__type_descriptor_t)``) that the
+    bootstrap compiler emits weak references to, so shadowing the complete
+    system libc++abi makes every managed tool abort with a dyld "Symbol not
+    found: __ZnamSt19__type_descriptor_t".  The fallback variable is searched
+    *after* install names/rpaths, so managed libc++/libomp/libarts still resolve
+    via each binary's rpath while the system libc++abi provides the type-aware
+    operators.  Do not switch this back to ``DYLD_LIBRARY_PATH`` without also
+    fixing the managed libc++abi to export those operators.
+    """
     info = platform_info or detect_platform_info()
     if is_windows_platform(info):
         return ("PATH",)
     if is_macos_platform(info):
-        return ("DYLD_LIBRARY_PATH",)
+        return ("DYLD_FALLBACK_LIBRARY_PATH",)
     if is_linux_platform(info):
         return ("LD_LIBRARY_PATH",)
-    return ("DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH")
+    return ("DYLD_FALLBACK_LIBRARY_PATH", "LD_LIBRARY_PATH")
 
 
 def is_windows_platform(platform_info: Any | None = None) -> bool:
