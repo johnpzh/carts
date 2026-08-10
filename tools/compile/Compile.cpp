@@ -160,6 +160,13 @@ static cl::opt<bool> DistributedDb(
              "(ownership marking + parallel initPerWorker creation)"),
     cl::init(false));
 
+/// CXL placement for read-only DataBlocks.
+static cl::opt<bool> CxlReadOnlyDbs(
+    "cxl-readonly-dbs",
+    cl::desc("Create read-only DataBlocks with the ARTS_DB_CXL runtime type "
+             "(requires an ARTS runtime built with ARTS_USE_CXL)"),
+    cl::init(false));
+
 ///===----------------------------------------------------------------------===///
 /// Pipeline Stop Options
 ///===----------------------------------------------------------------------===///
@@ -1294,10 +1301,11 @@ void buildPreLoweringPipeline(PassManager &pm) {
 /// ARTS-RT to LLVM conversion passes.
 void buildArtsRtToLLVMPipeline(PassManager &pm, bool debug,
                                bool distributedInitPerWorker,
-                               const arts::RuntimeConfig *machine) {
+                               const arts::RuntimeConfig *machine,
+                               bool cxlReadOnlyDbs) {
   pm.addNestedPass<func::FuncOp>(createLowerAffinePass());
   pm.addPass(arts_rt::createConvertArtsRtToLLVMPass(
-      debug, distributedInitPerWorker, machine));
+      debug, distributedInitPerWorker, machine, cxlReadOnlyDbs));
   /// ConvertArtsRtToLLVM still consults lowering contracts for late dependency
   /// decisions (for example N-D stencil halo slices). Clean them up only after
   /// that conversion has consumed them.
@@ -1464,7 +1472,8 @@ static ArrayRef<StageDescriptor> getStageRegistry() {
       {StageId::ArtsRtToLLVM, kArtsRtToLLVMToken, StageKind::Core, true, true,
        false, "Error when lowering ARTS-RT to LLVM", kArtsRtToLLVMPasses,
        [](PassManager &pm, const StageExecutionContext &ctx) {
-         buildArtsRtToLLVMPipeline(pm, Debug, DistributedDb, ctx.machine);
+         buildArtsRtToLLVMPipeline(pm, Debug, DistributedDb, ctx.machine,
+                                   CxlReadOnlyDbs);
        },
        isStageEnabledAlways,
        /*dependsOn=*/kDepArtsRtToLLVM},

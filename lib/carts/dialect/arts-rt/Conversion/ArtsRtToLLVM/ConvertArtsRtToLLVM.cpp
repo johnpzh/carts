@@ -51,9 +51,14 @@ struct ConvertArtsRtToLLVMPass
 
   explicit ConvertArtsRtToLLVMPass(bool debug = false,
                                    bool distributedInitPerWorker = false,
-                                   const arts::RuntimeConfig *machine = nullptr)
+                                   const arts::RuntimeConfig *machine = nullptr,
+                                   bool useCxlReadOnlyDbs = false)
       : debugMode(debug), distributedInitPerWorker(distributedInitPerWorker),
-        machine(machine) {}
+        machine(machine) {
+    /// Keep the ODS `cxl-readonly-dbs` option and the programmatic constructor
+    /// in sync through the single generated member.
+    cxlReadOnlyDbs = useCxlReadOnlyDbs;
+  }
 
   void runOnOperation() override;
 
@@ -81,6 +86,7 @@ void ConvertArtsRtToLLVMPass::runOnOperation() {
   AC = ownedAC.get();
   AC->setDistributedInitInWorkers(distributedInitPerWorker);
   AC->setRuntimeConfig(machine);
+  AC->setCxlReadOnlyDbs(cxlReadOnlyDbs);
   ARTS_DEBUG_TYPE("ArtsCodegen initialized successfully");
 
   //// Apply patterns with greedy rewriter (four runs)
@@ -167,9 +173,10 @@ std::unique_ptr<Pass> createConvertArtsRtToLLVMPass() {
 
 std::unique_ptr<Pass>
 createConvertArtsRtToLLVMPass(bool debug, bool distributedInitPerWorker,
-                              const arts::RuntimeConfig *machine) {
+                              const arts::RuntimeConfig *machine,
+                              bool cxlReadOnlyDbs) {
   return std::make_unique<ConvertArtsRtToLLVMPass>(
-      debug, distributedInitPerWorker, machine);
+      debug, distributedInitPerWorker, machine, cxlReadOnlyDbs);
 }
 } // namespace carts::arts_rt
 } // namespace mlir

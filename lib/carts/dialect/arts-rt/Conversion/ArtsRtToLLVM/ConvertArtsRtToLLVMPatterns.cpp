@@ -408,9 +408,8 @@ struct DbAllocPattern : public ArtsRtToLLVMPattern<DbAllocOp> {
     Value totalDbSize =
         AC->create<arith::MulIOp>(loc, elementSize, payloadSize);
     std::optional<int64_t> nextId;
-    if (auto createIdAttr =
-            op->getAttrOfType<IntegerAttr>(
-                arts::AttrNames::Operation::ArtsCreateId))
+    if (auto createIdAttr = op->getAttrOfType<IntegerAttr>(
+            arts::AttrNames::Operation::ArtsCreateId))
       nextId = createIdAttr.getInt();
     else
       nextId = getArtsId(op);
@@ -435,6 +434,17 @@ struct DbAllocPattern : public ArtsRtToLLVMPattern<DbAllocOp> {
       return success();
     }
 
+    /// Runtime DB subtype for locally created DBs. dbMode `read` means every
+    /// dependency acquisition of this DB is DB_MODE_RO, so the payload is
+    /// immutable after the creator EDT fills it — eligible for CXL placement.
+    unsigned runtimeDbType = ARTS_DB_DEFAULT;
+    if (AC->useCxlForReadOnlyDbs() && op.getDbMode() == DbMode::read) {
+      runtimeDbType = ARTS_DB_CXL;
+      /// CXL device memory is not subject to NUMA interleaving; keep the
+      /// plain creation entry point.
+      dbMemoryPlacement = DbMemoryPlacement::Default;
+    }
+
     if (isSingleElement) {
       ARTS_DEBUG("Creating single DB");
       /// Allocate 1D linear array of GUIDs
@@ -449,7 +459,8 @@ struct DbAllocPattern : public ArtsRtToLLVMPattern<DbAllocOp> {
                                              ValueRange{totalElems});
       createSingleDb(dbMemref, guidMemref, route, totalDbSize,
                      nextId ? &nextId : nullptr, loc, distributedOwnership,
-                     /*createDb=*/true, DbMemoryPlacement::Default);
+                     /*createDb=*/true, DbMemoryPlacement::Default,
+                     runtimeDbType);
     } else {
       ARTS_DEBUG("Creating multi-dim DB");
       /// Compute total number of elements
@@ -465,7 +476,7 @@ struct DbAllocPattern : public ArtsRtToLLVMPattern<DbAllocOp> {
                                              ValueRange{totalElems});
       createMultiDbs(dbMemref, guidMemref, dbSizes, route, totalDbSize,
                      nextId ? &nextId : nullptr, loc, distributedOwnership,
-                     /*createDb=*/true, dbMemoryPlacement);
+                     /*createDb=*/true, dbMemoryPlacement, runtimeDbType);
     }
 
     if (failed(linearizeRankedHandleUses(op.getGuid(), guidMemref, dbSizes,
@@ -923,8 +934,8 @@ private:
 
   void createDbFromGuidAtIndex(Value dbMemref, Value guid, Value linearIndex,
                                Value elementSize, std::optional<int64_t> nextId,
-                               Location loc,
-                               DbMemoryPlacement memoryPlacement) const {
+                               Location loc, DbMemoryPlacement memoryPlacement,
+                               unsigned runtimeDbType = ARTS_DB_DEFAULT) const {
     Value elemSize64 = AC->ensureI64(elementSize, loc);
 
     /// Build arts_hint_t with arts_id if available.
@@ -939,7 +950,7 @@ private:
     }
     Value zeroRoute = AC->createIntConstant(0, AC->Int32, loc);
     Value hintMemref = buildArtsHintMemref(AC, zeroRoute, artsIdValue, loc);
-    Value dbType = AC->createIntConstant(ARTS_DB_DEFAULT, AC->Int32, loc);
+    Value dbType = AC->createIntConstant(runtimeDbType, AC->Int32, loc);
     Value nullPtr = AC->create<LLVM::ZeroOp>(loc, AC->llvmPtr);
     Value nullData =
         AC->create<polygeist::Pointer2MemrefOp>(loc, AC->VoidPtr, nullPtr);
@@ -960,7 +971,8 @@ private:
       std::optional<int64_t> *nextId, Location loc,
       bool distributedOwnership = false, bool createDb = true,
       DbMemoryPlacement memoryPlacement = DbMemoryPlacement::Default,
-      ArrayRef<Value> sizes = {}, ArrayRef<Value> indices = {},
+      unsigned runtimeDbType = ARTS_DB_DEFAULT, ArrayRef<Value> sizes = {},
+      ArrayRef<Value> indices = {},
       std::optional<Value> linearIndexOverride = std::nullopt) const {
     Value linearIndex;
     if (linearIndexOverride.has_value()) {
@@ -1000,15 +1012,17 @@ private:
         }
       }
       createDbFromGuidAtIndex(dbMemref, guid, linearIndex, elementSize, baseId,
-                              loc, memoryPlacement);
+                              loc, memoryPlacement, runtimeDbType);
     }
   }
 
-  void createMultiDbs(
-      Value dbMemref, Value guidMemref, ArrayRef<Value> sizes, Value route,
-      Value elementSize, std::optional<int64_t> *nextId, Location loc,
-      bool distributedOwnership = false, bool createDb = true,
-      DbMemoryPlacement memoryPlacement = DbMemoryPlacement::Default) const {
+  void
+  createMultiDbs(Value dbMemref, Value guidMemref, ArrayRef<Value> sizes,
+                 Value route, Value elementSize, std::optional<int64_t> *nextId,
+                 Location loc, bool distributedOwnership = false,
+                 bool createDb = true,
+                 DbMemoryPlacement memoryPlacement = DbMemoryPlacement::Default,
+                 unsigned runtimeDbType = ARTS_DB_DEFAULT) const {
     Value totalElems = AC->computeTotalElements(sizes, loc);
     /// Keep DB creation always linearized here. The dedicated GuidRangeCallOpt
     /// pass handles reserve->reserve_range promotion centrally after
@@ -1021,6 +1035,7 @@ private:
     Value linearIndex = linearLoop.getInductionVar();
     createSingleDb(dbMemref, guidMemref, route, elementSize, nextId, loc,
                    distributedOwnership, createDb, memoryPlacement,
+                   runtimeDbType,
                    /*sizes=*/{},
                    /*indices=*/{}, /*linearIndexOverride=*/linearIndex);
     AC->setInsertionPointAfter(linearLoop);

@@ -37,6 +37,8 @@ def ConvertArtsRtToLLVM : Pass<"convert-arts-rt-to-llvm", "mlir::ModuleOp"> {
   let constructor = "mlir::carts::arts_rt::createConvertArtsRtToLLVMPass()";
   let options = [
     Option<"debug", "debug", "bool", /*default=*/"false", "Enable debug mode.">,
+    Option<"cxlReadOnlyDbs", "cxl-readonly-dbs", "bool", /*default=*/"false",
+           "Create read-only DataBlocks with the ARTS_DB_CXL runtime type.">,
   ];
 }
 

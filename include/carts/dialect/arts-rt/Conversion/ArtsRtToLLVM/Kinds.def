@@ -61,6 +61,7 @@
 #define ARTS_DB_LOCAL 1
 #define ARTS_DB_GPU 2
 #define ARTS_DB_LC 3
+#define ARTS_DB_CXL 4
 
 /// arts_edt_types_t enum values (from arts v2 arts.h)
 #define ARTS_EDT_DEFAULT 0

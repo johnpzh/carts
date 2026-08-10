@@ -1,7 +1,7 @@
 [submodule "external/arts"]
 	path = external/arts
-	url = git@github.com:johnpzh/ARTS.git
-	branch = main
+	url = https://github.com/randreshg/ARTS.git
+	branch = cxl
 	shallow = true
 
 [submodule "external/Polygeist"]

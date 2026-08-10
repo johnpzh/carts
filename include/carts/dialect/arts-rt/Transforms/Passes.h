@@ -48,7 +48,8 @@ std::unique_ptr<::mlir::Pass> createVerifyPreLoweredPass();
 std::unique_ptr<::mlir::Pass> createConvertArtsRtToLLVMPass();
 std::unique_ptr<::mlir::Pass>
 createConvertArtsRtToLLVMPass(bool debug, bool distributedInitPerWorker,
-                              const arts::RuntimeConfig *machine);
+                              const arts::RuntimeConfig *machine,
+                              bool cxlReadOnlyDbs = false);
 /// Erase abstract ARTS lowering-contract metadata after ARTS-RT lowering.
 std::unique_ptr<::mlir::Pass> createLoweringContractCleanupPass();
 /// Hoist dependency/data pointer loads after runtime ABI lowering.

@@ -142,6 +142,8 @@ public:
     runtimeConfig = machine;
   }
   const arts::RuntimeConfig *getRuntimeConfig() const { return runtimeConfig; }
+  bool useCxlForReadOnlyDbs() const { return cxlReadOnlyDbs; }
+  void setCxlReadOnlyDbs(bool value) { cxlReadOnlyDbs = value; }
 
   /// Helper functions
   Value createZeroValue(Type elemType, Location loc);
@@ -232,6 +234,7 @@ private:
   SmallVector<func::FuncOp, 8> distributedInitWorkerCallbacks;
   bool distributedInitInWorkers = false;
   const arts::RuntimeConfig *runtimeConfig = nullptr;
+  bool cxlReadOnlyDbs = false;
 
   /// Helper functions
   void initializeTypes();
