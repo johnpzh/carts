@@ -138,16 +138,13 @@ __ARTS_TYPE(RawPtr, mlir::LLVM::LLVMPointerType::get)
 #define __ARTS_STRUCT_TYPE(VarName, Name, Packed, ...)                         \
   ARTS_STRUCT_TYPE(VarName, "struct." #Name, Packed, __VA_ARGS__)
 
-/// typedef struct {
-///   arts_guid_t guid;
-///   void *ptr;
-///   arts_db_access_mode_t mode;
-///   uint32_t flags;
-///   uint64_t slice_offset;
-///   uint64_t slice_size;
-/// } arts_edt_dep_t;
+/// Mirror of the v2 runtime record `arts_edt_dep_t` in external/arts
+/// libs/include/public/arts.h: { arts_guid_t guid; void *ptr;
+/// arts_db_access_mode_t mode; }. depv GEPs and sizeof-based dep-buffer
+/// allocation take the array stride from this type, so its field list
+/// must match the runtime struct exactly.
 __ARTS_STRUCT_TYPE(ArtsEdtDep, arts_edt_dep_t, false, ArtsGuid, llvmPtr,
-                   ArtsType, Int32, Int64, Int64)
+                   ArtsType)
 
 /// typedef struct {
 ///   unsigned int route;

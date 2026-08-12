@@ -373,10 +373,11 @@ private:
     RCB.callVoid(types::ARTSRTL_arts_free, {depBuffer});
   }
 
+  /// Fill one arts_edt_dep_t record. {guid, ptr, mode} is the complete
+  /// runtime record (Kinds.def); dep flags and byte slices have no slot
+  /// in it and travel only through the arts_add_dependence* calls.
   void storeReadyLocalDepEntry(Value depBuffer, Value slotValue,
                                Value guidValue, Value modeValue,
-                               std::optional<int32_t> depFlags,
-                               Value byteOffsetI64, Value byteSizeI64,
                                Location loc) const {
     Value slotI64 = AC->ensureI64(slotValue, loc);
     Value depEntryPtr = AC->create<LLVM::GEPOp>(
@@ -384,16 +385,7 @@ private:
     Value c0 = AC->createIntConstant(0, AC->Int64, loc);
     Value c1 = AC->createIntConstant(1, AC->Int64, loc);
     Value c2 = AC->createIntConstant(2, AC->Int64, loc);
-    Value c3 = AC->createIntConstant(3, AC->Int64, loc);
-    Value c4 = AC->createIntConstant(4, AC->Int64, loc);
-    Value c5 = AC->createIntConstant(5, AC->Int64, loc);
-    Value flagsValue =
-        AC->createIntConstant(depFlags.value_or(0), AC->Int32, loc);
     Value nullPtr = AC->create<LLVM::ZeroOp>(loc, AC->llvmPtr);
-    if (!byteOffsetI64)
-      byteOffsetI64 = AC->createIntConstant(0, AC->Int64, loc);
-    if (!byteSizeI64)
-      byteSizeI64 = AC->createIntConstant(0, AC->Int64, loc);
 
     Value guidPtr = AC->create<LLVM::GEPOp>(loc, AC->llvmPtr, AC->ArtsEdtDep,
                                             depEntryPtr, ValueRange{c0, c0});
@@ -401,18 +393,9 @@ private:
                                            depEntryPtr, ValueRange{c0, c1});
     Value modePtr = AC->create<LLVM::GEPOp>(loc, AC->llvmPtr, AC->ArtsEdtDep,
                                             depEntryPtr, ValueRange{c0, c2});
-    Value flagsPtr = AC->create<LLVM::GEPOp>(loc, AC->llvmPtr, AC->ArtsEdtDep,
-                                             depEntryPtr, ValueRange{c0, c3});
-    Value offsetPtr = AC->create<LLVM::GEPOp>(loc, AC->llvmPtr, AC->ArtsEdtDep,
-                                              depEntryPtr, ValueRange{c0, c4});
-    Value sizePtr = AC->create<LLVM::GEPOp>(loc, AC->llvmPtr, AC->ArtsEdtDep,
-                                            depEntryPtr, ValueRange{c0, c5});
     AC->create<LLVM::StoreOp>(loc, AC->ensureI64(guidValue, loc), guidPtr);
     AC->create<LLVM::StoreOp>(loc, nullPtr, ptrPtr);
     AC->create<LLVM::StoreOp>(loc, modeValue, modePtr);
-    AC->create<LLVM::StoreOp>(loc, flagsValue, flagsPtr);
-    AC->create<LLVM::StoreOp>(loc, byteOffsetI64, offsetPtr);
-    AC->create<LLVM::StoreOp>(loc, byteSizeI64, sizePtr);
   }
 
   SmallVector<Value, 4>
@@ -1341,8 +1324,7 @@ private:
                                           useDepv, depStruct, baseOffset, loc);
       if (readyLocalDepBuffer) {
         storeReadyLocalDepEntry(readyLocalDepBuffer, currentSlotI32,
-                                dbGuidValue, modeValue, effectiveDepFlags,
-                                byteOffsetI64, byteSizeI64, loc);
+                                dbGuidValue, modeValue, loc);
       } else {
         emitRecordDepCall(dbGuidValue, edtGuidValue, currentSlotI32, modeValue,
                           byteOffsetI64, byteSizeI64, effectiveDepFlags, loc);
@@ -1354,7 +1336,7 @@ private:
         Value nullGuid = AC->createIntConstant(0, AC->Int64, loc);
         Value nullMode = AC->createIntConstant(DB_MODE_NULL, AC->Int32, loc);
         storeReadyLocalDepEntry(readyLocalDepBuffer, currentSlotI32, nullGuid,
-                                nullMode, std::nullopt, Value(), Value(), loc);
+                                nullMode, loc);
       } else {
         ArtsCodegen::RuntimeCallBuilder RCB(*AC, loc);
         RCB.callVoid(types::ARTSRTL_arts_signal_edt_null,
@@ -1369,8 +1351,7 @@ private:
                                           useDepv, depStruct, baseOffset, loc);
       if (readyLocalDepBuffer) {
         storeReadyLocalDepEntry(readyLocalDepBuffer, currentSlotI32,
-                                dbGuidValue, modeValue, effectiveDepFlags,
-                                byteOffsetI64, byteSizeI64, loc);
+                                dbGuidValue, modeValue, loc);
       } else {
         emitRecordDepCall(dbGuidValue, edtGuidValue, currentSlotI32, modeValue,
                           byteOffsetI64, byteSizeI64, effectiveDepFlags, loc);
