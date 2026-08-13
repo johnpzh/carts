@@ -7,6 +7,7 @@ from dekk import Exit, Option, print_error, print_info, print_step, print_succes
 from scripts.platform import get_config
 from scripts import (
     run_subprocess,
+    declared_nested_submodules,
     ARTS_NESTED_SUBMODULES,
     MAKE_TARGET_ARTS,
     MAKE_TARGET_BUILD,
@@ -116,11 +117,13 @@ def _update_submodule_checkout(carts_dir: Path, submodule: str) -> None:
         ["git", "submodule", "sync", "--recursive"],
         "Failed to sync nested ARTS submodule metadata",
     )
-    _run_git(
-        arts_dir,
-        ["git", "submodule", "update", "--init", *ARTS_NESTED_SUBMODULES],
-        "Failed to update required ARTS nested submodules",
-    )
+    arts_nested = declared_nested_submodules(arts_dir, ARTS_NESTED_SUBMODULES)
+    if arts_nested:
+        _run_git(
+            arts_dir,
+            ["git", "submodule", "update", "--init", *arts_nested],
+            "Failed to update required ARTS nested submodules",
+        )
 
 
 def update(

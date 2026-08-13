@@ -64,6 +64,9 @@ def build(
     rdma: bool = Option(
         True, "--rdma/--no-rdma",
         help="Build ARTS with RDMA RSockets transport by default; use --no-rdma for TCP fallback (--arts only)"),
+    examples: bool = Option(
+        False, "--examples",
+        help="Also build ARTS example programs into the ARTS build tree (--arts only)"),
     cc: Optional[str] = Option(
         None, "--cc",
         help="C compiler for LLVM bootstrap (default: clang; use gcc on systems without clang)"),
@@ -115,6 +118,7 @@ def build(
                 "ARTS_BUILD_TYPE=Debug",
             ])
         make_vars.append(f"ARTS_USE_RDMA={'ON' if rdma else 'OFF'}")
+        make_vars.append(f"ARTS_BUILD_EXAMPLES={'ON' if examples else 'OFF'}")
 
     # Counter levels: 0=off, 1=artsid, 2=deep
     # Levels 1+ require USE_COUNTERS and USE_METRICS

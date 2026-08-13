@@ -24,6 +24,7 @@ from scripts import (
     SUBMODULE_ARTS,
     SUBMODULE_BENCHMARKS,
     SUBMODULE_POLYGEIST,
+    declared_nested_submodules,
     run_subprocess,
 )
 from scripts.build_env import (
@@ -80,16 +81,18 @@ def _prepare_project_sources() -> None:
     arts_dir = project_root / SUBMODULE_ARTS
     print_step("Initializing ARTS nested submodules...")
     _run(["git", "submodule", "sync", "--recursive"], cwd=arts_dir, label="ARTS submodule sync")
-    _run(
-        [
-            "git", "submodule", "update", "--init",
-            "--depth", "1", "--single-branch", "--recommend-shallow",
-            "--jobs", git_jobs,
-            *ARTS_NESTED_SUBMODULES,
-        ],
-        cwd=arts_dir,
-        label="ARTS nested submodule update",
-    )
+    arts_nested = declared_nested_submodules(arts_dir, ARTS_NESTED_SUBMODULES)
+    if arts_nested:
+        _run(
+            [
+                "git", "submodule", "update", "--init",
+                "--depth", "1", "--single-branch", "--recommend-shallow",
+                "--jobs", git_jobs,
+                *arts_nested,
+            ],
+            cwd=arts_dir,
+            label="ARTS nested submodule update",
+        )
 
     polygeist_dir = project_root / SUBMODULE_POLYGEIST
     print_step("Initializing Polygeist nested submodules...")

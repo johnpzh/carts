@@ -23,7 +23,9 @@ SUBMODULE_ARTS = "external/arts"
 SUBMODULE_POLYGEIST = "external/Polygeist"
 SUBMODULE_BENCHMARKS = "external/carts-benchmarks"
 
-# Nested submodules required for each top-level submodule
+# Nested submodules required for each top-level submodule. The sets drift
+# across submodule branches (the arts `cxl` branch has no jemalloc), so pass
+# them through declared_nested_submodules() before handing them to git.
 ARTS_NESTED_SUBMODULES = ["third_party/hwloc", "third_party/jemalloc"]
 POLYGEIST_NESTED_SUBMODULES = ["llvm-project"]
 
@@ -138,6 +140,38 @@ def run_subprocess(
         timeout=timeout,
     )
     return result
+
+
+def declared_nested_submodules(repo_dir: Path,
+                               candidates: list[str]) -> list[str]:
+    """Filter nested-submodule paths to those declared by the checked-out
+    commit's .gitmodules.
+
+    ``git submodule update`` fails outright on pathspecs the current commit
+    does not declare, and fixed pathspec lists go stale when a submodule
+    pin moves to a branch with a different nested set.
+    """
+    gitmodules = repo_dir / ".gitmodules"
+    if not gitmodules.is_file():
+        return []
+    result = run_subprocess(
+        ["git", "config", "-f", str(gitmodules), "--get-regexp",
+         r"^submodule\..*\.path$"],
+        capture_output=True,
+        check=False,
+        cwd=repo_dir,
+    )
+    declared = set()
+    for line in (result.stdout or "").splitlines():
+        parts = line.split(maxsplit=1)
+        if len(parts) == 2:
+            declared.add(parts[1].strip())
+    kept = [path for path in candidates if path in declared]
+    if is_verbose() and len(kept) != len(candidates):
+        dropped = ", ".join(p for p in candidates if p not in declared)
+        print_debug(f"Skipping nested submodules not declared by "
+                    f"{gitmodules}: {dropped}")
+    return kept
 
 
 def run_command_with_output(
