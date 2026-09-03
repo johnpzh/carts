@@ -344,6 +344,16 @@ __ARTS_RTL_ATTRS(arts_add_dependence_at_ex, ControlAttrs, EmptyAttrs,
 ///           arts_hint_t* replaces route parameter)
 ///===----------------------------------------------------------------------===///
 /// {
+/// arts_guid_t arts_db_create(void **addr, uint64_t len,
+///                            arts_db_types_t db_type,
+///                            const arts_hint_t *hint);
+/// Creation entry for locally owned DBs: the runtime mints the GUID at
+/// allocation time (pointer-encoded for ARTS_DB_CXL), so nothing is reserved
+/// up front.
+__ARTS_RTL(arts_db_create, ArtsGuid, RawPtr, Int64, Int32, ArtsHintTypePtr)
+__ARTS_RTL_ATTRS(arts_db_create, AllocAttrs, EmptyAttrs,
+                 ParamAttrs(ArgPtrAttrs, EmptyAttrs, SExt, ReadOnlyPtrAttrs))
+
 /// void *arts_db_create_with_guid(arts_guid_t guid, uint64_t len,
 ///                                arts_db_types_t db_type, const void *data,
 ///                                const arts_hint_t *hint);

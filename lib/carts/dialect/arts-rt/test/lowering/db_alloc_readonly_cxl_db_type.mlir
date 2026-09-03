@@ -1,22 +1,53 @@
 // RUN: %carts-compile %s --arts-config %arts_config --cxl-readonly-dbs --start-from arts-rt-to-llvm --pipeline arts-rt-to-llvm | %FileCheck %s --check-prefix=CXL
 // RUN: %carts-compile %s --arts-config %arts_config --start-from arts-rt-to-llvm --pipeline arts-rt-to-llvm | %FileCheck %s --check-prefix=DEFAULT
 
-// Read-only DataBlocks (dbMode <read>) are created with the ARTS_DB_CXL
-// runtime type (4) when --cxl-readonly-dbs is set. Write-mode DataBlocks and
-// default compiles keep ARTS_DB_DEFAULT (0). The db_type is the third
-// argument of arts_db_create_with_guid.
+// Read-only DataBlocks (dbMode <read>) become ARTS_DB_CXL (db_type 4) under
+// --cxl-readonly-dbs; write-mode DataBlocks and default compiles keep
+// ARTS_DB_DEFAULT (0). Every locally owned DB is created with arts_db_create,
+// which mints the GUID at allocation time (pointer-encoded for CXL), so
+// neither compile reserves a GUID or calls arts_db_create_with_guid.
 
 // CXL-LABEL: func.func @readonly_db
+// CXL-NOT: call @arts_guid_reserve
 // CXL-DAG: %[[CXL_TYPE:.*]] = arith.constant 4 : i32
-// CXL: call @arts_db_create_with_guid({{[^,]+}}, {{[^,]+}}, %[[CXL_TYPE]],
+// CXL: call @arts_db_create({{[^,]+}}, {{[^,]+}}, %[[CXL_TYPE]],
+// CXL-NOT: call @arts_db_create_with_guid
 
 // CXL-LABEL: func.func @writable_db
+// CXL-NOT: call @arts_guid_reserve
 // CXL-DAG: %[[DEFAULT_TYPE:.*]] = arith.constant 0 : i32
-// CXL: call @arts_db_create_with_guid({{[^,]+}}, {{[^,]+}}, %[[DEFAULT_TYPE]],
+// CXL: call @arts_db_create({{[^,]+}}, {{[^,]+}}, %[[DEFAULT_TYPE]],
+// CXL-NOT: call @arts_db_create_with_guid
+
+// Multi-element read-only allocations go through the createMultiDbs loop and
+// must use the same GUID-at-creation protocol.
+// CXL-LABEL: func.func @readonly_db_array
+// CXL-NOT: call @arts_guid_reserve
+// CXL-DAG: %[[ARRAY_CXL_TYPE:.*]] = arith.constant 4 : i32
+// CXL: call @arts_db_create({{[^,]+}}, {{[^,]+}}, %[[ARRAY_CXL_TYPE]],
+// CXL-NOT: call @arts_db_create_with_guid
+
+// The CXL branch of arts_db_create is local-only, so a CXL DB pins the
+// current-node sentinel in hint->route even when the alloc names another rank;
+// default compiles pass the alloc's route through.
+// CXL-LABEL: func.func @readonly_db_routed
+// CXL-NOT: call @arts_guid_reserve
+// CXL-DAG: %[[PIN:.*]] = arith.constant -1 : i32
+// CXL-DAG: %[[ROUTED_CXL_TYPE:.*]] = arith.constant 4 : i32
+// CXL: llvm.insertvalue %[[PIN]], {{.*}}[0] : !llvm.struct<(i32, i64)>
+// CXL: call @arts_db_create({{[^,]+}}, {{[^,]+}}, %[[ROUTED_CXL_TYPE]],
+// CXL-NOT: call @arts_db_create_with_guid
 
 // DEFAULT-LABEL: func.func @readonly_db
+// DEFAULT-NOT: call @arts_guid_reserve
 // DEFAULT-DAG: %[[DEFAULT_TYPE:.*]] = arith.constant 0 : i32
-// DEFAULT: call @arts_db_create_with_guid({{[^,]+}}, {{[^,]+}}, %[[DEFAULT_TYPE]],
+// DEFAULT: call @arts_db_create({{[^,]+}}, {{[^,]+}}, %[[DEFAULT_TYPE]],
+// DEFAULT-NOT: call @arts_db_create_with_guid
+
+// DEFAULT-LABEL: func.func @readonly_db_routed
+// DEFAULT-DAG: %[[ROUTE3:.*]] = arith.constant 3 : i32
+// DEFAULT: llvm.insertvalue %[[ROUTE3]], {{.*}}[0] : !llvm.struct<(i32, i64)>
+// DEFAULT: call @arts_db_create(
 
 module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i64, dense<64> : vector<2xi64>>, #dlti.dl_entry<i32, dense<32> : vector<2xi64>>, #dlti.dl_entry<!llvm.ptr, dense<64> : vector<4xi64>>, #dlti.dl_entry<"dlti.endianness", "little">, #dlti.dl_entry<"dlti.stack_alignment", 128 : i64>>, llvm.data_layout = "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", llvm.target_triple = "aarch64-unknown-linux-gnu"} {
   func.func @readonly_db() -> i64 {
@@ -34,6 +65,24 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<f64, dense<64> : 
     %c16 = arith.constant 16 : index
     %route = arith.constant -1 : i32
     %guid, %ptr = arts.db_alloc[<inout>, <heap>, <write>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c16] : (memref<?xi64>, memref<?x!llvm.ptr>)
+    %guid_value = memref.load %guid[%c0] : memref<?xi64>
+    return %guid_value : i64
+  }
+  func.func @readonly_db_array() -> i64 {
+    %c0 = arith.constant 0 : index
+    %c4 = arith.constant 4 : index
+    %c16 = arith.constant 16 : index
+    %route = arith.constant -1 : i32
+    %guid, %ptr = arts.db_alloc[<in>, <heap>, <read>] route(%route : i32) sizes[%c4] elementType(f64) elementSizes[%c16] : (memref<?xi64>, memref<?x!llvm.ptr>)
+    %guid_value = memref.load %guid[%c0] : memref<?xi64>
+    return %guid_value : i64
+  }
+  func.func @readonly_db_routed() -> i64 {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c16 = arith.constant 16 : index
+    %route = arith.constant 3 : i32
+    %guid, %ptr = arts.db_alloc[<in>, <heap>, <read>] route(%route : i32) sizes[%c1] elementType(f64) elementSizes[%c16] : (memref<?xi64>, memref<?x!llvm.ptr>)
     %guid_value = memref.load %guid[%c0] : memref<?xi64>
     return %guid_value : i64
   }

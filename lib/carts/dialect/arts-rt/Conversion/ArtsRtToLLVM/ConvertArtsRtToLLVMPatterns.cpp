@@ -932,22 +932,23 @@ private:
     return success();
   }
 
+  /// arts_id for the creation hint: base create-id plus the linear DB index.
+  Value buildDbArtsId(Value linearIndex, std::optional<int64_t> nextId,
+                      Location loc) const {
+    if (!nextId.has_value())
+      return AC->createIntConstant(0, AC->Int64, loc);
+    Value baseArtsId = AC->create<arith::ConstantOp>(
+        loc, AC->Int64, AC->getBuilder().getI64IntegerAttr(*nextId));
+    Value linearIndex64 = AC->ensureI64(linearIndex, loc);
+    return AC->create<arith::AddIOp>(loc, baseArtsId, linearIndex64);
+  }
+
   void createDbFromGuidAtIndex(Value dbMemref, Value guid, Value linearIndex,
                                Value elementSize, std::optional<int64_t> nextId,
                                Location loc, DbMemoryPlacement memoryPlacement,
                                unsigned runtimeDbType = ARTS_DB_DEFAULT) const {
     Value elemSize64 = AC->ensureI64(elementSize, loc);
-
-    /// Build arts_hint_t with arts_id if available.
-    Value artsIdValue;
-    if (nextId.has_value()) {
-      Value baseArtsId = AC->create<arith::ConstantOp>(
-          loc, AC->Int64, AC->getBuilder().getI64IntegerAttr(*nextId));
-      Value linearIndex64 = AC->ensureI64(linearIndex, loc);
-      artsIdValue = AC->create<arith::AddIOp>(loc, baseArtsId, linearIndex64);
-    } else {
-      artsIdValue = AC->createIntConstant(0, AC->Int64, loc);
-    }
+    Value artsIdValue = buildDbArtsId(linearIndex, nextId, loc);
     Value zeroRoute = AC->createIntConstant(0, AC->Int32, loc);
     Value hintMemref = buildArtsHintMemref(AC, zeroRoute, artsIdValue, loc);
     Value dbType = AC->createIntConstant(runtimeDbType, AC->Int32, loc);
@@ -963,6 +964,47 @@ private:
         RCB.callOp(runtimeFn, {guid, elemSize64, dbType, nullData, hintMemref});
 
     AC->create<memref::StoreOp>(loc, dbCall.getResult(0), dbMemref,
+                                ValueRange{linearIndex});
+  }
+
+  /// Creates one DB with arts_db_create, which mints the GUID and the object
+  /// together and returns the payload pointer through an out-param. Every
+  /// locally owned DB uses this entry point: for ARTS_DB_DEFAULT the runtime
+  /// performs the same reserve-then-create sequence internally, and for
+  /// ARTS_DB_CXL it is the only correct path because the GUID encodes the
+  /// payload address (arts_cxl_make_guid), which exists only once the CXL
+  /// arena allocates.
+  void createDbAtIndex(Value dbMemref, Value guidMemref, Value linearIndex,
+                       Value elementSize, std::optional<int64_t> nextId,
+                       Value route, unsigned runtimeDbType,
+                       Location loc) const {
+    Value elemSize64 = AC->ensureI64(elementSize, loc);
+    Value artsIdValue = buildDbArtsId(linearIndex, nextId, loc);
+
+    /// arts_db_create reads hint->route as the creation rank; any rank other
+    /// than the current node requests a remote stub and yields a NULL payload
+    /// pointer. The CXL branch of arts_db_create is local-only, so CXL DBs pin
+    /// the current-node sentinel instead of the alloc's route.
+    Value hintRoute = runtimeDbType == ARTS_DB_CXL
+                          ? createCurrentNodeRoute(AC->getBuilder(), loc)
+                          : route;
+    Value hintMemref = buildArtsHintMemref(AC, hintRoute, artsIdValue, loc);
+    Value dbType = AC->createIntConstant(runtimeDbType, AC->Int32, loc);
+
+    /// Out-param slot for the payload pointer, pre-nulled because
+    /// arts_db_create leaves *addr untouched when the allocation fails.
+    Value addrSlot =
+        AC->create<LLVM::AllocaOp>(loc, AC->llvmPtr, AC->llvmPtr,
+                                   AC->createIntConstant(1, AC->Int32, loc));
+    Value nullPtr = AC->create<LLVM::ZeroOp>(loc, AC->llvmPtr);
+    AC->create<LLVM::StoreOp>(loc, nullPtr, addrSlot);
+
+    ArtsCodegen::RuntimeCallBuilder RCB(*AC, loc);
+    auto guid = RCB.call(types::ARTSRTL_arts_db_create,
+                         {addrSlot, elemSize64, dbType, hintMemref});
+    AC->create<memref::StoreOp>(loc, guid, guidMemref, ValueRange{linearIndex});
+    Value payloadPtr = AC->create<LLVM::LoadOp>(loc, AC->llvmPtr, addrSlot);
+    AC->create<memref::StoreOp>(loc, payloadPtr, dbMemref,
                                 ValueRange{linearIndex});
   }
 
@@ -983,6 +1025,34 @@ private:
                         : AC->computeLinearIndex(sizes, indices, loc);
     }
 
+    /// Base arts_id for created DBs, shared by both creation entry points.
+    std::optional<int64_t> baseId = std::nullopt;
+    if (createDb && nextId && nextId->has_value()) {
+      if (indices.empty() && !linearIndexOverride.has_value()) {
+        baseId = **nextId;
+        **nextId = **nextId + 1;
+      } else {
+        baseId = **nextId;
+      }
+    }
+
+    /// A GUID is reserved ahead of creation only for the protocols that need
+    /// the name before the object exists: the distributed init, where every
+    /// node agrees on deterministic GUIDs before the owner creates its
+    /// partitions (possibly in a later callback, hence createDb=false), and
+    /// NUMA-interleaved placement, whose entry point has no arts_db_create
+    /// counterpart yet. Every other DB is created with arts_db_create, which
+    /// mints the GUID at creation.
+    bool reservesGuid = distributedOwnership || !createDb ||
+                        memoryPlacement == DbMemoryPlacement::Interleaved;
+    if (!reservesGuid) {
+      createDbAtIndex(dbMemref, guidMemref, linearIndex, elementSize, baseId,
+                      route, runtimeDbType, loc);
+      return;
+    }
+    assert(runtimeDbType != ARTS_DB_CXL &&
+           "CXL DBs never use the reserve-then-create protocol");
+
     Value reserveRoute = route;
     if (distributedOwnership) {
       Value linearIndexI32 = AC->castToInt(AC->Int32, linearIndex, loc);
@@ -1001,19 +1071,9 @@ private:
     AC->create<memref::StoreOp>(loc, guid, guidMemref, ValueRange{linearIndex});
 
     /// Optionally create DB and store pointer in the linearized db memref.
-    if (createDb) {
-      std::optional<int64_t> baseId = std::nullopt;
-      if (nextId && nextId->has_value()) {
-        if (indices.empty() && !linearIndexOverride.has_value()) {
-          baseId = **nextId;
-          **nextId = **nextId + 1;
-        } else {
-          baseId = **nextId;
-        }
-      }
+    if (createDb)
       createDbFromGuidAtIndex(dbMemref, guid, linearIndex, elementSize, baseId,
                               loc, memoryPlacement, runtimeDbType);
-    }
   }
 
   void
@@ -1024,9 +1084,9 @@ private:
                  DbMemoryPlacement memoryPlacement = DbMemoryPlacement::Default,
                  unsigned runtimeDbType = ARTS_DB_DEFAULT) const {
     Value totalElems = AC->computeTotalElements(sizes, loc);
-    /// Keep DB creation always linearized here. The dedicated GuidRangeCallOpt
-    /// pass handles reserve->reserve_range promotion centrally after
-    /// ARTS-RT-to-LLVM conversion.
+    /// Keep DB creation always linearized here. For the distributed reserve
+    /// loop, the dedicated GuidRangeCallOpt pass handles reserve->reserve_range
+    /// promotion centrally after ARTS-RT-to-LLVM conversion.
     auto lowerBound = AC->createIndexConstant(0, loc);
     auto step = AC->createIndexConstant(1, loc);
     auto linearLoop = AC->create<scf::ForOp>(loc, lowerBound, totalElems, step);
